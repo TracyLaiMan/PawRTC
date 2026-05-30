@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>概念速查 + 记忆测验 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Concept Cards Grid ===== */
+.ref{width:100%;max-width:1200px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ref.vis{opacity:1;transform:translateY(0)}
+.ref-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+.ref-card{border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.04);transition:all .3s;cursor:pointer}
+.ref-card:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.ref-card .rc-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.ref-card .rc-title{font-size:14px;font-weight:700;color:#d0d0f0;margin-bottom:6px}
+.ref-card .rc-body{font-size:11.5px;color:#8888bb;line-height:1.7}
+.ref-card .rc-body em{color:#6c63ff;font-style:normal;font-weight:600}
+.ref-card .rc-body code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10px;font-family:"JetBrains Mono",monospace}
+
+/* Color variants */
+.ref-card.c-jwt{background:rgba(108,99,255,.02);border-color:rgba(108,99,255,.1)}.ref-card.c-jwt .rc-tag{color:#6c63ff}
+.ref-card.c-tls{background:rgba(56,189,248,.02);border-color:rgba(56,189,248,.1)}.ref-card.c-tls .rc-tag{color:#38bdf8}
+.ref-card.c-ice{background:rgba(245,158,11,.02);border-color:rgba(245,158,11,.1)}.ref-card.c-ice .rc-tag{color:#f59e0b}
+.ref-card.c-dtls{background:rgba(167,139,250,.02);border-color:rgba(167,139,250,.1)}.ref-card.c-dtls .rc-tag{color:#a78bfa}
+.ref-card.c-sdp{background:rgba(52,211,153,.02);border-color:rgba(52,211,153,.1)}.ref-card.c-sdp .rc-tag{color:#34d399}
+.ref-card.c-srtp{background:rgba(244,63,94,.02);border-color:rgba(244,63,94,.1)}.ref-card.c-srtp .rc-tag{color:#f43f5e}
+.ref-card.c-hash{background:rgba(249,224,98,.02);border-color:rgba(249,224,98,.1)}.ref-card.c-hash .rc-tag{color:#f9e062}
+.ref-card.c-aes{background:rgba(137,180,250,.02);border-color:rgba(137,180,250,.1)}.ref-card.c-aes .rc-tag{color:#89b4fa}
+.ref-card.c-ecdhe{background:rgba(203,166,247,.02);border-color:rgba(203,166,247,.1)}.ref-card.c-ecdhe .rc-tag{color:#cba6f7}
+.ref-card.c-ecdsa{background:rgba(166,227,161,.02);border-color:rgba(166,227,161,.1)}.ref-card.c-ecdsa .rc-tag{color:#a6e3a1}
+
+/* ===== Mnemonic ===== */
+.mne{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.mne.vis{opacity:1;transform:translateY(0)}
+.mne-chain{display:flex;justify-content:center;gap:6px;margin-top:28px;flex-wrap:wrap}
+.mne-ring{width:80px;height:80px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2.5px solid;transition:all .4s;opacity:0;transform:scale(0.6)}
+.mne-ring.vis{opacity:1;transform:scale(1)}
+.mne-ring .mr-char{font-size:22px;font-weight:900;line-height:1}
+.mne-ring .mr-name{font-size:7px;letter-spacing:0.5px;margin-top:2px;opacity:.7;text-transform:uppercase}
+.mne-link{display:flex;align-items:center;font-size:18px;color:rgba(255,255,255,.1)}
+.mne-desc{margin-top:20px;text-align:center;font-size:12.5px;color:#8888bb;line-height:1.85}
+.mne-desc em{color:#6c63ff;font-style:normal;font-weight:600}
+.mne-desc strong{color:#d0d0f0}
+
+/* ===== Flash Cards ===== */
+.flash{width:100%;max-width:1100px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.flash.vis{opacity:1;transform:translateY(0)}
+.flash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:20px}
+.flash-card{border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .4s;min-height:100px;background:rgba(0,0,0,.08);perspective:800px}
+.flash-card:hover{border-color:rgba(108,99,255,.15);transform:translateY(-2px)}
+.flash-inner{position:relative;width:100%;transition:transform .5s;transform-style:preserve-3d}
+.flash-card.flipped .flash-inner{transform:rotateY(180deg)}
+.flash-front,.flash-back{backface-visibility:hidden}
+.flash-back{position:absolute;top:0;left:0;width:100%;transform:rotateY(180deg)}
+.flash-front .ff-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.flash-front .ff-name{font-size:13px;font-weight:700;color:#d0d0f0}
+.flash-back .fb-body{font-size:11px;color:#a0a0c8;line-height:1.7}
+.flash-back .fb-body em{color:#6c63ff;font-style:normal;font-weight:600}
+.flash-back .fb-body code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 4px;border-radius:3px;font-size:9.5px;font-family:"JetBrains Mono",monospace}
+.flash-hint{font-size:10px;color:#555577;text-align:center;margin-top:4px}
+
+/* ===== Quiz ===== */
+.quiz{width:100%;max-width:800px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.quiz.vis{opacity:1;transform:translateY(0)}
+.quiz-box{background:rgba(0,0,0,.12);border-radius:16px;padding:28px;border:1px solid rgba(255,255,255,.04);min-height:300px;margin-top:16px}
+.quiz-progress{display:flex;gap:4px;margin-bottom:20px}
+.quiz-pdot{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.05);transition:all .3s}
+.quiz-pdot.done{background:rgba(52,211,153,.4)}
+.quiz-pdot.cur{background:rgba(108,99,255,.5)}
+.quiz-pdot.wrong{background:rgba(244,63,94,.4)}
+.quiz-qnum{font-size:10px;font-weight:700;color:#6c63ff;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.quiz-q{text{font-size:15px;font-weight:700;color:#e0e0ff;line-height:1.6;margin-bottom:18px}
+.quiz-q{font-size:15px;font-weight:700;color:#e0e0ff;line-height:1.6;margin-bottom:18px}
+.quiz-opts{display:flex;flex-direction:column;gap:8px}
+.quiz-opt{padding:12px 16px;border-radius:10px;border:1px solid rgba(255,255,255,.06);cursor:pointer;font-size:13px;color:#a0a0c8;transition:all .3s;background:rgba(0,0,0,.08)}
+.quiz-opt:hover{border-color:rgba(108,99,255,.25);background:rgba(108,99,255,.04);color:#d0d0f0}
+.quiz-opt.selected{border-color:rgba(108,99,255,.4);background:rgba(108,99,255,.08);color:#d0d0f0}
+.quiz-opt.correct{border-color:rgba(52,211,153,.4)!important;background:rgba(52,211,153,.08)!important;color:#6ee7b7!important}
+.quiz-opt.wrong{border-color:rgba(244,63,94,.4)!important;background:rgba(244,63,94,.08)!important;color:#fca5a5!important}
+.quiz-opt.disabled{pointer-events:none;opacity:.7}
+.quiz-explain{margin-top:14px;padding:14px 18px;border-radius:10px;font-size:12.5px;line-height:1.75;display:none}
+.quiz-explain.show{display:block}
+.quiz-explain.ok{background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.1);color:#a0c8b0}
+.quiz-explain.fail{background:rgba(244,63,94,.05);border:1px solid rgba(244,63,94,.1);color:#c8a0a0}
+.quiz-explain em{color:#6c63ff;font-style:normal;font-weight:600}
+.quiz-explain code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+.quiz-nav{display:flex;gap:10px;margin-top:18px;justify-content:flex-end}
+.quiz-nbtn{padding:8px 20px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .3s;border:1px solid;background:none}
+.quiz-nbtn.next{border-color:rgba(108,99,255,.3);color:#a78bfa}
+.quiz-nbtn.next:hover{background:rgba(108,99,255,.1)}
+.quiz-nbtn.retry{border-color:rgba(52,211,153,.3);color:#6ee7b7}
+.quiz-nbtn.retry:hover{background:rgba(52,211,153,.1)}
+.quiz-score{font-size:12px;color:#8888aa;margin-top:8px}
+
+/* ===== Score Final ===== */
+.score{width:100%;max-width:700px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.score.vis{opacity:1;transform:translateY(0)}
+.score-ring{width:180px;height:180px;border-radius:50%;margin:28px auto;position:relative;display:flex;align-items:center;justify-content:center}
+.score-ring svg{position:absolute;inset:-4px;transform:rotate(-90deg)}
+.score-ring .sr-num{font-size:38px;font-weight:900;z-index:1}
+.score-ring .sr-lbl{font-size:10px;color:#8888aa;z-index:1;margin-left:4px}
+.score-msg{margin-top:16px;text-align:center;font-size:13.5px;line-height:1.8;color:#b0b0d0}
+.score-msg em{color:#6c63ff;font-style:normal;font-weight:600}
+.score-btns{display:flex;gap:10px;justify-content:center;margin-top:20px}
+.score-btn{padding:10px 24px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .3s;border:1px solid;background:none}
+.score-btn.retry{border-color:rgba(108,99,255,.3);color:#a78bfa}
+.score-btn.retry:hover{background:rgba(108,99,255,.1)}
+.score-btn.clear{border-color:rgba(244,63,94,.2);color:#8888aa}
+.score-btn.clear:hover{background:rgba(244,63,94,.05)}
+
+.links{margin-top:24px;text-align:center}
+.links a{display:inline-block;margin:4px 8px;padding:6px 14px;border-radius:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);font-size:11px;color:#8888aa;text-decoration:none;transition:all .3s}
+.links a:hover{border-color:rgba(108,99,255,.25);color:#b0b0e0}
+
+@media(max-width:700px){.ref-grid{grid-template-columns:1fr}.mne-ring{width:60px;height:60px}.mne-ring .mr-char{font-size:16px}.flash-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Concept Reference ========== -->
+<div class="sec" id="s1">
+  <h1 class="sec-title" data-reveal>概念速查</h1>
+  <p class="sec-sub" data-reveal>所有核心概念的对照卡——一张图看清 Hash vs HMAC、CTR vs GCM、ECDHE vs ECDSA 等关键区别。</p>
+  <div class="ref" data-reveal>
+    <div class="ref-grid" id="refGrid"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 2. Mnemonic ========== -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" data-reveal>记忆口诀</h2>
+  <p class="sec-sub" data-reveal>六层安全链，从信令到媒体，环环相扣。记住这个公式，就能还原整条依赖关系。</p>
+  <div class="mne" data-reveal>
+    <div class="mne-chain" id="mneChain"></div>
+    <div class="mne-desc" id="mneDesc"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 3. Flash Cards ========== -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" data-reveal>闪卡翻转</h2>
+  <p class="sec-sub" data-reveal>正面是概念名，点击翻转看定义和项目中的用途。</p>
+  <div class="flash" data-reveal>
+    <div class="flash-grid" id="flashGrid"></div>
+    <div class="flash-hint">点击卡片翻转</div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 4. Scenario Quiz ========== -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" data-reveal>情景测验</h2>
+  <p class="sec-sub" data-reveal>给出攻击情景，选择哪一层安全被突破——测试你是否真正理解了信任链。</p>
+  <div class="quiz" data-reveal>
+    <div class="quiz-box">
+      <div class="quiz-progress" id="qProg"></div>
+      <div class="quiz-qnum" id="qNum"></div>
+      <div class="quiz-q" id="qText"></div>
+      <div class="quiz-opts" id="qOpts"></div>
+      <div class="quiz-explain" id="qExplain"></div>
+      <div class="quiz-nav" id="qNav"></div>
+    </div>
+    <div class="quiz-score" id="qScore"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 5. Score & Links ========== -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" data-reveal>学习完成</h2>
+  <p class="sec-sub" data-reveal>恭喜你完成了所有测验！回顾你的成绩，继续深入探索各个专题。</p>
+  <div class="score" data-reveal>
+    <div class="score-ring" id="scoreRing">
+      <svg viewBox="0 0 200 200" width="196" height="196">
+        <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,.03)" stroke-width="8"/>
+        <circle id="scoreArc" cx="100" cy="100" r="90" fill="none" stroke="rgba(108,99,255,.5)" stroke-width="8" stroke-linecap="round" stroke-dasharray="0 565" style="transition:stroke-dasharray 1.5s"/>
+      </svg>
+      <span class="sr-num" id="srNum">-</span>
+      <span class="sr-lbl">/10</span>
+    </div>
+    <div class="score-msg" id="scoreMsg"></div>
+    <div class="score-btns">
+      <button class="score-btn retry" onclick="retryQuiz()">重新测验</button>
+      <button class="score-btn clear" onclick="clearProgress()">清除进度</button>
+    </div>
+    <div class="links">
+      <a href="livekit_overview_learn.html" style="font-weight:bold">纵览</a>
+      <a href="livekit_hmac_learn.html">HMAC</a>
+      <a href="livekit_aes_learn.html">AES</a>
+      <a href="livekit_ecdhe_learn.html">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+      <a href="livekit_dtlsp_learn.html">DTLS</a>
+      <a href="livekit_wss_learn.html">WSS</a>
+      <a href="livekit_jwt_ice_learn.html">JWT+ICE</a>
+      <a href="livekit_trustchain_learn.html">信任链</a>
+      <a href="livekit_protocols_learn.html" style="font-weight:bold">协议</a>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+// =========================================================
+// Concept Reference Cards
+// =========================================================
+var refData = [
+  {cls:'c-hash',tag:'密码学基础',title:'Hash vs HMAC',
+   body:'<em>Hash</em>：无密钥，只检测篡改，无法验证来源。<br><em>HMAC</em>：有密钥，同时检测篡改 + 验证来源。<br>区别：HMAC = Hash(密钥⊕opad ‖ Hash(密钥⊕ipad ‖ 消息))'},
+  {cls:'c-aes',tag:'密码学基础',title:'AES-CTR vs AES-GCM',
+   body:'<em>CTR</em>：流式加密，无完整性保护。<br><em>GCM</em> = CTR加密 + GHASH认证，一步到位。<br>项目：SRTP用<code>CTR+HMAC-SHA1</code>，TLS用<code>GCM</code>'},
+  {cls:'c-ecdhe',tag:'密码学基础',title:'ECDHE vs RSA 密钥交换',
+   body:'<em>ECDHE</em>：临时密钥 → <em>前向保密</em>，私钥泄露不影响历史。<br><em>RSA</em>：用服务器公钥加密预主密钥 → 无 PFS。<br>WebRTC 强制 ECDHE'},
+  {cls:'c-ecdsa',tag:'密码学基础',title:'ECDHE vs ECDSA',
+   body:'<em>ECDHE</em>：密钥<em>交换</em>（协商共享密钥）。<br><em>ECDSA</em>：数字<em>签名</em>（证明身份和消息完整性）。<br>DTLS 握手同时使用两者'},
+  {cls:'c-jwt',tag:'六层安全',title:'JWT (L1) — 身份证明',
+   body:'三段结构：Header.Payload.Signature<br>签名算法：<em>HMAC-SHA256(API Secret)</em><br>定时过期：<code>exp</code>/<code>nbf</code><br>最小权限：<code>canPublish:true, canSubscribe:false</code>'},
+  {cls:'c-tls',tag:'六层安全',title:'WSS/TLS 1.2 (L2) — 信令加密',
+   body:'加密对象：JWT、SDP、ICE 候选等所有信令<br>密钥协商：<em>ECDHE</em> → PFS<br>加密算法：<code>AES-128-GCM</code><br>⚠️ 板端 VERIFY_OPTIONAL 跳过验证'},
+  {cls:'c-ice',tag:'六层安全',title:'ICE 认证 (L3) — 消息完整性',
+   body:'STUN 短期凭证：<code>HMAC-SHA1(ice-pwd, msg)</code> → MESSAGE-INTEGRITY<br>TURN 长期凭证：挑战-响应模式<br>凭证来源：SDP 中 <code>a=ice-ufrag</code> / <code>a=ice-pwd</code>'},
+  {cls:'c-dtls',tag:'六层安全',title:'DTLS 握手 (L4) — 密钥协商',
+   body:'基于 UDP 的 TLS，握手协商 SRTP 密钥<br>证书：<em>ECDSA P-256 自签名</em><br>密钥交换：<em>ECDHE</em> → 保证 PFS<br>导出：<code>TLS PRF → SRTP key/salt</code>'},
+  {cls:'c-sdp',tag:'六层安全',title:'SDP 指纹绑定 (L5) — 证书锚定',
+   body:'SHA-256(DER 证书) 通过 TLS 保护的信令传递<br>DTLS 握手后比对指纹 → 防止证书替换<br>⚠️ 如果 TLS 被攻破，指纹可被篡改'},
+  {cls:'c-srtp',tag:'六层安全',title:'SRTP 媒体加密 (L6) — 最终保护',
+   body:'加密：<em>AES-128-CTR</em>（流式，低延迟）<br>认证：<em>HMAC-SHA1-80</em>（10字节 auth tag）<br>密钥来源：DTLS 握手导出<br>每方向独立密钥，防反射攻击'}
+];
+
+function renderRef(){
+  var h='';
+  refData.forEach(function(c){
+    h+='<div class="ref-card '+c.cls+'" data-reveal>';
+    h+='<div class="rc-tag">'+c.tag+'</div>';
+    h+='<div class="rc-title">'+c.title+'</div>';
+    h+='<div class="rc-body">'+c.body+'</div>';
+    h+='</div>';
+  });
+  document.getElementById('refGrid').innerHTML=h;
+}
+
+// =========================================================
+// Mnemonic — 验身密核印封
+// =========================================================
+var mneData=[
+  {char:'验',layer:'JWT',color:'#6c63ff',desc:'身份<em>验</em>证'},
+  {char:'身',layer:'TLS',color:'#38bdf8',desc:'信令通道保护<em>身</em>份'},
+  {char:'密',layer:'ICE',color:'#f59e0b',desc:'消息完整<em>密</em>钥认证'},
+  {char:'核',layer:'DTLS',color:'#a78bfa',desc:'密钥协商<em>核</em>心'},
+  {char:'印',layer:'SDP',color:'#34d399',desc:'证书数字指纹<em>印</em>章'},
+  {char:'封',layer:'SRTP',color:'#f43f5e',desc:'媒体加密<em>封</em>装'}
+];
+
+function renderMne(){
+  var h='';
+  mneData.forEach(function(m,i){
+    if(i>0) h+='<div class="mne-link">→</div>';
+    h+='<div class="mne-ring" data-delay="'+i+'" style="border-color:'+m.color+';color:'+m.color+'">';
+    h+='<span class="mr-char">'+m.char+'</span>';
+    h+='<span class="mr-name" style="color:'+m.color+'">'+m.layer+'</span>';
+    h+='</div>';
+  });
+  document.getElementById('mneChain').innerHTML=h;
+
+  var desc='<strong>口诀：「验身密核印封」</strong><br><br>';
+  mneData.forEach(function(m){
+    desc+='<span style="color:'+m.color+';font-weight:700">'+m.char+'</span> = '+m.layer+' → '+m.desc+'<br>';
+  });
+  desc+='<br><em>记忆逻辑：</em>先<em>验</em>身份(JWT)，加密信令保护<em>身</em>份(TLS)，用<em>密</em>钥认证消息(ICE)，协商加密<em>核</em>心密钥(DTLS)，用数字指<em>印</em>锚定证书(SDP)，最终<em>封</em>装媒体(SRTP)。断裂任何一环，后续全部失效。';
+  document.getElementById('mneDesc').innerHTML=desc;
+}
+
+// =========================================================
+// Flash Cards
+// =========================================================
+var flashData=[
+  {name:'SHA-256',cls:'c-hash',back:'密码学哈希函数。输出 256-bit 固定长度摘要。<em>单向性</em>：无法从摘要反推输入。<em>抗碰撞性</em>：找不到两个输入产生相同输出。项目用于：SDP指纹计算、JWT签名内部。'},
+  {name:'HMAC-SHA256',cls:'c-hash',back:'带密钥的哈希。双重Hash结构（ipad+opad）。<em>同时保证完整性和来源真实性</em>。项目用于：JWT签名(<code>API Secret</code>)。对比：HMAC-SHA1 用于 ICE/STUN 认证。'},
+  {name:'AES-128-CTR',cls:'c-aes',back:'流式对称加密。IV+Counter → AES → keystream → XOR plaintext。<em>无完整性保护</em>——篡改不报错。项目用于：<code>SRTP</code> 媒体加密。需要额外加 HMAC-SHA1 认证标记。'},
+  {name:'AES-128-GCM',cls:'c-aes',back:'认证加密 = CTR加密 + GHASH认证。<em>一步完成加密和完整性验证</em>。先验证tag再解密(encrypt-then-MAC)。项目用于：<code>TLS 1.2</code> 信令加密。未来 SRTP 也应迁移到 GCM。'},
+  {name:'ECDHE P-256',cls:'c-ecdhe',back:'临时椭圆曲线 Diffie-Hellman 密钥交换。<em>前向保密</em>：每次会话新密钥对，用后销毁。计算：S=G·a·b。离散对数问题保证安全。MIPS上约50-100ms。'},
+  {name:'ECDSA P-256',cls:'c-ecdsa',back:'椭圆曲线数字签名算法。自签名证书用于DTLS。<em>WebRTC信任模型</em>：不依赖CA，依赖SDP指纹比对。与ECDHE区别：ECDSA是签名(证明身份)，ECDHE是密钥交换(协商密钥)。'},
+  {name:'JWT',cls:'c-jwt',back:'JSON Web Token = Header.Payload.Signature。签名：<em>HMAC-SHA256(API Secret)</em>。定时过期：<code>exp</code>。最小权限：<code>canPublish:true</code>。风险：当前通过URL query传递，可能被日志记录。'},
+  {name:'ice-pwd',cls:'c-ice',back:'ICE 短期认证密码。来源：SDP中<code>a=ice-pwd</code>。用途：<em>HMAC-SHA1(ice-pwd, STUN消息)</em> → MESSAGE-INTEGRITY。生命周期：单ICE会话。安全依赖：SDP通过TLS传输。'},
+  {name:'DTLS握手',cls:'c-dtls',back:'基于UDP的TLS握手。步骤：Hello → Certificate → KeyExchange → Finished。协商出<em>master_secret</em> → TLS PRF → SRTP密钥。Cookie机制防DoS（板端已禁用⚠️）。'},
+  {name:'SDP指纹',cls:'c-sdp',back:'SHA-256(DER证书)的Base64编码。通过TLS保护的信令通道传递。DTLS握手后与对端证书指纹比对。<em>防止中间人替换证书</em>。如果TLS被攻破，指纹可被篡改→全链崩溃。'}
+];
+
+function renderFlash(){
+  var h='';
+  flashData.forEach(function(f,i){
+    h+='<div class="flash-card" onclick="this.classList.toggle(\'flipped\')">';
+    h+='<div class="flash-inner">';
+    h+='<div class="flash-front">';
+    h+='<div class="ff-tag" style="color:var(--'+f.cls+'-color,#6c63ff)">'+f.cls.replace('c-','').toUpperCase()+'</div>';
+    h+='<div class="ff-name">'+f.name+'</div>';
+    h+='</div>';
+    h+='<div class="flash-back"><div class="fb-body">'+f.back+'</div></div>';
+    h+='</div></div>';
+  });
+  document.getElementById('flashGrid').innerHTML=h;
+  // Fix tag colors after render
+  document.querySelectorAll('.flash-card').forEach(function(card,i){
+    var cls=flashData[i].cls;
+    var colorMap={'c-hash':'#f9e062','c-aes':'#89b4fa','c-ecdhe':'#cba6f7','c-ecdsa':'#a6e3a1','c-jwt':'#6c63ff','c-ice':'#f59e0b','c-dtls':'#a78bfa','c-sdp':'#34d399'};
+    var tag=card.querySelector('.ff-tag');
+    if(tag && colorMap[cls]) tag.style.color=colorMap[cls];
+  });
+}
+
+// =========================================================
+// Quiz
+// =========================================================
+var quizData=[
+  {q:'攻击者窃取了设备的 JWT，但发现它已过期。JWT 中的哪个字段阻止了重放攻击？',
+   opts:['iss (签发者)','sub (主体)','exp (过期时间)','nbf (生效时间)'],
+   ans:2,explain:'<em>exp</em> 字段指定 token 的过期时间戳。SFU 验证签名后还会检查当前时间是否在 exp 之前。过期 JWT 直接拒绝，即使签名有效。'},
+  {q:'板端配置了 <code>VERIFY_OPTIONAL</code>，TLS 证书验证被跳过。攻击者能做什么？',
+   opts:['解密 SRTP 媒体流','篡改 SDP 中的 DTLS 指纹','拒绝 ICE 连接','伪造 JWT'],
+   ans:1,explain:'VERIFY_OPTIONAL 意味着板端不验证服务器 TLS 证书 → 中间人可以拦截信令 → 篡改 SDP 中的 <em>a=fingerprint</em> 字段 → 替换为自己的证书指纹 → DTLS 与攻击者握手 → SRTP 密钥泄露。这是最危险的攻击链。'},
+  {q:'AES-CTR 模式加密的密文被篡改了一个字节，解密方会怎样？',
+   opts:['直接报错拒绝解密','解密出乱码但不报错','自动纠正篡改的字节','重新请求发送'],
+   ans:1,explain:'CTR 模式没有完整性保护。<em>解密方不知道密文被篡改</em>，只会正常执行 XOR 操作，得到一个与原文差异极小的乱码明文。这就是 SRTP 必须额外加 HMAC-SHA1 auth tag 的原因。'},
+  {q:'ECDHE 中 E (Ephemeral) 的安全意义是什么？',
+   opts:['加密速度更快','密钥长度更短','保证前向保密','支持更多曲线'],
+   ans:2,explain:'Ephemeral = 每次会话生成新的临时密钥对，会话结束后销毁。<em>即使以后服务器被攻破、长期私钥泄露，攻击者也无法解密之前录制的流量</em>——因为临时私钥 a/b 已被销毁，无法从 A=G·a 和 B=G·b 反推共享密钥。'},
+  {q:'ICE 连通性检查中，STUN Binding Request 的 MESSAGE-INTEGRITY 是如何计算的？',
+   opts:['HMAC-SHA256(API Secret, message)','HMAC-SHA1(ice-pwd, message)','SHA-256(message)','AES-GCM(Tag, message)'],
+   ans:1,explain:'STUN 短期凭证使用 <em>HMAC-SHA1</em>，密钥是 SDP 中交换的 <code>ice-pwd</code>。区别于 JWT 用的 HMAC-SHA256 + API Secret。同一个 HMAC 家族，不同的算法和密钥。'},
+  {q:'为什么 SRTP 为每个方向使用独立的加密密钥？',
+   opts:['提升加密强度','防止反射攻击','节省计算开销','兼容不同编码器'],
+   ans:1,explain:'如果双向用同一个密钥，攻击者可以把板端发出的 SRTP 包原封不动发回板端——板端会用同一个密钥成功解密。<em>独立密钥</em>使得发出的包用 client_key 加密，收到的包用 server_key 解密，反射包无法被解密。'},
+  {q:'DTLS 握手完成后，板端如何获得 SRTP 的加密密钥？',
+   opts:['服务器单独发送密钥','从 CA 证书提取','通过 TLS PRF 从 master_secret 派生','使用 JWT 中的密钥字段'],
+   ans:2,explain:'DTLS 握手协商出 <em>master_secret</em>，然后通过 TLS PRF 从 master_secret 导出 60 字节密钥材料，切成 client_key + server_key + client_salt + server_salt。没有额外的密钥传输步骤。'},
+  {q:'如果 DTLS Cookie 机制被禁用（板端当前状态），面临什么风险？',
+   opts:['密钥协商不安全','无法验证证书','DTLS 握手放大攻击','ICE 连接失败'],
+   ans:2,explain:'DTLS 基于 UDP，没有 TCP 的三次握手。攻击者可以伪造源 IP 发送大量 <em>ClientHello</em>，服务器为每个 Hello 做昂贵的 ECDHE 计算 → <em>CPU 放大攻击</em>。Cookie 机制要求客户端回传随机 cookie 证明源 IP 可达，禁用后就没了这层防护。'},
+  {q:'WebRTC 为什么使用自签名证书而不是 CA 签发的证书？',
+   opts:['CA 证书太贵','自签名更安全','信任锚是信令通道而非 CA','浏览器不支持 CA 证书'],
+   ans:2,explain:'WebRTC 的信任模型是：<em>信令通道 (TLS) 传递证书指纹 → 对端比对</em>。不需要 CA 证明“这个域名是谁的”，只需证明“对面的人就是信令中告诉我的那个人”。这使得 WebRTC 可以在任意两个端点间建立安全连接，无需预先信任关系。'},
+  {q:'如果 HMAC 的密钥被泄露，哪些安全属性会丧失？',
+   opts:['只有机密性','只有完整性','完整性和来源真实性','所有安全属性'],
+   ans:2,explain:'HMAC 不提供<em>机密性</em>（它不做加密）。密钥泄露意味着攻击者可以：(1) 伪造有效 HMAC → 丧失<em>来源真实性</em>；(2) 篡改消息并生成新 HMAC → 丧失<em>完整性</em>。但已加密的数据仍然安全（如果加密密钥没泄露）。'}
+];
+
+var qIdx=0, qScore=0, qAnswered=false;
+
+function startQuiz(){
+  qIdx=0;qScore=0;qAnswered=false;
+  // Load saved progress
+  var saved=localStorage.getItem('lk_quiz_progress');
+  if(saved){
+    try{
+      var p=JSON.parse(saved);
+      if(p.active){qIdx=p.idx;qScore=p.score;}
+    }catch(e){}
+  }
+  renderQ();
+}
+
+function renderQ(){
+  qAnswered=false;
+  var q=quizData[qIdx];
+  // Progress dots
+  var ph='';
+  for(var i=0;i<quizData.length;i++){
+    var cls='quiz-pdot';
+    if(i<qIdx) cls+=' done';
+    else if(i===qIdx) cls+=' cur';
+    ph+='<div class="'+cls+'"></div>';
+  }
+  document.getElementById('qProg').innerHTML=ph;
+
+  document.getElementById('qNum').textContent='问题 '+(qIdx+1)+' / '+quizData.length;
+  document.getElementById('qText').textContent=q.q;
+
+  var oh='';
+  q.opts.forEach(function(o,i){
+    oh+='<div class="quiz-opt" data-idx="'+i+'" onclick="answerQ('+i+')">'+o+'</div>';
+  });
+  document.getElementById('qOpts').innerHTML=oh;
+
+  document.getElementById('qExplain').className='quiz-explain';
+  document.getElementById('qExplain').innerHTML='';
+  document.getElementById('qNav').innerHTML='';
+
+  var total=quizData.length;
+  var answered=qIdx;
+  document.getElementById('qScore').textContent='得分: '+qScore+' / '+answered+' (共 '+total+' 题)';
+}
+
+function answerQ(idx){
+  if(qAnswered) return;
+  qAnswered=true;
+  var q=quizData[qIdx];
+  var correct=idx===q.ans;
+  if(correct) qScore++;
+
+  // Style options
+  document.querySelectorAll('.quiz-opt').forEach(function(el,i){
+    el.classList.add('disabled');
+    if(i===q.ans) el.classList.add('correct');
+    else if(i===idx && !correct) el.classList.add('wrong');
+  });
+
+  // Explanation
+  var exp=document.getElementById('qExplain');
+  exp.className='quiz-explain show '+(correct?'ok':'fail');
+  exp.innerHTML=(correct?'✅ 正确！':'❌ 错误。正确答案是 '+String.fromCharCode(65+q.ans)+'。')+'<br>'+q.explain;
+
+  // Progress dot
+  var dots=document.querySelectorAll('.quiz-pdot');
+  if(dots[qIdx]){
+    dots[qIdx].classList.remove('cur');
+    dots[qIdx].classList.add(correct?'done':'wrong');
+  }
+
+  // Nav button
+  var nav=document.getElementById('qNav');
+  if(qIdx<quizData.length-1){
+    nav.innerHTML='<button class="quiz-nbtn next" onclick="nextQ()">下一题 →</button>';
+  } else {
+    nav.innerHTML='<button class="quiz-nbtn next" onclick="showFinal()">查看成绩</button>';
+  }
+
+  // Save progress
+  localStorage.setItem('lk_quiz_progress',JSON.stringify({active:true,idx:qIdx+1,score:qScore}));
+
+  document.getElementById('qScore').textContent='得分: '+qScore+' / '+(qIdx+1)+' (共 '+quizData.length+' 题)';
+}
+
+function nextQ(){
+  qIdx++;
+  renderQ();
+}
+
+function showFinal(){
+  var total=quizData.length;
+  var pct=qScore/total;
+  var arc=document.getElementById('scoreArc');
+  var circ=2*Math.PI*90;
+  setTimeout(function(){arc.setAttribute('stroke-dasharray',(circ*pct)+' '+(circ*(1-pct)));},100);
+  document.getElementById('srNum').textContent=qScore;
+
+  var color, msg;
+  if(pct>=0.9){color='#34d399';msg='出类拔萃！你对 LiveKit IPC 安全链路有深刻理解。';}
+  else if(pct>=0.7){color='#a78bfa';msg='掌握得不错！建议重温错题对应的专题页面。<br>'+getWeakAreas();}
+  else if(pct>=0.5){color='#f59e0b';msg='还需要加强！建议从头阅读各专题页面。<br>'+getWeakAreas();}
+  else{color='#f43f5e';msg='基础还不牢固，建议系统学习后再来挑战。<br>'+getWeakAreas();}
+
+  arc.setAttribute('stroke',color);
+  document.getElementById('srNum').style.color=color;
+  document.getElementById('scoreMsg').innerHTML=msg;
+
+  // Scroll to score section
+  document.getElementById('s5').scrollIntoView({behavior:'smooth'});
+
+  localStorage.setItem('lk_quiz_final',JSON.stringify({score:qScore,total:total,date:new Date().toISOString()}));
+}
+
+function getWeakAreas(){
+  // This is a simplified version - just suggest all pages
+  return '<em>重点复习：</em><a href="livekit_overview_learn.html" style="color:#e0e0ff;font-weight:bold">纵览</a> | <a href="livekit_trustchain_learn.html" style="color:#a78bfa">信任链</a> | <a href="livekit_dtlsp_learn.html" style="color:#a78bfa">DTLS</a> | <a href="livekit_wss_learn.html" style="color:#38bdf8">WSS</a> | <a href="livekit_jwt_ice_learn.html" style="color:#a78bfa">JWT+ICE</a> | <a href="livekit_protocols_learn.html" style="color:#e0e0ff;font-weight:bold">协议</a>';
+}
+
+function retryQuiz(){
+  qIdx=0;qScore=0;qAnswered=false;
+  localStorage.removeItem('lk_quiz_progress');
+  renderQ();
+  document.getElementById('s4').scrollIntoView({behavior:'smooth'});
+}
+
+function clearProgress(){
+  localStorage.removeItem('lk_quiz_progress');
+  localStorage.removeItem('lk_quiz_final');
+  retryQuiz();
+}
+
+// =========================================================
+// Init
+// =========================================================
+(function(){
+  renderRef();
+  renderMne();
+  renderFlash();
+  startQuiz();
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<8;i++){
+      var p=document.createElement('div');p.className='particle';
+      p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+      p.style.animationDuration=(8+Math.random()*14)+'s';
+      p.style.animationDelay=(Math.random()*10)+'s';
+      p.style.width=p.style.height=(1+Math.random()*2)+'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*200;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+  document.querySelectorAll('.ref,.mne,.flash,.quiz,.score').forEach(function(el){obs.observe(el)});
+
+  // Mnemonic ring reveal
+  var mneObs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.querySelectorAll('.mne-ring').forEach(function(r){
+          var d=parseInt(r.getAttribute('data-delay'))*200;
+          setTimeout(function(){r.classList.add('vis')},d);
+        });
+      }
+    });
+  },{threshold:0.2});
+  document.querySelectorAll('.mne-chain').forEach(function(el){mneObs.observe(el)});
+})();
+</script>
+</body>
+</html>

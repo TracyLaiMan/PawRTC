@@ -1,0 +1,2053 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveKit IPC 推流全流程技术详解</title>
+<style>
+/* ========== CSS Variables & Reset ========== */
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2236;
+  --bg-card-hover: #1f2a42;
+  --bg-code: #0d1117;
+  --border: #2a3550;
+  --border-glow: #3b82f6;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --accent-blue: #3b82f6;
+  --accent-cyan: #06b6d4;
+  --accent-green: #10b981;
+  --accent-purple: #8b5cf6;
+  --accent-orange: #f59e0b;
+  --accent-red: #ef4444;
+  --accent-pink: #ec4899;
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.4);
+  --shadow-glow: 0 0 30px rgba(59,130,246,0.15);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --sidebar-width: 260px;
+  --pipeline-height: 80px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:15px}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg-primary);
+  color:var(--text-primary);
+  line-height:1.7;
+  overflow-x:hidden;
+}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg-primary)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
+
+/* ========== Sidebar Navigation ========== */
+.sidebar{
+  position:fixed;top:0;left:0;
+  width:var(--sidebar-width);height:100vh;
+  background:var(--bg-secondary);
+  border-right:1px solid var(--border);
+  overflow-y:auto;z-index:100;
+  padding:24px 0;
+  transition:transform .3s;
+}
+.sidebar-logo{
+  padding:0 20px 20px;
+  font-size:1.1rem;font-weight:700;
+  color:var(--accent-cyan);
+  border-bottom:1px solid var(--border);
+  margin-bottom:12px;
+  display:flex;align-items:center;gap:10px;
+}
+.sidebar-logo .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-green);animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+.nav-section{padding:8px 16px;font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-dim);margin-top:8px}
+.nav-link{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 20px;
+  color:var(--text-secondary);
+  text-decoration:none;font-size:.85rem;
+  border-left:3px solid transparent;
+  transition:all .2s;
+}
+.nav-link:hover{color:var(--text-primary);background:rgba(59,130,246,.08);border-left-color:var(--accent-blue)}
+.nav-link.active{color:var(--accent-blue);background:rgba(59,130,246,.1);border-left-color:var(--accent-blue)}
+.nav-link .step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--bg-card);font-size:.65rem;font-weight:700;
+  flex-shrink:0;
+}
+.nav-link.active .step-num{background:var(--accent-blue);color:#fff}
+
+/* ========== Main Content ========== */
+.main{margin-left:var(--sidebar-width);padding:0 40px 80px;max-width:1100px}
+
+/* ========== Hero Section ========== */
+.hero{
+  padding:80px 0 40px;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;
+  background:radial-gradient(circle at 50% 50%,rgba(59,130,246,.06) 0%,transparent 60%);
+  animation:hero-glow 8s ease-in-out infinite;
+}
+@keyframes hero-glow{0%,100%{transform:translate(0,0)}50%{transform:translate(5%,3%)}}
+.hero h1{
+  font-size:2.6rem;font-weight:800;
+  background:linear-gradient(135deg,var(--accent-cyan),var(--accent-blue),var(--accent-purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  position:relative;
+}
+.hero .subtitle{
+  font-size:1.1rem;color:var(--text-secondary);
+  margin-top:12px;position:relative;
+}
+.hero-badges{
+  display:flex;justify-content:center;gap:12px;
+  margin-top:24px;position:relative;flex-wrap:wrap;
+}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border-radius:20px;
+  font-size:.78rem;font-weight:500;
+  background:var(--bg-card);border:1px solid var(--border);
+}
+.badge.green{color:var(--accent-green);border-color:rgba(16,185,129,.3)}
+.badge.blue{color:var(--accent-blue);border-color:rgba(59,130,246,.3)}
+.badge.purple{color:var(--accent-purple);border-color:rgba(139,92,246,.3)}
+.badge.orange{color:var(--accent-orange);border-color:rgba(245,158,11,.3)}
+
+/* ========== Section ========== */
+.section{
+  margin-top:60px;
+  scroll-margin-top:24px;
+}
+.section-header{
+  display:flex;align-items:center;gap:14px;
+  margin-bottom:24px;
+}
+.section-num{
+  display:flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:10px;
+  background:linear-gradient(135deg,var(--accent-blue),var(--accent-purple));
+  font-size:.9rem;font-weight:800;color:#fff;flex-shrink:0;
+}
+.section-title{
+  font-size:1.6rem;font-weight:700;
+}
+.section-subtitle{
+  font-size:.9rem;color:var(--text-secondary);margin-top:2px;
+}
+
+/* ========== Pipeline ========== */
+.pipeline{
+  display:flex;align-items:center;justify-content:center;
+  gap:0;margin:40px 0;flex-wrap:wrap;
+  padding:20px 0;
+}
+.pipeline-step{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  cursor:pointer;position:relative;
+  transition:transform .2s;
+}
+.pipeline-step:hover{transform:translateY(-4px)}
+.pipeline-node{
+  width:64px;height:64px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.4rem;font-weight:700;color:#fff;
+  position:relative;
+  transition:all .3s;
+}
+.pipeline-node::after{
+  content:'';position:absolute;inset:-3px;border-radius:18px;
+  background:inherit;opacity:0;filter:blur(8px);z-index:-1;
+  transition:opacity .3s;
+}
+.pipeline-step:hover .pipeline-node::after{opacity:.5}
+.pipeline-node.s1{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.pipeline-node.s2{background:linear-gradient(135deg,#8b5cf6,#7c3aed)}
+.pipeline-node.s3{background:linear-gradient(135deg,#06b6d4,#0891b2)}
+.pipeline-node.s4{background:linear-gradient(135deg,#10b981,#059669)}
+.pipeline-node.s5{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.pipeline-node.s6{background:linear-gradient(135deg,#ec4899,#db2777)}
+.pipeline-node.s7{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.pipeline-node.s8{background:linear-gradient(135deg,#6366f1,#4f46e5)}
+.pipeline-node.s9{background:linear-gradient(135deg,#14b8a6,#0d9488)}
+.pipeline-node.s10{background:linear-gradient(135deg,#f97316,#ea580c)}
+.pipeline-node.s11{background:linear-gradient(135deg,#22d3ee,#06b6d4)}
+.pipeline-label{
+  font-size:.7rem;color:var(--text-secondary);text-align:center;
+  max-width:80px;font-weight:500;
+}
+.pipeline-arrow{
+  width:32px;height:2px;
+  background:linear-gradient(to right,var(--border),var(--text-dim),var(--border));
+  margin:0 2px;margin-bottom:22px;
+  position:relative;
+}
+.pipeline-arrow::after{
+  content:'';position:absolute;right:-2px;top:-3px;
+  border:4px solid transparent;border-left-color:var(--text-dim);
+}
+/* pipeline data flow animation */
+.pipeline-arrow .flow-dot{
+  position:absolute;top:-2px;left:0;
+  width:6px;height:6px;border-radius:50%;
+  background:var(--accent-cyan);
+  animation:flow-right 2s infinite;
+  opacity:0;
+}
+@keyframes flow-right{0%{left:0;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:100%;opacity:0}}
+
+/* ========== Cards ========== */
+.card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;
+  margin-bottom:16px;
+  box-shadow:var(--shadow-card);
+  transition:all .3s;
+}
+.card:hover{border-color:rgba(59,130,246,.3);box-shadow:var(--shadow-glow)}
+.card-title{font-size:1rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card-title .icon{font-size:1.1rem}
+
+/* ========== Code Blocks ========== */
+.code-block{
+  background:var(--bg-code);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:16px 20px;
+  margin:12px 0;
+  font-family:var(--font-mono);
+  font-size:.82rem;
+  line-height:1.8;
+  overflow-x:auto;
+  position:relative;
+}
+.code-block .lang-tag{
+  position:absolute;top:8px;right:12px;
+  font-size:.65rem;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:1px;
+}
+.code-block .line-num{color:var(--text-dim);user-select:none;margin-right:16px}
+.code-log .log-time{color:var(--accent-blue)}
+.code-log .log-tag{color:var(--accent-purple);font-weight:600}
+.code-log .log-ok{color:var(--accent-green)}
+.code-log .log-err{color:var(--accent-red)}
+.code-log .log-dim{color:var(--text-dim)}
+.code-comment{color:var(--text-dim);font-style:italic}
+.code-key{color:var(--accent-cyan)}
+.code-str{color:var(--accent-green)}
+.code-num{color:var(--accent-orange)}
+
+/* ========== Tables ========== */
+.table-wrap{overflow-x:auto;margin:12px 0}
+table{
+  width:100%;border-collapse:collapse;
+  font-size:.85rem;
+}
+th{
+  background:var(--bg-secondary);
+  padding:10px 14px;text-align:left;
+  font-weight:600;font-size:.78rem;
+  text-transform:uppercase;letter-spacing:.5px;
+  color:var(--text-secondary);
+  border-bottom:2px solid var(--border);
+}
+td{
+  padding:10px 14px;
+  border-bottom:1px solid var(--border);
+}
+tr:hover td{background:rgba(59,130,246,.04)}
+td code{
+  background:rgba(59,130,246,.12);
+  padding:2px 6px;border-radius:4px;
+  font-family:var(--font-mono);font-size:.8rem;
+  color:var(--accent-cyan);
+}
+
+/* ========== Architecture Diagram ========== */
+.arch-diagram{
+  display:flex;align-items:stretch;justify-content:center;
+  gap:24px;margin:30px 0;flex-wrap:wrap;
+}
+.arch-box{
+  flex:1;min-width:200px;max-width:300px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;text-align:center;
+  position:relative;
+  transition:all .3s;
+}
+.arch-box:hover{transform:translateY(-4px);box-shadow:var(--shadow-glow)}
+.arch-box .arch-icon{font-size:2rem;margin-bottom:8px}
+.arch-box .arch-label{font-size:1.1rem;font-weight:700;margin-bottom:4px}
+.arch-box .arch-desc{font-size:.78rem;color:var(--text-secondary)}
+.arch-box.ipc{border-top:3px solid var(--accent-blue)}
+.arch-box.sfu{border-top:3px solid var(--accent-purple)}
+.arch-box.browser{border-top:3px solid var(--accent-green)}
+.arch-connector{
+  display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:4px;min-width:80px;
+}
+.arch-connector .conn-line{
+  width:60px;height:2px;
+  background:linear-gradient(to right,var(--accent-blue),var(--accent-purple));
+  position:relative;
+}
+.arch-connector .conn-line.two{
+  background:linear-gradient(to right,var(--accent-purple),var(--accent-green));
+}
+.arch-connector .conn-label{
+  font-size:.65rem;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:1px;
+}
+.conn-line .pulse{
+  position:absolute;top:-2px;width:6px;height:6px;border-radius:50%;
+  animation:pulse-move 2.5s infinite;background:var(--accent-cyan);
+}
+@keyframes pulse-move{0%{left:0;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:54px;opacity:0}}
+
+/* ========== Sequence Diagram ========== */
+.seq-container{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;
+  margin:20px 0;
+  overflow-x:auto;
+}
+.seq-header{
+  display:flex;justify-content:space-around;
+  margin-bottom:20px;padding-bottom:12px;
+  border-bottom:2px solid var(--border);
+}
+.seq-entity{
+  text-align:center;font-size:.85rem;font-weight:700;
+  padding:8px 16px;border-radius:var(--radius-sm);
+  min-width:120px;
+}
+.seq-entity.e1{background:rgba(59,130,246,.15);color:var(--accent-blue)}
+.seq-entity.e2{background:rgba(139,92,246,.15);color:var(--accent-purple)}
+.seq-entity.e3{background:rgba(16,185,129,.15);color:var(--accent-green)}
+.seq-lifelines{
+  display:flex;justify-content:space-around;
+  position:relative;
+  min-height:600px;
+}
+.seq-lifeline{
+  width:2px;
+  background:repeating-linear-gradient(to bottom,var(--border) 0,var(--border) 8px,transparent 8px,transparent 16px);
+  position:absolute;top:0;bottom:0;
+}
+.seq-messages{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+}
+.seq-msg{
+  position:absolute;left:0;right:0;
+  display:flex;align-items:center;
+  height:32px;
+  opacity:0;
+  transform:translateX(-10px);
+  transition:all .4s ease;
+}
+.seq-msg.visible{opacity:1;transform:translateX(0)}
+.seq-msg .msg-line{
+  flex:1;height:2px;position:relative;
+}
+.seq-msg .msg-line .msg-arrow{
+  position:absolute;right:-4px;top:-4px;
+  width:0;height:0;
+  border:5px solid transparent;
+}
+.seq-msg .msg-line.right{background:var(--accent-blue)}
+.seq-msg .msg-line.right .msg-arrow{border-left-color:var(--accent-blue);border-right:none}
+.seq-msg .msg-line.left{background:var(--accent-purple)}
+.seq-msg .msg-line.left .msg-arrow{left:-4px;right:auto;border-right-color:var(--accent-purple);border-left:none}
+.seq-msg .msg-label{
+  position:absolute;top:-18px;
+  font-size:.7rem;color:var(--text-secondary);
+  white-space:nowrap;
+  font-family:var(--font-mono);
+}
+.seq-msg .msg-label.center{left:50%;transform:translateX(-50%)}
+.seq-msg .msg-label.left-align{left:8%}
+.seq-msg .msg-label.right-align{right:8%}
+.seq-msg .msg-note{
+  position:absolute;font-size:.65rem;
+  padding:3px 10px;border-radius:4px;
+  background:rgba(59,130,246,.1);color:var(--accent-blue);
+  border:1px solid rgba(59,130,246,.2);
+  white-space:nowrap;
+}
+.seq-phase{
+  position:absolute;left:0;right:0;
+  border-top:1px dashed var(--border);
+  padding-top:4px;
+}
+.seq-phase-label{
+  font-size:.6rem;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:1px;
+  padding-left:8px;
+}
+
+/* ========== Security Layers ========== */
+.security-layers{
+  display:flex;flex-direction:column;gap:0;
+  margin:30px 0;perspective:1000px;
+}
+.sec-layer{
+  display:flex;align-items:center;gap:16px;
+  padding:14px 20px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  cursor:pointer;
+  transition:all .3s;
+  position:relative;
+}
+.sec-layer:first-child{border-radius:var(--radius) var(--radius) 0 0}
+.sec-layer:last-child{border-radius:0 0 var(--radius) var(--radius)}
+.sec-layer+.sec-layer{border-top:none}
+.sec-layer:hover{background:var(--bg-card-hover);padding-left:28px}
+.sec-layer-num{
+  width:28px;height:28px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;
+}
+.sec-layer:nth-child(1) .sec-layer-num{background:var(--accent-blue)}
+.sec-layer:nth-child(2) .sec-layer-num{background:var(--accent-cyan)}
+.sec-layer:nth-child(3) .sec-layer-num{background:var(--accent-green)}
+.sec-layer:nth-child(4) .sec-layer-num{background:var(--accent-purple)}
+.sec-layer:nth-child(5) .sec-layer-num{background:var(--accent-orange)}
+.sec-layer:nth-child(6) .sec-layer-num{background:var(--accent-pink)}
+.sec-layer-info{flex:1}
+.sec-layer-title{font-size:.9rem;font-weight:600}
+.sec-layer-desc{font-size:.72rem;color:var(--text-secondary)}
+.sec-layer-expand{
+  font-size:.8rem;color:var(--text-dim);
+  transition:transform .3s;
+}
+.sec-layer.expanded .sec-layer-expand{transform:rotate(90deg)}
+.sec-layer-detail{
+  max-height:0;overflow:hidden;
+  transition:max-height .4s ease;
+  background:rgba(0,0,0,.2);
+}
+.sec-layer.expanded+.sec-layer-detail{max-height:800px}
+.sec-layer-detail-inner{padding:20px 24px}
+
+/* ========== RTP Packet Explorer ========== */
+.rtp-explorer{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;margin:20px 0;
+}
+.rtp-bits{
+  display:flex;flex-wrap:wrap;gap:2px;margin:12px 0;
+  font-family:var(--font-mono);font-size:.7rem;
+}
+.rtp-bit-group{
+  display:flex;flex-direction:column;align-items:center;
+  cursor:pointer;transition:all .2s;
+}
+.rtp-bit-group:hover{transform:translateY(-2px)}
+.rtp-bit-group.highlight .rtp-bit-cells .rtp-bit-cell{border-color:var(--accent-cyan);color:var(--accent-cyan)}
+.rtp-bit-cells{display:flex;gap:1px}
+.rtp-bit-cell{
+  width:18px;height:22px;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);
+  border-radius:2px;
+  background:var(--bg-secondary);
+  color:var(--text-secondary);
+  font-size:.6rem;
+  transition:all .2s;
+}
+.rtp-bit-label{
+  font-size:.55rem;color:var(--text-dim);
+  margin-top:3px;text-align:center;
+  max-width:80px;
+}
+.rtp-bit-desc{
+  min-height:40px;padding:10px;
+  background:var(--bg-secondary);
+  border-radius:var(--radius-sm);
+  font-size:.8rem;color:var(--text-secondary);
+  margin-top:12px;
+  transition:all .3s;
+}
+
+/* ========== Performance Waterfall ========== */
+.waterfall{margin:20px 0}
+.waterfall-row{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:8px;
+}
+.waterfall-label{
+  width:140px;text-align:right;
+  font-size:.78rem;color:var(--text-secondary);
+  font-family:var(--font-mono);flex-shrink:0;
+}
+.waterfall-bar-bg{
+  flex:1;height:24px;
+  background:var(--bg-secondary);
+  border-radius:4px;position:relative;
+  overflow:hidden;
+}
+.waterfall-bar{
+  height:100%;border-radius:4px;
+  position:absolute;top:0;
+  transition:width 1.5s cubic-bezier(.22,1,.36,1);
+  min-width:2px;
+}
+.waterfall-bar.anim{width:0!important}
+.waterfall-bar.c1{background:linear-gradient(to right,var(--accent-blue),rgba(59,130,246,.6))}
+.waterfall-bar.c2{background:linear-gradient(to right,var(--accent-purple),rgba(139,92,246,.6))}
+.waterfall-bar.c3{background:linear-gradient(to right,var(--accent-cyan),rgba(6,182,212,.6))}
+.waterfall-bar.c4{background:linear-gradient(to right,var(--accent-green),rgba(16,185,129,.6))}
+.waterfall-bar.c5{background:linear-gradient(to right,var(--accent-orange),rgba(245,158,11,.6))}
+.waterfall-bar.c6{background:linear-gradient(to right,var(--accent-red),rgba(239,68,68,.6))}
+.waterfall-bar.c7{background:linear-gradient(to right,var(--accent-pink),rgba(236,72,153,.6))}
+.waterfall-time{
+  font-size:.7rem;font-family:var(--font-mono);
+  color:var(--text-dim);margin-left:8px;flex-shrink:0;
+  min-width:60px;
+}
+.waterfall-note{
+  font-size:.65rem;color:var(--accent-orange);
+  margin-left:4px;
+}
+
+/* ========== FU-A Animation ========== */
+.fua-demo{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;margin:20px 0;
+}
+.fua-nal{
+  display:flex;flex-direction:column;gap:8px;margin:16px 0;
+}
+.fua-original{
+  padding:12px;background:rgba(59,130,246,.08);
+  border:1px dashed rgba(59,130,246,.3);
+  border-radius:var(--radius-sm);
+  font-family:var(--font-mono);font-size:.75rem;
+  position:relative;
+}
+.fua-original-label{
+  position:absolute;top:-10px;left:12px;
+  font-size:.6rem;background:var(--bg-card);
+  padding:0 6px;color:var(--accent-blue);
+}
+.fua-packets{
+  display:flex;flex-direction:column;gap:6px;
+}
+.fua-pkt{
+  display:flex;gap:4px;align-items:center;
+  padding:8px 12px;
+  background:var(--bg-secondary);
+  border-radius:var(--radius-sm);
+  font-family:var(--font-mono);font-size:.72rem;
+  opacity:0;transform:translateY(10px);
+  transition:all .4s ease;
+}
+.fua-pkt.show{opacity:1;transform:translateY(0)}
+.fua-pkt-header{padding:4px 8px;border-radius:4px;font-size:.65rem;font-weight:700}
+.fua-pkt-header.start{background:rgba(16,185,129,.2);color:var(--accent-green)}
+.fua-pkt-header.cont{background:rgba(245,158,11,.2);color:var(--accent-orange)}
+.fua-pkt-header.end{background:rgba(139,92,246,.2);color:var(--accent-purple)}
+.fua-pkt-data{color:var(--text-secondary);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* ========== Status Indicators ========== */
+.status-row{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 0;font-size:.82rem;
+}
+.status-icon{width:16px;text-align:center;font-size:.9rem}
+.status-ok{color:var(--accent-green)}
+.status-warn{color:var(--accent-orange)}
+.status-fail{color:var(--accent-red)}
+.status-text{color:var(--text-secondary)}
+
+/* ========== Expandable Sections ========== */
+.expand-trigger{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 16px;
+  background:var(--bg-secondary);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  cursor:pointer;margin:8px 0;
+  font-size:.85rem;font-weight:600;
+  transition:all .2s;user-select:none;
+}
+.expand-trigger:hover{background:var(--bg-card-hover);border-color:var(--accent-blue)}
+.expand-trigger .expand-icon{transition:transform .3s;font-size:.7rem;color:var(--text-dim)}
+.expand-trigger.open .expand-icon{transform:rotate(90deg)}
+.expand-content{
+  max-height:0;overflow:hidden;
+  transition:max-height .4s ease;
+}
+.expand-content.open{max-height:2000px}
+
+/* ========== Tab System ========== */
+.tabs{
+  display:flex;gap:4px;margin:16px 0 0;
+  border-bottom:2px solid var(--border);
+}
+.tab-btn{
+  padding:8px 18px;border:none;
+  background:transparent;color:var(--text-secondary);
+  font-size:.82rem;font-weight:600;cursor:pointer;
+  border-bottom:2px solid transparent;
+  margin-bottom:-2px;transition:all .2s;
+}
+.tab-btn:hover{color:var(--text-primary)}
+.tab-btn.active{color:var(--accent-blue);border-bottom-color:var(--accent-blue)}
+.tab-pane{display:none;padding:16px 0}
+.tab-pane.active{display:block}
+
+/* ========== Animated Gradient Text ========== */
+.gradient-text{
+  background:linear-gradient(90deg,var(--accent-cyan),var(--accent-blue),var(--accent-purple),var(--accent-cyan));
+  background-size:300% 100%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:gradient-shift 4s ease infinite;
+}
+@keyframes gradient-shift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+/* ========== Interactive highlighting ========== */
+.highlight-box{
+  border-left:3px solid var(--accent-cyan);
+  padding:10px 16px;margin:12px 0;
+  background:rgba(6,182,212,.05);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:.85rem;
+}
+
+/* ========== Tooltip ========== */
+.tooltip-trigger{
+  position:relative;cursor:help;
+  border-bottom:1px dashed var(--accent-cyan);
+}
+.tooltip-trigger:hover::after{
+  content:attr(data-tip);
+  position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
+  background:var(--bg-card);border:1px solid var(--border);
+  padding:6px 12px;border-radius:6px;
+  font-size:.72rem;color:var(--text-primary);
+  white-space:nowrap;z-index:10;
+  box-shadow:0 4px 12px rgba(0,0,0,.4);
+}
+
+/* ========== Mobile hamburger ========== */
+.mobile-toggle{
+  display:none;position:fixed;top:12px;left:12px;z-index:200;
+  width:40px;height:40px;border-radius:10px;
+  background:var(--bg-card);border:1px solid var(--border);
+  align-items:center;justify-content:center;
+  cursor:pointer;font-size:1.1rem;color:var(--text-primary);
+}
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:0 16px 60px}
+  .mobile-toggle{display:flex}
+  .hero h1{font-size:1.8rem}
+  .pipeline{gap:0}
+  .pipeline-arrow{width:16px}
+  .pipeline-node{width:48px;height:48px;font-size:1rem}
+  .arch-diagram{flex-direction:column;align-items:center}
+  .arch-connector{flex-direction:row}
+  .waterfall-label{width:100px;font-size:.7rem}
+}
+
+/* ========== Tree connector lines ========== */
+.tree{padding-left:20px}
+.tree-item{position:relative;padding-left:24px;margin:4px 0}
+.tree-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:var(--border)}
+.tree-item::after{content:'';position:absolute;left:0;top:12px;width:16px;height:1px;background:var(--border)}
+.tree-item:last-child::before{bottom:calc(100% - 12px)}
+
+/* ========== Key-pair animation ========== */
+.key-flow{
+  display:flex;align-items:center;justify-content:center;
+  gap:12px;padding:20px;margin:12px 0;
+  background:var(--bg-secondary);border-radius:var(--radius-sm);
+  flex-wrap:wrap;
+}
+.key-role{
+  text-align:center;padding:12px;border-radius:var(--radius-sm);
+  background:var(--bg-card);border:1px solid var(--border);min-width:100px;
+}
+.key-role .role-label{font-size:.65rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px}
+.key-role .role-val{font-size:.82rem;font-weight:600;margin-top:2px}
+.key-arrow{color:var(--accent-cyan);font-size:1.2rem}
+
+/* ========== Animated STUN flow ========== */
+.stun-flow{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:8px;margin:20px 0;padding:20px;
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+.stun-endpoint{
+  text-align:center;padding:16px;flex:1;min-width:120px;
+}
+.stun-endpoint .ep-icon{font-size:1.8rem;margin-bottom:6px}
+.stun-endpoint .ep-label{font-size:.85rem;font-weight:600}
+.stun-endpoint .ep-addr{font-family:var(--font-mono);font-size:.68rem;color:var(--text-dim);margin-top:2px}
+.stun-arrows{
+  display:flex;flex-direction:column;gap:6px;
+  flex:1;min-width:100px;
+}
+.stun-msg{
+  display:flex;align-items:center;gap:6px;
+  font-size:.7rem;font-family:var(--font-mono);
+  padding:4px 8px;border-radius:4px;
+  opacity:0;transform:translateX(-10px);
+  transition:all .4s ease;
+}
+.stun-msg.show{opacity:1;transform:translateX(0)}
+.stun-msg.right{flex-direction:row;color:var(--accent-blue);background:rgba(59,130,246,.08)}
+.stun-msg.left{flex-direction:row-reverse;color:var(--accent-purple);background:rgba(139,92,246,.08)}
+.stun-msg .arrow-char{font-size:.9rem}
+
+/* ========== Scrollbar progress ========== */
+.progress-bar{
+  position:fixed;top:0;left:var(--sidebar-width);right:0;
+  height:3px;background:transparent;z-index:200;
+}
+.progress-bar .fill{
+  height:100%;width:0;
+  background:linear-gradient(to right,var(--accent-blue),var(--accent-cyan),var(--accent-purple));
+  transition:width .1s;
+}
+
+/* ========== Play/Replay buttons ========== */
+.replay-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--bg-secondary);color:var(--text-secondary);
+  font-size:.78rem;cursor:pointer;transition:all .2s;
+}
+.replay-btn:hover{background:var(--bg-card);color:var(--accent-cyan);border-color:var(--accent-cyan)}
+</style>
+</head>
+<body>
+
+<!-- Progress Bar -->
+<div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+
+<!-- Mobile Toggle -->
+<div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</div>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-logo"><span class="dot"></span> LiveKit 推流详解</div>
+  <div class="nav-section">概览</div>
+  <a class="nav-link active" href="#hero" data-section="hero"><span class="step-num">⌂</span> 首页</a>
+  <a class="nav-link" href="#pipeline" data-section="pipeline"><span class="step-num">▸</span> 全流程管线</a>
+
+  <div class="nav-section">推流阶段</div>
+  <a class="nav-link" href="#s1" data-section="s1"><span class="step-num">1</span> 视频源初始化</a>
+  <a class="nav-link" href="#s2" data-section="s2"><span class="step-num">2</span> JWT 认证</a>
+  <a class="nav-link" href="#s3" data-section="s3"><span class="step-num">3</span> WebSocket 连接</a>
+  <a class="nav-link" href="#s4" data-section="s4"><span class="step-num">4</span> 加入房间</a>
+  <a class="nav-link" href="#s5" data-section="s5"><span class="step-num">5</span> AddTrack</a>
+  <a class="nav-link" href="#s6" data-section="s6"><span class="step-num">6</span> SDP Offer/Answer</a>
+  <a class="nav-link" href="#s7" data-section="s7"><span class="step-num">7</span> ICE 候选交换</a>
+  <a class="nav-link" href="#s8" data-section="s8"><span class="step-num">8</span> ICE 连通性检查</a>
+  <a class="nav-link" href="#s9" data-section="s9"><span class="step-num">9</span> DTLS 握手</a>
+  <a class="nav-link" href="#s10" data-section="s10"><span class="step-num">10</span> SRTP 密钥提取</a>
+  <a class="nav-link" href="#s11" data-section="s11"><span class="step-num">11</span> RTP 推流</a>
+
+  <div class="nav-section">汇总</div>
+  <a class="nav-link" href="#sequence" data-section="sequence"><span class="step-num">◈</span> 完整时序图</a>
+  <a class="nav-link" href="#perf" data-section="perf"><span class="step-num">◷</span> 性能开销</a>
+  <a class="nav-link" href="#security" data-section="security"><span class="step-num">🛡</span> 安全技术</a>
+  <a class="nav-link" href="#limits" data-section="limits"><span class="step-num">⚡</span> 限制与优化</a>
+</nav>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- ==================== HERO ==================== -->
+  <section class="hero" id="hero">
+    <h1 class="gradient-text">LiveKit IPC 推流全流程</h1>
+    <p class="subtitle">从 MP4 文件到浏览器画面 — 嵌入式 WebRTC 推流 11 个阶段的完整技术拆解</p>
+    <div class="hero-badges">
+      <span class="badge blue">WebRTC</span>
+      <span class="badge purple">LiveKit Cloud</span>
+      <span class="badge green">mipsel</span>
+      <span class="badge orange">H.264</span>
+    </div>
+  </section>
+
+  <!-- ==================== PIPELINE ==================== -->
+  <section class="section" id="pipeline">
+    <div class="section-header">
+      <span class="section-num">◈</span>
+      <div><div class="section-title">全流程管线</div><div class="section-subtitle">点击每个阶段跳转到详细说明</div></div>
+    </div>
+
+    <div class="pipeline" id="pipelineEl">
+      <div class="pipeline-step" onclick="location.href='#s1'">
+        <div class="pipeline-node s1">🎬</div>
+        <div class="pipeline-label">视频源初始化</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:0s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s2'">
+        <div class="pipeline-node s2">🔑</div>
+        <div class="pipeline-label">JWT 构造</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:.4s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s3'">
+        <div class="pipeline-node s3">🔌</div>
+        <div class="pipeline-label">WS 连接</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:.8s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s4'">
+        <div class="pipeline-node s4">🚪</div>
+        <div class="pipeline-label">Join 房间</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:1.2s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s5'">
+        <div class="pipeline-node s5">➕</div>
+        <div class="pipeline-label">AddTrack</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:1.6s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s6'">
+        <div class="pipeline-node s6">📝</div>
+        <div class="pipeline-label">SDP 协商</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:2s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s7'">
+        <div class="pipeline-node s7">❄</div>
+        <div class="pipeline-label">ICE 交换</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:2.4s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s8'">
+        <div class="pipeline-node s8">✓</div>
+        <div class="pipeline-label">ICE 连通</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:2.8s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s9'">
+        <div class="pipeline-node s9">🔒</div>
+        <div class="pipeline-label">DTLS 握手</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:3.2s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s10'">
+        <div class="pipeline-node s10">🗝</div>
+        <div class="pipeline-label">SRTP 密钥</div>
+      </div>
+      <div class="pipeline-arrow"><div class="flow-dot" style="animation-delay:3.6s"></div></div>
+      <div class="pipeline-step" onclick="location.href='#s11'">
+        <div class="pipeline-node s11">📡</div>
+        <div class="pipeline-label">RTP 推流</div>
+      </div>
+    </div>
+
+    <!-- Architecture Diagram -->
+    <div class="arch-diagram">
+      <div class="arch-box ipc">
+        <div class="arch-icon">📷</div>
+        <div class="arch-label">IPC 设备</div>
+        <div class="arch-desc">mipsel · LWS+nanopb · mbedTLS</div>
+      </div>
+      <div class="arch-connector">
+        <div class="conn-line"><div class="pulse"></div></div>
+        <div class="conn-label">WebSocket 信令</div>
+      </div>
+      <div class="arch-box sfu">
+        <div class="arch-icon">☁</div>
+        <div class="arch-label">LiveKit Cloud</div>
+        <div class="arch-desc">SFU · Cloudflare CDN · 日本节点</div>
+      </div>
+      <div class="arch-connector">
+        <div class="conn-line two"><div class="pulse"></div></div>
+        <div class="conn-label">WebRTC/SRTP</div>
+      </div>
+      <div class="arch-box browser">
+        <div class="arch-icon">🖥</div>
+        <div class="arch-label">浏览器</div>
+        <div class="arch-desc">H.264 解码 · WebRTC API</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 1 ==================== -->
+  <section class="section" id="s1">
+    <div class="section-header">
+      <span class="section-num">1</span>
+      <div><div class="section-title">视频源初始化</div><div class="section-subtitle">Bento4 解析 MP4 容器，提取 H.264 AVC bitstream</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[Mp4Source]</span> AVC: nalu_length_size=4, SPS/PPS prefix=41 bytes<br>
+      <span class="log-tag">[Mp4Source]</span> Opened: <span class="log-ok">/data/test_video.mp4</span> (1920x1080 @ 30fps, 1800 samples, timescale=15360)
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📦</span> 技术细节</div>
+      <div class="highlight-box">
+        <strong>AVCC → Annex-B 转换</strong>：MP4 中 NAL 使用 4 字节 length-prefix 格式（AVCC），推流前需转为 <code>00 00 00 01</code> start code 格式
+      </div>
+      <div class="highlight-box">
+        <strong>SPS/PPS 参数集</strong>：提前提取 41 字节参数集，每帧 IDR 前自动插入 SPS+PPS，确保浏览器能独立解码
+      </div>
+      <div class="highlight-box">
+        <strong>时间基准转换</strong>：MP4 timescale=15360，15360/30fps = 512 ticks/帧，RTP 需统一到 90000Hz 时钟
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 2 ==================== -->
+  <section class="section" id="s2">
+    <div class="section-header">
+      <span class="section-num">2</span>
+      <div><div class="section-title">JWT 认证</div><div class="section-subtitle">HMAC-SHA256 签名的身份令牌</div></div>
+    </div>
+
+    <div class="code-block">
+      <span class="lang-tag">JWT</span>
+      <span class="log-dim">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.</span><span class="accent-cyan">eyJleHAiOjE3ODA1OTEyODcsImlzcyI6IkFQSXVhVzhUV1lqSGY2MyIsInN1YiI6InRlc3RwdWIiLCJ2aWRlbyI6eyJjYW5QdWJsaXNoIjp0cnVlfX0</span>.<span class="accent-orange">&lt;signature&gt;</span>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab(this,'jwt-struct')">结构解析</button>
+      <button class="tab-btn" onclick="showTab(this,'jwt-fields')">字段说明</button>
+      <button class="tab-btn" onclick="showTab(this,'jwt-flow')">传递方式</button>
+    </div>
+    <div class="tab-pane active" id="jwt-struct">
+      <div class="key-flow">
+        <div class="key-role">
+          <div class="role-label">Header</div>
+          <div class="role-val" style="color:var(--accent-blue)">alg: HS256</div>
+        </div>
+        <div class="key-arrow">.</div>
+        <div class="key-role">
+          <div class="role-label">Payload</div>
+          <div class="role-val" style="color:var(--accent-cyan)">权限声明</div>
+        </div>
+        <div class="key-arrow">.</div>
+        <div class="key-role">
+          <div class="role-label">Signature</div>
+          <div class="role-val" style="color:var(--accent-orange)">HMAC-SHA256</div>
+        </div>
+      </div>
+    </div>
+    <div class="tab-pane" id="jwt-fields">
+      <div class="table-wrap"><table>
+        <tr><th>字段</th><th>值</th><th>作用</th></tr>
+        <tr><td><code>iss</code></td><td><code>APIuaW8TWYjHf63</code></td><td>LiveKit API Key，标识应用</td></tr>
+        <tr><td><code>sub</code></td><td><code>testpub</code></td><td>参与者身份 ID</td></tr>
+        <tr><td><code>exp</code></td><td><code>1780591287</code></td><td>过期时间戳</td></tr>
+        <tr><td><code>video.canPublish</code></td><td><code>true</code></td><td>允许推流</td></tr>
+        <tr><td><code>video.canSubscribe</code></td><td><code>true</code></td><td>允许订阅</td></tr>
+        <tr><td><code>video.room</code></td><td><code>test</code></td><td>房间名</td></tr>
+        <tr><td><code>video.roomJoin</code></td><td><code>true</code></td><td>允许加入房间</td></tr>
+      </table></div>
+    </div>
+    <div class="tab-pane" id="jwt-flow">
+      <div class="code-block">
+        <span class="lang-tag">URL</span>
+        <span class="code-key">wss://</span>pawrtc-qbbhiyec.livekit.cloud<span class="code-key">/rtc?access_token=</span><span class="code-str">&lt;JWT&gt;</span><span class="code-key">&protocol=17</span>
+      </div>
+      <div class="highlight-box">
+        JWT 直接拼入 WebSocket URL 的 <code>access_token</code> 参数，而非使用 Authorization header。
+        <code>protocol=17</code> 是 LiveKit 信令协议版本号。
+      </div>
+      <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">URL query string 传递 JWT 可能泄露到 CDN 日志、浏览器历史记录中（见安全章节）</span></div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 3 ==================== -->
+  <section class="section" id="s3">
+    <div class="section-header">
+      <span class="section-num">3</span>
+      <div><div class="section-title">WebSocket 连接</div><div class="section-subtitle">LWS + mbedTLS 建立 WSS 通道</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[signaling]</span> ccInfo: address=pawrtc-qbbhiyec.livekit.cloud port=443<br>
+      <span class="log-dim">&nbsp;&nbsp;method=(NULL-for-WS) protocol=livekit-protocol alpn=http/1.1 ssl=0x7</span><br>
+      <span class="log-tag">[signaling]</span> PROTOCOL_INIT<br>
+      <span class="log-tag">[signaling]</span> <span class="log-ok">ESTABLISHED_CLIENT_HTTP: status=101</span> (expected 101 for WS!)<br>
+      <span class="log-tag">[signaling]</span> <span class="log-ok">CLIENT_ESTABLISHED — WebSocket connected!</span>
+    </div>
+
+    <div class="expand-trigger" onclick="toggleExpand(this)">
+      <span class="expand-icon">▶</span> 为什么必须强制 ALPN=http/1.1？
+    </div>
+    <div class="expand-content">
+      <div style="padding:16px;font-size:.85rem;line-height:1.8">
+        LiveKit Cloud 前面有 <strong>Cloudflare CDN</strong>，CDN 默认协商 HTTP/2。但 <strong>HTTP/2 不支持 Upgrade 机制</strong>（RFC 8441 的 extended CONNECT 不在范围内），WebSocket 升级只能在 HTTP/1.1 上完成。<br><br>
+        如果不设 ALPN，CDN 会协商 H2，WS upgrade 头会被吞掉，返回 <strong>HTTP 200</strong> 而非 101，连接看似成功但 WebSocket 未建立。
+      </div>
+    </div>
+
+    <div class="expand-trigger" onclick="toggleExpand(this)">
+      <span class="expand-icon">▶</span> 交叉编译 ALPN 的坑
+    </div>
+    <div class="expand-content">
+      <div style="padding:16px;font-size:.85rem;line-height:1.8">
+        LWS 内部用 <code class="code-inline">CHECK_C_SOURCE_COMPILES</code> 检测 mbedTLS 是否支持 ALPN，但交叉编译时 try_compile 在 <strong>x86 主机</strong>执行，链接不到 mipsel 的 mbedTLS，所以所有 feature detection 都失败。<br><br>
+        必须手动注入宏：
+        <div class="code-block" style="margin-top:8px"><span class="lang-tag">cmake</span>
+<span class="code-key">-D</span>LWS_HAVE_mbedtls_ssl_conf_alpn_protocols=<span class="code-num">1</span>
+<span class="code-key">-D</span>LWS_HAVE_mbedtls_ssl_get_alpn_protocol=<span class="code-num">1</span>
+<span class="code-key">-D</span>LWS_HAVE_mbedtls_ssl_conf_sni=<span class="code-num">1</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 4 ==================== -->
+  <section class="section" id="s4">
+    <div class="section-header">
+      <span class="section-num">4</span>
+      <div><div class="section-title">加入房间 (Join)</div><div class="section-subtitle">protobuf 信令，nanopb 编解码</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[signaling]</span> Received message <span class="log-ok">tag=1</span>&nbsp;&nbsp;← JoinResponse<br>
+      <span class="log-tag">[signaling]</span> Received message tag=0&nbsp;&nbsp;← Update<br>
+      <span class="log-tag">[signaling]</span> Received message tag=5&nbsp;&nbsp;← Room update<br>
+      <span class="log-tag">[signaling]</span> Received message <span class="log-ok">tag=11</span> ← ICE servers<br>
+      <span class="log-tag">[demo]</span> <span class="log-ok">=== JOIN SUCCESS ===</span><br>
+      <span class="log-tag">[demo]</span> ICE servers: 1<br>
+      <span class="log-dim">&nbsp;&nbsp;ICE[0]: urls=3
+&nbsp;&nbsp;&nbsp;&nbsp;turn:ip-161-115-163-93...3478?transport=udp
+&nbsp;&nbsp;&nbsp;&nbsp;turns:oosaka1a...443?transport=tcp
+&nbsp;&nbsp;&nbsp;&nbsp;turns:pawrtc-qbbhiyec...443?transport=tcp</span>
+    </div>
+
+    <div class="table-wrap"><table>
+      <tr><th>tag</th><th>消息类型</th><th>方向</th><th>说明</th></tr>
+      <tr><td><code>1</code></td><td>JoinResponse</td><td>S→C</td><td>包含房间信息、参与者列表、ICE 服务器、订阅模式</td></tr>
+      <tr><td><code>0</code></td><td>Update</td><td>S→C</td><td>参与者状态更新</td></tr>
+      <tr><td><code>2</code></td><td>Answer</td><td>S→C</td><td>SDP Answer</td></tr>
+      <tr><td><code>3</code></td><td>Offer</td><td>S→C</td><td>SDP Offer（subscriber transport）</td></tr>
+      <tr><td><code>4</code></td><td>Trickle</td><td>双向</td><td>ICE 候选</td></tr>
+      <tr><td><code>5</code></td><td>RoomUpdate</td><td>S→C</td><td>房间属性变更</td></tr>
+      <tr><td><code>6</code></td><td>TrackPublished</td><td>S→C</td><td>远端发布新轨道</td></tr>
+      <tr><td><code>11</code></td><td>TokenUpdate</td><td>S→C</td><td>更新 JWT token</td></tr>
+      <tr><td><code>20</code></td><td>Ping/Pong</td><td>双向</td><td>保持连接（5s 间隔）</td></tr>
+    </table></div>
+
+    <div class="highlight-box">
+      <strong>subscriber_primary 模式</strong>：板端 <code>subscriber_primary=false</code>，意味着板端发 publisher Offer，SFU 回 Answer。SFU 发 subscriber Offer 给板端时不对等互换（板端不需要订阅远程轨道）。
+    </div>
+  </section>
+
+  <!-- ==================== Section 5 ==================== -->
+  <section class="section" id="s5">
+    <div class="section-header">
+      <span class="section-num">5</span>
+      <div><div class="section-title">AddTrack</div><div class="section-subtitle">告知 SFU 即将发布一路 H.264 视频</div></div>
+    </div>
+    <div class="card">
+      板端通过 <code>SignalRequest.addTrack</code> 发送轨道发布请求，告知 SFU 即将发布一路 H.264 视频。SFU 确认后在房间中广播 <code>TrackPublished</code> 事件，浏览器端订阅者才准备接收。
+    </div>
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[demo]</span> Sent video addTrack request
+    </div>
+  </section>
+
+  <!-- ==================== Section 6 ==================== -->
+  <section class="section" id="s6">
+    <div class="section-header">
+      <span class="section-num">6</span>
+      <div><div class="section-title">SDP Offer/Answer</div><div class="section-subtitle">WebRTC 会话描述协商</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[signaling]</span> sendOffer: encoded <span class="code-num">1320</span> bytes, SDP type=offer len=1307<br>
+      <span class="log-tag">[LkTransport]</span> SDP offer built (<span class="code-num">1307</span> bytes)<br>
+      <span class="log-tag">[LkTransport]</span> Track[0]: mid=0 kind=video ssrc=<span class="code-num">2454983075</span> rtxSsrc=<span class="code-num">2844079714</span><br>
+      <span class="log-dim">...</span><br>
+      <span class="log-tag">[signaling]</span> Received message <span class="log-ok">tag=2</span>&nbsp;&nbsp;← Answer<br>
+      <span class="log-tag">[demo]</span> Type: answer, SDP length: <span class="code-num">917</span> bytes
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab(this,'sdp-offer')">Offer 关键字段</button>
+      <button class="tab-btn" onclick="showTab(this,'sdp-answer')">Answer 关键字段</button>
+      <button class="tab-btn" onclick="showTab(this,'sdp-tech')">技术细节</button>
+    </div>
+    <div class="tab-pane active" id="sdp-offer">
+      <div class="code-block">
+        <span class="lang-tag">SDP</span>
+<span class="code-key">a=fingerprint:</span>sha-256 1B:0F:43:F8:30:EC:... <span class="code-comment">← DTLS 证书指纹</span>
+<span class="code-key">a=ice-lite</span> <span class="code-comment">← 不做主动 ICE check</span>
+<span class="code-key">a=group:BUNDLE</span> 0 <span class="code-comment">← 音视频复用同一传输通道</span>
+<span class="code-key">a=setup:</span>actpass <span class="code-comment">← DTLS 角色待定</span>
+<span class="code-key">a=ice-ufrag:</span>4aHMxe4V <span class="code-comment">← ICE 用户名片段</span>
+<span class="code-key">a=ice-pwd:</span>5qUzIr4WgQ7T5xRcsCyTZOEF <span class="code-comment">← ICE 密码</span>
+<span class="code-key">a=sendonly</span> <span class="code-comment">← 板端只发送</span>
+<span class="code-key">a=rtpmap:</span>96 H264/90000 <span class="code-comment">← H.264 PT=96</span>
+<span class="code-key">a=fmtp:</span>96 profile-level-id=<span class="code-num">42e01f</span> <span class="code-comment">← CBP Level 3.1</span>
+<span class="code-key">a=rtpmap:</span>97 rtx/90000 <span class="code-comment">← RTX 重传 PT=97</span>
+<span class="code-key">a=ssrc-group:</span>FID 2454983075 2844079714 <span class="code-comment">← 主流+RTX</span>
+      </div>
+    </div>
+    <div class="tab-pane" id="sdp-answer">
+      <div class="code-block">
+        <span class="lang-tag">SDP</span>
+<span class="code-key">a=setup:</span>active <span class="code-comment">← SFU 做 DTLS client（发起握手）</span>
+<span class="code-key">a=ice-lite</span> <span class="code-comment">← SFU 只响应 STUN，不主动探测</span>
+      </div>
+      <div class="highlight-box">
+        SFU 作为 DTLS client 主动发起 ClientHello，板端作为 DTLS server 等待握手请求。
+      </div>
+    </div>
+    <div class="tab-pane" id="sdp-tech">
+      <div class="card">
+        <div class="highlight-box"><strong>BUNDLE</strong>：音视频共用一个 5-tuple（IP:port），减少 NAT 状态和 ICE 候选数</div>
+        <div class="highlight-box"><strong>profile-level-id=42e01f</strong>：Constrained Baseline Profile level 3.1，浏览器兼容性最好</div>
+        <div class="highlight-box"><strong>FID (Flow Identification)</strong>：主 SSRC + RTX SSRC 配对，丢包时 SFU 可请求重传</div>
+        <div class="highlight-box"><strong>transport-cc</strong>：RTP 头扩展携带序列号，接收端通过 RTCP 反馈丢包和延迟，发送端据此估计带宽</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 7 ==================== -->
+  <section class="section" id="s7">
+    <div class="section-header">
+      <span class="section-num">7</span>
+      <div><div class="section-title">ICE 候选交换</div><div class="section-subtitle">Trickle ICE 边收集边发送</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[pub]</span> ICE candidate: 0 1 udp <span class="code-num">2130706431</span> 192.168.10.184 <span class="code-num">61154</span> typ host<br><br>
+      <span class="log-tag">[demo]</span> TRICKLE:<br>
+      <span class="log-dim">&nbsp;&nbsp;candidate:2536628116 1 udp 2130706431 161.115.163.93 50014 typ host&nbsp;&nbsp;&nbsp;</span>← IPv4 host<br>
+      <span class="log-dim">&nbsp;&nbsp;candidate:2358731519 1 udp 2130706431 2603:c023:13:... typ host&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>← IPv6 host<br>
+      <span class="log-dim">&nbsp;&nbsp;candidate:717401716 1 tcp 1671430143 161.115.163.93 7881 typ host tcptype passive</span> ← TCP host
+    </div>
+
+    <div class="table-wrap"><table>
+      <tr><th>类型</th><th>优先级</th><th>说明</th><th>板端结果</th></tr>
+      <tr><td>host</td><td>2130706431</td><td>本地网卡 IP</td><td style="color:var(--accent-green)">192.168.10.184:61154 ✓</td></tr>
+      <tr><td>srflx</td><td>16777215</td><td>STUN 反射地址</td><td style="color:var(--text-dim)">未收集（无 STUN 服务器）</td></tr>
+      <tr><td>relay</td><td>16777215</td><td>TURN 中继</td><td style="color:var(--accent-red)">分配失败（401）</td></tr>
+      <tr><td>TCP host</td><td>1671430143</td><td>TCP 连接</td><td style="color:var(--accent-red)">被 KVS 拒绝 (0x5a000005)</td></tr>
+    </table></div>
+
+    <div class="expand-trigger" onclick="toggleExpand(this)">
+      <span class="expand-icon">▶</span> TCP 候选被拒绝的原因
+    </div>
+    <div class="expand-content">
+      <div style="padding:16px;font-size:.85rem;line-height:1.8">
+        KVS ICE Agent 在 <code>IceAgent.c:438</code> 硬编码拒绝了所有 TCP 候选：<br><br>
+        <div class="code-block"><span class="lang-tag">C</span>
+CHK(STRNCMPI(ICE_TRANSPORT_TYPE_TCP, curr, tokenLen) != 0,
+     STATUS_ICE_CANDIDATE_STRING_IS_TCP);</div>
+        <br>这是 KVS 的已知限制——没有实现 TCP 传输层。LiveKit Cloud 通过 CDN 返回的大部分候选是 TCP（<code>tcptype passive</code>），全部被丢弃。
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <strong>Trickle ICE</strong>（RFC 8838）：候选不再等全部收集完才发送，而是边收集边通过信令通道逐条发送，加速连接建立。
+    </div>
+  </section>
+
+  <!-- ==================== Section 8 ==================== -->
+  <section class="section" id="s8">
+    <div class="section-header">
+      <span class="section-num">8</span>
+      <div><div class="section-title">ICE 连通性检查</div><div class="section-subtitle">STUN Binding 确认双向可达</div></div>
+    </div>
+
+    <div class="stun-flow" id="stunFlow">
+      <div class="stun-endpoint">
+        <div class="ep-icon">📷</div>
+        <div class="ep-label">板端</div>
+        <div class="ep-addr">192.168.10.184:61154</div>
+      </div>
+      <div class="stun-arrows" id="stunArrows">
+        <div class="stun-msg right" style="transition-delay:.2s">
+          <span class="arrow-char">→</span> STUN Binding Request (username=KXfxYlfO:4aHMxe4V, HMAC-SHA256)
+        </div>
+        <div class="stun-msg left" style="transition-delay:.6s">
+          STUN Binding Response (mapped-address=公网IP) <span class="arrow-char">←</span>
+        </div>
+        <div class="stun-msg right" style="transition-delay:1s">
+          <span class="arrow-char">→</span> STUN Binding Request ← SFU 也主动探测
+        </div>
+        <div class="stun-msg left" style="transition-delay:1.4s">
+          STUN Binding Response <span class="arrow-char">←</span>
+        </div>
+        <div class="stun-msg right" style="transition-delay:1.8s">
+          <span class="arrow-char">→</span> STUN Binding Request (USE_CANDIDATE) — 控制端提名
+        </div>
+        <div class="stun-msg left" style="transition-delay:2.2s">
+          STUN Binding Response <span class="arrow-char">←</span>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:.78rem;color:var(--accent-green);opacity:0;transition:opacity .4s;transition-delay:2.8s" class="stun-msg">
+          ✓ ICE CONNECTED → READY &nbsp;(RTT: 176ms)
+        </div>
+      </div>
+      <div class="stun-endpoint">
+        <div class="ep-icon">☁</div>
+        <div class="ep-label">SFU</div>
+        <div class="ep-addr">161.115.163.93:50014</div>
+      </div>
+    </div>
+    <div style="text-align:right;margin-top:8px">
+      <button class="replay-btn" onclick="replayStun()">▶ 重新播放</button>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="highlight-box"><strong>ICE-CONTROLLING</strong>：板端发布的 Offer 带 <code>a=ice-lite</code>，所以板端是 controlling 角色，负责提名候选对</div>
+      <div class="highlight-box"><strong>NAT 穿透</strong>：板端在 NAT 后面，通过 STUN mapped-address 发现公网映射，直接 host→host 连通</div>
+      <div class="highlight-box"><strong>RTT 176ms</strong>：板端到日本大阪节点的物理延迟</div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 9 ==================== -->
+  <section class="section" id="s9">
+    <div class="section-header">
+      <span class="section-num">9</span>
+      <div><div class="section-title">DTLS 握手</div><div class="section-subtitle">ECDHE + ECDSA P-256 密钥协商</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[LkTransport]</span> DTLS role from answer: server<br>
+      <span class="log-tag">[LkTransport]</span> DTLS handshake started as server<br>
+      <span claSS="log-tag">[PROFILE]</span> dtlsSessionChangeState(): [DTLS initialization completion] Time taken: <span class="code-num">635.41</span> ms
+    </div>
+
+    <!-- DTLS Handshake Animation -->
+    <div class="fua-demo" id="dtlsDemo">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <strong>DTLS 握手流程</strong>
+        <button class="replay-btn" onclick="replayDtls()">▶ 播放</button>
+      </div>
+      <div id="dtlsSteps" style="display:flex;flex-direction:column;gap:6px">
+        <div class="fua-pkt" style="transition-delay:.1s">
+          <span class="fua-pkt-header start">SFU→</span>
+          <span class="fua-pkt-data">ClientHello (ECDSA P-256, ECDHE)</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:.5s">
+          <span class="fua-pkt-header cont">→板端</span>
+          <span class="fua-pkt-data">ServerHello + Certificate (自签名, SHA-256 指纹)</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:.9s">
+          <span class="fua-pkt-header cont">→板端</span>
+          <span class="fua-pkt-data">ServerKeyExchange (ECDHE 参数签名)</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:1.3s">
+          <span class="fua-pkt-header cont">→板端</span>
+          <span class="fua-pkt-data">CertificateRequest + ServerHelloDone</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:1.7s">
+          <span class="fua-pkt-header start">SFU→</span>
+          <span class="fua-pkt-data">ClientKeyExchange (ECDHE 公钥)</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:2.1s">
+          <span class="fua-pkt-header start">SFU→</span>
+          <span class="fua-pkt-data">ChangeCipherSpec + Finished (encrypted)</span>
+        </div>
+        <div class="fua-pkt" style="transition-delay:2.5s">
+          <span class="fua-pkt-header end">→板端</span>
+          <span class="fua-pkt-data">ChangeCipherSpec + Finished (encrypted)</span>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:.82rem;color:var(--accent-green);opacity:0;transition:opacity .4s;transition-delay:3s" class="dtls-done">
+          ✓ DTLS 握手完成 (~635ms) — SRTP 密钥已派生
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="highlight-box"><strong>mbedTLS 3.6.3</strong> 实现 DTLS 1.2，密钥交换 ECDHE + ECDSA P-256</div>
+      <div class="highlight-box"><strong>自签名证书</strong> 2048-bit，有效期 365 天，运行时生成 — 可用 <code>lk_transport_pregenerate_dtls_cert()</code> 预生成节省时间</div>
+      <div class="highlight-box"><strong>SFU 验证</strong>：从 SDP <code>a=fingerprint:sha-256</code> 匹配板端证书指纹</div>
+      <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">635ms 在 mipsel CPU 上较慢，预生成证书可降至 ~1.0s 首帧时间</span></div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 10 ==================== -->
+  <section class="section" id="s10">
+    <div class="section-header">
+      <span class="section-num">10</span>
+      <div><div class="section-title">SRTP 密钥提取</div><div class="section-subtitle">DTLS Exporter 派生双向加密密钥</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[LkTransport]</span> SRTP init: role=server recv=client?1 xmit=server?1 profile=1 key_len=<span class="code-num">30</span><br>
+      <span class="log-tag">[SRTP]</span> receiveKey (first 16): <span class="code-num">b92b6cf4f34672d8e5e7d0f845a09987</span><br>
+      <span class="log-tag">[SRTP]</span> transmitKey (first 16): <span class="code-num">398142186e19b53c42fb6ff64d7dfe17</span>
+    </div>
+
+    <div class="key-flow" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div style="text-align:center;font-size:.78rem;color:var(--text-dim)">DTLS 握手完成后 — RFC 5764 密钥派生</div>
+      <div class="key-flow">
+        <div class="key-role">
+          <div class="role-label">DTLS Exporter</div>
+          <div class="role-val" style="color:var(--accent-purple);font-size:.75rem">label="EXTRACTOR-dtls_srtp"</div>
+        </div>
+        <div class="key-arrow">→</div>
+        <div class="key-role">
+          <div class="role-label">client write key</div>
+          <div class="role-val" style="color:var(--accent-blue)">板端 receiveKey</div>
+        </div>
+      </div>
+      <div class="key-flow">
+        <div class="key-role">
+          <div class="role-label">DTLS Exporter</div>
+          <div class="role-val" style="color:var(--accent-purple);font-size:.75rem">length=2*(key+salt)</div>
+        </div>
+        <div class="key-arrow">→</div>
+        <div class="key-role">
+          <div class="role-label">server write key</div>
+          <div class="role-val" style="color:var(--accent-green)">板端 transmitKey</div>
+        </div>
+      </div>
+      <div style="text-align:center;font-size:.72rem;color:var(--text-dim)">每个方向: master_key(16B) + salt(14B) = 30 字节 &nbsp;|&nbsp; profile=SRTP_AES128_CM_HMAC_SHA1_80</div>
+    </div>
+  </section>
+
+  <!-- ==================== Section 11 ==================== -->
+  <section class="section" id="s11">
+    <div class="section-header">
+      <span class="section-num">11</span>
+      <div><div class="section-title">RTP 推流</div><div class="section-subtitle">H.264 打包、SRTP 加密、RTCP 反馈</div></div>
+    </div>
+
+    <div class="code-block code-log">
+      <span class="lang-tag">log</span>
+      <span class="log-tag">[LkTransport]</span> RTP #<span class="code-num">120</span>: pt=96 ssrc=2454983075 seq=58840 ts=2060420285<br>
+      <span class="log-dim">&nbsp;&nbsp;&nbsp;&nbsp;payloadLen=1200 rtpBufLen=1220 encLen=1230 marker=0</span><br>
+      <span class="log-tag">[signaling]</span> Received message tag=20 ← Ping/Pong<br>
+      <span class="log-tag">[demo]</span> Sent <span class="code-num">210</span> frames (<span class="code-num">14</span> seconds)
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab(this,'rtp-h264')">H.264 RTP 打包</button>
+      <button class="tab-btn" onclick="showTab(this,'rtp-packet')">RTP 包结构</button>
+      <button class="tab-btn" onclick="showTab(this,'rtp-srtp')">SRTP 加密</button>
+      <button class="tab-btn" onclick="showTab(this,'rtp-rtcp')">RTCP 反馈</button>
+    </div>
+
+    <!-- H.264 RTP Tab -->
+    <div class="tab-pane active" id="rtp-h264">
+      <p style="font-size:.85rem;margin-bottom:12px;color:var(--text-secondary)">从 MP4 读取的 NAL 单元打包成 RTP 包：</p>
+
+      <div class="fua-demo" id="fuaDemo">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <strong>FU-A 分片动画</strong>
+          <button class="replay-btn" onclick="replayFua()">▶ 播放</button>
+        </div>
+        <div class="fua-nal">
+          <div class="fua-original">
+            <span class="fua-original-label">Annex-B NAL (3000+ bytes IDR)</span>
+            00 00 00 01 65 88 80 40 27 ... (SPS+PPS+IDR)
+          </div>
+          <div class="fua-packets">
+            <div class="fua-pkt" style="transition-delay:.3s">
+              <span class="fua-pkt-header start">START</span>
+              <span class="fua-pkt-data">[FU Ind: Type=28][FU Hdr: S=1, Type=5] + NAL前1000字节</span>
+            </div>
+            <div class="fua-pkt" style="transition-delay:.6s">
+              <span class="fua-pkt-header cont">CONT</span>
+              <span class="fua-pkt-data">[FU Ind: Type=28][FU Hdr: S=0,E=0, Type=5] + NAL后续1000字节</span>
+            </div>
+            <div class="fua-pkt" style="transition-delay:.9s">
+              <span class="fua-pkt-header end">END</span>
+              <span class="fua-pkt-data">[FU Ind: Type=28][FU Hdr: E=1, Type=5] + NAL剩余字节</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><span class="icon">🔧</span> FU-A 头部结构</div>
+        <div class="code-block">
+<span class="lang-tag">bits</span>
+FU Indicator (1 byte): <span class="code-num">0|1|1|1|1|1|0|0</span> ← F=0, Type=28 (FU-A), NRI=继承
+FU Header (1 byte):    <span class="code-num">S|E|R| Type </span>← S=Start, E=End, R=0, Type=原始NAL类型</div>
+      </div>
+    </div>
+
+    <!-- RTP Packet Tab -->
+    <div class="tab-pane" id="rtp-packet">
+      <div class="rtp-explorer" id="rtpExplorer">
+        <div style="font-size:.85rem;margin-bottom:8px;color:var(--text-secondary)">点击字段查看说明：</div>
+        <div class="rtp-bits" id="rtpBits">
+          <!-- V=2 -->
+          <div class="rtp-bit-group" data-desc="V (Version): RTP 版本号，固定为 2" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">1</div><div class="rtp-bit-cell">0</div></div>
+            <div class="rtp-bit-label">V=2</div>
+          </div>
+          <!-- P -->
+          <div class="rtp-bit-group" data-desc="P (Padding): 填充标志，=1 表示包尾部有填充字节" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">0</div></div>
+            <div class="rtp-bit-label">P</div>
+          </div>
+          <!-- X -->
+          <div class="rtp-bit-group" data-desc="X (Extension): =1 表示有头部扩展（transport-cc, mid, rid 等）" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">1</div></div>
+            <div class="rtp-bit-label">X</div>
+          </div>
+          <!-- CC -->
+          <div class="rtp-bit-group" data-desc="CC (CSRC Count): 贡献源数量，板端推流通常为 0" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div></div>
+            <div class="rtp-bit-label">CC</div>
+          </div>
+          <!-- M -->
+          <div class="rtp-bit-group" data-desc="M (Marker): =1 表示帧最后一个包，浏览器据此拼接完整帧" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">0/1</div></div>
+            <div class="rtp-bit-label">M</div>
+          </div>
+          <!-- PT -->
+          <div class="rtp-bit-group" data-desc="PT (Payload Type): 96 = H.264 动态 payload type（SDP 中协商）" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">1</div><div class="rtp-bit-cell">1</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div><div class="rtp-bit-cell">0</div></div>
+            <div class="rtp-bit-label">PT=96</div>
+          </div>
+          <!-- Seq -->
+          <div class="rtp-bit-group" data-desc="Sequence Number: 16-bit，每包 +1，用于排序和丢包检测，溢出后从 0 重新开始" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell" style="width:120px">seq num (16bit)</div></div>
+            <div class="rtp-bit-label">Seq</div>
+          </div>
+          <!-- Timestamp -->
+          <div class="rtp-bit-group" data-desc="Timestamp: 90000Hz 时钟，30fps 时每帧 +3000，15fps 时 +6000。同一帧所有分片包共享相同时间戳" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell" style="width:180px">timestamp (32bit)</div></div>
+            <div class="rtp-bit-label">TimeStamp</div>
+          </div>
+          <!-- SSRC -->
+          <div class="rtp-bit-group" data-desc="SSRC: 同步源标识符，随机生成（2454983075），标识这条视频流，接收端据此分流" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell" style="width:180px">SSRC (32bit)</div></div>
+            <div class="rtp-bit-label">SSRC</div>
+          </div>
+          <!-- Extension -->
+          <div class="rtp-bit-group" data-desc="Header Extensions: BUNDLE 时携带 mid=0, rid= 等标识，区分多路复用媒体行" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell" style="width:140px">extensions</div></div>
+            <div class="rtp-bit-label">Ext</div>
+          </div>
+          <!-- Payload -->
+          <div class="rtp-bit-group" data-desc="RTP Payload: H.264 NAL 数据（SRTP 加密后不可读）" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell" style="width:200px">payload (SRTP encrypted)</div></div>
+            <div class="rtp-bit-label">Payload</div>
+          </div>
+          <!-- Auth Tag -->
+          <div class="rtp-bit-group" data-desc="SRTP Auth Tag: 10 字节 HMAC-SHA1 认证标签，防篡改+防重放" onclick="highlightRtpBit(this)">
+            <div class="rtp-bit-cells"><div class="rtp-bit-cell">auth</div><div class="rtp-bit-cell">tag</div><div class="rtp-bit-cell">10B</div></div>
+            <div class="rtp-bit-label">Auth</div>
+          </div>
+        </div>
+        <div class="rtp-bit-desc" id="rtpBitDesc">点击上方字段查看详细说明</div>
+      </div>
+    </div>
+
+    <!-- SRTP Tab -->
+    <div class="tab-pane" id="rtp-srtp">
+      <div class="card">
+        <div class="card-title"><span class="icon">🔐</span> SRTP 配置</div>
+        <div class="tree" style="margin-top:12px">
+          <div class="tree-item"><strong>Profile:</strong> AES128_CM_HMAC_SHA1_80</div>
+          <div class="tree-item"><strong>加密:</strong> AES-128 Counter Mode (CTR) — 机密性</div>
+          <div class="tree-item"><strong>认证:</strong> HMAC-SHA1 (80-bit tag) — 完整性</div>
+          <div class="tree-item"><strong>密钥:</strong> 16B master key + 14B salt = 30B per direction</div>
+        </div>
+      </div>
+
+      <div class="code-block">
+<span class="lang-tag">C</span>
+<span class="code-comment">// 发送端加密</span>
+<span class="code-key">srtp_protect</span>(ctx, rtp_buf, &amp;len);
+  <span class="code-num">1.</span> 递增 ROC 跟踪 seq 溢出
+  <span class="code-num">2.</span> AES-128-CTR 加密 RTP payload
+     IV = (SSRC || ROC || SeqNum || 0...) XOR (master_salt)
+  <span class="code-num">3.</span> HMAC-SHA1 over 整个 RTP 包
+  <span class="code-num">4.</span> 附加 10 字节 auth tag
+
+<span class="code-comment">// 接收端解密</span>
+<span class="code-key">srtp_unprotect</span>(ctx, rtp_buf, &amp;len);
+  <span class="code-num">1.</span> 检查重放窗口（滑动窗口, 默认128）
+  <span class="code-num">2.</span> 验证 auth tag (HMAC-SHA1)
+  <span class="code-num">3.</span> 验证通过 → AES-128-CTR 解密 payload
+  <span class="code-num">4.</span> 验证失败 → 丢弃包</div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">🛡</span> 重放攻击防护 — 滑动窗口</div>
+        <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:16px;margin-top:8px;font-family:var(--font-mono);font-size:.75rem;overflow-x:auto">
+          <div style="display:flex;gap:2px;margin:8px 0">
+            <div style="padding:4px 8px;background:rgba(100,116,139,.2);color:var(--text-dim)">100</div>
+            <div style="padding:4px 8px;background:rgba(59,130,246,.15);color:var(--accent-blue)">101</div>
+            <div style="padding:4px 8px;background:rgba(59,130,246,.15);color:var(--accent-blue)">102</div>
+            <div style="padding:4px 2px;color:var(--text-dim)">│</div>
+            <div style="padding:4px 8px;background:rgba(16,185,129,.1);color:var(--accent-green);border:1px solid var(--accent-green)">103</div>
+            <div style="padding:4px 8px;background:rgba(16,185,129,.1);color:var(--accent-green)">104</div>
+            <div style="padding:4px 8px;background:rgba(16,185,129,.1);color:var(--accent-green)">105</div>
+            <div style="padding:4px 8px;background:rgba(16,185,129,.1);color:var(--accent-green)">106</div>
+            <div style="padding:4px 8px;background:rgba(16,185,129,.1);color:var(--accent-green)">107</div>
+            <div style="padding:4px 2px;color:var(--text-dim)">│</div>
+            <div style="padding:4px 8px;background:rgba(100,116,139,.2);color:var(--text-dim)">108</div>
+          </div>
+          <div style="font-family:var(--font-sans);font-size:.72rem;color:var(--text-secondary);margin-top:4px">
+            ← 左边界 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 窗口内（绿色）&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 右边界 →
+          </div>
+          <div style="font-family:var(--font-sans);font-size:.72rem;color:var(--text-dim);margin-top:8px">
+            • seq &gt; 右边界: 正常接收，窗口右移 &nbsp;• 窗口内已收: 重放包，丢弃<br>
+            • 窗口内未收: 可能重传，接受 &nbsp;• seq &lt; 左边界: 太旧，丢弃
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RTCP Tab -->
+    <div class="tab-pane" id="rtp-rtcp">
+      <div class="card">
+        <div class="card-title"><span class="icon" style="color:var(--accent-red)">◉</span> PLI — 请求关键帧</div>
+        <div class="code-block code-log">
+<span class="lang-tag">log</span>
+<span class="log-tag">[LkTransport]</span> RTCP PLI received — requesting key frame
+<span class="log-tag">[pub]</span> Key frame request (PLI/FIR)</div>
+        <div style="font-size:.85rem;color:var(--text-secondary);margin-top:8px">
+          浏览器订阅后解码失败时发送。板端收到后强制 IMP/Mp4FileSource 输出下一帧为 IDR。
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon" style="color:var(--accent-blue)">◉</span> SR — 发送方报告</div>
+        <div class="code-block code-log">
+<span class="lang-tag">log</span>
+<span class="log-tag">[LkTransport]</span> RTCP SR sent: ssrc=2454983075 pkts=2478 octs=1952081 rtpTs=514045927</div>
+        <div style="font-size:.85rem;color:var(--text-secondary);margin-top:8px">
+          每 5 秒自动发送。携带 NTP 时间戳 ↔ RTP timestamp 映射。SFU 据此做音视频同步和码率估计。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Sequence Diagram ==================== -->
+  <section class="section" id="sequence">
+    <div class="section-header">
+      <span class="section-num">◈</span>
+      <div><div class="section-title">完整时序图</div><div class="section-subtitle">从 WebSocket 到持续推流的完整交互</div></div>
+    </div>
+
+    <div class="seq-container" id="seqDiagram">
+      <div class="seq-header">
+        <div class="seq-entity e1">📷 板端 (mipsel)</div>
+        <div class="seq-entity e2">☁ LiveKit Cloud SFU</div>
+        <div class="seq-entity e3">🖥 浏览器</div>
+      </div>
+      <div class="seq-lifelines" style="position:relative;min-height:520px">
+        <div class="seq-lifeline" style="left:16.6%"></div>
+        <div class="seq-lifeline" style="left:50%"></div>
+        <div class="seq-lifeline" style="left:83.3%"></div>
+        <div class="seq-messages" id="seqMsgs">
+          <!-- Messages will be populated by JS -->
+        </div>
+      </div>
+    </div>
+    <div style="text-align:right;margin-top:8px">
+      <button class="replay-btn" onclick="replaySequence()">▶ 重新播放</button>
+    </div>
+  </section>
+
+  <!-- ==================== Performance ==================== -->
+  <section class="section" id="perf">
+    <div class="section-header">
+      <span class="section-num">◷</span>
+      <div><div class="section-title">性能开销</div><div class="section-subtitle">首帧可用时间分解 — 总计 ~1.6s</div></div>
+    </div>
+
+    <div class="waterfall" id="waterfall">
+      <div class="waterfall-row">
+        <div class="waterfall-label">MP4 文件打开</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c1" data-width="0.1" style="left:0%"></div></div>
+        <div class="waterfall-time">~1ms</div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">WebSocket+TLS</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c2" data-width="25" style="left:0"></div></div>
+        <div class="waterfall-time">~400ms</div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">Join+信令</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c3" data-width="3" style="left:25%"></div></div>
+        <div class="waterfall-time">~50ms</div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">SDP 生成</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c4" data-width="0.1" style="left:28%"></div></div>
+        <div class="waterfall-time">~1ms</div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">ICE 候选收集</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c5" data-width="29" style="left:28%"></div></div>
+        <div class="waterfall-time">~457ms <span class="waterfall-note">瓶颈: TURN DNS</span></div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">ICE 连通</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c1" data-width="11" style="left:57%"></div></div>
+        <div class="waterfall-time">~176ms</div>
+      </div>
+      <div class="waterfall-row">
+        <div class="waterfall-label">DTLS 握手</div>
+        <div class="waterfall-bar-bg"><div class="waterfall-bar c6" data-width="40" style="left:68%"></div></div>
+        <div class="waterfall-time">~635ms <span class="waterfall-note">瓶颈: ECDSA mipsel</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)">
+      <div class="card-title" style="color:var(--accent-orange)"><span class="icon">💡</span> 优化建议</div>
+      <div style="font-size:.85rem;color:var(--text-secondary)">
+        预生成 DTLS 证书可将首帧时间从 <strong>~1.6s</strong> 降至 <strong>~1.0s</strong>，因为在 mipsel 上 ECDSA P-256 签名耗时约 635ms，而预生成只需一次随机数生成。
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Security ==================== -->
+  <section class="section" id="security">
+    <div class="section-header">
+      <span class="section-num">🛡</span>
+      <div><div class="section-title">安全技术详解</div><div class="section-subtitle">6 层安全机制 — 从信令到媒体的逐层保护</div></div>
+    </div>
+
+    <div class="security-layers">
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">1</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">JWT 认证 — 信令通道身份校验</div>
+          <div class="sec-layer-desc">HMAC-SHA256 对称签名，API Secret 作为共享密钥</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div class="table-wrap"><table>
+            <tr><th>属性</th><th>实现</th><th>风险</th></tr>
+            <tr><td>完整性</td><td>HMAC-SHA256 签名</td><td>任何人无法篡改 payload 而不被发现</td></tr>
+            <tr><td>时效性</td><td>exp/nbf 字段</td><td>过期 token 被 SFU 拒绝</td></tr>
+            <tr><td>最小权限</td><td>canPublish/canSubscribe 独立控制</td><td>设备 token 可只授权推流</td></tr>
+          </table></div>
+          <div class="status-row" style="margin-top:8px"><span class="status-icon status-warn">⚠</span><span class="status-text">JWT 通过 URL query string 传递，可能泄露到 CDN 日志</span></div>
+          <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">HMAC 对称签名，API Secret 泄露 = 任意权限伪造</span></div>
+        </div>
+      </div>
+
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">2</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">WSS (TLS 1.2) — 信令通道加密</div>
+          <div class="sec-layer-desc">mbedTLS 3.6.3 + LWS 4.3.5，ECDHE 前向保密</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div class="table-wrap"><table>
+            <tr><th>密码套件</th><th>密钥交换</th><th>加密</th></tr>
+            <tr><td>TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256</td><td>ECDHE+ECDSA</td><td>AES-128-GCM</td></tr>
+            <tr><td>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256</td><td>ECDHE+RSA</td><td>AES-128-GCM</td></tr>
+          </table></div>
+          <div class="highlight-box"><strong>前向保密 (PFS)</strong>：ECDHE 密钥交换保证即使服务器私钥泄露，历史会话密钥也无法推导</div>
+          <div class="status-row" style="margin-top:8px"><span class="status-icon status-warn">⚠</span><span class="status-text">板端 VERIFY_OPTIONAL 不完全验证服务器证书 — 中间人攻击风险</span></div>
+        </div>
+      </div>
+
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">3</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">ICE 认证 — STUN/TURN 消息完整性</div>
+          <div class="sec-layer-desc">短期凭证(STUN) + 长期凭证(TURN)，HMAC-SHA1</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div class="card-title" style="font-size:.85rem">STUN 短期凭证</div>
+          <div class="code-block" style="font-size:.75rem">
+USERNAME: "KXfxYlfOdnPeKSWc:4aHMxe4V" ← remote:local ufrag
+MESSAGE-INTEGRITY: HMAC-SHA1(key=ice_pwd, message) ← 20 字节
+FINGERPRINT: CRC32(message) ← 检测中间盒篡改</div>
+          <div class="card-title" style="font-size:.85rem;margin-top:12px">TURN 长期凭证</div>
+          <div style="font-size:.82rem;color:var(--text-secondary)">
+            TURN 服务器需要独立用户名/密码认证，由 LiveKit Cloud 在 JoinResponse 中动态下发，每个会话不同。<br>
+            使用挑战-响应模式（401 → 重发带 MESSAGE-INTEGRITY 的请求），REALM + NONCE 防止重放攻击。
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">4</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">DTLS 握手 — 媒体通道密钥协商</div>
+          <div class="sec-layer-desc">ECDHE + ECDSA P-256 自签名证书，X.509 v3</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div class="table-wrap"><table>
+            <tr><th>项</th><th>值</th><th>评估</th></tr>
+            <tr><td>密钥类型</td><td>ECDSA P-256</td><td style="color:var(--accent-green)">等效 RSA-3072，足够安全</td></tr>
+            <tr><td>证书签名</td><td>SHA-1</td><td style="color:var(--accent-orange)">弱项 — 应改为 SHA-256</td></tr>
+            <tr><td>自签名</td><td>Issuer=Subject</td><td style="color:var(--accent-green)">WebRTC 用 SDP 指纹绑定，不依赖 CA</td></tr>
+            <tr><td>DTLS Cookie</td><td>禁用</td><td style="color:var(--accent-orange)">中风险 — 易受放大攻击</td></tr>
+          </table></div>
+        </div>
+      </div>
+
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">5</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">SRTP 加密 — 媒体数据机密性与完整性</div>
+          <div class="sec-layer-desc">AES-128-CTR 加密 + HMAC-SHA1-80 认证 + 滑动窗口重放防护</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div class="code-block" style="font-size:.75rem">
+<span class="lang-tag">overhead</span>
+原始 RTP: [Header 12B][Header Ext ~8B][Payload]
+SRTP:     [Header 12B][Header Ext ~8B][Encrypted Payload][Auth Tag 10B]
+SRTCP:    [Header 8B][Encrypted Payload][Index 4B][Auth Tag 10B]</div>
+          <div class="highlight-box" style="margin-top:8px"><strong>重放攻击防护</strong>：滑动窗口（默认 128 packes），seq &lt; 左边界丢弃，窗口内重复丢弃</div>
+        </div>
+      </div>
+
+      <div class="sec-layer" onclick="toggleSecLayer(this)">
+        <span class="sec-layer-num">6</span>
+        <div class="sec-layer-info">
+          <div class="sec-layer-title">SDP 指纹 — 端到端证书绑定</div>
+          <div class="sec-layer-desc">信令通道传递 SHA-256 指纹，DTLS 握手时独立验证</div>
+        </div>
+        <span class="sec-layer-expand">▶</span>
+      </div>
+      <div class="sec-layer-detail">
+        <div class="sec-layer-detail-inner">
+          <div style="font-size:.85rem;color:var(--text-secondary);line-height:1.8">
+            WebRTC 不依赖 PKI/CA 信任链，而是通过信令通道（已受 TLS 保护）传递证书指纹：<br><br>
+            <strong>1.</strong> 信令通道受 TLS 保护，指纹在传输中不可被篡改<br>
+            <strong>2.</strong> DTLS 握手时，对端发送证书<br>
+            <strong>3.</strong> 本地计算对端证书的 SHA-256 摘要<br>
+            <strong>4.</strong> 与 SDP 中的 <code>a=fingerprint</code> 比对，不匹配则拒绝<br><br>
+            <strong>安全属性</strong>：攻击者即使能拦截 DTLS 并替换证书，也无法匹配 SDP 中绑定的指纹。SFU 只做媒体转发，无法篡改端到端指纹。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security Summary -->
+    <div class="card" style="margin-top:20px">
+      <div class="card-title"><span class="icon">📋</span> 安全链路端到端分析</div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">信令窃听 — WSS (TLS 1.2 + ECDHE) 防护</span></div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">信令篡改 — TLS + JWT HMAC 防护</span></div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">伪造设备身份 — JWT sub + API Secret 防护</span></div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">媒体窃听 — SRTP (AES-128-CTR) 防护</span></div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">媒体篡改 — SRTP Auth (HMAC-SHA1-80) 防护</span></div>
+      <div class="status-row"><span class="status-icon status-ok">✓</span><span class="status-text">DTLS 中间人 — SDP 指纹绑定防护</span></div>
+      <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">DTLS 放大攻击 — Cookie 未启用</span></div>
+      <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">板端证书验证 — VERIFY_OPTIONAL</span></div>
+      <div class="status-row"><span class="status-icon status-warn">⚠</span><span class="status-text">JWT URL 泄露 — query string 传递</span></div>
+    </div>
+
+    <!-- Production Recommendations -->
+    <div class="table-wrap" style="margin-top:16px"><table>
+      <tr><th>优先级</th><th>建议</th><th>工作量</th></tr>
+      <tr><td style="color:var(--accent-red);font-weight:700">P0</td><td>推送完整 CA 证书到板端，TLS/DTLS 改为 VERIFY_REQUIRED</td><td>半天</td></tr>
+      <tr><td style="color:var(--accent-red);font-weight:700">P0</td><td>启用 DTLS Cookie 防止放大攻击</td><td>1 天</td></tr>
+      <tr><td style="color:var(--accent-orange);font-weight:700">P1</td><td>JWT 通过 header 而非 URL query 传递</td><td>半天</td></tr>
+      <tr><td style="color:var(--accent-orange);font-weight:700">P1</td><td>证书签名算法从 SHA-1 改为 SHA-256</td><td>改一行</td></tr>
+      <tr><td style="color:var(--accent-blue)">P2</td><td>TURNS (turns:) 启用，依赖 CA 证书修复</td><td>跟随 P0</td></tr>
+      <tr><td style="color:var(--accent-blue)">P2</td><td>JWT 短有效期 + 自动刷新机制</td><td>1 天</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ==================== Limits ==================== -->
+  <section class="section" id="limits">
+    <div class="section-header">
+      <span class="section-num">⚡</span>
+      <div><div class="section-title">已知限制与优化方向</div></div>
+    </div>
+
+    <div class="table-wrap"><table>
+      <tr><th>限制</th><th>原因</th><th>优化方向</th></tr>
+      <tr><td>TCP 候选被拒</td><td>KVS ICE Agent 未实现 TCP 传输</td><td>改用 libnice 或 pion/ice</td></tr>
+      <tr><td>TURNS 失败</td><td>板端缺 CA 证书</td><td>推送完整 ca-certificates.crt</td></tr>
+      <tr><td>STUN 服务器缺失</td><td>LiveKit Cloud 不返回 stun: URL</td><td>已在代码中支持，等 Cloud 侧配置</td></tr>
+      <tr><td>RTT ~176ms</td><td>日本节点物理距离</td><td>自建国内 SFU</td></tr>
+      <tr><td>IMP 编码器卡死</td><td>avpu_codec_ioctl 驱动 bug</td><td>报告驱动团队</td></tr>
+      <tr><td>DTLS 首帧慢</td><td>ECDSA P-256 在 mipsel 上慢</td><td>预生成证书</td></tr>
+      <tr><td>无自适应码率</td><td>未实现 TWCC 发送端估计</td><td>接入 SubscribedQualityUpdate 回调</td></tr>
+    </table></div>
+  </section>
+
+</div><!-- /main -->
+
+<script>
+// ========== Scroll Progress ==========
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+});
+
+// ========== Nav Active State ==========
+const sections = [];
+document.querySelectorAll('.section, .hero').forEach(s => {
+  if (s.id) sections.push({id: s.id, el: s});
+});
+
+function updateNav() {
+  let current = '';
+  sections.forEach(s => {
+    const r = s.el.getBoundingClientRect();
+    if (r.top < window.innerHeight * 0.4) current = s.id;
+  });
+  document.querySelectorAll('.nav-link').forEach(l => {
+    l.classList.toggle('active', l.dataset.section === current);
+  });
+}
+window.addEventListener('scroll', updateNav);
+updateNav();
+
+// ========== Tab System ==========
+function showTab(btn, id) {
+  const parent = btn.closest('.section') || btn.closest('.main');
+  parent.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  parent.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
+
+// ========== Expand/Collapse ==========
+function toggleExpand(trigger) {
+  trigger.classList.toggle('open');
+  const content = trigger.nextElementSibling;
+  content.classList.toggle('open');
+}
+
+// ========== Security Layers ==========
+function toggleSecLayer(layer) {
+  const wasExpanded = layer.classList.contains('expanded');
+  // collapse all
+  document.querySelectorAll('.sec-layer').forEach(l => l.classList.remove('expanded'));
+  if (!wasExpanded) layer.classList.add('expanded');
+}
+
+// ========== RTP Bit Explorer ==========
+function highlightRtpBit(group) {
+  document.querySelectorAll('.rtp-bit-group').forEach(g => g.classList.remove('highlight'));
+  group.classList.add('highlight');
+  document.getElementById('rtpBitDesc').textContent = group.dataset.desc;
+}
+
+// ========== STUN Flow Animation ==========
+function replayStun() {
+  const msgs = document.querySelectorAll('#stunArrows .stun-msg');
+  msgs.forEach(m => m.classList.remove('show'));
+  setTimeout(() => {
+    msgs.forEach(m => m.classList.add('show'));
+  }, 100);
+}
+
+// Observe STUN flow
+const stunObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      replayStun();
+      stunObs.unobserve(e.target);
+    }
+  });
+}, {threshold: 0.3});
+stunObs.observe(document.getElementById('stunFlow'));
+
+// ========== FU-A Animation ==========
+function replayFua() {
+  const pkts = document.querySelectorAll('#fuaDemo .fua-pkt');
+  pkts.forEach(p => p.classList.remove('show'));
+  setTimeout(() => pkts.forEach(p => p.classList.add('show')), 100);
+}
+
+const fuaObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      replayFua();
+      fuaObs.unobserve(e.target);
+    }
+  });
+}, {threshold: 0.3});
+fuaObs.observe(document.getElementById('fuaDemo'));
+
+// ========== DTLS Animation ==========
+function replayDtls() {
+  const steps = document.querySelectorAll('#dtlsSteps .fua-pkt');
+  const done = document.querySelector('.dtls-done');
+  steps.forEach(s => s.classList.remove('show'));
+  if (done) done.style.opacity = '0';
+  setTimeout(() => {
+    steps.forEach(s => s.classList.add('show'));
+    if (done) setTimeout(() => done.style.opacity = '1', 3000);
+  }, 100);
+}
+
+const dtlsObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      replayDtls();
+      dtlsObs.unobserve(e.target);
+    }
+  });
+}, {threshold: 0.3});
+dtlsObs.observe(document.getElementById('dtlsDemo'));
+
+// ========== Waterfall Animation ==========
+const waterfallObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const bars = e.target.querySelectorAll('.waterfall-bar');
+      bars.forEach((b, i) => {
+        b.style.width = '0';
+        setTimeout(() => {
+          b.style.width = b.dataset.width + '%';
+        }, i * 150);
+      });
+      waterfallObs.unobserve(e.target);
+    }
+  });
+}, {threshold: 0.2});
+waterfallObs.observe(document.getElementById('waterfall'));
+
+// ========== Sequence Diagram ==========
+const seqMsgs = [
+  {from: 0, to: 1, label: 'WebSocket Connect', phase: 'signaling'},
+  {from: 1, to: 0, label: '101 Switching Proto', phase: 'signaling'},
+  {from: 0, to: 1, label: 'JoinRequest (JWT)', phase: 'signaling'},
+  {from: 1, to: 0, label: 'JoinResponse', phase: 'signaling', note: 'ICE servers, room info'},
+  {from: 0, to: 1, label: 'AddTrack (video)', phase: 'signaling'},
+  {from: 1, to: 2, label: 'TrackPublished', phase: 'signaling'},
+  {from: 0, to: 1, label: 'SDP Offer', phase: 'negotiation'},
+  {from: 1, to: 0, label: 'SDP Answer', phase: 'negotiation'},
+  {from: 0, to: 1, label: 'Trickle ICE (host)', phase: 'ice'},
+  {from: 1, to: 0, label: 'Trickle ICE (host/TCP❌)', phase: 'ice'},
+  {from: 0, to: 1, label: 'STUN Binding', phase: 'connectivity', double: true},
+  {from: 1, to: 0, label: 'STUN Response', phase: 'connectivity'},
+  {label: 'ICE CONNECTED → READY', phase: 'connected', y_override: true},
+  {from: 1, to: 0, label: 'DTLS ClientHello', phase: 'dtls', double: true},
+  {from: 0, to: 1, label: 'DTLS ServerHello+Cert', phase: 'dtls'},
+  {from: 1, to: 0, label: 'DTLS Finished', phase: 'dtls'},
+  {from: 0, to: 1, label: 'DTLS Finished', phase: 'dtls'},
+  {label: 'SRTP keys derived', phase: 'srtp', y_override: true},
+  {from: 0, to: 1, label: 'RTP (H.264/SRTP)', phase: 'media', double: true},
+  {from: 1, to: 2, label: 'RTP (H.264/SRTP)', phase: 'media'},
+  {from: 2, to: 1, label: 'RTCP PLI', phase: 'media'},
+  {from: 1, to: 0, label: 'RTCP PLI', phase: 'media'},
+  {from: 0, to: 1, label: 'IDR frame', phase: 'media'},
+  {from: 1, to: 0, label: 'Ping (5s)', phase: 'keepalive', double: true},
+];
+
+function buildSequence() {
+  const container = document.getElementById('seqMsgs');
+  container.innerHTML = '';
+  const positions = [16.6, 50, 83.3]; // % positions of lifelines
+  let y = 10;
+  const spacing = 22;
+  let lastPhase = '';
+
+  seqMsgs.forEach((msg, i) => {
+    // Phase separator
+    if (msg.phase !== lastPhase && msg.phase) {
+      const sep = document.createElement('div');
+      sep.className = 'seq-phase';
+      sep.style.top = y + 'px';
+      sep.innerHTML = `<span class="seq-phase-label">${msg.phase}</span>`;
+      container.appendChild(sep);
+      y += 16;
+      lastPhase = msg.phase;
+    }
+
+    const el = document.createElement('div');
+    el.className = 'seq-msg';
+    el.style.top = y + 'px';
+
+    if (msg.y_override) {
+      // Status line
+      el.innerHTML = `<div style="text-align:center;font-size:.75rem;font-weight:700;color:var(--accent-green);letter-spacing:1px">${msg.label}</div>`;
+    } else {
+      const fromX = positions[msg.from];
+      const toX = positions[msg.to];
+      const isRight = toX > fromX;
+      const leftPct = Math.min(fromX, toX);
+      const widthPct = Math.abs(toX - fromX);
+
+      const colorClass = isRight ? 'right' : 'left';
+      const lineStyle = msg.double
+        ? `background:repeating-linear-gradient(to right,var(--accent-cyan) 0,var(--accent-cyan) 6px,transparent 6px,transparent 10px)`
+        : '';
+      const arrowColor = isRight ? 'var(--accent-blue)' : 'var(--accent-purple)';
+
+      el.innerHTML = `
+        <div style="position:absolute;left:${leftPct}%;width:${widthPct}%">
+          <div class="msg-line ${colorClass}" style="${lineStyle}">
+            <div class="msg-arrow" style="border-left-color:${isRight ? arrowColor : 'transparent'};border-right-color:${isRight ? 'transparent' : arrowColor}"></div>
+          </div>
+          <div class="msg-label ${isRight ? 'left-align' : 'right-align'}" style="${isRight ? 'left:8px' : 'right:8px'}">${msg.label}</div>
+        </div>`;
+    }
+
+    container.appendChild(el);
+    y += spacing;
+  });
+
+  // Set container height
+  container.parentElement.style.minHeight = (y + 20) + 'px';
+}
+
+function replaySequence() {
+  const msgs = document.querySelectorAll('#seqMsgs .seq-msg');
+  msgs.forEach(m => m.classList.remove('visible'));
+  msgs.forEach((m, i) => {
+    setTimeout(() => m.classList.add('visible'), i * 120);
+  });
+}
+
+// Build and observe
+buildSequence();
+const seqObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      replaySequence();
+      seqObs.unobserve(e.target);
+    }
+  });
+}, {threshold: 0.1});
+seqObs.observe(document.getElementById('seqDiagram'));
+
+// ========== Pipeline animation on load ==========
+setTimeout(() => {
+  document.querySelectorAll('.flow-dot').forEach(d => d.style.animationPlayState = 'running');
+}, 500);
+</script>
+</body>
+</html>

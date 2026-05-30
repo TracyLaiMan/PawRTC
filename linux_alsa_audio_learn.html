@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux ALSA 音频采集 — 嵌入式 IPC 开发基础</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:760px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero Pipeline ===== */
+.hero-pipe{width:100%;max-width:960px;margin-top:28px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-pipe.vis{opacity:1;transform:translateY(0)}
+.pipe-tier-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.2);margin-bottom:6px;text-align:center}
+.pipe-row{display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:4px}
+.pipe-node{padding:10px 14px;border-radius:10px;text-align:center;min-width:80px;transition:all .3s;cursor:default;position:relative;line-height:1.3}
+.pipe-node:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.pipe-node h5{font-size:12.5px;font-weight:700;margin:0;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.pipe-node .pn-sub{font-size:9px;opacity:.45;margin-top:1px;color:#c8c8e8}
+.pipe-node .pn-tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:rgba(0,0,0,.88);color:#c8c8e8;font-size:9.5px;padding:4px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:5;border:1px solid rgba(108,99,255,.15)}
+.pipe-node:hover .pn-tip{display:block}
+.pipe-arr{color:rgba(108,99,255,.35);font-size:16px;font-weight:700;min-width:14px;text-align:center}
+.pipe-vline{width:2px;height:18px;background:rgba(108,99,255,.2);margin:0 auto}
+.pipe-vlabel{font-size:9px;color:rgba(255,255,255,.18);text-align:center;margin:2px 0}
+.pipe-node canvas{display:block;margin:4px auto 0;border-radius:4px}
+.ctrls{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.cbtn{padding:7px 16px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;transition:all .3s;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);color:#a78bfa}
+.cbtn:hover{background:rgba(108,99,255,.18)}
+.cbtn.act{background:rgba(108,99,255,.25);border-color:rgba(108,99,255,.5)}
+
+/* ===== Architecture Diagram (Nested) ===== */
+.arch-diagram{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;margin-top:24px;border:1px solid rgba(255,255,255,.04)}
+.arch-zone{padding:22px;position:relative}
+.arch-us{background:rgba(108,99,255,.025);border-bottom:1px dashed rgba(108,99,255,.12)}
+.arch-ks{background:rgba(248,113,113,.012)}
+.zone-badge{position:absolute;top:10px;right:14px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.12);pointer-events:none}
+.abox{background:var(--abg,rgba(255,255,255,.025));border:1px solid rgba(255,255,255,.05);border-left:4px solid var(--ab,#6c63ff);border-radius:12px;padding:16px 18px;margin:6px 0;transition:all .3s}
+.abox:hover{border-color:var(--ab);transform:translateX(2px)}
+.abox-hd{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.abox-icon{font-size:18px;min-width:24px}
+.abox-hd h4{font-size:14px;font-weight:700;color:var(--ab);margin:0}
+.abox-bd{font-size:12px;color:#8888aa;line-height:1.75}
+.abox-bd code{background:rgba(108,99,255,.12);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+.abox-bd strong{color:#d0d0f0}
+.abox-inner{background:rgba(0,0,0,.08);border:1px solid rgba(255,255,255,.03);border-left:3px solid var(--ab,#38bdf8);border-radius:10px;padding:12px 14px;margin-top:10px}
+.abox-inner h5{font-size:12px;font-weight:700;margin:0 0 4px;color:var(--ab,#38bdf8)}
+.abox-inner code{font-size:11px;background:rgba(108,99,255,.1);padding:1px 5px;border-radius:3px}
+.arch-arrow{text-align:center;padding:4px 0;font-size:10px;color:rgba(108,99,255,.35);font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+.arch-arrow span{font-size:14px;line-height:1}
+.arch-bridge{display:flex;justify-content:center;gap:12px;padding:10px 20px;background:rgba(0,0,0,.1);border-top:1px dashed rgba(108,99,255,.1);border-bottom:1px dashed rgba(108,99,255,.1);flex-wrap:wrap}
+.bridge-node{padding:5px 12px;background:rgba(108,99,255,.05);border:1px solid rgba(108,99,255,.12);border-radius:8px;font-size:10.5px;text-align:center;line-height:1.5}
+.bridge-node code{font-size:10.5px;background:rgba(108,99,255,.12);padding:1px 4px;border-radius:3px}
+.bridge-node small{color:#6666aa;display:block;margin-top:1px;font-size:9px}
+
+/* ===== PCM Ring Buffer ===== */
+.ring-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ring-wrap.vis{opacity:1;transform:translateY(0)}
+.ring-diagram{margin-top:24px;display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:800px;background:rgba(0,0,0,.1);border-radius:14px;padding:24px 20px;border:1px solid rgba(255,255,255,.03)}
+.ring-row{display:flex;align-items:center;gap:0;width:100%}
+.ring-cell{flex:1;height:48px;border:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:10px;font-family:"JetBrains Mono",monospace;color:#555;transition:all .4s;position:relative}
+.ring-cell.period-start{border-left:2px solid rgba(108,99,255,.3)}
+.ring-cell.filled{background:rgba(52,211,153,.1);color:#34d39980;border-color:rgba(52,211,153,.15)}
+.ring-cell.playing{background:rgba(251,191,36,.12);color:#fbbf2480;border-color:rgba(251,191,36,.2)}
+.ring-cell.empty{background:rgba(255,255,255,.01);color:#333}
+.ring-marker{position:absolute;top:-20px;font-size:9px;color:rgba(108,99,255,.5);font-weight:600;white-space:nowrap}
+.ring-bottom{font-size:11px;color:#6666aa;text-align:center;line-height:1.7}
+
+/* ===== Latency Slider ===== */
+.lat-controls{display:flex;gap:14px;align-items:center;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.lat-slider{display:flex;flex-direction:column;gap:4px;align-items:center}
+.lat-slider label{font-size:11px;color:#8888bb;font-weight:600}
+.lat-slider input[type="range"]{width:200px;accent-color:#6c63ff}
+.lat-val{font-size:13px;font-weight:700;color:#a78bfa;font-family:"JetBrains Mono",monospace}
+.lat-result{margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+.lat-item{text-align:center;font-size:11px;color:#8888aa}
+.lat-item .lv{font-size:18px;font-weight:800;display:block;margin-bottom:2px;font-family:"JetBrains Mono",monospace}
+
+/* ===== Capture Flow ===== */
+.cap-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cap-wrap.vis{opacity:1;transform:translateY(0)}
+.cap-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px}
+@media(max-width:650px){.cap-grid{grid-template-columns:1fr}}
+.cap-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:22px 18px;transition:all .4s;opacity:0;transform:translateY(20px)}
+.cap-card.vis{opacity:1;transform:translateY(0)}
+.cap-card:hover{border-color:var(--ac);background:rgba(255,255,255,.06);transform:translateY(-3px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.cap-card h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.cap-card .cap-sub{font-size:11px;color:var(--ac);font-weight:600;margin-bottom:10px}
+.cap-card .cap-body{font-size:12.5px;color:#9999bb;line-height:1.8}
+.cap-card .cap-body p{margin:4px 0;break-inside:avoid}
+.cap-card .cap-body code{background:rgba(108,99,255,.12);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+.cap-card .cap-body em{color:#6c63ff;font-style:normal;font-weight:600}
+.cap-card .cap-body strong{color:#d0d0f0}
+
+/* ===== Code Block ===== */
+.cblock{background:#0d0d1a;padding:0;border-radius:10px;font-family:"JetBrains Mono",monospace;font-size:11px;color:#c8c8e8;line-height:1.85;overflow-x:auto;margin:14px 0;border:1px solid rgba(255,255,255,.06);position:relative}
+.cblock::before{content:attr(data-file);display:block;padding:7px 14px;font-size:9.5px;font-weight:600;color:#555577;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.04);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cblock .cbody{padding:12px 16px;overflow-x:auto;white-space:pre;tab-size:4}
+.cblock .cm{color:#4a4a66;font-style:italic}
+.cblock .kw{color:#a78bfa;font-weight:600}
+.cblock .st{color:#34d399}
+.cblock .nu{color:#fbbf24}
+.cblock .tp{color:#38bdf8;font-weight:600}
+.cblock .pp{color:#f87171}
+.struct-card .cblock{border:1px solid rgba(255,255,255,.03);padding:0;margin:8px 0 0;border-radius:8px;background:rgba(13,13,26,.6)}
+.struct-card .cblock::before{display:none}
+.struct-card .cblock .cbody{padding:10px 12px;font-size:10.5px;line-height:1.7}
+
+/* ===== Callout ===== */
+.callout{border-radius:10px;padding:14px 18px;margin:14px 0;border-left:4px solid;font-size:12.5px;line-height:1.7}
+.callout .ct{font-weight:700;font-size:12.5px;margin-bottom:6px}
+.callout.info{background:rgba(108,99,255,.06);border-left-color:#6c63ff;color:#b0b0d0}
+.callout.info .ct{color:#6c63ff}
+.callout.warning{background:rgba(245,158,11,.06);border-left-color:#f59e0b;color:#c8a84a}
+.callout.warning .ct{color:#f59e0b}
+.callout.danger{background:rgba(239,68,68,.06);border-left-color:#ef4444;color:#d08090}
+.callout.danger .ct{color:#ef4444}
+.callout.success{background:rgba(16,185,129,.06);border-left-color:#10b981;color:#6ee7b7}
+.callout.success .ct{color:#10b981}
+.callout code{background:rgba(108,99,255,.08);padding:1px 5px;border-radius:3px;font-size:11px;color:#a78bfa}
+
+/* ===== S2b Architecture Depth ===== */
+.depth-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.depth-wrap.vis{opacity:1;transform:translateY(0)}
+.depth-details{border:1px solid rgba(108,99,255,.15);border-radius:14px;margin-bottom:16px;overflow:hidden;background:rgba(0,0,0,.08);transition:all .3s}
+.depth-details:hover{border-color:rgba(108,99,255,.3)}
+.depth-details summary{padding:16px 20px;font-size:14px;font-weight:700;color:#e0e0ff;cursor:pointer;background:rgba(108,99,255,.04);transition:all .2s;list-style:none;display:flex;align-items:center;gap:10px}
+.depth-details summary::-webkit-details-marker{display:none}
+.depth-details summary::before{content:'▸';color:#6c63ff;font-size:12px;transition:transform .25s}
+.depth-details[open] summary::before{transform:rotate(90deg)}
+.depth-details[open] summary{border-bottom:1px solid rgba(108,99,255,.1);background:rgba(108,99,255,.06)}
+.depth-details summary .ds-num{font-size:11px;font-weight:700;color:#6c63ff;background:rgba(108,99,255,.12);padding:2px 8px;border-radius:6px}
+.depth-details summary .ds-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;margin-left:auto}
+.depth-content{padding:20px}
+.struct-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px}
+@media(max-width:750px){.struct-grid{grid-template-columns:1fr}}
+.struct-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:16px;transition:all .3s}
+.struct-card:hover{border-color:var(--sc);background:rgba(255,255,255,.045)}
+.struct-card h5{font-size:13px;font-weight:700;margin-bottom:6px}
+.struct-card .sc-rel{font-size:10px;color:#7777aa;margin-top:8px;line-height:1.6}
+.struct-card .sc-rel code{background:rgba(108,99,255,.08);padding:1px 4px;border-radius:3px;font-size:10px}
+.state-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;margin:12px 0}
+.state-node{padding:8px 14px;border-radius:10px;font-size:12px;font-weight:700;text-align:center;min-width:70px;transition:all .3s;cursor:default}
+.state-node:hover{transform:scale(1.08)}
+.state-node .sn-sub{font-size:9px;opacity:.5;font-weight:400;display:block;margin-top:1px}
+.state-arr{color:rgba(108,99,255,.4);font-size:13px;font-weight:700}
+.state-label{font-size:9px;color:rgba(167,139,250,.6);text-align:center;margin-top:-4px;margin-bottom:8px}
+.flow-stage{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;margin:6px 0;transition:all .3s;cursor:default}
+.flow-stage:hover{transform:translateX(4px)}
+.flow-stage .fs-num{font-size:11px;font-weight:700;color:#6c63ff;min-width:22px;text-align:center}
+.flow-stage .fs-body{font-size:12px;color:#b0b0d0;line-height:1.7}
+.flow-stage .fs-lat{font-size:10px;font-weight:600;margin-left:auto;white-space:nowrap}
+
+/* ===== Tool Cards ===== */
+.tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+@media(max-width:650px){.tool-grid{grid-template-columns:1fr}}
+.tool-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:16px;transition:all .3s}
+.tool-card:hover{border-color:var(--tc);background:rgba(255,255,255,.045)}
+.tool-card h5{font-size:14px;font-weight:700;margin-bottom:4px}
+.tool-card .tc-sub{font-size:10px;color:var(--tc);font-weight:600;margin-bottom:8px}
+.tool-card .tc-cmd{background:#0d0d1a;padding:0;border-radius:6px;font-family:"JetBrains Mono",monospace;font-size:10px;color:#9999bb;line-height:1.7;overflow-x:auto;margin-bottom:6px;border:1px solid rgba(255,255,255,.04);position:relative}
+.tool-card .tc-cmd::before{content:'Terminal';display:block;padding:5px 10px;font-size:8.5px;font-weight:600;color:#444466;background:rgba(255,255,255,.025);border-bottom:1px solid rgba(255,255,255,.03);letter-spacing:.5px;text-transform:uppercase}
+.tc-cmd{background:#0d0d1a;padding:0;border-radius:6px;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:#9999bb;line-height:1.8;overflow-x:auto;border:1px solid rgba(255,255,255,.04);position:relative}
+.tc-cmd::before{content:'Terminal';display:block;padding:5px 10px;font-size:8.5px;font-weight:600;color:#444466;background:rgba(255,255,255,.025);border-bottom:1px solid rgba(255,255,255,.03);letter-spacing:.5px;text-transform:uppercase}
+.tc-cmd .cbody{padding:8px 10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+.tool-card .tc-cmd .prompt,.tc-cmd .prompt{color:#34d399;font-weight:700}
+.tool-card .tc-cmd .comment,.tc-cmd .comment{color:#444466;font-style:italic}
+.tool-card p{font-size:11px;color:#7777aa;line-height:1.7}
+
+/* ===== Flow Row ===== */
+.flow-row{display:flex;align-items:center;gap:6px;margin:10px 0;flex-wrap:wrap;justify-content:center}
+.flow-box{padding:6px 14px;border-radius:8px;font-size:11.5px;font-weight:600;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:#c8c8e8;transition:all .3s;cursor:default}
+.flow-box:hover{background:rgba(108,99,255,.08);border-color:rgba(108,99,255,.2)}
+.flow-arr{color:rgba(108,99,255,.3);font-size:14px}
+
+/* ===== Table ===== */
+.map-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;background:rgba(0,0,0,.15);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.04)}
+.map-tbl th{text-align:left;color:#7777aa;font-weight:600;padding:10px 14px;border-bottom:2px solid rgba(108,99,255,.1);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+.map-tbl td{padding:9px 14px;color:#b0b0d0;border-bottom:1px solid rgba(255,255,255,.03)}
+.map-tbl tr:last-child td{border-bottom:none}
+.map-tbl tr:hover td{background:rgba(108,99,255,.03)}
+.map-tbl .g{color:#34d399;font-weight:600}
+.map-tbl .y{color:#fbbf24;font-weight:600}
+.map-tbl code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+
+/* ===== Radar Chart (CSS) ===== */
+.radar-wrap{width:100%;max-width:600px;margin-top:24px;opacity:0;transform:translateY(20px);transition:all .6s}
+.radar-wrap.vis{opacity:1;transform:translateY(0)}
+.radar-grid{position:relative;width:100%;padding-bottom:100%}
+.radar-axis{position:absolute;width:2px;background:rgba(108,99,255,.12);transform-origin:bottom center;bottom:50%;left:calc(50% - 1px)}
+.radar-ring{position:absolute;border:1px solid rgba(108,99,255,.08);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%)}
+.radar-container{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+
+/* ===== Details ===== */
+details{border:1px solid rgba(255,255,255,.06);border-radius:10px;margin:10px 0;overflow:hidden}
+summary{padding:10px 16px;font-size:13px;font-weight:600;color:#6c63ff;cursor:pointer;background:rgba(26,26,46,.3);transition:all .2s}
+summary:hover{background:rgba(108,99,255,.06)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.04)}
+details>div,details>p{padding:12px 16px;font-size:12.5px;line-height:1.7;color:#b0b0d0}
+
+code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:rgba(108,99,255,.2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(108,99,255,.4)}
+::selection{background:rgba(108,99,255,.3);color:#fff}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ============================================================ -->
+<!-- S1: Hero — 从 Microphone 到 PCM Samples -->
+<!-- ============================================================ -->
+<div class="sec" id="s1">
+  <h2 class="sec-title" id="s1t">Linux ALSA 音频采集</h2>
+  <p class="sec-sub" id="s1s">
+    从 Microphone 到 PCM Samples：嵌入式 Linux 音频采集的完整通路。<br>
+    ALSA 是 Linux 内核的音频设备统一框架，理解它的分层架构与 PCM 参数，是掌握 IPC 产品音频通路的基础。
+  </p>
+  <div class="hero-pipe" id="heroPipe">
+    <div id="pipeStd">
+      <div class="pipe-tier-label">硬件管线 (HW Pipeline)</div>
+      <div class="pipe-row">
+        <div class="pipe-node" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)">
+          <h5 style="background:linear-gradient(135deg,#fbbf24,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Mic</h5>
+          <div class="pn-sub">驻极体/硅麦</div>
+          <canvas class="mic-cv" width="60" height="24"></canvas>
+          <div class="pn-tip">声波 → 模拟电信号</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.25)">
+          <h5 style="background:linear-gradient(135deg,#f97316,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent">ADC/I2S</h5>
+          <div class="pn-sub">采样量化</div>
+          <canvas class="adc-cv" width="60" height="24"></canvas>
+          <div class="pn-tip">模拟信号 → 数字采样 (48000 次/s)</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25)">
+          <h5 style="background:linear-gradient(135deg,#38bdf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent">DMA</h5>
+          <div class="pn-sub">搬运到内存</div>
+          <canvas class="dma-cv" width="60" height="24"></canvas>
+          <div class="pn-tip">DMA 引擎将采样数据写入 ring buffer</div>
+        </div>
+      </div>
+      <div class="pipe-vline"></div>
+      <div class="pipe-vlabel">SNDRV_PCM_IOCTL_READI_FRAMES</div>
+      <div class="pipe-vline"></div>
+      <div class="pipe-tier-label">软件流程 (SW Flow)</div>
+      <div class="pipe-row">
+        <div class="pipe-node" style="background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.3)">
+          <h5 style="background:linear-gradient(135deg,#a78bfa,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">/dev/snd/pcmCxDxc</h5>
+          <div class="pn-sub">字符设备节点</div>
+          <div class="pn-tip">内核 PCM 设备节点，用户通过 ioctl 操作</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25)">
+          <h5 style="background:linear-gradient(135deg,#34d399,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Ring Buffer</h5>
+          <div class="pn-sub">环形缓冲区</div>
+          <canvas class="ring-cv" width="60" height="24"></canvas>
+          <div class="pn-tip">appl_ptr / hw_ptr 双指针管理</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25)">
+          <h5 style="background:linear-gradient(135deg,#a78bfa,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">snd_pcm_readi()</h5>
+          <div class="pn-sub">alsa-lib API</div>
+          <div class="pn-tip">阻塞读取一个 period 的 PCM 帧</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25)">
+          <h5 style="background:linear-gradient(135deg,#f87171,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Application</h5>
+          <div class="pn-sub">用户空间处理</div>
+          <div class="pn-tip">格式转换 / 降采样 / AGC / 编码</div>
+        </div>
+      </div>
+    </div>
+    <div id="pipeProj" style="display:none">
+      <div class="pipe-tier-label">JY1C 项目实际通路 (Ingenic T31)</div>
+      <div class="pipe-row">
+        <div class="pipe-node" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)">
+          <h5 style="background:linear-gradient(135deg,#fbbf24,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent">双Mic</h5>
+          <div class="pn-sub">阵列降噪</div>
+          <div class="pn-tip">2 通道驻极体 Mic，I2S 直连 SoC</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.25)">
+          <h5 style="background:linear-gradient(135deg,#f97316,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent">内置ADC</h5>
+          <div class="pn-sub">T31 I2S 接口</div>
+          <div class="pn-tip">Ingenic T31 内置 ADC，无需外部 Codec</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.3)">
+          <h5 style="background:linear-gradient(135deg,#a78bfa,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">hw:1,0</h5>
+          <div class="pn-sub">S24_LE 48kHz 2ch</div>
+          <div class="pn-tip">ALSA 直通硬件，避免插件转换开销</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25)">
+          <h5 style="background:linear-gradient(135deg,#a78bfa,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">S24→float</h5>
+          <div class="pn-sub">24bit 解包</div>
+          <div class="pn-tip">3 字节有效 → 4 字节对齐 → float 归一化</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25)">
+          <h5 style="background:linear-gradient(135deg,#38bdf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent">L/R/2CH</h5>
+          <div class="pn-sub">声道提取</div>
+          <div class="pn-tip">单通道录音用 LEFT，降噪用 2CH</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25)">
+          <h5 style="background:linear-gradient(135deg,#fbbf24,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent">48k→16k</h5>
+          <div class="pn-sub">3:1 降采样</div>
+          <div class="pn-tip">MLP 抗混叠滤波 + 抽取</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25)">
+          <h5 style="background:linear-gradient(135deg,#34d399,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">AGC</h5>
+          <div class="pn-sub">WebRTC 增益</div>
+          <div class="pn-tip">自适应数字增益，目标 -2dBFS</div>
+        </div>
+        <div class="pipe-arr">→</div>
+        <div class="pipe-node" style="background:rgba(192,132,252,.08);border:1px solid rgba(192,132,252,.25)">
+          <h5 style="background:linear-gradient(135deg,#c084fc,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Opus</h5>
+          <div class="pn-sub">int16 16kHz</div>
+          <div class="pn-tip">Opus 语音编码 → RTP → SFU → 浏览器</div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:8px;font-size:10px;color:rgba(52,211,153,.4);font-weight:700;letter-spacing:1px">AlsaAudioCaptureWrapper.cpp 完整通路</div>
+    </div>
+  </div>
+  <div class="ctrls">
+    <button class="cbtn act" onclick="setPath('std')" id="btnStd">ALSA 标准路径</button>
+    <button class="cbtn" onclick="setPath('proj')" id="btnProj">项目实际路径 (JY1C)</button>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2: ALSA 子系统架构 -->
+<!-- ============================================================ -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" id="s2t">ALSA 子系统架构</h2>
+  <p class="sec-sub" id="s2s">
+    ALSA 分为内核核心层、PCM 中间层、硬件驱动层，以及用户空间的 alsa-lib 和插件层。逐层理解才能定位音频问题。
+  </p>
+  <div class="arch-wrap" id="archWrap">
+    <div class="arch-diagram">
+      <!-- ===== 用户空间 ===== -->
+      <div class="arch-zone arch-us">
+        <span class="zone-badge">用户空间 USERSPACE</span>
+
+        <div class="abox" style="--ab:#a78bfa;--abg:rgba(108,99,255,.05)">
+          <div class="abox-hd"><span class="abox-icon">👤</span><h4>应用层 Application</h4></div>
+          <div class="abox-bd">
+            使用 <code>snd_pcm_readi()</code> / <code>snd_pcm_writei()</code> 采集/播放。GStreamer、PulseAudio、本项目 AlsaAudioCaptureWrapper 均在此层。<br>
+            <strong>alsa-lib 内部：</strong><code>snd_pcm_open()</code> 时根据 <code>~/.asoundrc</code> 或 <code>/etc/asound.conf</code> 的 <code>snd_config_t</code> 配置树构建插件链。<code>snd_pcm_t</code> 维护 PCM 流状态机 (SETUP→PREPARED→RUNNING)。<strong>参数协商：</strong><code>snd_pcm_hw_params()</code> 逐一尝试参数，与驱动取交集，失败返回 <code>-EINVAL</code>。声道选择、增益调节、pre_gain 自适应均在此层完成。
+          </div>
+        </div>
+
+        <div class="arch-arrow"><span>▼</span>snd_pcm_readi() → ioctl()</div>
+
+        <div class="abox" style="--ab:#34d399;--abg:rgba(52,211,153,.035)">
+          <div class="abox-hd"><span class="abox-icon">📦</span><h4>alsa-lib (C 库 + 插件链)</h4></div>
+          <div class="abox-bd">
+            <div class="abox-inner" style="--ab:#38bdf8;--abg:rgba(56,189,248,.025)">
+              <h5>核心抽象</h5>
+              <code>snd_pcm_t</code> — PCM 流对象 (封装 fd、插件链、状态机)；<code>snd_config_t</code> — 配置树 (解析 asoundrc)；<code>snd_ctl_t</code> — 控制接口 (管理 mixer/kcontrol)。<br>
+              <strong>ioctl 封装：</strong><code>snd_pcm_readi()</code> → mmap 或 read 模式 → <code>ioctl(fd, SNDRV_PCM_IOCTL_*, arg)</code>。<br>
+              <strong>错误码：</strong><code>-EPIPE</code>(XRUN)、<code>-ESTRPIPE</code>(挂起)、<code>-EBADFD</code>、<code>-EAGAIN</code>、<code>-ENODEV</code>。<code>snd_pcm_recover()</code> 统一处理。
+            </div>
+            <div class="abox-inner" style="--ab:#34d399;--abg:rgba(52,211,153,.025);margin-top:8px">
+              <h5>插件链 Plugin Chain</h5>
+              <code>hw</code>(直通硬件) → <code>plughw</code>(自动格式/速率/通道转换) → <code>dmix</code>(多路软件混音，shm+flock) → <code>dsnoop</code>(多路软件分路) → <code>pulse</code>(PulseAudio 代理)。<br>
+              <strong>hw vs plughw：</strong><code>hw:X,Y</code> 严格匹配驱动参数，不支持则 <code>-EINVAL</code>；<code>plughw:X,Y</code> 自动插入转换滤镜，对应用透明但增加 CPU 开销。IPC 场景下直接用 <code>hw:X,Y</code> 避免延迟。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 设备节点桥接层 ===== -->
+      <div class="arch-bridge">
+        <div class="bridge-node"><code>/dev/snd/pcmC0D0c</code><small>Card0 Capture</small></div>
+        <div class="bridge-node"><code>/dev/snd/pcmC1D0c</code><small>Card1 Capture (本项目 Mic)</small></div>
+        <div class="bridge-node"><code>/dev/snd/controlC0</code><small>混音器控制</small></div>
+      </div>
+
+      <!-- ===== 内核空间 ===== -->
+      <div class="arch-zone arch-ks">
+        <span class="zone-badge">内核空间 KERNELSPACE</span>
+
+        <div class="abox" style="--ab:#fbbf24;--abg:rgba(251,191,36,.035)">
+          <div class="abox-hd"><span class="abox-icon">⚙️</span><h4>ALSA Core</h4></div>
+          <div class="abox-bd">
+            设备注册体系 <code>snd_card</code> → <code>snd_device</code> → <code>snd_minor</code>，每个 minor 对应 <code>/dev/snd/</code> 下的一个设备节点。控制层通过 <code>snd_ctl_*</code> API 管理，每个控制项是一个 <code>snd_kcontrol_new</code> 实例。内存管理用 <code>snd_dma_buffer</code> 分配连续物理内存供 DMA。
+          </div>
+        </div>
+
+        <div class="abox" style="--ab:#38bdf8;--abg:rgba(56,189,248,.035)">
+          <div class="abox-hd"><span class="abox-icon">🔄</span><h4>PCM Midlevel</h4></div>
+          <div class="abox-bd">
+            Ring buffer 核心——内核维护 <code>hw_ptr</code>(DMA 写位置)，用户维护 <code>appl_ptr</code>(应用读位置)。<code>hw_params</code> 回调分配 DMA 缓冲；<code>sw_params</code> 配置 start_threshold/avail_min/stop_threshold。中断回调 <code>snd_pcm_period_elapsed()</code> 更新 hw_ptr 并唤醒等待进程。XRUN：hw_ptr 追上 appl_ptr 时触发 overrun。
+          </div>
+        </div>
+
+        <div class="arch-arrow"><span>▼</span>snd_pcm_ops 驱动回调</div>
+
+        <div class="abox" style="--ab:#f87171;--abg:rgba(248,113,113,.035)">
+          <div class="abox-hd"><span class="abox-icon">🔧</span><h4>ASoC Driver 硬件驱动层</h4></div>
+          <div class="abox-bd">
+            <strong>ASoC 体系：</strong>DAI 驱动配置 I2S/PCM 格式和时钟 (BCLK/LRCK)；DAI Link 连接 CPU DAI 和 Codec DAI；Codec 驱动控制 ADC/DAC 增益、电源管理；Platform 驱动管理 DMA 引擎。四者通过 <code>snd_soc_card</code> 组合。<br>
+            <strong>Ingenic T31：</strong>内置 ADC 直接挂 I2S 接口，无需外部 Codec 芯片。Mic 信号直连 SoC I2S 输入引脚，Codec DAI 是内部虚拟设备。双 Mic (2ch) 通过 I2S 同时采集。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout info" style="margin-top:16px;max-width:960px;width:100%">
+      <div class="ct">设备注册流程</div>
+      <code>snd_card_new()</code> 创建声卡 → <code>snd_pcm_new()</code> 注册 PCM 设备 → 驱动填充 <code>snd_pcm_ops</code> 回调 → <code>snd_card_register()</code> 创建 <code>/dev/snd/</code> 节点。<br>
+      <strong>命名约定：</strong><code>hw:X,Y</code> 中 X=Card 编号，Y=Device 编号。C=Card，D=Device，c=capture/p=playback。本项目 Mic 用 <code>hw:1,0</code> (对应 <code>/dev/snd/pcmC1D0c</code>)，Speaker 用 <code>hw:0,0</code>。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2b: ALSA 架构深度 -->
+<!-- ============================================================ -->
+<div class="sec" id="s2b">
+  <h2 class="sec-title" id="s2bt">ALSA 架构深度</h2>
+  <p class="sec-sub" id="s2bs">
+    展开下方四个板块，深入理解 ALSA 内核数据结构、PCM 状态机、完整数据流路径和调试工具集。
+    这些是你在嵌入式 Linux 上定位音频问题的底层武器。
+  </p>
+  <div class="depth-wrap" id="depthWrap">
+
+    <details class="depth-details" style="--sc:#a78bfa">
+      <summary>
+        <span class="ds-num">01</span>
+        内核核心数据结构
+        <span class="ds-tag" style="color:#a78bfa;background:rgba(167,139,250,.1)">内核</span>
+      </summary>
+      <div class="depth-content">
+        <p style="font-size:12px;color:#9999bb;margin-bottom:8px;line-height:1.7">
+          ALSA 内核用三层嵌套结构管理 PCM 设备：<code>snd_card</code> 是声卡根对象，<code>snd_pcm</code> 是 PCM 设备，
+          <code>snd_pcm_runtime</code> 是运行时上下文。理解它们的包含关系是阅读内核音频代码的钥匙。
+        </p>
+        <div class="struct-grid">
+          <div class="struct-card" style="--sc:#a78bfa">
+            <h5 style="color:#a78bfa">struct snd_card</h5>
+            <div class="cblock"><div class="cbody"><span class="cm">// 声卡根对象 — 所有子设备的容器</span>
+<span class="kw">struct</span> <span class="tp">snd_card</span> {
+  <span class="tp">int</span> number;            <span class="cm">// 声卡编号 → /dev/snd/Cx</span>
+  <span class="tp">char</span> id[16];            <span class="cm">// 声卡 ID 字符串</span>
+  <span class="tp">char</span> driver[16];        <span class="cm">// 驱动名</span>
+  <span class="tp">char</span> shortname[32];     <span class="cm">// 短名 (proc 显示)</span>
+  <span class="tp">char</span> longname[80];      <span class="cm">// 长名</span>
+  <span class="tp">struct list_head</span> devices; <span class="cm">// 子设备链表</span>
+  <span class="tp">struct list_head</span> controls; <span class="cm">// kcontrol 链表</span>
+  <span class="tp">struct proc_dir_entry</span> *proc_root;
+  <span class="tp">void</span> *private_data;    <span class="cm">// 驱动私有数据</span>
+};</div></div>
+            <div class="sc-rel">← 通过 <code>snd_card_new()</code> 创建，<code>snd_card_register()</code> 注册后创建 <code>/dev/snd/</code> 节点</div>
+          </div>
+          <div class="struct-card" style="--sc:#34d399">
+            <h5 style="color:#34d399">struct snd_pcm</h5>
+            <div class="cblock"><div class="cbody"><span class="cm">// PCM 设备 — 含 playback + capture</span>
+<span class="kw">struct</span> <span class="tp">snd_pcm</span> {
+  <span class="tp">struct snd_card</span> *card;
+  <span class="tp">int</span> device;             <span class="cm">// Device 编号</span>
+  <span class="tp">struct snd_pcm_str</span> streams[2];
+    <span class="cm">// [0]=PLAYBACK, [1]=CAPTURE</span>
+  <span class="tp">struct snd_info_entry</span> *proc_entry;
+};</div></div>
+            <div class="sc-rel">每个 stream 含 <code>substream_count</code> 个 <code>snd_pcm_substream</code>，substream 才是实际操作的 PCM 流</div>
+          </div>
+          <div class="struct-card" style="--sc:#fbbf24">
+            <h5 style="color:#fbbf24">struct snd_pcm_runtime</h5>
+            <div class="cblock"><div class="cbody"><span class="cm">// 运行时上下文 — ring buffer + 参数</span>
+<span class="kw">struct</span> <span class="tp">snd_pcm_runtime</span> {
+  <span class="tp">snd_pcm_state_t</span> state;  <span class="cm">// 当前状态</span>
+  <span class="tp">snd_pcm_format_t</span> format;
+  <span class="tp">unsigned int</span> rate;
+  <span class="tp">unsigned int</span> channels;
+  <span class="tp">snd_pcm_uframes_t</span> period_size;
+  <span class="tp">snd_pcm_uframes_t</span> buffer_size;
+  <span class="tp">snd_pcm_sframes_t</span> hw_ptr; <span class="cm">// DMA 写位置</span>
+  <span class="tp">snd_pcm_sframes_t</span> appl_ptr; <span class="cm">// 应用读位置</span>
+  <span class="tp">struct snd_dma_buffer</span> dma_buffer;
+  <span class="tp">struct snd_pcm_ops</span> *ops;  <span class="cm">// 驱动回调</span>
+};</div></div>
+            <div class="sc-rel">→ <code>hw_ptr - appl_ptr</code> = 可读帧数 (capture)；ring buffer 由 <code>dma_buffer</code> 描述物理内存</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding:12px 16px;background:rgba(0,0,0,.1);border-radius:8px;border:1px solid rgba(255,255,255,.03);font-size:11px;color:#8888aa;line-height:1.7">
+          <strong style="color:#e0e0ff">包含关系：</strong>
+          <code>snd_card</code> → <code>snd_pcm</code> → <code>snd_pcm_str</code>[0/1] → <code>snd_pcm_substream</code> → <code>snd_pcm_runtime</code><br>
+          <strong style="color:#e0e0ff">关键路径：</strong>
+          用户 <code>open("/dev/snd/pcmC1D0c")</code> → 内核通过 <code>snd_minor</code> 找到 <code>snd_pcm_substream</code> → 应用 <code>ioctl</code> 操作 <code>snd_pcm_runtime</code>
+        </div>
+      </div>
+    </details>
+
+    <details class="depth-details" style="--sc:#34d399">
+      <summary>
+        <span class="ds-num">02</span>
+        PCM 状态机
+        <span class="ds-tag" style="color:#34d399;background:rgba(52,211,153,.1)">运行时</span>
+      </summary>
+      <div class="depth-content">
+        <p style="font-size:12px;color:#9999bb;margin-bottom:12px;line-height:1.7">
+          ALSA PCM 流有 6 种状态。理解状态转换的触发条件和对应 ioctl，才能真正读懂 <code>snd_pcm_readi()</code> 内部做了什么，以及为什么 <code>snd_pcm_prepare()</code> 能恢复 XRUN。
+        </p>
+        <div class="state-flow">
+          <div class="state-node" style="background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.3);color:#a78bfa">OPEN<span class="sn-sub">初始态</span></div>
+          <div class="state-arr">→</div>
+          <div class="state-node" style="background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);color:#38bdf8">SETUP<span class="sn-sub">hw_params</span></div>
+          <div class="state-arr">→</div>
+          <div class="state-node" style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);color:#34d399">PREPARED<span class="sn-sub">prepare</span></div>
+          <div class="state-arr">→</div>
+          <div class="state-node" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fbbf24">RUNNING<span class="sn-sub">trigger START</span></div>
+        </div>
+        <div class="state-label">主路径：open → hw_params → prepare → trigger(START)</div>
+        <div class="state-flow">
+          <div class="state-node" style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:#f87171">XRUN<span class="sn-sub">缓冲溢出/下溢</span></div>
+          <div class="state-arr">→</div>
+          <div class="state-node" style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:#34d399">PREPARED<span class="sn-sub">prepare 恢复</span></div>
+        </div>
+        <div class="state-label">XRUN 恢复：snd_pcm_prepare() 清空缓冲区 → PREPARED → 重新 trigger</div>
+        <div class="state-flow">
+          <div class="state-node" style="background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.2);color:#c084fc">SUSPENDED<span class="sn-sub">系统挂起</span></div>
+          <div class="state-arr">→</div>
+          <div style="font-size:11px;color:#8888aa">resume → 上一状态</div>
+        </div>
+        <div class="state-label">SUSPENDED：系统休眠时 PCM 被挂起，snd_pcm_resume() 恢复到挂起前的状态</div>
+        <div class="state-flow">
+          <div class="state-node" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);color:#fbbf24">RUNNING<span class="sn-sub">运行中</span></div>
+          <div class="state-arr">→</div>
+          <div class="state-node" style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);color:#38bdf8">SETUP<span class="sn-sub">trigger STOP</span></div>
+        </div>
+        <div class="state-label">停止：trigger(STOP) → SETUP → 可重新 prepare 或 hw_params</div>
+        <div class="callout warning" style="margin-top:14px">
+          <div class="ct">常见踩坑</div>
+          <code>snd_pcm_readi()</code> 在 PREPARED 状态会隐式触发 START（因为 start_threshold=1），所以你可能不知道 PCM 已经进入了 RUNNING 态。如果在 RUNNING 态调用 <code>snd_pcm_hw_params()</code> 会返回 <code>-EBADFD</code>，必须先 <code>snd_pcm_drop()</code> 回到 SETUP。
+        </div>
+      </div>
+    </details>
+
+    <details class="depth-details" style="--sc:#38bdf8">
+      <summary>
+        <span class="ds-num">03</span>
+        完整数据流路径
+        <span class="ds-tag" style="color:#38bdf8;background:rgba(56,189,248,.1)">数据流</span>
+      </summary>
+      <div class="depth-content">
+        <p style="font-size:12px;color:#9999bb;margin-bottom:12px;line-height:1.7">
+          这是从麦克风声波到用户空间 PCM 缓冲区的每一个步骤。理解每一步的延迟贡献，才能精确计算端到端音频延迟。
+        </p>
+        <div class="flow-stage" style="background:rgba(251,191,36,.04);border-left:3px solid rgba(251,191,36,.3)">
+          <div class="fs-num">1</div>
+          <div class="fs-body"><strong style="color:#fbbf24">Mic 声电转换</strong> — 驻极体/硅麦将声波转为模拟电信号（mV 级）</div>
+          <div class="fs-lat" style="color:#fbbf24">~0µs</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(249,115,22,.04);border-left:3px solid rgba(249,115,22,.3)">
+          <div class="fs-num">2</div>
+          <div class="fs-body"><strong style="color:#f97316">ADC 采样量化</strong> — <code>48kHz</code> 采样率，每 <code>1/48000≈20.8µs</code> 采样一次，24bit 量化。I2S 格式输出数字码流</div>
+          <div class="fs-lat" style="color:#f97316">~1 sample</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(56,189,248,.04);border-left:3px solid rgba(56,189,248,.3)">
+          <div class="fs-num">3</div>
+          <div class="fs-body"><strong style="color:#38bdf8">I2S 传输</strong> — 采样数据通过 I2S 总线 (BCLK=3.072MHz, LRCK=48kHz) 传入 SoC</div>
+          <div class="fs-lat" style="color:#38bdf8">~1 sample</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(108,99,255,.04);border-left:3px solid rgba(108,99,255,.3)">
+          <div class="fs-num">4</div>
+          <div class="fs-body"><strong style="color:#a78bfa">DMA 写入 Ring Buffer</strong> — DMA 引擎将 I2S 接收的采样数据搬运到 <code>snd_dma_buffer</code>，每填满一个 period 触发一次中断</div>
+          <div class="fs-lat" style="color:#a78bfa">1 period</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(167,139,250,.04);border-left:3px solid rgba(167,139,250,.3)">
+          <div class="fs-num">5</div>
+          <div class="fs-body"><strong style="color:#c084fc">中断回调</strong> — <code>snd_pcm_period_elapsed()</code> 更新 <code>hw_ptr</code>，调用 <code>wake_up()</code> 唤醒在 <code>poll</code> 上等待的进程</div>
+          <div class="fs-lat" style="color:#c084fc">~10-50µs</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(52,211,153,.04);border-left:3px solid rgba(52,211,153,.3)">
+          <div class="fs-num">6</div>
+          <div class="fs-body"><strong style="color:#34d399">snd_pcm_readi()</strong> — 触发 <code>ioctl(SNDRV_PCM_IOCTL_READI_FRAMES)</code>，内核执行 <code>copy_to_user()</code> 从 ring buffer 拷贝一个 period 数据到用户空间</div>
+          <div class="fs-lat" style="color:#34d399">1 period copy</div>
+        </div>
+        <div class="flow-stage" style="background:rgba(248,113,113,.04);border-left:3px solid rgba(248,113,113,.3)">
+          <div class="fs-num">7</div>
+          <div class="fs-body"><strong style="color:#f87171">用户空间处理</strong> — S24_LE→float 转换、降采样、AGC、编码等</div>
+          <div class="fs-lat" style="color:#f87171">应用决定</div>
+        </div>
+        <div style="margin-top:14px;padding:12px 16px;background:rgba(0,0,0,.1);border-radius:8px;border:1px solid rgba(255,255,255,.03);font-size:11px;color:#8888aa;line-height:1.7">
+          <strong style="color:#e0e0ff">延迟计算 (本项目)：</strong>
+          <code>period_size=256, rate=48000</code> → 1 period = 5.33ms<br>
+          硬件延迟 ≈ 1 period (DMA 填充) + 中断唤醒 ≈ <strong style="color:#fbbf24">5.5ms</strong><br>
+          软件延迟 ≈ <code>snd_pcm_readi</code> 阻塞等待 + <code>copy_to_user</code> ≈ <strong style="color:#34d399">5.5ms</strong><br>
+          缓冲延迟 ≈ buffer = 3 periods → 最坏情况 <strong style="color:#f87171">16ms</strong> (2 periods 已填充 + 当前 period)<br>
+          <strong style="color:#e0e0ff">总延迟 ≈ 11~16ms</strong> (不含编码和网络传输)
+        </div>
+      </div>
+    </details>
+
+    <details class="depth-details" style="--sc:#c084fc">
+      <summary>
+        <span class="ds-num">04</span>
+        ALSA 调试工具全景
+        <span class="ds-tag" style="color:#c084fc;background:rgba(192,132,252,.1)">实战</span>
+      </summary>
+      <div class="depth-content">
+        <p style="font-size:12px;color:#9999bb;margin-bottom:12px;line-height:1.7">
+          这些是 JY1C 板上调试音频问题的一线工具。掌握命令行输出解读，比看日志更直接高效。
+        </p>
+        <div class="tool-grid">
+          <div class="tool-card" style="--tc:#a78bfa">
+            <h5 style="color:#a78bfa">arecord</h5>
+            <div class="tc-sub">录音测试 — 验证采集通路完整性</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> arecord -D hw:1,0 -f S24_LE -r 48000 -c 2 -d 5 /tmp/test.wav
+<span class="comment"># 录制 5 秒到 WAV 文件</span>
+<span class="prompt">$</span> arecord -D hw:1,0 --dump-hw-params
+<span class="comment"># 仅打印硬件参数然后退出</span>
+<span class="prompt">$</span> arecord -l
+<span class="comment"># 列出所有采集设备</span></div></div>
+            <p>如果报 <code>-EPIPE</code> 说明 overrun，检查 CPU 负载和线程优先级。</p>
+          </div>
+          <div class="tool-card" style="--tc:#34d399">
+            <h5 style="color:#34d399">aplay</h5>
+            <div class="tc-sub">播放测试 — 验证输出通路</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> aplay -D hw:0,0 -f S16_LE -r 16000 -c 1 /tmp/test.wav
+<span class="comment"># 播放 WAV 文件</span>
+<span class="prompt">$</span> aplay -l
+<span class="comment"># 列出所有播放设备</span></div></div>
+            <p>Speaker 用 <code>hw:0,0</code>，Mic 用 <code>hw:1,0</code>，二者属于不同声卡。</p>
+          </div>
+          <div class="tool-card" style="--tc:#38bdf8">
+            <h5 style="color:#38bdf8">amixer</h5>
+            <div class="tc-sub">混音器控制 — 调节增益/静音/通路</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> amixer -c 1 contents
+<span class="comment"># 列出 Card1 所有控制项</span>
+<span class="prompt">$</span> amixer -c 1 set 'ADC Gain' 80
+<span class="comment"># 设置 ADC 增益</span></div></div>
+            <p>Ingenic T31 的 mixer 控制项名称需查 BSP 文档。</p>
+          </div>
+          <div class="tool-card" style="--tc:#fbbf24">
+            <h5 style="color:#fbbf24">/proc/asound</h5>
+            <div class="tc-sub">内核状态 — 实时诊断 PCM 流状态</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> cat /proc/asound/cards
+<span class="comment"># 列出所有注册的声卡</span>
+<span class="prompt">$</span> cat /proc/asound/card1/pcm0c/sub0/hw_params
+<span class="comment"># 查看当前协商的硬件参数</span>
+<span class="prompt">$</span> cat /proc/asound/card1/pcm0c/sub0/status
+<span class="comment"># 查看状态、hw_ptr、appl_ptr</span></div></div>
+            <p>最重要的诊断入口。XRUN 时先看 <code>status</code>。</p>
+          </div>
+          <div class="tool-card" style="--tc:#f87171">
+            <h5 style="color:#f87171">alsactl</h5>
+            <div class="tc-sub">配置存储 — 保存/恢复 mixer 状态</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> alsactl store -c 1
+<span class="comment"># 保存 Card1 mixer 状态</span>
+<span class="prompt">$</span> alsactl restore -c 1
+<span class="comment"># 恢复 mixer 状态</span></div></div>
+            <p>开机脚本通常调用 <code>alsactl restore</code>。</p>
+          </div>
+          <div class="tool-card" style="--tc:#c084fc">
+            <h5 style="color:#c084fc">i2ctransfer</h5>
+            <div class="tc-sub">I2C 调试 — 读写外部 Codec 寄存器</div>
+            <div class="tc-cmd"><div class="cbody"><span class="prompt">$</span> i2ctransfer -y 1 w2@1a 0x00 0x00 r1
+<span class="comment"># 读 Codec 寄存器</span>
+<span class="comment"># T31 内置 ADC 无需此命令</span></div></div>
+            <p>本项目 T31 内置 ADC 不走 I2C，知识完整性补充。</p>
+          </div>
+        </div>
+      </div>
+    </details>
+
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: PCM 参数深度解析 -->
+<!-- ============================================================ -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" id="s4t">PCM 参数深度解析</h2>
+  <p class="sec-sub" id="s4s">
+    ALSA PCM 参数决定了音频数据的格式和延迟特性。理解 frame / period / buffer 的关系，才能调出低延迟且稳定的采集参数。
+  </p>
+  <div class="ring-wrap" id="ringWrap">
+    <!-- Ring Buffer Diagram -->
+    <div class="ring-diagram" id="ringDiagram">
+      <div style="font-size:14px;font-weight:700;color:rgba(255,255,255,.35);text-align:center;margin-bottom:10px">ALSA Ring Buffer 结构</div>
+      <div class="ring-row" id="ringRow"></div>
+      <div class="ring-bottom">
+        <code>frame</code> = 1 采样点 × 通道数 × 位深/8<br>
+        本项目: <code>1 frame = 1 × 2(ch) × 4(S24_LE) = 8 bytes</code><br>
+        <code>period</code> = period_size × frame_size = <code>256 × 8 = 2048 bytes</code><br>
+        <code>buffer</code> = 3 × period = <code>6144 bytes ≈ 16ms 延迟</code>
+      </div>
+    </div>
+
+    <!-- Latency Calculator -->
+    <div class="lat-controls">
+      <div class="lat-slider">
+        <label>采样率 (Hz)</label>
+        <input type="range" min="8000" max="48000" step="8000" value="48000" id="rateSlider" oninput="calcLatency()">
+        <span class="lat-val" id="rateVal">48000</span>
+      </div>
+      <div class="lat-slider">
+        <label>周期大小 (frames)</label>
+        <input type="range" min="64" max="1024" step="64" value="256" id="periodSlider" oninput="calcLatency()">
+        <span class="lat-val" id="periodVal">256</span>
+      </div>
+      <div class="lat-slider">
+        <label>周期数</label>
+        <input type="range" min="2" max="8" step="1" value="3" id="periodsSlider" oninput="calcLatency()">
+        <span class="lat-val" id="periodsVal">3</span>
+      </div>
+    </div>
+    <div class="lat-result" id="latResult">
+      <div class="lat-item"><span class="lv" style="color:#a78bfa" id="latPeriod">5.33</span>ms 周期延迟</div>
+      <div class="lat-item"><span class="lv" style="color:#34d399" id="latBuffer">16.0</span>ms 缓冲延迟</div>
+      <div class="lat-item"><span class="lv" style="color:#fbbf24" id="latIrq">187.5</span>Hz 中断频率</div>
+    </div>
+
+    <div class="cap-grid" style="margin-top:20px">
+      <div class="cap-card" style="--ac:#a78bfa">
+        <h4>硬件参数 (hw_params)</h4>
+        <div class="cap-sub">运行时不可更改，决定数据格式</div>
+        <div class="cap-body">
+          <p><strong>访问模式：</strong><code>SND_PCM_ACCESS_RW_INTERLEAVED</code> — 通道数据交错存储（L R L R...），最常用。NONINTERLEAVED 则按通道分平面存储。</p>
+          <p><strong>采样格式：</strong><code>SND_PCM_FORMAT_S24_LE</code> — 24bit 小端有符号整数，3字节有效但4字节对齐。本项目 JY1C 使用此格式。S16_LE 更通用但精度低。</p>
+          <p><strong>采样率：</strong>48kHz — IPC 音频主流。高采样率减少延迟但增加 CPU 和带宽开销。</p>
+          <p><strong>通道数：</strong>2 — 双 Mic 阵列降噪场景必需。单通道录音用 <code>_handle_type=E_HANDLE_TYPE_LEFT</code>。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#34d399">
+        <h4>软件参数 (sw_params)</h4>
+        <div class="cap-sub">控制流启动/停止行为</div>
+        <div class="cap-body">
+          <p><strong>start_threshold：</strong>缓冲填充到此帧数后自动启动 DMA。设为 1 = 即时启动；设为 buffer_size = 整个 buffer 填满才启动（增加延迟）。</p>
+          <p><strong>avail_min：</strong><code>snd_pcm_sw_params_set_avail_min()</code> — 可用帧数达到此值时 <code>snd_pcm_wait()</code> / poll 返回可读。通常设为 period_size。</p>
+          <p><strong>stop_threshold：</strong>当可写/可读帧数低于此值时自动停止。通常设为 buffer_size，即 XRUN 时不自动停止。</p>
+          <p><strong>silence_threshold：</strong>静音填充阈值。Capture 场景不常用。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout warning" style="margin-top:14px;max-width:960px;width:100%">
+      <div class="ct">S24_LE 的坑</div>
+      <code>SND_PCM_FORMAT_S24_LE</code> 在内存中占 4 字节（3 字节有效 + 1 字节 padding），不是 3 字节！采样值范围 <code>-8388608 ~ +8388607</code>。读取时需手动解包：低3字节组合后用符号位扩展到 32bit。<br><br>
+      ALSA 插件 <code>plughw</code> 会自动做 <code>S24_LE → S16_LE</code> 转换，但 <code>hw</code> 模式下必须自己处理。本项目 <code>_alsa_capture_work</code> 中的转换循环就是这个原因。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: ALSA 采集实战 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" id="s5t">ALSA 采集实战</h2>
+  <p class="sec-sub" id="s5s">
+    从 snd_pcm_open 到 snd_pcm_readi 循环，完整的最小采集流程。理解错误处理路径是生产级代码的关键。
+  </p>
+  <div class="cap-wrap" id="capWrap">
+    <div class="cblock" data-file="capture_minimal.c"><div class="cbody"><span class="kw">#include</span> <span class="st">&lt;alsa/asoundlib.h&gt;</span>
+
+<span class="tp">int</span> main() {
+    snd_pcm_t *pcm;
+    <span class="tp">int</span> ret;
+
+    <span class="cm">// ═══ 1. 打开采集设备 (阻塞模式) ═══</span>
+    ret = snd_pcm_open(&pcm, <span class="st">"hw:1,0"</span>, <span class="pp">SND_PCM_STREAM_CAPTURE</span>, <span class="nu">0</span>);
+    <span class="kw">if</span> (ret < <span class="nu">0</span>) <span class="kw">return</span> -<span class="nu">1</span>;
+
+    <span class="cm">// ═══ 2. 配置硬件参数 ═══</span>
+    snd_pcm_hw_params_t *hw;
+    snd_pcm_hw_params_alloca(&hw);
+    snd_pcm_hw_params_any(pcm, hw);
+
+    <span class="cm">// 2a. 访问方式 & 采样格式</span>
+    snd_pcm_hw_params_set_access(pcm, hw, <span class="pp">SND_PCM_ACCESS_RW_INTERLEAVED</span>);
+    snd_pcm_hw_params_set_format(pcm, hw, <span class="pp">SND_PCM_FORMAT_S24_LE</span>);
+
+    <span class="cm">// 2b. 采样率 & 声道数</span>
+    <span class="tp">unsigned int</span> rate = <span class="nu">48000</span>;
+    snd_pcm_hw_params_set_rate_near(pcm, hw, &rate, <span class="nu">0</span>);
+    snd_pcm_hw_params_set_channels(pcm, hw, <span class="nu">2</span>);
+
+    <span class="cm">// 2c. 周期 & 缓冲区大小</span>
+    snd_pcm_uframes_t period = <span class="nu">256</span>;
+    snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, <span class="nu">0</span>);
+    snd_pcm_uframes_t buffer = period * <span class="nu">3</span>;
+    snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer);
+
+    snd_pcm_hw_params(pcm, hw);
+
+    <span class="cm">// ═══ 3. 准备并启动 ═══</span>
+    snd_pcm_prepare(pcm);
+
+    <span class="cm">// ═══ 4. 采集循环 ═══</span>
+    <span class="tp">uint8_t</span> buf[<span class="nu">2048</span>]; <span class="cm">// period_size × channels × sample_bytes</span>
+    <span class="kw">while</span> (<span class="nu">1</span>) {
+        snd_pcm_sframes_t frames = snd_pcm_readi(pcm, buf, period);
+
+        <span class="cm">// Overrun: 应用读得太慢，缓冲数据被覆盖</span>
+        <span class="kw">if</span> (frames == -<span class="pp">EPIPE</span>) {
+            snd_pcm_prepare(pcm);
+            <span class="kw">continue</span>;
+        }
+
+        <span class="cm">// 系统挂起恢复</span>
+        <span class="kw">if</span> (frames == -<span class="pp">ESTRPIPE</span>) {
+            <span class="kw">while</span> (snd_pcm_resume(pcm) == -<span class="pp">EAGAIN</span>) sleep(<span class="nu">1</span>);
+            snd_pcm_prepare(pcm);
+            <span class="kw">continue</span>;
+        }
+
+        <span class="cm">// 未知错误，尝试恢复</span>
+        <span class="kw">if</span> (frames < <span class="nu">0</span>) {
+            snd_pcm_recover(pcm, frames, <span class="nu">0</span>);
+            <span class="kw">continue</span>;
+        }
+
+        <span class="cm">// ✓ 成功读取 frames 帧数据，进行处理...</span>
+    }
+
+    snd_pcm_close(pcm);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}</div></div>
+
+    <div class="cap-grid">
+      <div class="cap-card" style="--ac:#f87171">
+        <h4>XRUN 处理</h4>
+        <div class="cap-sub">Overrun / Underrun — 音频最常见错误</div>
+        <div class="cap-body">
+          <p><strong>Overrun (Capture)：</strong>应用读得太慢，DMA 新数据覆盖了未读数据。内核计数 overrun 次数，<code>snd_pcm_readi</code> 返回 <code>-EPIPE</code>。</p>
+          <p><strong>恢复：</strong><code>snd_pcm_prepare(pcm)</code> 清空缓冲区重新启动。注意：prepare 会丢失当前 period 数据。</p>
+          <p><strong>预防：</strong>提高采集线程优先级(SCHED_FIFO)、增大 buffer_periods、减少处理耗时。本项目采集线程用 SCHED_FIFO + 最高优先级。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#38bdf8">
+        <h4>阻塞 vs 非阻塞</h4>
+        <div class="cap-sub">三种 IO 模式各有取舍</div>
+        <div class="cap-body">
+          <p><strong>阻塞模式 (0)：</strong><code>snd_pcm_readi</code> 阻塞直到一个 period 数据就绪。代码最简单，本项目使用此模式。</p>
+          <p><strong>非阻塞 (SND_PCM_NONBLOCK)：</strong>无数据时立即返回 <code>-EAGAIN</code>，需配合 poll/select 使用。适合事件驱动架构。</p>
+          <p><strong>异步 (SND_PCM_ASYNC)：</strong>每填满一个 period 发 SIGIO 信号。信号处理函数中做 IO 操作不安全，生产环境极少使用。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout success" style="margin-top:14px;max-width:960px;width:100%">
+      <div class="ct">项目代码映射：AlsaAudioCaptureWrapper.cpp</div>
+      <div style="font-size:12px;color:#9999bb;line-height:1.8">
+        <p><strong style="color:#34d399">_init_alsa()</strong> → <code>snd_pcm_open(&pcm, "hw:1,0", SND_PCM_STREAM_CAPTURE, 0)</code> + <code>snd_pcm_hw_params_set_*</code> 全套配置（S24_LE/48kHz/2ch/period=256/buffer=3×period）</p>
+        <p><strong style="color:#34d399">_alsa_capture_work()</strong> → <code>snd_pcm_readi(pcm, alsa_inbuf, 256)</code> 循环，含 S24_LE→float 转换、XRUN 恢复（-EPIPE → <code>snd_pcm_prepare</code>）</p>
+        <p><strong style="color:#34d399">_save_audio_cache()</strong> → 转换后的 float 数据缓存到 _cache 队列，累积到 LYNR_CHUNK_SIZE_48K(1440) 帧</p>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S6: 音频前处理链路 -->
+<!-- ============================================================ -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" id="s6t">音频前处理链路</h2>
+  <p class="sec-sub" id="s6s">
+    从 ALSA 采集的原始 PCM 数据到送入编码器，中间需要格式转换、降采样、降噪和增益处理。这条链路决定了最终语音质量。
+  </p>
+  <div class="cap-wrap" id="procWrap">
+    <div class="flow-row" style="margin-bottom:20px">
+      <div class="flow-box" style="border-color:rgba(248,113,113,.3);color:#f87171">S24_LE<br>48kHz 2ch</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(167,139,250,.3);color:#a78bfa">格式转换<br>→ float32</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(56,189,248,.3);color:#38bdf8">声道提取<br>L/R/2CH</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(251,191,36,.3);color:#fbbf24">降采样<br>48k→16k</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(52,211,153,.3);color:#34d399">低通滤波<br>MLP</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(192,132,252,.3);color:#c084fc">AGC<br>增益控制</div>
+      <div class="flow-arr">→</div>
+      <div class="flow-box" style="border-color:rgba(52,211,153,.3);color:#34d399">int16 16kHz<br>→编码器</div>
+    </div>
+
+    <div class="cap-grid">
+      <div class="cap-card" style="--ac:#a78bfa">
+        <h4>S24_LE → float32 转换</h4>
+        <div class="cap-sub">24bit 有符号整数 → 浮点归一化</div>
+        <div class="cap-body">
+          <p>ALSA 采集的 <code>S24_LE</code> 数据每样本占 4 字节（3有效+1padding）。拆包过程：拼接低3字节，符号扩展到 32bit。</p>
+          <p>本项目处理：先将 24bit 值存为 <code>int32_t</code>，再直接赋值给 <code>float</code>（保留整数精度）。后续处理用 <code>pre_gain / 8388608.f</code> 归一化到 [-1, 1]。</p>
+          <p>关键代码：<code>val = (conv_p[0])|(conv_p[1]<<8)|((conv_p[2]&0x7F)<<16)</code>，然后处理符号位 <code>0x80 & conv_p[2]</code>。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#38bdf8">
+        <h4>48kHz → 16kHz 降采样</h4>
+        <div class="cap-sub">3:1 降采样 + 抗混叠低通滤波</div>
+        <div class="cap-body">
+          <p>简单 3:1 抽取（每隔3个样本取1个）会导致频谱混叠。必须先低通滤波截止到 8kHz (Nyquist = 16k/2)，再 3:1 抽取。</p>
+          <p>本项目使用 MLP (Multi-rate Low-pass) 滤波器：<code>mlp_create(31, 16000, 8000)</code>，31阶 FIR，通带8kHz，阻带起始于8kHz。</p>
+          <p>实际代码更简洁：直接每隔3个样本取1个 <code>lp_inbuf[i] = lynr_outbuf[i*3]</code>，因为 lynr 降噪输出已经是带限信号（≈16kHz以内），滤波主要留给 MLP。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#34d399">
+        <h4>MLP 低通滤波</h4>
+        <div class="cap-sub">抗混叠 FIR 滤波器</div>
+        <div class="cap-body">
+          <p><code>mlp_process(_lp, lp_inbuf, lp_inbuf, 480)</code> — 原地滤波，输入输出同一缓冲区。</p>
+          <p>31阶 FIR 滤波器：输入480个样本（16kHz下30ms），输出480个滤波后样本。截止频率 8kHz，保证 3:1 抽取后的频谱纯净。</p>
+          <p>FIR 滤波延迟 = (N-1)/2 / fs = 30/2 / 16000 ≈ 0.94ms，可忽略。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#c084fc">
+        <h4>AGC 自动增益控制</h4>
+        <div class="cap-sub">WebRtcAgc — 语音响度归一化</div>
+        <div class="cap-body">
+          <p>使用 WebRTC AGC 引擎：<code>WebRtcAgc_Init(_agc, 0, 255, kAgcModeAdaptiveDigital, 16000)</code>。</p>
+          <p>处理粒度：每次 160 个样本 (10ms @16kHz)，480 个样本分 3 次处理。</p>
+          <p>目标电平：<code>targetLevelDbfs=2</code>，压缩增益：<code>compressionGaindB=18</code>。效果：说话声音小的时候自动放大，声音大的时候压低，保持输出音量稳定。</p>
+          <p>此外还有 pre_gain 机制：初始化为 8.0，检测到溢出(-32760~+32760)时自动减小 0.5，连续 28800 帧(≈180s) 无溢出则缓慢回升 0.01。这是一种慢速自适应增益保护。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout info" style="margin-top:14px;max-width:960px;width:100%">
+      <div class="ct">为什么降到 16kHz？</div>
+      Opus 编码语音模式最高支持 16kHz 宽带语音（超宽带/全频带需更高码率）。16kHz 采样率覆盖 0-8kHz 频谱，包含语音的全部关键频段。48kHz→16kHz 的降采样将数据量减少 2/3，同时保留语音清晰度。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S7: 音频编码格式全景 -->
+<!-- ============================================================ -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" id="s7t">音频编码格式全景</h2>
+  <p class="sec-sub" id="s7s">
+    从 PSTN 遗留的 G.711 到 WebRTC 标配的 Opus，音频编码的选择取决于带宽、延迟和音质要求的三角权衡。
+  </p>
+  <div class="cap-wrap" id="encWrap">
+    <table class="map-tbl" style="max-width:960px;width:100%">
+      <tr><th>格式</th><th>采样率</th><th>码率</th><th>编码延迟</th><th>质量</th><th>适用场景</th></tr>
+      <tr><td class="g">G.711A/U</td><td>8kHz</td><td>64kbps (固定)</td><td>0.125ms</td><td class="y">电话音质</td><td>PSTN 网关、SIP 话机、IVR</td></tr>
+      <tr><td class="g">AAC-LC</td><td>48kHz</td><td>64-128kbps</td><td>~20ms</td><td class="g">高保真</td><td>流媒体直播、录像回放</td></tr>
+      <tr><td class="g">Opus</td><td>16/48kHz</td><td>6-510kbps</td><td>2.5-60ms</td><td class="g">优秀</td><td>WebRTC 通话、VoIP、实时互动</td></tr>
+      <tr><td>G.722</td><td>16kHz</td><td>64kbps</td><td>~1ms</td><td class="y">宽带语音</td><td>HD Voice 会议电话</td></tr>
+      <tr><td>Speex</td><td>8/16/32kHz</td><td>2.4-44kbps</td><td>~30ms</td><td class="y">低于Opus</td><td>已被 Opus 取代</td></tr>
+    </table>
+
+    <div class="cap-grid" style="margin-top:20px">
+      <div class="cap-card" style="--ac:#f87171">
+        <h4>G.711 A-law / μ-law</h4>
+        <div class="cap-sub">PCM → 对数压缩，零编码延迟</div>
+        <div class="cap-body">
+          <p>将 14bit 线性 PCM 非线性量化为 8bit。A-law 用于欧洲/中国(E1)，μ-law 用于北美/日本(T1)。听起来像电话音质。</p>
+          <p>编码/解码仅需一次查表操作，延迟几乎为零。但 64kbps 对带宽的要求甚至高于 Opus 低码率模式，性价比低。</p>
+          <p>SDP 协商：<code>a=rtpmap:0 PCMU/8000</code> 或 <code>a=rtpmap:8 PCMA/8000</code>。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#38bdf8">
+        <h4>AAC-LC</h4>
+        <div class="cap-sub">感知编码，高压缩比，高延迟</div>
+        <div class="cap-body">
+          <p>利用心理声学模型遮蔽效应，去除人耳不可闻频率分量。48kHz 采样支持全频带音频。典型 64-128kbps 码率下接近透明音质。</p>
+          <p>编码延迟 ~20ms (1024样本帧 @48kHz)，对通话场景太高。主要用于录像存储、流媒体分发（HLS/DASH）。</p>
+          <p>本项目中 ACS SDK 的录像存储使用 AAC-LC 编码，实时通话使用 Opus。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#34d399">
+        <h4>Opus</h4>
+        <div class="cap-sub">WebRTC 标配，SILK+CELT 混合编码</div>
+        <div class="cap-body">
+          <p>SILK 引擎处理语音（线性预测编码，6-40kbps，适合低码率），CELT 引擎处理音乐/混合内容（MDCT 变换，40-510kbps）。编码器根据信号特征自动切换。</p>
+          <p>帧长灵活：2.5/5/10/20/40/60ms。10ms 帧总延迟 ≈ 20ms (编码+抖动缓冲)，满足交互实时性要求。</p>
+          <p>内置 In-band FEC：每帧嵌入前一帧低码率副本，丢包可恢复。DTX 模式：静音时只发舒适噪声帧，大幅节省带宽。</p>
+          <p>SDP 协商：<code>a=rtpmap:111 opus/48000/2</code>，<code>a=fmtp:111 useinbandfec=1; maxaveragebitrate=24000</code>。</p>
+        </div>
+      </div>
+      <div class="cap-card" style="--ac:#fbbf24">
+        <h4>项目编码选择</h4>
+        <div class="cap-sub">Agora RTC / LiveKit 均使用 Opus</div>
+        <div class="cap-body">
+          <p><strong>RemoteLiveView (Agora)：</strong>内置 Agora RTC SDK，自动使用 Opus 编解码。开发者只需提供 16kHz PCM 数据，SDK 内部完成 Opus 编码和网络传输。</p>
+          <p><strong>LiveKit Demo：</strong>使用 LiveKit C SDK，Opus 是唯一音频编码格式。客户端通过 <code>livekit_webrtc_publish_audio_frame()</code> 提交 16bit PCM 数据。</p>
+          <p><strong>完整通路：</strong>Mic → ALSA S24_LE 48kHz → float转换 → 声道提取 → 48k→16k降采样 → MLP滤波 → AGC增益 → int16 16kHz PCM → Opus编码 → RTP → SFU → 浏览器。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ========================================
+// Particles
+// ========================================
+document.querySelectorAll('.sec').forEach(sec=>{
+  for(let i=0;i<12;i++){
+    const p=document.createElement('div');
+    p.className='particle';
+    p.style.cssText=`left:${Math.random()*100}%;top:${60+Math.random()*40}%;animation-duration:${8+Math.random()*14}s;animation-delay:${Math.random()*8}s;width:${1+Math.random()*2}px;height:${1+Math.random()*2}px`;
+    sec.appendChild(p);
+  }
+});
+
+// ========================================
+// IntersectionObserver
+// ========================================
+const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('vis')})},{threshold:.15});
+document.querySelectorAll('.sec-title,.sec-sub,.hero-pipe,.arch-wrap,.abox,.ring-wrap,.cap-wrap,.cap-card,.callout,.ring-diagram,.depth-wrap,.depth-details').forEach(el=>io.observe(el));
+
+// ========================================
+// Hero Pipeline — path switching
+// ========================================
+function setPath(mode){
+  const std=document.getElementById('pipeStd');
+  const proj=document.getElementById('pipeProj');
+  const btnStd=document.getElementById('btnStd');
+  const btnProj=document.getElementById('btnProj');
+  if(mode==='std'){
+    std.style.display='block'; proj.style.display='none';
+    btnStd.classList.add('act'); btnProj.classList.remove('act');
+  } else {
+    std.style.display='none'; proj.style.display='block';
+    btnStd.classList.remove('act'); btnProj.classList.add('act');
+  }
+}
+
+// observe hero-pipe for vis
+const heroPipeIo=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');heroPipeIo.unobserve(e.target)}})},{threshold:.2});
+heroPipeIo.observe(document.getElementById('heroPipe'));
+
+// ========================================
+// Canvas Micro-Animations
+// ========================================
+const microCanvases={};
+let mcTime=0;
+function initMicroCanvas(cls,w,h,drawFn){
+  document.querySelectorAll('canvas.'+cls).forEach(cv=>{
+    cv.width=w*window.devicePixelRatio;
+    cv.height=h*window.devicePixelRatio;
+    cv.style.width=w+'px';
+    cv.style.height=h+'px';
+    const ctx=cv.getContext('2d');
+    ctx.scale(window.devicePixelRatio,window.devicePixelRatio);
+    microCanvases[cls]=microCanvases[cls]||[];
+    microCanvases[cls].push({ctx,w,h,drawFn});
+  });
+}
+
+function drawMic(ctx,w,h,t){
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(251,191,36,.5)';ctx.lineWidth=1.2;
+  ctx.beginPath();
+  for(let x=0;x<w;x++){
+    const y=h/2+Math.sin(x*0.25+t*5)*6+Math.sin(x*0.6+t*3)*3;
+    x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+}
+
+function drawAdc(ctx,w,h,t){
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(249,115,22,.5)';ctx.lineWidth=1.2;
+  ctx.beginPath();
+  const step=6;
+  for(let x=0;x<w;x+=step){
+    const raw=Math.sin(x*0.15+t*4);
+    const quant=Math.round(raw*3)/3;
+    const y=h/2-quant*8;
+    x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    ctx.lineTo(x+step,y);
+  }
+  ctx.stroke();
+}
+
+function drawDma(ctx,w,h,t){
+  ctx.clearRect(0,0,w,h);
+  const filled=(t*0.3)%1;
+  const blocks=8;
+  const bw=w/blocks-2;
+  for(let i=0;i<blocks;i++){
+    const x=i*(bw+2)+1;
+    const pct=i/blocks;
+    if(pct<filled){
+      ctx.fillStyle='rgba(56,189,248,'+(.2+pct*.3)+')';
+    } else {
+      ctx.fillStyle='rgba(56,189,248,.05)';
+    }
+    ctx.fillRect(x,h*.2,bw,h*.6);
+  }
+}
+
+function drawRing(ctx,w,h,t){
+  ctx.clearRect(0,0,w,h);
+  const cx=w/2,cy=h/2,r=9;
+  ctx.strokeStyle='rgba(52,211,153,.2)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  const hwAngle=t*2;
+  ctx.fillStyle='rgba(52,211,153,.7)';
+  ctx.beginPath();ctx.arc(cx+Math.cos(hwAngle)*r,cy+Math.sin(hwAngle)*r,2,0,Math.PI*2);ctx.fill();
+  const appAngle=t*2-1.2;
+  ctx.fillStyle='rgba(167,139,250,.7)';
+  ctx.beginPath();ctx.arc(cx+Math.cos(appAngle)*r,cy+Math.sin(appAngle)*r,2,0,Math.PI*2);ctx.fill();
+}
+
+initMicroCanvas('mic-cv',60,24,drawMic);
+initMicroCanvas('adc-cv',60,24,drawAdc);
+initMicroCanvas('dma-cv',60,24,drawDma);
+initMicroCanvas('ring-cv',60,24,drawRing);
+
+function animateMicro(){
+  mcTime+=0.016;
+  for(const cls in microCanvases){
+    microCanvases[cls].forEach(({ctx,w,h,drawFn})=>{
+      if(document.visibilityState==='visible') drawFn(ctx,w,h,mcTime);
+    });
+  }
+  requestAnimationFrame(animateMicro);
+}
+animateMicro();
+
+// ========================================
+// Ring Buffer Diagram
+// ========================================
+function buildRingBuffer(){
+  const row=document.getElementById('ringRow');
+  const periods=3,pps=4; // 3 periods, 4 cells each
+  row.innerHTML='';
+  for(let p=0;p<periods;p++){
+    for(let c=0;c<pps;c++){
+      const cell=document.createElement('div');
+      cell.className='ring-cell';
+      if(c===0) cell.classList.add('period-start');
+      const idx=p*pps+c;
+      // Simulate: first periods are filled, last is being written
+      if(p===0){ cell.classList.add('filled'); }
+      else if(p===1){ cell.classList.add('playing'); }
+      else { cell.classList.add('empty'); }
+      cell.textContent=idx;
+      // Period marker
+      if(c===0){
+        const marker=document.createElement('div');
+        marker.className='ring-marker';
+        marker.textContent='P'+p;
+        cell.appendChild(marker);
+      }
+      row.appendChild(cell);
+    }
+  }
+}
+buildRingBuffer();
+
+// ========================================
+// Latency Calculator
+// ========================================
+function calcLatency(){
+  const rate=parseInt(document.getElementById('rateSlider').value);
+  const period=parseInt(document.getElementById('periodSlider').value);
+  const periods=parseInt(document.getElementById('periodsSlider').value);
+
+  document.getElementById('rateVal').textContent=rate;
+  document.getElementById('periodVal').textContent=period;
+  document.getElementById('periodsVal').textContent=periods;
+
+  const periodMs=(period/rate*1000).toFixed(2);
+  const bufferMs=(period*periods/rate*1000).toFixed(1);
+  const irqHz=(rate/period).toFixed(1);
+
+  document.getElementById('latPeriod').textContent=periodMs;
+  document.getElementById('latBuffer').textContent=bufferMs;
+  document.getElementById('latIrq').textContent=irqHz;
+}
+calcLatency();
+</script>
+</body>
+</html>

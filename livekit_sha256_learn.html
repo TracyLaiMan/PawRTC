@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHA-256 深度交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(6,182,212,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(6,182,212,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero canvas ===== */
+.hero-canvas-wrap{margin-top:36px;width:100%;max-width:840px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+#heroCanvas{width:100%;height:260px;border-radius:16px;background:rgba(0,0,0,.2);border:1px solid rgba(6,182,212,.08)}
+
+/* ===== Flip cards ===== */
+.flip-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.flip-wrap.vis{opacity:1;transform:translateY(0)}
+.flip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:18px;margin-top:24px}
+.flip-card{height:240px;perspective:800px;cursor:pointer}
+.flip-inner{position:relative;width:100%;height:100%;transition:transform .6s;transform-style:preserve-3d}
+.flip-card.flipped .flip-inner{transform:rotateY(180deg)}
+.flip-front,.flip-back{position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:22px 18px;text-align:center}
+.flip-front{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}
+.flip-front .fi-icon{font-size:32px;margin-bottom:12px}
+.flip-front .fi-name{font-size:15px;font-weight:700;color:#e0e0ff;line-height:1.4}
+.flip-front .fi-hint{font-size:10px;color:#555577;margin-top:10px;letter-spacing:.5px}
+.flip-back{background:rgba(6,182,212,.04);border:1px solid rgba(6,182,212,.12);transform:rotateY(180deg)}
+.flip-back .fb-title{font-size:14px;font-weight:700;color:#06b6d4;margin-bottom:10px}
+.flip-back .fb-desc{font-size:12.5px;color:#a0a0c8;line-height:1.75}
+.flip-back .fb-ex{margin-top:10px;font-size:11px;color:#06b6d4;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;background:rgba(6,182,212,.06);padding:6px 10px;border-radius:6px;word-break:break-all}
+
+/* ===== Comparison table ===== */
+.cmp-wrap{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cmp-wrap.vis{opacity:1;transform:translateY(0)}
+.cmp-table{margin-top:20px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+.cmp-table table{width:100%;border-collapse:collapse;font-size:13px}
+.cmp-table thead{background:rgba(6,182,212,.06)}
+.cmp-table th{padding:14px 18px;text-align:left;font-weight:700;color:#06b6d4;font-size:12px;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid rgba(6,182,212,.1)}
+.cmp-table td{padding:13px 18px;color:#b0b0d0;border-bottom:1px solid rgba(255,255,255,.03);line-height:1.6}
+.cmp-table tr:last-child td{border-bottom:none}
+.cmp-table tr:hover td{background:rgba(6,182,212,.02)}
+.cmp-table .hash-col{color:#06b6d4;font-weight:600}
+.cmp-table .enc-col{color:#a78bfa;font-weight:600}
+.cmp-insight{margin-top:20px;padding:18px 24px;background:rgba(6,182,212,.04);border:1px solid rgba(6,182,212,.1);border-radius:12px;font-size:13px;line-height:1.85;color:#a0c8c8}
+.cmp-insight strong{color:#06b6d4}
+
+/* ===== Project cards ===== */
+.prj{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.prj.vis{opacity:1;transform:translateY(0)}
+.prj-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;margin-top:14px;opacity:0;transform:translateX(-20px);transition:all .6s}
+.prj-card.vis{opacity:1;transform:translateX(0)}
+.prj-card .pc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.prj-card .pc-title{font-size:16px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.prj-card .pc-desc{font-size:13px;color:#8888bb;line-height:1.75;margin-bottom:14px}
+.prj-card .pc-desc em{color:#06b6d4;font-style:normal;font-weight:600}
+.prj-card .pc-code{background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto}
+.prj-card .pc-code .kw{color:#cba6f7}.prj-card .pc-code .str{color:#a6e3a1}.prj-card .pc-code .cmt{color:#6c7086}.prj-card .pc-code .fn{color:#06b6d4}
+
+/* ===== Playground ===== */
+.pg{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.pg.vis{opacity:1;transform:translateY(0)}
+.pg-input-area{margin-top:20px}
+.pg-label{font-size:10px;font-weight:700;color:#06b6d4;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.pg-textarea{width:100%;min-height:80px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px 18px;font-size:14px;color:#d0d0f0;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;outline:none;resize:vertical;transition:border-color .3s}
+.pg-textarea:focus{border-color:rgba(6,182,212,.4)}
+.pg-textarea::placeholder{color:#444466}
+.pg-hash-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+@media(max-width:700px){.pg-hash-row{grid-template-columns:1fr}}
+.pg-hash-box{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:18px}
+.pg-hash-box .ph-label{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:8px}
+.pg-hash-box .ph-label.orig{color:#06b6d4}
+.pg-hash-box .ph-label.mod{color:#f59e0b}
+.pg-hash-box .ph-value{font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:12.5px;word-break:break-all;line-height:1.8;letter-spacing:.3px;transition:color .3s}
+.pg-hash-box .ph-value .diff{color:#f43f5e;font-weight:700;text-shadow:0 0 6px rgba(244,63,94,.3)}
+.pg-hash-box .ph-value .same{color:#555577}
+.pg-bar-wrap{margin-top:18px}
+.pg-bar-label{font-size:11px;color:#8888aa;margin-bottom:6px;display:flex;justify-content:space-between}
+.pg-bar{height:10px;background:rgba(255,255,255,.04);border-radius:5px;overflow:hidden}
+.pg-bar-fill{height:100%;border-radius:5px;transition:width .5s,background .5s}
+.pg-stat{margin-top:14px;padding:14px 18px;background:rgba(6,182,212,.04);border:1px solid rgba(6,182,212,.08);border-radius:10px;font-size:12.5px;line-height:1.8;color:#a0a0c8}
+.pg-stat strong{color:#06b6d4}
+.pg-stat em{color:#f59e0b;font-style:normal;font-weight:600}
+
+/* ===== Flow diagram ===== */
+.flow-wrap{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.flow-wrap.vis{opacity:1;transform:translateY(0)}
+.flow-tree{margin-top:24px;display:flex;flex-direction:column;align-items:center;gap:0}
+.flow-root{padding:16px 28px;background:rgba(6,182,212,.08);border:2px solid rgba(6,182,212,.25);border-radius:14px;font-size:18px;font-weight:800;color:#06b6d4;text-align:center;position:relative;z-index:2;transition:all .4s}
+.flow-root:hover{border-color:rgba(6,182,212,.5);box-shadow:0 0 20px rgba(6,182,212,.15)}
+.flow-stem{width:2px;height:28px;background:rgba(6,182,212,.2);margin:0 auto}
+.flow-branches{display:flex;gap:24px;justify-content:center;position:relative}
+.flow-branches::before{content:'';position:absolute;top:0;left:25%;right:25%;height:2px;background:rgba(6,182,212,.15)}
+.flow-branch-line{width:2px;height:24px;background:rgba(6,182,212,.15);margin:0 auto}
+.flow-branch{flex:1;max-width:280px;text-align:center;transition:all .4s}
+.flow-branch:hover{transform:translateY(-4px)}
+.flow-node{padding:18px 16px;border-radius:12px;cursor:pointer;transition:all .4s;position:relative}
+.flow-node.b1{background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12)}
+.flow-node.b2{background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.12)}
+.flow-node.b3{background:rgba(6,182,212,.04);border:1px solid rgba(6,182,212,.12)}
+.flow-branch:hover .flow-node.b1{border-color:rgba(108,99,255,.4);box-shadow:0 0 16px rgba(108,99,255,.1)}
+.flow-branch:hover .flow-node.b2{border-color:rgba(167,139,250,.4);box-shadow:0 0 16px rgba(167,139,250,.1)}
+.flow-branch:hover .flow-node.b3{border-color:rgba(6,182,212,.4);box-shadow:0 0 16px rgba(6,182,212,.1)}
+.flow-node .fn-title{font-size:13px;font-weight:700;color:#d0d0f0;margin-bottom:6px}
+.flow-node .fn-formula{font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;color:#8888bb;word-break:break-all;line-height:1.6}
+.flow-arrow{font-size:11px;color:#555577;margin-bottom:4px}
+.flow-layers{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
+.flow-layer{font-size:9px;padding:2px 8px;border-radius:6px;font-weight:600}
+.flow-layer.l1{background:rgba(108,99,255,.1);color:#a78bfa}
+.flow-layer.l3{background:rgba(245,158,11,.1);color:#fbbf24}
+.flow-layer.l4{background:rgba(167,139,250,.1);color:#c084fc}
+.flow-layer.l5{background:rgba(6,182,212,.1);color:#06b6d4}
+.flow-layer.l6{background:rgba(244,63,94,.1);color:#f87171}
+.flow-highlight{position:fixed;display:none;padding:8px 14px;background:rgba(10,8,26,.92);border:1px solid rgba(6,182,212,.25);border-radius:8px;font-size:11px;color:#c8c8e8;z-index:999;pointer-events:none;backdrop-filter:blur(6px)}
+
+@media(max-width:700px){.flip-grid{grid-template-columns:1fr 1fr}.flow-branches{flex-direction:column;align-items:center}.flow-branches::before{display:none}}
+@media(max-width:480px){.flip-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Hero ========== -->
+<div class="sec" id="s1">
+  <div class="sec-title" data-reveal>SHA-256：数字指纹的雪崩之力</div>
+  <div class="sec-sub" data-reveal>任意输入 → 固定 256 位摘要。改一个字，输出天翻地覆。不可逆、不可碰、不可篡改。</div>
+  <div class="hero-canvas-wrap" id="heroWrap" data-reveal>
+    <canvas id="heroCanvas"></canvas>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 2. Five properties ========== -->
+<div class="sec" id="s2">
+  <div class="sec-title" data-reveal>五大性质</div>
+  <div class="sec-sub" data-reveal>点击卡片翻转，查看每个性质的详细解释和示例。</div>
+  <div class="flip-wrap" data-reveal>
+    <div class="flip-grid" id="flipGrid"></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 3. Hash ≠ Encryption ========== -->
+<div class="sec" id="s3">
+  <div class="sec-title" data-reveal>哈希 ≠ 加密</div>
+  <div class="sec-sub" data-reveal>两者服务于完全不同的安全目标。混淆它们会导致致命的安全设计缺陷。</div>
+  <div class="cmp-wrap" data-reveal>
+    <div class="cmp-table">
+      <table>
+        <thead>
+          <tr><th style="width:20%">维度</th><th style="width:40%"><span class="hash-col">哈希 (SHA-256)</span></th><th style="width:40%"><span class="enc-col">加密 (AES / RSA)</span></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>方向</td><td class="hash-col">单向</td><td class="enc-col">双向（可加密可解密）</td></tr>
+          <tr><td>密钥</td><td class="hash-col">无</td><td class="enc-col">有（对称/非对称密钥）</td></tr>
+          <tr><td>目的</td><td class="hash-col">完整性校验</td><td class="enc-col">保密性</td></tr>
+          <tr><td>输出长度</td><td class="hash-col">固定 32 字节</td><td class="enc-col">≥ 输入长度</td></tr>
+          <tr><td>典型场景</td><td class="hash-col">SDP指纹、签名前哈希</td><td class="enc-col">SRTP加密、TLS加密</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cmp-insight">
+      <strong>核心洞察：</strong>哈希帮你看穿篡改，加密帮你藏住内容 —— 两者配合才构成完整安全。<br><br>
+      在 LiveKit IPC 中：DTLS 用 SHA-256 做证书指纹（看穿中间人），用 AES 做 SRTP 加密（藏住视频流）。两把锁，各管各的门。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 4. LiveKit 3 uses ========== -->
+<div class="sec" id="s4">
+  <div class="sec-title" data-reveal>LiveKit 三处关键应用</div>
+  <div class="sec-sub" data-reveal>同一个哈希原语，在三处不同的安全层扮演不同角色。</div>
+  <div class="prj" id="prj" data-reveal>
+    <div class="prj-card" data-reveal style="border-left:3px solid #06b6d4">
+      <div class="pc-tag" style="color:#06b6d4">Layer 5 · SDP 指纹计算</div>
+      <div class="pc-title">SHA-256 — 自签名证书的唯一指纹</div>
+      <div class="pc-desc">对 DTLS 自签名证书的 DER 编码做 SHA-256，得到 <em>sha-256 79:5A:3B:...</em> 格式指纹。指纹通过 TLS 信令通道传递给对端，DTLS 握手完成后与收到的证书哈希比对——如果一致，说明证书未被替换。<br><br><em>风险点：</em>项目代码中 VERIFY_OPTIONAL 跳过了比对，意味着中间人可以替换证书而不被发现。</div>
+      <div class="pc-code"><span class="cmt">// Dtls.c: AUTHENTICATION_CERTIFICATE_VERIFY</span>
+<span class="fn">SHA256</span>(DER_certificate) → <span class="str">"79:5A:3B:CF:..."</span>
+<span class="cmt">// SDP 中: a=fingerprint:sha-256 79:5A:3B:CF:...</span>
+<span class="cmt">// 握手后应比对，但 VERIFY_OPTIONAL 跳过了</span></div>
+    </div>
+    <div class="prj-card" data-reveal style="border-left:3px solid #a78bfa">
+      <div class="pc-tag" style="color:#a78bfa">Layer 4 · ECDSA 签名前哈希</div>
+      <div class="pc-title">SHA-256 — 签名的"压缩器"</div>
+      <div class="pc-desc">ECDSA 不直接对消息签名，而是先 <em>SHA-256(message)</em> → 对 32 字节哈希值签名。为什么？<br>1. ECC 运算量与输入长度无关——签名 1MB 文件和签名 32 字节哈希，计算量一样。<br>2. ECC 只接受固定大小的输入（P-256 曲线要求 256 bit）。<br>3. SHA-256 把任意长度映射到固定长度，充当"压缩器"角色。</div>
+      <div class="pc-code"><span class="cmt">// Ecdsa.c — 签名流程</span>
+digest = <span class="fn">SHA256</span>(message)    <span class="cmt">// 任意长度 → 32字节</span>
+sig = <span class="fn">ECDSA_sign</span>(digest, private_key)
+<span class="cmt">// 验证端：SHA256(message) → ECDSA_verify(sig, public_key)</span></div>
+    </div>
+    <div class="prj-card" data-reveal style="border-left:3px solid #6c63ff">
+      <div class="pc-tag" style="color:#6c63ff">Layer 1/3/6 · HMAC 底层引擎</div>
+      <div class="pc-title">SHA-256 — HMAC 的内部引擎</div>
+      <div class="pc-desc">HMAC-SHA256 = <em>SHA256(opad ∥ SHA256(ipad ∥ message))</em>。SHA-256 在 HMAC 内部执行两次哈希运算：<br>• 内层：SHA256(ipad ∥ message) → 32 字节中间值<br>• 外层：SHA256(opad ∥ 中间值) → 32 字节最终 HMAC<br><br>JWT 签名（L1）、STUN MESSAGE-INTEGRITY 用 HMAC-SHA1（L3）、SRTP auth tag 用 HMAC-SHA1-80（L6）——底层全是 SHA 系列。</div>
+      <div class="pc-code"><span class="cmt">// HMAC-SHA256 内部执行两次 SHA-256</span>
+inner = <span class="fn">SHA256</span>(key_xor_ipad ∥ msg)
+hmac  = <span class="fn">SHA256</span>(key_xor_opad ∥ inner)
+<span class="cmt">// HMAC-SHA256 用于 JWT · HMAC-SHA1 用于 ICE/SRTP</span></div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 5. Playground ========== -->
+<div class="sec" id="s5">
+  <div class="sec-title" data-reveal>动手实验：雪崩效应实时计算</div>
+  <div class="sec-sub" data-reveal>输入文字，实时观察 SHA-256 输出。修改一个字，对比两个哈希的差异位数。</div>
+  <div class="pg" data-reveal>
+    <div class="pg-input-area">
+      <div class="pg-label">输入文本</div>
+      <textarea class="pg-textarea" id="pgInput" oninput="pgCompute()">Hello</textarea>
+    </div>
+    <div class="pg-hash-row">
+      <div class="pg-hash-box">
+        <div class="ph-label orig">原始 SHA-256</div>
+        <div class="ph-value" id="pgOrig"></div>
+      </div>
+      <div class="pg-hash-box">
+        <div class="ph-label mod">修改一个字后的 SHA-256</div>
+        <div class="ph-value" id="pgMod"></div>
+      </div>
+    </div>
+    <div class="pg-bar-wrap" id="pgBarWrap">
+      <div class="pg-bar-label"><span>变化字符数</span><span id="pgDiffCount">0 / 64</span></div>
+      <div class="pg-bar"><div class="pg-bar-fill" id="pgBarFill"></div></div>
+    </div>
+    <div class="pg-stat" id="pgStat"></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 6. Relationship diagram ========== -->
+<div class="sec" id="s6">
+  <div class="sec-title" data-reveal>SHA-256 与 HMAC / ECDSA 的关系</div>
+  <div class="sec-sub" data-reveal>SHA-256 是三种安全机制的共同基石。悬浮每个分支，查看对应的 LiveKit 安全层。</div>
+  <div class="flow-wrap" data-reveal>
+    <div class="flow-tree">
+      <div class="flow-root">SHA-256</div>
+      <div class="flow-stem"></div>
+      <div class="flow-branches">
+        <div class="flow-branch">
+          <div class="flow-branch-line"></div>
+          <div class="flow-node b1" data-layer="l1,l3,l6">
+            <div class="fn-title">HMAC-SHA256</div>
+            <div class="fn-formula">SHA256(opad ∥ SHA256(ipad ∥ msg))</div>
+            <div class="flow-layers">
+              <span class="flow-layer l1">L1 JWT签名</span>
+              <span class="flow-layer l3">L3 STUN完整性</span>
+              <span class="flow-layer l6">L6 SRTP认证</span>
+            </div>
+          </div>
+        </div>
+        <div class="flow-branch">
+          <div class="flow-branch-line"></div>
+          <div class="flow-node b2" data-layer="l4">
+            <div class="fn-title">ECDSA 签名</div>
+            <div class="fn-formula">Sign_ECDSA( SHA256(msg), priv_key )</div>
+            <div class="flow-layers">
+              <span class="flow-layer l4">L4 DTLS证书签名</span>
+            </div>
+          </div>
+        </div>
+        <div class="flow-branch">
+          <div class="flow-branch-line"></div>
+          <div class="flow-node b3" data-layer="l5">
+            <div class="fn-title">SDP 指纹</div>
+            <div class="fn-formula">SHA256( DER_certificate )</div>
+            <div class="flow-layers">
+              <span class="flow-layer l5">L5 指纹绑定</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px;font-weight:600">SHA-256</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+// Canvas roundRect polyfill
+// =========================================================
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){if(typeof r==='number')r=[r,r,r,r];this.moveTo(x+r[0],y);this.lineTo(x+w-r[1],y);this.quadraticCurveTo(x+w,y,x+w,y+r[1]);this.lineTo(x+w,y+h-r[2]);this.quadraticCurveTo(x+w,y+h,x+w-r[2],y+h);this.lineTo(x+r[3],y+h);this.quadraticCurveTo(x,y+h,x,y+h-r[3]);this.lineTo(x,y+r[0]);this.quadraticCurveTo(x,y,x+r[0],y);this.closePath();return this;}}
+
+// =========================================================
+// SHA-256 pure JS
+// =========================================================
+var K256=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+var H0=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+function rotr(x,n){return(x>>>n)|(x<<(32-n))}
+function ch(x,y,z){return(x&y)^(~x&z)}
+function maj(x,y,z){return(x&y)^(x&z)^(y&z)}
+function ep0(x){return rotr(x,2)^rotr(x,13)^rotr(x,22)}
+function ep1(x){return rotr(x,6)^rotr(x,11)^rotr(x,25)}
+function sig0(x){return rotr(x,7)^rotr(x,18)^(x>>>3)}
+function sig1(x){return rotr(x,17)^rotr(x,19)^(x>>>10)}
+function sha256(input){var bytes=input instanceof Uint8Array?Array.from(input):Array.from(new TextEncoder().encode(input));var msgLen=bytes.length;var bitLen=msgLen*8;bytes.push(0x80);while((bytes.length%64)!==56)bytes.push(0);bytes.push((bitLen/0x100000000)>>>24&0xff,(bitLen/0x100000000)>>>16&0xff,(bitLen/0x100000000)>>>8&0xff,(bitLen/0x100000000)&0xff,(bitLen>>>24)&0xff,(bitLen>>>16)&0xff,(bitLen>>>8)&0xff,bitLen&0xff);var words=new Uint32Array(bytes.length/4);for(var i=0;i<words.length;i++){words[i]=(bytes[i*4]<<24)|(bytes[i*4+1]<<16)|(bytes[i*4+2]<<8)|bytes[i*4+3]}var H=H0.slice();for(var off=0;off<words.length;off+=16){var w=new Uint32Array(64);for(var j=0;j<16;j++)w[j]=words[off+j];for(var j=16;j<64;j++)w[j]=sig1(w[j-2])+w[j-7]+sig0(w[j-15])+w[j-16]|0;var a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];for(var j=0;j<64;j++){var T1=h+ep1(e)+ch(e,f,g)+K256[j]+w[j];var T2=ep0(a)+maj(a,b,c);h=g;g=f;f=e;e=d+T1|0;d=c;c=b;b=a;a=T1+T2|0}H[0]=H[0]+a|0;H[1]=H[1]+b|0;H[2]=H[2]+c|0;H[3]=H[3]+d|0;H[4]=H[4]+e|0;H[5]=H[5]+f|0;H[6]=H[6]+g|0;H[7]=H[7]+h|0;}var hex='';for(var i=0;i<8;i++)for(var j=3;j>=0;j--)hex+=((H[i]>>(j*8))&0xff).toString(16).padStart(2,'0');return hex;}
+
+// =========================================================
+// Section 1: Hero Canvas — Avalanche Animation
+// =========================================================
+var heroCanvas = document.getElementById('heroCanvas');
+var heroCtx = heroCanvas.getContext('2d');
+var heroPhase = 0; // 0:Hello 1:transition 2:Hello! 3:transition2
+var heroTimer = 0;
+var heroDigits = [];
+var heroInputText = 'Hello';
+var heroTargetHash = sha256('Hello');
+var heroNextHash = sha256('Hello!');
+var heroCurrentDisplay = '';
+var heroAnimating = false;
+
+function initHeroDigits(){
+  heroDigits = [];
+  for(var i=0;i<64;i++){
+    heroDigits.push({char:'0',target:'0',flipTimer:0,flipping:false,color:'#555577'});
+  }
+  syncHeroDigits();
+}
+
+function syncHeroDigits(){
+  for(var i=0;i<64;i++){
+    heroDigits[i].target = heroTargetHash[i];
+  }
+}
+
+function startAvalanche(newHash){
+  for(var i=0;i<64;i++){
+    if(heroDigits[i].char !== newHash[i]){
+      heroDigits[i].flipping = true;
+      heroDigits[i].flipTimer = 0;
+      heroDigits[i].target = newHash[i];
+    }
+  }
+}
+
+var heroAnimFrame = 0;
+function renderHeroCanvas(performanceNow){
+  var wrap = document.getElementById('heroWrap');
+  if(!wrap) return;
+  var w = heroCanvas.clientWidth;
+  var h = heroCanvas.clientHeight;
+  var dpr = window.devicePixelRatio || 1;
+  if(heroCanvas.width !== w*dpr || heroCanvas.height !== h*dpr){
+    heroCanvas.width = w*dpr;
+    heroCanvas.height = h*dpr;
+    heroCtx.scale(dpr,dpr);
+  }
+  heroCtx.clearRect(0,0,w,h);
+
+  heroAnimFrame++;
+  heroTimer++;
+
+  // Phase management: cycle through Hello -> Hello!
+  if(heroTimer > 180 && heroPhase === 0){
+    heroPhase = 1;
+    heroInputText = 'Hello!';
+    heroTargetHash = sha256('Hello!');
+    startAvalanche(heroTargetHash);
+  } else if(heroTimer > 360 && heroPhase === 1){
+    heroPhase = 0;
+    heroInputText = 'Hello';
+    heroTargetHash = sha256('Hello');
+    startAvalanche(heroTargetHash);
+    heroTimer = 0;
+  }
+
+  // Update digits
+  for(var i=0;i<64;i++){
+    var d = heroDigits[i];
+    if(d.flipping){
+      d.flipTimer++;
+      // Random hex digit animation
+      d.char = '0123456789abcdef'[Math.floor(Math.random()*16)];
+      d.color = '#'+'06b6d4';
+      if(d.flipTimer > 12 + Math.random()*20){
+        d.char = d.target;
+        d.flipping = false;
+        d.color = '#7777aa';
+        d.flipTimer = 0;
+      }
+    }
+  }
+
+  // Draw input text
+  heroCtx.fillStyle = '#06b6d4';
+  heroCtx.font = 'bold 14px "JetBrains Mono",monospace';
+  heroCtx.textAlign = 'center';
+  heroCtx.fillText('Input: "' + heroInputText + '"', w/2, 30);
+
+  // Draw arrow
+  heroCtx.strokeStyle = 'rgba(6,182,212,0.2)';
+  heroCtx.lineWidth = 1.5;
+  heroCtx.beginPath();
+  heroCtx.moveTo(w/2, 40);
+  heroCtx.lineTo(w/2, 68);
+  heroCtx.stroke();
+  heroCtx.fillStyle = 'rgba(6,182,212,0.3)';
+  heroCtx.beginPath();
+  heroCtx.moveTo(w/2-5, 64);
+  heroCtx.lineTo(w/2+5, 64);
+  heroCtx.lineTo(w/2, 72);
+  heroCtx.fill();
+
+  // Draw label
+  heroCtx.fillStyle = '#555577';
+  heroCtx.font = 'bold 9px -apple-system,sans-serif';
+  heroCtx.textAlign = 'center';
+  heroCtx.fillText('SHA-256 OUTPUT (64 HEX CHARS)', w/2, 86);
+
+  // Draw hash digits
+  var cols = 32;
+  var rows = 2;
+  var digitW = Math.min(22, (w - 40) / cols);
+  var startX = (w - cols * digitW) / 2;
+  var startY = 100;
+
+  for(var r=0;r<rows;r++){
+    for(var c=0;c<cols;c++){
+      var idx = r*cols+c;
+      var d = heroDigits[idx];
+      var x = startX + c * digitW;
+      var y = startY + r * 36;
+
+      // Background
+      if(d.flipping){
+        heroCtx.fillStyle = 'rgba(6,182,212,0.15)';
+        heroCtx.beginPath();
+        heroCtx.roundRect(x+1, y, digitW-2, 28, 4);
+        heroCtx.fill();
+        // Scatter particles
+        heroCtx.fillStyle = 'rgba(6,182,212,0.3)';
+        for(var p=0;p<2;p++){
+          var px = x + digitW/2 + (Math.random()-0.5)*digitW;
+          var py = y + 14 + (Math.random()-0.5)*20;
+          heroCtx.beginPath();
+          heroCtx.arc(px, py, 1 + Math.random(), 0, Math.PI*2);
+          heroCtx.fill();
+        }
+      }
+
+      // Digit character
+      heroCtx.fillStyle = d.color;
+      heroCtx.font = 'bold 13px "JetBrains Mono",monospace';
+      heroCtx.textAlign = 'center';
+      heroCtx.fillText(d.char, x + digitW/2, y + 19);
+    }
+  }
+
+  // Draw hash comparison info
+  var hash1 = sha256('Hello');
+  var hash2 = sha256('Hello!');
+  var diff = 0;
+  for(var i=0;i<64;i++) if(hash1[i]!==hash2[i]) diff++;
+  heroCtx.fillStyle = '#555577';
+  heroCtx.font = '11px -apple-system,sans-serif';
+  heroCtx.textAlign = 'center';
+  heroCtx.fillText('"Hello" 和 "Hello!" 仅差1个字符，但有 '+diff+'/64 个十六进制位不同 ('+Math.round(diff/64*100)+'%)', w/2, h - 16);
+
+  requestAnimationFrame(renderHeroCanvas);
+}
+
+initHeroDigits();
+requestAnimationFrame(renderHeroCanvas);
+
+// =========================================================
+// Section 2: Flip Cards
+// =========================================================
+var flipData = [
+  {icon:'🔒',name:'单向性',
+   desc:'给定哈希值，无法反推出原文（计算不可行）',
+   ex:'SHA256("abc") → ba78... 但从 ba78... 无法反推回 "abc"'},
+  {icon:'💥',name:'抗碰撞',
+   desc:'找到两个不同输入产生相同哈希，计算不可行（2^128 次运算）',
+   ex:'至今无人找到 SHA-256 的碰撞。SHA-1 在 2017 年被碰撞攻破。'},
+  {icon:'❄️',name:'雪崩效应',
+   desc:'输入改 1 bit，输出改变 ~128/256 bit（50%）',
+   ex:'"Hello" 改为 "Hello!"，64 个十六进制位中约 32 位翻转'},
+  {icon:'📏',name:'固定长度',
+   desc:'无论输入 1 字节还是 1TB，输出恒为 32 字节',
+   ex:'SHA256("a") = SHA256(1GB_file) → 都输出 64 个十六进制字符'},
+  {icon:'⚙️',name:'确定性',
+   desc:'同一输入永远产生同一输出',
+   ex:'SHA256("LiveKit") 在任何设备、任何语言中结果一致'},
+];
+
+(function(){
+  var html = '';
+  flipData.forEach(function(d,i){
+    html += '<div class="flip-card" onclick="this.classList.toggle(\'flipped\')" style="transition-delay:'+(i*0.08)+'s">';
+    html += '<div class="flip-inner">';
+    html += '<div class="flip-front"><div class="fi-icon">'+d.icon+'</div><div class="fi-name">'+d.name+'</div><div class="fi-hint">点击翻转</div></div>';
+    html += '<div class="flip-back"><div class="fb-title">'+d.name+'</div><div class="fb-desc">'+d.desc+'</div><div class="fb-ex">'+d.ex+'</div></div>';
+    html += '</div></div>';
+  });
+  document.getElementById('flipGrid').innerHTML = html;
+})();
+
+// =========================================================
+// Section 5: Playground — Avalanche Effect Calculator
+// =========================================================
+function pgCompute(){
+  var input = document.getElementById('pgInput').value;
+  if(!input){
+    document.getElementById('pgOrig').innerHTML = '<span class="same">-</span>';
+    document.getElementById('pgMod').innerHTML = '<span class="same">-</span>';
+    document.getElementById('pgDiffCount').textContent = '0 / 64';
+    document.getElementById('pgBarFill').style.width = '0%';
+    document.getElementById('pgBarFill').style.background = '#06b6d4';
+    document.getElementById('pgStat').innerHTML = '';
+    return;
+  }
+  var origHash = sha256(input);
+  var modInput = input.slice(0,-1) + String.fromCharCode(input.charCodeAt(input.length-1) ^ 1);
+  if(modInput === input){
+    modInput = input + '!';
+  }
+  var modHash = sha256(modInput);
+
+  var diffCount = 0;
+  var origHtml = '';
+  var modHtml = '';
+  for(var i=0;i<64;i++){
+    if(origHash[i] !== modHash[i]){
+      diffCount++;
+      origHtml += '<span class="diff">'+origHash[i]+'</span>';
+      modHtml += '<span class="diff">'+modHash[i]+'</span>';
+    } else {
+      origHtml += '<span class="same">'+origHash[i]+'</span>';
+      modHtml += '<span class="same">'+modHash[i]+'</span>';
+    }
+  }
+
+  document.getElementById('pgOrig').innerHTML = origHtml;
+  document.getElementById('pgMod').innerHTML = modHtml;
+
+  var pct = Math.round(diffCount/64*100);
+  document.getElementById('pgDiffCount').textContent = diffCount + ' / 64';
+  var barFill = document.getElementById('pgBarFill');
+  barFill.style.width = pct + '%';
+  if(pct < 35) barFill.style.background = '#f43f5e';
+  else if(pct < 45) barFill.style.background = '#f59e0b';
+  else barFill.style.background = '#06b6d4';
+
+  document.getElementById('pgStat').innerHTML =
+    '原始输入: <strong>"'+input+'"</strong> → <code>'+origHash+'</code><br>'+
+    '修改输入: <strong>"'+modInput+'"</strong> → <code>'+modHash+'</code><br><br>'+
+    '变化的十六进制字符: <strong>'+diffCount+'</strong> / 64 (<em>'+pct+'%</em>)<br>'+
+    '理论预期: ~50% (32/64)。雪崩效应使得即使只改 1 bit 输入，输出也会有约一半的位发生变化。<br><br>'+
+    '<strong>结论：</strong>'+input+' 和 '+modInput+' 看起来只差一个字符，但 SHA-256 把它们映射到完全不同的"指纹"——这就是雪崩之力。';
+}
+
+// =========================================================
+// Section 6: Flow Diagram — hover interaction
+// =========================================================
+(function(){
+  var nodes = document.querySelectorAll('.flow-node');
+  nodes.forEach(function(node){
+    node.addEventListener('mouseenter', function(){
+      var layerAttr = this.getAttribute('data-layer') || '';
+      var layers = layerAttr.split(',');
+      layers.forEach(function(l){
+        var els = document.querySelectorAll('.flow-layer.'+l);
+        els.forEach(function(el){ el.style.transform = 'scale(1.15)'; el.style.fontWeight = '800'; });
+      });
+    });
+    node.addEventListener('mouseleave', function(){
+      var layerAttr = this.getAttribute('data-layer') || '';
+      var layers = layerAttr.split(',');
+      layers.forEach(function(l){
+        var els = document.querySelectorAll('.flow-layer.'+l);
+        els.forEach(function(el){ el.style.transform = ''; el.style.fontWeight = ''; });
+      });
+    });
+  });
+})();
+
+// =========================================================
+// Particles
+// =========================================================
+(function(){
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<10;i++){
+      var p=document.createElement('div');p.className='particle';
+      p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+      p.style.animationDuration=(8+Math.random()*14)+'s';
+      p.style.animationDelay=(Math.random()*10)+'s';
+      p.style.width=p.style.height=(1+Math.random()*2)+'px';
+      sec.appendChild(p);
+    }
+  });
+})();
+
+// =========================================================
+// Scroll Reveal
+// =========================================================
+(function(){
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*350;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.12});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+})();
+
+// =========================================================
+// Init playground
+// =========================================================
+pgCompute();
+</script>
+</body>
+</html>

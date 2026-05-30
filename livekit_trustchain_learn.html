@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>信任链断裂实验 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Chain ===== */
+.chain-wrap{width:100%;max-width:1060px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.chain-wrap.vis{opacity:1;transform:translateY(0)}
+.chain-canvas{position:relative;width:100%;height:320px;border-radius:18px;background:radial-gradient(ellipse at 50% 80%,rgba(108,99,255,0.03),transparent 60%);overflow:hidden;margin-bottom:16px}
+.rings-row{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;z-index:10;height:120px}
+.ring-slot{display:flex;align-items:center}
+.ring{width:90px;height:90px;border-radius:18px;cursor:pointer;position:relative;transition:all .5s cubic-bezier(.4,0,.2,1);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;z-index:2}
+.ring::before{content:'';position:absolute;inset:0;border-radius:18px;border:2px solid transparent;transition:all .5s}
+.ring::after{content:'';position:absolute;inset:-3px;border-radius:21px;border:2px solid transparent;opacity:0;transition:all .4s}
+.ring:hover::after{opacity:1;animation:ringHov .8s ease infinite}
+@keyframes ringHov{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.08);opacity:1}}
+.ring-icon{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3));transition:all .5s}
+.ring-name{font-size:10px;font-weight:700;letter-spacing:.8px;transition:all .5s}
+.ring-role{font-size:8px;color:#8888aa;line-height:1.2;text-align:center;max-width:80px;transition:all .5s}
+.join{width:24px;height:3px;border-radius:2px;transition:all .8s cubic-bezier(.4,0,.2,1);position:relative;z-index:1;margin:0 -2px}
+.join::before,.join::after{content:'';position:absolute;width:5px;height:5px;border-radius:50%;top:50%;transform:translateY(-50%);transition:all .5s}
+.join::before{left:-2px}
+.join::after{right:-2px}
+/* Colors */
+.ring.r1{background:rgba(108,99,255,.08)}.ring.r1::before{border-color:rgba(108,99,255,.25)}.ring.r1 .ring-name{color:#b8b8ff}
+.ring.r1:hover::after{border-color:rgba(108,99,255,.3)}
+.ring.r2{background:rgba(56,189,248,.08)}.ring.r2::before{border-color:rgba(56,189,248,.2)}.ring.r2 .ring-name{color:#93c5fd}
+.ring.r2:hover::after{border-color:rgba(56,189,248,.3)}
+.ring.r3{background:rgba(245,158,11,.08)}.ring.r3::before{border-color:rgba(245,158,11,.2)}.ring.r3 .ring-name{color:#fcd34d}
+.ring.r3:hover::after{border-color:rgba(245,158,11,.3)}
+.ring.r4{background:rgba(167,139,250,.08)}.ring.r4::before{border-color:rgba(167,139,250,.2)}.ring.r4 .ring-name{color:#c4b5fd}
+.ring.r4:hover::after{border-color:rgba(167,139,250,.3)}
+.ring.r5{background:rgba(52,211,153,.08)}.ring.r5::before{border-color:rgba(52,211,153,.2)}.ring.r5 .ring-name{color:#6ee7b7}
+.ring.r5:hover::after{border-color:rgba(52,211,153,.3)}
+.ring.r6{background:rgba(244,63,94,.08)}.ring.r6::before{border-color:rgba(244,63,94,.2)}.ring.r6 .ring-name{color:#fca5a5}
+.ring.r6:hover::after{border-color:rgba(244,63,94,.3)}
+.join.j1{background:rgba(108,99,255,.22)}.join.j1::before,.join.j1::after{background:rgba(108,99,255,.35)}
+.join.j2{background:rgba(56,189,248,.18)}.join.j2::before,.join.j2::after{background:rgba(56,189,248,.3)}
+.join.j3{background:rgba(245,158,11,.18)}.join.j3::before,.join.j3::after{background:rgba(245,158,11,.3)}
+.join.j4{background:rgba(167,139,250,.18)}.join.j4::before,.join.j4::after{background:rgba(167,139,250,.3)}
+.join.j5{background:rgba(52,211,153,.18)}.join.j5::before,.join.j5::after{background:rgba(52,211,153,.3)}
+/* Broken */
+.ring.broken{animation:rBrk .6s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes rBrk{0%{transform:scale(1) rotate(0)}20%{transform:scale(1.08) rotate(-2deg)}40%{transform:scale(.95) rotate(3deg)}60%{transform:scale(1.02) rotate(-1deg)}100%{transform:scale(.92) rotate(6deg);opacity:.35;filter:grayscale(.8)}}
+.ring.broken::before{border-color:rgba(244,63,94,.4)!important;border-style:dashed!important;background:rgba(244,63,94,.05)}
+.ring.broken::after{border-color:transparent!important;animation:none!important}
+.ring.broken .ring-icon{filter:grayscale(1) drop-shadow(0 0 4px rgba(244,63,94,.3))}
+.ring.cascade{animation:rCsc .8s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes rCsc{0%{transform:scale(1)}30%{transform:scale(.97);opacity:.6}100%{transform:scale(.92);opacity:.3;filter:grayscale(.6)}}
+.ring.cascade::before{border-style:dashed!important}
+.join.broken{animation:jBrk .5s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes jBrk{0%{transform:scaleX(1);opacity:1}50%{transform:scaleX(1.2);opacity:.5}100%{transform:scaleX(0);opacity:0}}
+.join.broken::before,.join.broken::after{animation:dBrk .4s forwards}
+@keyframes dBrk{to{opacity:0;transform:translateY(-8px) scale(0)}}
+.shard{position:absolute;z-index:20;pointer-events:none}
+.shard-p{width:4px;height:4px;border-radius:1px;animation:sFly .8s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes sFly{0%{transform:translate(0,0) rotate(0) scale(1);opacity:1}100%{transform:translate(var(--sx),var(--sy)) rotate(var(--sr)) scale(0);opacity:0}}
+/* Attack card */
+.atk-card{position:absolute;z-index:25;max-width:220px;opacity:0;transform:translateY(8px) scale(.95);transition:all .5s cubic-bezier(.4,0,.2,1) .3s;pointer-events:none}
+.atk-card.show{opacity:1;transform:translateY(0) scale(1)}
+.atk-inner{padding:12px 14px;border-radius:12px;border:1px solid rgba(244,63,94,.2);background:rgba(244,63,94,.06);backdrop-filter:blur(12px)}
+.atk-step{font-size:8px;color:#f43f5e;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+.atk-title{font-size:12px;font-weight:700;color:#fca5a5;margin-bottom:4px}
+.atk-desc{font-size:10px;color:#a0a0c8;line-height:1.6}
+/* Progress dots */
+.prog{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:16px}
+.pd{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.06);transition:all .3s}
+.pd.ok{background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.3)}
+.pd.broken{background:#f43f5e;box-shadow:0 0 8px rgba(244,63,94,.3);animation:pPulse 1.5s ease infinite}
+.pd.cascade{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.3)}
+@keyframes pPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
+/* Controls */
+.ctrl{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.btn{background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25);color:#b0b0d8;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all .25s}
+.btn:hover{background:rgba(108,99,255,.3);color:#fff}
+.btn.danger{background:rgba(244,63,94,.1);border-color:rgba(244,63,94,.2);color:#fca5a5}
+.btn.danger:hover{background:rgba(244,63,94,.25)}
+/* Narration */
+.narr{max-width:1060px;width:100%;padding:20px 28px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;min-height:80px;line-height:1.9;font-size:13px;color:#b0b0d0}
+.narr strong{color:#e0e0ff}
+.narr em{color:#6c63ff;font-style:normal;font-weight:600}
+.narr .tag{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:4px;margin-right:4px;vertical-align:middle}
+.narr .tag.ok{background:rgba(52,211,153,.15);color:#6ee7b7}
+.narr .tag.broken{background:rgba(244,63,94,.15);color:#fca5a5}
+.narr .tag.warn{background:rgba(245,158,11,.15);color:#fcd34d}
+
+/* ===== TLS attack path ===== */
+.tls-atk{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.tls-atk.vis{opacity:1;transform:translateY(0)}
+.tls-flow{display:flex;flex-direction:column;gap:0;margin-top:24px}
+.tls-step{display:flex;align-items:stretch;gap:0;opacity:0;transform:translateX(-20px);transition:all .6s}
+.tls-step.vis{opacity:1;transform:translateX(0)}
+.tls-marker{width:48px;display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.tls-dot{width:14px;height:14px;border-radius:50%;border:2px solid;flex-shrink:0;z-index:1}
+.tls-line{width:2px;flex:1;min-height:20px;transition:background .5s}
+.tls-body{padding:12px 18px;border-radius:12px;margin-bottom:8px;flex:1;border:1px solid rgba(255,255,255,.04)}
+.tls-step.s1 .tls-dot{border-color:#38bdf8;background:rgba(56,189,248,.15)}
+.tls-step.s1 .tls-body{background:rgba(56,189,248,.03);border-color:rgba(56,189,248,.1)}
+.tls-step.s2 .tls-dot{border-color:#34d399;background:rgba(52,211,153,.15)}
+.tls-step.s2 .tls-body{background:rgba(52,211,153,.03);border-color:rgba(52,211,153,.1)}
+.tls-step.s3 .tls-dot{border-color:#a78bfa;background:rgba(167,139,250,.15)}
+.tls-step.s3 .tls-body{background:rgba(167,139,250,.03);border-color:rgba(167,139,250,.1)}
+.tls-step.s4 .tls-dot{border-color:#f43f5e;background:rgba(244,63,94,.15)}
+.tls-step.s4 .tls-body{background:rgba(244,63,94,.03);border-color:rgba(244,63,94,.1)}
+.tls-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.tls-step.s1 .tls-label{color:#38bdf8}
+.tls-step.s2 .tls-label{color:#34d399}
+.tls-step.s3 .tls-label{color:#a78bfa}
+.tls-step.s4 .tls-label{color:#f43f5e}
+.tls-text{font-size:12.5px;color:#a0a0c8;line-height:1.7}
+.tls-text strong{color:#d0d0f0}
+.tls-text code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:11px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+
+/* ===== Key tree ===== */
+.ktree{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ktree.vis{opacity:1;transform:translateY(0)}
+.kt-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:480px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.kt-canvas canvas{width:100%;height:100%}
+.kt-detail{margin-top:16px;padding:20px 26px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:80px}
+.kt-detail strong{color:#e0e0ff}
+.kt-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.kt-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+
+/* ===== Risks ===== */
+.risks{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.risks.vis{opacity:1;transform:translateY(0)}
+.risk-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:22px;margin-top:14px;opacity:0;transform:translateX(-20px);transition:all .6s}
+.risk-card.vis{opacity:1;transform:translateX(0)}
+.risk-card .rc-prio{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:8px}
+.risk-card .rc-prio.p0{background:rgba(244,63,94,.15);color:#fca5a5}
+.risk-card .rc-prio.p1{background:rgba(245,158,11,.15);color:#fcd34d}
+.risk-card .rc-prio.p2{background:rgba(108,99,255,.15);color:#b8b8ff}
+.risk-card .rc-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:6px}
+.risk-card .rc-cause{font-size:12px;color:#8888bb;margin-bottom:8px}
+.risk-card .rc-impact{font-size:12.5px;color:#a0a0c8;line-height:1.7}
+.risk-card .rc-impact strong{color:#fca5a5}
+.risk-card .rc-impact em{color:#6c63ff;font-style:normal;font-weight:600}
+
+/* ===== Fixes ===== */
+.fixes{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.fixes.vis{opacity:1;transform:translateY(0)}
+.fix-tbl{width:100%;border-collapse:collapse;margin-top:20px;font-size:12.5px}
+.fix-tbl th{text-align:left;background:rgba(108,99,255,.06);color:#b0b0e0;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.fix-tbl td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.03);color:#a0a0c8;line-height:1.6;vertical-align:top}
+.fix-tbl tr:nth-child(even) td{background:rgba(255,255,255,.01)}
+.fix-tbl code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px}
+
+@media(max-width:700px){.rings-row{transform:translate(-50%,-50%) scale(.7)}.kt-canvas{height:360px}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Hero: Trust Chain Interactive ========== -->
+<div class="sec" id="s1">
+  <div class="sec-title" data-reveal>信任依赖链：为什么每层都不可少？</div>
+  <div class="sec-sub" data-reveal>6 层安全不是简单堆叠，而是<strong>环环相扣的信任链</strong>。<br>点击任意锁环使其断裂 → 观察下游如何连锁崩塌 → 理解"一环断，全链毁"。</div>
+  <div class="chain-wrap" id="chainWrap" data-reveal>
+    <div class="prog" id="prog">
+      <div class="pd ok" id="pd1"></div><div class="pd ok" id="pd2"></div><div class="pd ok" id="pd3"></div>
+      <div class="pd ok" id="pd4"></div><div class="pd ok" id="pd5"></div><div class="pd ok" id="pd6"></div>
+    </div>
+    <div class="chain-canvas" id="chainCanvas">
+      <div class="atk-card" id="atkCard" style="top:14px;right:16px">
+        <div class="atk-inner">
+          <div class="atk-step" id="atkStep">攻击路径</div>
+          <div class="atk-title" id="atkTitle"></div>
+          <div class="atk-desc" id="atkDesc"></div>
+        </div>
+      </div>
+      <div class="rings-row" id="ringsRow">
+        <div class="ring-slot"><div class="ring r1" id="r1" onclick="breakAt(1)"><div class="ring-icon">🔐</div><div class="ring-name">JWT</div><div class="ring-role">验身份</div></div></div>
+        <div class="join j1" id="j1"></div>
+        <div class="ring-slot"><div class="ring r2" id="r2" onclick="breakAt(2)"><div class="ring-icon">🔒</div><div class="ring-name">TLS</div><div class="ring-role">密信令</div></div></div>
+        <div class="join j2" id="j2"></div>
+        <div class="ring-slot"><div class="ring r3" id="r3" onclick="breakAt(3)"><div class="ring-icon">🛡</div><div class="ring-name">ICE</div><div class="ring-role">核连通</div></div></div>
+        <div class="join j3" id="j3"></div>
+        <div class="ring-slot"><div class="ring r4" id="r4" onclick="breakAt(4)"><div class="ring-icon">🤝</div><div class="ring-name">DTLS</div><div class="ring-role">核密钥</div></div></div>
+        <div class="join j4" id="j4"></div>
+        <div class="ring-slot"><div class="ring r5" id="r5" onclick="breakAt(5)"><div class="ring-icon">☝️</div><div class="ring-name">SDP</div><div class="ring-role">印指纹</div></div></div>
+        <div class="join j5" id="j5"></div>
+        <div class="ring-slot"><div class="ring r6" id="r6" onclick="breakAt(6)"><div class="ring-icon">📦</div><div class="ring-name">SRTP</div><div class="ring-role">封媒体</div></div></div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <button class="btn" onclick="resetChain()">🔄 重置锁链</button>
+      <button class="btn danger" onclick="breakAt(2)">⚡ 演示最危险断裂 (TLS)</button>
+    </div>
+    <div class="narr" id="narr">6 个锁环代表 6 层安全机制，从左到右形成<strong>信任依赖链</strong>：右侧每个环的安全依赖于左侧所有环的完整性。<br><br>💡 <em>点击任意锁环</em>使其断裂，观察下游如何连锁崩塌。</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 2. TLS Break Path ========== -->
+<div class="sec" id="s2">
+  <div class="sec-title" data-reveal>TLS 断裂：最危险的攻击链</div>
+  <div class="sec-sub" data-reveal>为什么 L2 (TLS) 是最关键的环节？因为它保护信令通道——SDP 指纹、ICE 凭证都从这里经过。<br>一旦 TLS 被中间人攻破，攻击者可以一路替换到 SRTP 密钥。</div>
+  <div class="tls-atk" data-reveal>
+    <div class="tls-flow" id="tlsFlow"></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 3. Key Derivation Tree ========== -->
+<div class="sec" id="s3">
+  <div class="sec-title" data-reveal>密钥派生溯源：SRTP 密钥从哪来？</div>
+  <div class="sec-sub" data-reveal>点击画布中的节点，逆向展开密钥的依赖树。<br>每一次点击，都能看到上游密钥的来源和代码位置。</div>
+  <div class="ktree" data-reveal>
+    <div class="kt-canvas" id="ktCanvas"><canvas id="ktC"></canvas></div>
+    <div class="kt-detail" id="ktDetail">点击画布中的 SRTP 密钥节点开始溯源。</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 4. Current Risks ========== -->
+<div class="sec" id="s4">
+  <div class="sec-title" data-reveal>当前已知风险点</div>
+  <div class="sec-sub" data-reveal>板端代码中有几处已知的非理想实践——有些是简化实现的权衡，有些是量产前必须修复的问题。</div>
+  <div class="risks" data-reveal id="risks"></div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 5. Security Fixes ========== -->
+<div class="sec" id="s5">
+  <div class="sec-title" data-reveal>安全增强方案</div>
+  <div class="sec-sub" data-reveal>按优先级排列的修复方案——从 P0 (必须修复) 到 P2 (建议改进)。</div>
+  <div class="fixes" data-reveal id="fixes"></div>
+</div>
+
+</div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+// SHA-256 (from HMAC page — verified against RFC vectors)
+// =========================================================
+var K256=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+var H0=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+function rotr(x,n){return(x>>>n)|(x<<(32-n))}
+function ch(x,y,z){return(x&y)^(~x&z)}
+function maj(x,y,z){return(x&y)^(x&z)^(y&z)}
+function ep0(x){return rotr(x,2)^rotr(x,13)^rotr(x,22)}
+function ep1(x){return rotr(x,6)^rotr(x,11)^rotr(x,25)}
+function sig0(x){return rotr(x,7)^rotr(x,18)^(x>>>3)}
+function sig1(x){return rotr(x,17)^rotr(x,19)^(x>>>10)}
+function sha256(input){
+  var bytes=input instanceof Uint8Array?Array.from(input):Array.from(new TextEncoder().encode(input));
+  var msgLen=bytes.length;var bitLen=msgLen*8;
+  bytes.push(0x80);while((bytes.length%64)!==56)bytes.push(0);
+  bytes.push((bitLen/0x100000000)>>>24&0xff,(bitLen/0x100000000)>>>16&0xff,(bitLen/0x100000000)>>>8&0xff,(bitLen/0x100000000)&0xff,(bitLen>>>24)&0xff,(bitLen>>>16)&0xff,(bitLen>>>8)&0xff,bitLen&0xff);
+  var words=new Uint32Array(bytes.length/4);
+  for(var i=0;i<words.length;i++){words[i]=(bytes[i*4]<<24)|(bytes[i*4+1]<<16)|(bytes[i*4+2]<<8)|bytes[i*4+3]}
+  var H=H0.slice();
+  for(var off=0;off<words.length;off+=16){
+    var w=new Uint32Array(64);for(var j=0;j<16;j++)w[j]=words[off+j];
+    for(var j=16;j<64;j++)w[j]=sig1(w[j-2])+w[j-7]+sig0(w[j-15])+w[j-16]|0;
+    var a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for(var j=0;j<64;j++){var T1=h+ep1(e)+ch(e,f,g)+K256[j]+w[j];var T2=ep0(a)+maj(a,b,c);h=g;g=f;f=e;e=d+T1|0;d=c;c=b;b=a;a=T1+T2|0}
+    H[0]=H[0]+a|0;H[1]=H[1]+b|0;H[2]=H[2]+c|0;H[3]=H[3]+d|0;H[4]=H[4]+e|0;H[5]=H[5]+f|0;H[6]=H[6]+g|0;H[7]=H[7]+h|0;
+  }
+  var hex='';for(var i=0;i<8;i++)for(var j=3;j>=0;j--)hex+=((H[i]>>(j*8))&0xff).toString(16).padStart(2,'0');return hex;
+}
+
+// =========================================================
+// Section 1: Trust Chain
+// =========================================================
+var atkData = {
+  1: { title:'伪造设备身份推流', desc:'没有 JWT 签名 → 攻击者可伪造任意设备身份加入房间 → 注入虚假视频流或替换真实设备画面', cascade:'JWT 断裂后，所有层的身份信任根基消失。虽然加密还在，但你不知道对端是谁。', danger:'中' },
+  2: { title:'窃听+篡改全部信令', desc:'TLS 断裂 → 攻击者可看到 JWT token、SDP 指纹、ICE 候选 → 篡改 SDP 指纹替换为自己的证书指纹 → 接管 DTLS 握手 → 获得 SRTP 密钥', cascade:'🔥 这是最危险的断裂！一环断，全链毁。', danger:'极高' },
+  3: { title:'劫持 ICE 连接', desc:'ICE 认证断裂 → 攻击者可伪造 STUN Binding Request → 将媒体流重定向到错误的目的地', cascade:'ICE 断裂不影响已建立的 DTLS/SRTP 安全性，但连接可能被重定向。', danger:'中' },
+  4: { title:'暴露 SRTP 密钥', desc:'DTLS 断裂 → 无法安全协商 SRTP 密钥 → 密钥可能被窃听 → 后续 SRTP 加密形同虚设', cascade:'DTLS 断裂直接导致 SRTP 密钥不再安全，所有媒体数据可被解密。', danger:'高' },
+  5: { title:'中间人替换 DTLS 证书', desc:'SDP 指纹断裂 → 攻击者可在 DTLS 握手中替换自己的证书 → 接管密钥协商 → 解密全部媒体', cascade:'SDP 指纹是 WebRTC 独有的端到端验证机制。没有了它，DTLS 证书可被替换。', danger:'高' },
+  6: { title:'视频内容全程裸露', desc:'SRTP 断裂 → 所有视频/音频数据明文传输 → 同网络任何人用 Wireshark 即可看到摄像头画面', cascade:'SRTP 是最后一道防线，断裂后虽无上游连锁，但媒体数据完全暴露。', danger:'高' }
+};
+var brokenRing = 0;
+var chainAnimating = false;
+
+function breakAt(n) {
+  if (chainAnimating || brokenRing === n) return;
+  chainAnimating = true;
+  resetChain(true);
+  brokenRing = n;
+  var ring = document.getElementById('r' + n);
+  ring.classList.add('broken');
+  document.getElementById('pd' + n).className = 'pd broken';
+  spawnShards(ring);
+  for (var i = n; i <= 5; i++) {
+    (function(ii) {
+      setTimeout(function() {
+        var join = document.getElementById('j' + ii);
+        if (join) join.classList.add('broken');
+      }, (ii - n + 1) * 120);
+    })(i);
+  }
+  for (var i = n + 1; i <= 6; i++) {
+    (function(ii) {
+      setTimeout(function() {
+        var r = document.getElementById('r' + ii);
+        r.classList.add('cascade');
+        document.getElementById('pd' + ii).className = 'pd cascade';
+      }, (ii - n) * 200 + 300);
+    })(i);
+  }
+  setTimeout(function() {
+    var card = document.getElementById('atkCard');
+    document.getElementById('atkTitle').textContent = atkData[n].title;
+    document.getElementById('atkDesc').textContent = atkData[n].desc;
+    card.classList.add('show');
+  }, 500);
+  setTimeout(function() {
+    var names = ['','JWT认证','TLS加密','ICE认证','DTLS握手','SDP指纹','SRTP加密'];
+    var d = atkData[n];
+    var html = '<span class="tag broken">L'+n+' 断裂</span> <em>'+names[n]+'</em> 被攻破！';
+    html += '<br><br>' + d.cascade;
+    html += '<br><br>';
+    if (n === 2) {
+      html += '<span class="tag broken">攻击路径</span> TLS断裂 → 篡改SDP指纹 → DTLS中间人 → 获取SRTP密钥 → <strong>全部视频可被解密</strong>';
+    } else if (n === 5) {
+      html += '<span class="tag broken">攻击路径</span> SDP指纹断裂 → 替换DTLS证书 → 接管密钥协商 → <strong>全部媒体通道被中间人</strong>';
+    } else if (n === 6) {
+      html += '<span class="tag warn">注意</span> SRTP断裂无上游连锁，但视频内容<strong>完全暴露</strong>';
+    } else if (n === 1) {
+      html += '<span class="tag warn">注意</span> JWT断裂后加密仍在，但你不知道对端是谁 → <strong>身份信任消失</strong>';
+    } else {
+      html += '<span class="tag ok">对比</span> 不同位置断裂影响范围不同，L2断裂最具破坏力';
+    }
+    html += '<br><br><span class="tag broken">危险等级：'+d.danger+'</span>';
+    document.getElementById('narr').innerHTML = html;
+    chainAnimating = false;
+  }, 800);
+}
+
+function spawnShards(el) {
+  var rect = el.getBoundingClientRect();
+  var canvas = document.getElementById('chainCanvas');
+  var cRect = canvas.getBoundingClientRect();
+  var cx = rect.left - cRect.left + rect.width / 2;
+  var cy = rect.top - cRect.top + rect.height / 2;
+  var shard = document.createElement('div');
+  shard.className = 'shard';
+  shard.style.left = cx + 'px';
+  shard.style.top = cy + 'px';
+  var colors = ['','#6c63ff','#38bdf8','#f59e0b','#a78bfa','#34d399','#f43f5e'];
+  for (var i = 0; i < 10; i++) {
+    var p = document.createElement('div');
+    p.className = 'shard-p';
+    var angle = (Math.PI * 2 / 10) * i + Math.random() * 0.5;
+    var dist = 25 + Math.random() * 40;
+    p.style.setProperty('--sx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--sy', Math.sin(angle) * dist + 'px');
+    p.style.setProperty('--sr', (Math.random() * 360) + 'deg');
+    p.style.animationDelay = (Math.random() * 0.1) + 's';
+    p.style.background = colors[brokenRing];
+    shard.appendChild(p);
+  }
+  canvas.appendChild(shard);
+  setTimeout(function() { shard.remove(); }, 1000);
+}
+
+function resetChain(silent) {
+  brokenRing = 0;
+  for (var i = 1; i <= 6; i++) {
+    var r = document.getElementById('r' + i);
+    r.classList.remove('broken', 'cascade');
+    if (i <= 5) document.getElementById('j' + i).classList.remove('broken');
+    document.getElementById('pd' + i).className = 'pd ok';
+  }
+  document.getElementById('atkCard').classList.remove('show');
+  if (!silent) {
+    document.getElementById('narr').innerHTML = '6 个锁环代表 6 层安全机制，从左到右形成<strong>信任依赖链</strong>：右侧每个环的安全依赖于左侧所有环的完整性。<br><br>💡 <em>点击任意锁环</em>使其断裂，观察下游如何连锁崩塌。';
+  }
+}
+
+// =========================================================
+// Section 2: TLS Attack Path
+// =========================================================
+function renderTLSPath() {
+  var steps = [
+    { cls:'s1', label:'步骤1 — TLS 断裂', text:'板端设置 <code>VERIFY_OPTIONAL</code>，跳过服务器证书验证。攻击者在网络中伪造 LiveKit Cloud 证书，板端不报错，握手正常完成。<br><strong>结果：</strong>攻击者获得 TLS 信令通道的中间人位置，可以看到所有明文信令流量。' },
+    { cls:'s2', label:'步骤2 — 篡改 SDP 指纹', text:'中间人拦截板端的 SDP Offer 和 SFU 的 SDP Answer。将 <code>a=fingerprint:sha-256</code> 中的指纹替换为自己 DTLS 证书的指纹。<br><strong>结果：</strong>双方收到的 SDP 指纹已经是攻击者的了。' },
+    { cls:'s3', label:'步骤3 — DTLS 中间人', text:'板端和 SFU 分别与攻击者建立 DTLS 握手。由于 SDP 指纹已经被篡改为攻击者的证书，指纹验证通过。<br><strong>结果：</strong>攻击者分别与双方建立了独立的 ECDHE 共享密钥。' },
+    { cls:'s4', label:'步骤4 — 解密全部视频', text:'攻击者从两个 DTLS 连接分别导出 SRTP 密钥。板端→攻击者的加密流量用一套密钥解密后再用另一套密钥转发给 SFU。<br><strong>结果：</strong>所有视频/音频数据可被完整窃听、记录、甚至实时替换。双方毫无察觉。' }
+  ];
+  var h = '<div class="tls-flow">';
+  steps.forEach(function(s, i) {
+    h += '<div class="tls-step '+s.cls+'" data-delay="'+i+'">';
+    h += '<div class="tls-marker"><div class="tls-dot"></div>';
+    if (i < steps.length - 1) h += '<div class="tls-line" style="background:rgba(108,99,255,.15)"></div>';
+    h += '</div>';
+    h += '<div class="tls-body"><div class="tls-label">'+s.label+'</div><div class="tls-text">'+s.text+'</div></div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  document.getElementById('tlsFlow').innerHTML = h;
+}
+
+// =========================================================
+// Section 3: Key Derivation Tree (Canvas)
+// =========================================================
+var ktNodes = [
+  { id:'srtp', label:'SRTP 密钥 (30B/dir)', x:0.5, y:0.92, color:'#f43f5e',
+    detail:'SRTP 密钥保护最终的视频/音频数据。<br><br>每方向 30 字节 = key(16B) + salt(14B)。<br>板端发送用 <em>transmitKey/transmitSalt</em>，接收浏览器数据用 <em>receiveKey/receiveSalt</em>。<br><br>代码位置：<code>Dtls_mbedtls.c:518 — dtlsSessionPopulateKeyingMaterial()</code>' },
+  { id:'prf', label:'TLS PRF', x:0.5, y:0.62, color:'#a78bfa',
+    detail:'TLS PRF (Pseudorandom Function) 从 master_secret 派生密钥材料。<br><br>标签 = <code>"EXTRACTOR-dtls_srtp"</code><br>输入 = master_secret + client_random + server_random<br>输出 = 60 字节 → client_key(16) + server_key(16) + client_salt(14) + server_salt(14)<br><br>这确保即使 master_secret 相同，不同用途的密钥也不同（密钥隔离）。' },
+  { id:'master', label:'master_secret (48B)', x:0.5, y:0.38, color:'#6c63ff',
+    detail:'master_secret 是 DTLS/TLS 握手的核心产物。<br><br>由 ECDHE 共享密钥 + 双方随机数通过 PRF 计算得出。<br>48 字节固定长度（TLS 1.2 规定）。<br><br>整个安全链的核心——如果 master_secret 泄露，所有下游密钥都可推导。' },
+  { id:'ecdhe', label:'ECDHE 共享密钥', x:0.28, y:0.16, color:'#34d399',
+    detail:'ECDHE 密钥交换的核心结果。<br><br>板端：<em>shared_secret = 服务器公钥 B × 板端私钥 a</em> (P-256 曲线点乘)<br>服务器：<em>shared_secret = 板端公钥 A × 服务器私钥 b</em><br><br>数学保证：A = a·G，B = b·G，但 a 和 b 无法从 A/B 反推（椭圆曲线离散对数问题）。<br><br>代码位置：<code>Dtls_mbedtls.c — mbedtls_ssl_handshake()</code>' },
+  { id:'client_r', label:'client_random (32B)', x:0.72, y:0.16, color:'#38bdf8',
+    detail:'板端在 ClientHello 中发送的 32 字节随机数。<br><br>由板端 <em>CTR-DRBG</em> 生成（熵源 = <code>/dev/urandom</code>）。<br>4 字节时间戳 + 28 字节随机数。<br><br>每次握手不同，确保即使使用相同的 ECDHE 密钥，master_secret 也不同。' },
+  { id:'board_rng', label:'板端 RNG', x:0.14, y:0.04, color:'#f59e0b',
+    detail:'板端随机数生成器：<code>mbedtls_ctr_drbg_seed()</code><br><br>熵源：<code>/dev/urandom</code><br>⚠️ 嵌入式设备启动早期，/dev/urandom 的熵可能不足（缺少用户输入、磁盘 IO 等熵源）。<br><br>如果此时生成密钥（如 ICE 密码或 DTLS 临时密钥），可能产生可预测的随机数。量产前必须验证启动各阶段的熵质量。' },
+  { id:'server_rng', label:'服务器 RNG', x:0.42, y:0.04, color:'#f59e0b',
+    detail:'服务器的随机数生成器（LiveKit Cloud SFU）。<br><br>云端服务器有充足的熵源（磁盘 IO、网络中断、硬件 RNG），生成的随机数质量有保证。' },
+  { id:'server_r', label:'server_random (32B)', x:0.86, y:0.04, color:'#38bdf8',
+    detail:'服务器在 ServerHello 中发送的 32 字节随机数。<br><br>由服务器安全随机数生成器生成。与 client_random 一起作为 PRF 的输入，确保握手唯一性。' }
+];
+var ktEdges = [
+  {from:'prf',to:'srtp'}, {from:'master',to:'prf'},
+  {from:'ecdhe',to:'master'}, {from:'client_r',to:'master'},
+  {from:'board_rng',to:'ecdhe'}, {from:'server_rng',to:'ecdhe'},
+  {from:'server_rng',to:'server_r'}
+];
+var ktExpanded = {};
+var ktHover = null;
+
+function renderKT() {
+  var canvas = document.getElementById('ktC');
+  var container = document.getElementById('ktCanvas');
+  var w = container.clientWidth;
+  var h = container.clientHeight;
+  canvas.width = w * 2; canvas.height = h * 2;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+  ctx.clearRect(0, 0, w, h);
+
+  var nodeMap = {};
+  ktNodes.forEach(function(n) {
+    nodeMap[n.id] = { x: n.x * w, y: n.y * h, color: n.color };
+  });
+
+  // Draw edges
+  ktEdges.forEach(function(e) {
+    if (!nodeMap[e.from] || !nodeMap[e.to]) return;
+    var from = nodeMap[e.from], to = nodeMap[e.to];
+    ctx.strokeStyle = from.color + '30';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y + 18);
+    ctx.lineTo(to.x, to.y - 18);
+    ctx.stroke();
+    // arrow
+    var angle = Math.atan2(to.y - 18 - (from.y + 18), to.x - from.x);
+    ctx.fillStyle = from.color + '50';
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y - 18);
+    ctx.lineTo(to.x - 7 * Math.cos(angle - 0.4), to.y - 18 - 7 * Math.sin(angle - 0.4));
+    ctx.lineTo(to.x - 7 * Math.cos(angle + 0.4), to.y - 18 - 7 * Math.sin(angle + 0.4));
+    ctx.fill();
+  });
+
+  // Draw nodes
+  ktNodes.forEach(function(n) {
+    var x = n.x * w, y = n.y * h;
+    var isHover = (ktHover === n.id);
+    var r = isHover ? 26 : 20;
+    // glow
+    if (isHover) {
+      ctx.shadowColor = n.color + '60';
+      ctx.shadowBlur = 20;
+    }
+    ctx.fillStyle = n.color + (isHover ? '35' : '18');
+    ctx.strokeStyle = n.color + (isHover ? '80' : '40');
+    ctx.lineWidth = isHover ? 2 : 1.2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+    // label
+    ctx.fillStyle = n.color;
+    ctx.font = (isHover ? 'bold ' : '') + '10px -apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var label = n.label;
+    if (label.length > 16 && !isHover) label = label.substring(0, 14) + '…';
+    ctx.fillText(label, x, y);
+  });
+}
+
+function ktClick(e) {
+  var canvas = document.getElementById('ktC');
+  var container = document.getElementById('ktCanvas');
+  var rect = canvas.getBoundingClientRect();
+  var sx = (e.clientX - rect.left) / rect.width;
+  var sy = (e.clientY - rect.top) / rect.height;
+  var w = container.clientWidth, h = container.clientHeight;
+
+  var hit = null;
+  ktNodes.forEach(function(n) {
+    var dx = sx - n.x, dy = sy - n.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 0.04) hit = n;
+  });
+
+  if (hit) {
+    ktHover = hit.id;
+    renderKT();
+    document.getElementById('ktDetail').innerHTML = '<strong>' + hit.label + '</strong><br><br>' + hit.detail;
+  }
+}
+
+// =========================================================
+// Section 4: Risks
+// =========================================================
+function renderRisks() {
+  var risks = [
+    { prio:'p0', label:'P0', title:'板端 VERIFY_OPTIONAL', cause:'CA 证书不完整', impact:'攻击者伪造 LiveKit Cloud 证书 → 板端不验证 → <strong>信令层中间人</strong> → 篡改SDP指纹 → DTLS中间人 → SRTP密钥泄露 → <strong>全部媒体可被解密</strong>' },
+    { prio:'p0', label:'P0', title:'DTLS Cookie 禁用', cause:'简化实现', impact:'攻击者伪造源IP发送ClientHello → 板端响应大量数据到受害者IP → <strong>DTLS放大攻击</strong>' },
+    { prio:'p1', label:'P1', title:'JWT 在 URL 中传递', cause:'WebSocket不支持自定义Header', impact:'服务器日志/CDN缓存记录了 <code>access_token</code> → 泄露后可在 exp 内使用 → <strong>Token泄露风险</strong>' },
+    { prio:'p1', label:'P1', title:'证书签名使用 SHA-1', cause:'KVS 默认值', impact:'SHA-1 已被证明可碰撞 → 实际碰撞概率极低（DTLS证书由CTR-DRBG随机生成）→ <strong>理论风险，实际安全</strong>' },
+    { prio:'p2', label:'P2', title:'TURNS (TLS over TURN) 失败', cause:'缺CA证书', impact:'TURN服务器与板端之间无TLS → 中间人可观察TURN流量（但内容仍是SRTP加密）→ <strong>元数据泄露，内容安全</strong>' },
+    { prio:'p2', label:'P2', title:'嵌入式随机数质量', cause:'启动早期 /dev/urandom 熵不足', impact:'此时生成 ICE 密码或 DTLS 临时密钥可能可预测 → <strong>密钥强度退化</strong>' }
+  ];
+  var h = '';
+  risks.forEach(function(r) {
+    h += '<div class="risk-card" data-reveal style="border-left:3px solid ' + (r.prio==='p0'?'#f43f5e':r.prio==='p1'?'#f59e0b':'#6c63ff') + '">';
+    h += '<div class="rc-prio '+r.prio+'">'+r.label+'</div>';
+    h += '<div class="rc-title">'+r.title+'</div>';
+    h += '<div class="rc-cause">根因：'+r.cause+'</div>';
+    h += '<div class="rc-impact">'+r.impact+'</div>';
+    h += '</div>';
+  });
+  document.getElementById('risks').innerHTML = h;
+}
+
+// =========================================================
+// Section 5: Fixes
+// =========================================================
+function renderFixes() {
+  var h = '<table class="fix-tbl">';
+  h += '<tr><th>优先级</th><th>问题</th><th>修复方案</th><th>代码位置</th></tr>';
+  var fixes = [
+    ['P0','VERIFY_OPTIONAL','打包完整 CA 证书链 (Mozilla CA bundle)，设置 <code>MBEDTLS_SSL_VERIFY_REQUIRED</code>','<code>Dtls_mbedtls.c:sslConf</code>'],
+    ['P0','DTLS Cookie 禁用','启用 HelloVerifyRequest，设置 <code>MBEDTLS_SSL_COOKIE_TIMEOUT</code>','<code>Dtls_mbedtls.c:dtlsSessionCreate</code>'],
+    ['P1','JWT in URL','改用 WebSocket 子协议传递 token：<code>Sec-WebSocket-Protocol: access_token,...</code>','<code>LiveKitSignaling.c:wsConnect</code>'],
+    ['P1','SHA-1 证书签名','配置 mbedTLS 使用 SHA-256：<code>MBEDTLS_MD_SHA256</code>','<code>Dtls_mbedtls.c:dtlsCertificateCreate</code>'],
+    ['P2','TURNS 失败','同 P0 CA 证书修复后，TURN TLS 自然可用','<code>TurnConnection.c:turnConnect</code>'],
+    ['P2','嵌入式随机数质量','启动阶段延迟密钥生成；添加熵检测：读取 <code>/proc/sys/kernel/random/entropy_avail</code>，低于阈值时等待','<code>main.c</code> 初始化阶段']
+  ];
+  fixes.forEach(function(f) {
+    h += '<tr><td><span class="rc-prio '+(f[0]==='P0'?'p0':f[0]==='P1'?'p1':'p2')+'" style="display:inline-block">'+f[0]+'</span></td><td><strong>'+f[1]+'</strong></td><td>'+f[2]+'</td><td>'+f[3]+'</td></tr>';
+  });
+  h += '</table>';
+  h += '<div style="margin-top:20px;padding:16px 22px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);border-radius:12px;font-size:12.5px;line-height:1.8;color:#a0c8b0">';
+  h += '<strong>⚡ 推荐修复顺序：</strong>P0 两项是量产前必须修复的安全漏洞，攻击者可在同网络环境下实时解密所有视频。P1 两项应在量产前评估，JWT in URL 有简单的替代方案。P2 可在量产后的 OTA 更新中逐步改进。';
+  h += '</div>';
+  document.getElementById('fixes').innerHTML = h;
+}
+
+// =========================================================
+// Init
+// =========================================================
+(function() {
+  renderTLSPath();
+  renderRisks();
+  renderFixes();
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec) {
+    for (var i = 0; i < 8; i++) {
+      var p = document.createElement('div'); p.className = 'particle';
+      p.style.left = Math.random() * 100 + '%'; p.style.bottom = '-10px';
+      p.style.animationDuration = (8 + Math.random() * 14) + 's';
+      p.style.animationDelay = (Math.random() * 10) + 's';
+      p.style.width = p.style.height = (1 + Math.random() * 2) + 'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c) {
+          var d = parseInt(c.getAttribute('data-delay')) * 350;
+          setTimeout(function() { c.classList.add('vis'); }, d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c) {
+          setTimeout(function() { c.classList.add('vis'); }, 100);
+        });
+        // TLS path steps
+        e.target.querySelectorAll('.tls-step').forEach(function(c) {
+          var d = parseInt(c.getAttribute('data-delay') || 0) * 500;
+          setTimeout(function() { c.classList.add('vis'); }, d);
+        });
+      }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('[data-reveal]').forEach(function(el) { obs.observe(el); });
+  document.querySelectorAll('.chain-wrap, .tls-atk, .ktree, .risks, .fixes').forEach(function(el) { obs.observe(el); });
+  document.querySelectorAll('.tls-flow').forEach(function(el) { obs.observe(el); });
+
+  // Key tree canvas
+  renderKT();
+  window.addEventListener('resize', renderKT);
+  var ktCanvas = document.getElementById('ktC');
+  ktCanvas.addEventListener('click', ktClick);
+  ktCanvas.addEventListener('mousemove', function(e) {
+    var rect = ktCanvas.getBoundingClientRect();
+    var sx = (e.clientX - rect.left) / rect.width;
+    var sy = (e.clientY - rect.top) / rect.height;
+    var found = false;
+    ktNodes.forEach(function(n) {
+      var dx = sx - n.x, dy = sy - n.y;
+      if (Math.sqrt(dx*dx+dy*dy) < 0.04) found = true;
+    });
+    ktCanvas.style.cursor = found ? 'pointer' : 'default';
+  });
+})();
+</script>
+</body>
+</html>

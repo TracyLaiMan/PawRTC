@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC 弱网对抗技术 — LiveKit 开发基础</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:760px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero Network Simulation ===== */
+.hero-canvas-wrap{width:100%;max-width:960px;height:340px;margin-top:28px;background:rgba(0,0,0,.12);border-radius:16px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.hero-canvas-wrap canvas{width:100%;height:100%}
+.hero-controls{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.hero-btn{padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .3s;border:1px solid}
+.hero-btn.bw{background:rgba(108,99,255,.1);border-color:rgba(108,99,255,.3);color:#a78bfa}
+.hero-btn.loss{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3);color:#fbbf24}
+.hero-btn.jitter{background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.3);color:#6ee7b7}
+.hero-btn:hover{transform:scale(1.05)}
+.hero-btn.active{transform:scale(1.05);box-shadow:0 0 14px rgba(108,99,255,.3)}
+.hero-btn.bw.active{background:rgba(108,99,255,.25)}
+.hero-btn.loss.active{background:rgba(245,158,11,.25)}
+.hero-btn.jitter.active{background:rgba(52,211,153,.25)}
+.hero-stat{display:flex;gap:24px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.hero-stat .hs{font-size:12px;color:#8888bb;text-align:center}
+.hero-stat .hs .hv{font-size:18px;font-weight:800;display:block;margin-bottom:2px}
+.hero-stat .hs .hv.bw-c{color:#a78bfa}
+.hero-stat .hs .hv.loss-c{color:#fbbf24}
+.hero-stat .hs .hv.rtt-c{color:#38bdf8}
+.hero-stat .hs .hv.jit-c{color:#34d399}
+
+/* ===== Overview Cards ===== */
+.overview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:960px;width:100%;margin-top:32px}
+@media(max-width:750px){.overview-grid{grid-template-columns:repeat(2,1fr)}}
+.ov-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:22px 18px;cursor:pointer;transition:all .4s;position:relative;opacity:0;transform:translateY(24px)}
+.ov-card.vis{opacity:1;transform:translateY(0)}
+.ov-card:hover{border-color:var(--oc);background:rgba(255,255,255,.06);transform:translateY(-4px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.ov-card .ov-icon{font-size:28px;margin-bottom:8px}
+.ov-card .ov-name{font-size:16px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.ov-card .ov-desc{font-size:12px;color:#8888aa;line-height:1.6}
+.ov-card .ov-tag{position:absolute;top:10px;right:10px;font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,.05);color:var(--oc);border:1px solid rgba(255,255,255,.08)}
+
+/* ===== GCC Section ===== */
+.gcc-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.gcc-wrap.vis{opacity:1;transform:translateY(0)}
+.gcc-flow{display:flex;flex-direction:column;gap:0;margin-top:24px;position:relative}
+.gcc-step{display:flex;align-items:flex-start;gap:16px;padding:14px 18px;border-radius:10px;transition:all .3s;cursor:pointer;border-left:4px solid transparent}
+.gcc-step:hover{background:rgba(108,99,255,.04);border-left-color:#6c63ff}
+.gcc-step.active{background:rgba(108,99,255,.06);border-left-color:#6c63ff}
+.gcc-num{width:32px;height:32px;min-width:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;background:var(--gc,#6c63ff);box-shadow:0 0 12px rgba(108,99,255,.25)}
+.gcc-content{flex:1}
+.gcc-content h4{font-size:14px;font-weight:700;color:#e0e0ff;margin-bottom:4px}
+.gcc-content p{font-size:12.5px;color:#9999bb;line-height:1.7}
+.gcc-content code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+.gcc-formula{margin-top:16px;padding:18px 24px;background:rgba(108,99,255,.03);border:1px solid rgba(108,99,255,.08);border-radius:12px}
+.gcc-formula h4{font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:10px}
+.gcc-formula .fm{font-family:"JetBrains Mono",monospace;font-size:13px;color:#c8c8e8;line-height:2;background:rgba(0,0,0,.2);padding:12px 16px;border-radius:8px;overflow-x:auto;display:block}
+.gcc-formula .fm .var{color:#a78bfa;font-weight:700}
+.gcc-formula .fm .op{color:#f59e0b}
+.gcc-formula .fm .cmt{color:#555577;font-style:italic}
+
+/* ===== Trendline Visualization ===== */
+.trend-canvas-wrap{width:100%;max-width:960px;height:220px;background:rgba(0,0,0,.12);border-radius:14px;margin-top:20px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(20px);transition:all .6s}
+.trend-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.trend-canvas-wrap canvas{width:100%;height:100%}
+.trend-legend{display:flex;gap:18px;justify-content:center;margin-top:10px;flex-wrap:wrap}
+.trend-legend .tl{font-size:11px;color:#8888bb;display:flex;align-items:center;gap:6px}
+.trend-legend .tl .td{width:12px;height:3px;border-radius:2px}
+
+/* ===== AIMD Canvas ===== */
+.aimd-canvas-wrap{width:100%;max-width:600px;height:300px;background:rgba(0,0,0,.12);border-radius:14px;margin-top:20px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(20px);transition:all .6s}
+.aimd-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.aimd-canvas-wrap canvas{width:100%;height:100%}
+
+/* ===== Transport-CC Section ===== */
+.tcc-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.tcc-wrap.vis{opacity:1;transform:translateY(0)}
+.tcc-flow-diagram{margin-top:24px;display:flex;flex-direction:column;gap:3px;width:100%;max-width:860px}
+.tcc-row{display:flex;align-items:center;gap:8px;opacity:0;transform:translateY(10px);transition:all .5s}
+.tcc-row.vis{opacity:1;transform:translateY(0)}
+.tcc-side{font-size:11px;font-weight:700;color:#a78bfa;min-width:80px;text-align:right}
+.tcc-arrow{color:rgba(108,99,255,.3);font-size:12px;min-width:24px;text-align:center}
+.tcc-pkt{padding:6px 14px;border-radius:6px;font-size:11px;font-family:"JetBrains Mono",monospace;transition:all .3s;cursor:default}
+.tcc-pkt.data{background:rgba(108,99,255,.12);color:#a78bfa;border:1px solid rgba(108,99,255,.2)}
+.tcc-pkt.fb{background:rgba(52,211,153,.1);color:#6ee7b7;border:1px solid rgba(52,211,153,.2)}
+.tcc-pkt:hover{transform:scale(1.05)}
+.tcc-note{margin-top:14px;font-size:12px;color:#7777aa;line-height:1.7;text-align:center}
+.tcc-note em{color:#6c63ff;font-style:normal;font-weight:600}
+
+/* ===== Comparison Table ===== */
+.cmp-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cmp-wrap.vis{opacity:1;transform:translateY(0)}
+.cmp-table-wrap{overflow-x:auto;margin-top:20px;border:1px solid rgba(255,255,255,.06);border-radius:12px}
+.cmp-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.cmp-table thead{background:rgba(26,26,46,.8)}
+.cmp-table th{padding:11px 14px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#9999bb;border-bottom:2px solid rgba(108,99,255,.12)}
+.cmp-table td{padding:10px 14px;color:#b0b0d0;border-bottom:1px solid rgba(255,255,255,.04)}
+.cmp-table tr:last-child td{border-bottom:none}
+.cmp-table tr:hover td{background:rgba(108,99,255,.03)}
+.cmp-table .good{color:#34d399;font-weight:600}
+.cmp-table .mid{color:#fbbf24;font-weight:600}
+.cmp-table .bad{color:#f87171;font-weight:600}
+
+/* ===== Anti-Loss Section ===== */
+.al-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.al-wrap.vis{opacity:1;transform:translateY(0)}
+.al-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+@media(max-width:650px){.al-grid{grid-template-columns:1fr}.al-body[style*="columns"]{columns:1!important}}
+.al-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:24px 20px;cursor:pointer;transition:all .4s;opacity:0;transform:translateY(20px)}
+.al-card.vis{opacity:1;transform:translateY(0)}
+.al-card:hover{border-color:var(--ac);background:rgba(255,255,255,.06);transform:translateY(-3px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.al-card .al-title{font-size:18px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.al-card .al-subtitle{font-size:12px;color:var(--ac);font-weight:600;margin-bottom:10px}
+.al-card .al-body{font-size:12.5px;color:#9999bb;line-height:1.8}
+.al-card .al-body p{break-inside:avoid}
+.al-card .al-body code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+.al-card .al-body em{color:#6c63ff;font-style:normal;font-weight:600}
+.al-card .al-body strong{color:#d0d0f0}
+.al-wrap .al-card{opacity:0;transform:translateY(20px);transition:opacity .6s,transform .6s}
+.al-wrap .al-card.vis{opacity:1;transform:translateY(0)}
+
+/* ===== NACK Timeline ===== */
+.nack-tl{margin-top:16px;display:flex;flex-direction:column;gap:2px;background:rgba(0,0,0,.15);border-radius:10px;padding:14px}
+.nack-step{display:flex;align-items:center;gap:10px;font-size:11.5px;padding:6px 8px;border-radius:6px;transition:all .3s}
+.nack-step:hover{background:rgba(108,99,255,.04)}
+.nack-step .ns-time{color:#555;font-family:"JetBrains Mono",monospace;font-size:10px;min-width:50px}
+.nack-step .ns-who{font-weight:700;min-width:50px}
+.nack-step .ns-who.tx{color:#a78bfa}
+.nack-step .ns-who.rx{color:#34d399}
+.nack-step .ns-what{color:#b0b0d0}
+.nack-step .ns-what code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 4px;border-radius:3px;font-size:10px}
+
+/* ===== FEC Visualization ===== */
+.fec-canvas-wrap{width:100%;max-width:960px;height:480px;background:rgba(0,0,0,.12);border-radius:14px;margin-top:16px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.fec-canvas-wrap canvas{width:100%;height:100%}
+
+/* ===== FEC HTML Grid ===== */
+.fec-grid-wrap{width:100%;max-width:960px;margin-top:16px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px 16px 16px;opacity:0;transform:translateY(20px);transition:all .6s}
+.fec-grid-wrap.vis{opacity:1;transform:translateY(0)}
+.fec-title{font-size:14px;font-weight:700;color:rgba(255,255,255,.35);text-align:center;margin-bottom:14px;letter-spacing:.5px}
+.fec-row{display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr 56px 1fr;gap:6px;margin-bottom:6px;align-items:center}
+.fec-header-row{margin-bottom:8px}
+.fec-cell{border-radius:7px;padding:8px 4px;text-align:center;font-size:12px;font-weight:600;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .3s}
+.fec-cell.media{background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.25);color:#a78bfa}
+.fec-cell.media span{font-size:9px;color:rgba(255,255,255,.2);font-family:"JetBrains Mono",monospace;margin-top:2px;font-weight:400}
+.fec-cell.media.lost{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.5);color:#f87171}
+.fec-cell.media.lost span{color:rgba(248,113,113,.35)}
+.fec-cell.media:hover{transform:scale(1.05);border-color:rgba(108,99,255,.45)}
+.fec-cell.media.lost:hover{border-color:rgba(248,113,113,.7)}
+.fec-cell.row-fec{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);color:#34d399;font-size:11px}
+.fec-cell.col-fec{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);color:#38bdf8;font-size:11px}
+.fec-cell.fec-label{background:none;border:none;min-height:auto;padding:0}
+.fec-cell.fec-row-label,.fec-cell.fec-col-label{font-size:10px;color:rgba(255,255,255,.2);font-weight:600;background:none;border:none;padding:0;min-height:auto}
+.fec-cell.fec-xor-label{font-size:10px;color:rgba(255,255,255,.2);font-family:"JetBrains Mono",monospace;background:none;border:none;padding:2px 4px;min-height:auto;text-align:left;white-space:nowrap}
+.fec-row.fec-xor-bottom .fec-xor-col{font-size:10px;color:rgba(56,189,248,.4);font-family:"JetBrains Mono",monospace;text-align:center;padding:4px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fec-recovery{margin-top:14px;background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.12);border-radius:10px;padding:12px 16px}
+.fr-item{font-size:12px;color:rgba(255,255,255,.5);line-height:1.8;display:flex;align-items:baseline;gap:4px}
+.fr-item strong{color:#e0e0ff;font-weight:700}
+.fr-icon{font-weight:700;margin-right:2px}
+.fr-row .fr-icon{color:#34d399}
+.fr-col .fr-icon{color:#38bdf8}
+.fr-cross .fr-icon{color:#fbbf24}
+@media(max-width:650px){
+  .fec-row{grid-template-columns:30px 1fr 1fr 1fr 1fr 44px 0;gap:4px}
+  .fec-cell.fec-xor-label,.fec-row.fec-xor-bottom,.fec-cell.fec-xor-col{display:none}
+}
+
+/* ===== ABR Section ===== */
+.abr-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.abr-wrap.vis{opacity:1;transform:translateY(0)}
+.abr-layers{display:flex;flex-direction:column;gap:2px;margin-top:24px;width:100%;max-width:760px}
+.abr-layer{padding:16px 20px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;display:flex;align-items:center;gap:16px;transition:all .3s;cursor:pointer;opacity:0;transform:translateX(-20px)}
+.abr-layer.vis{opacity:1;transform:translateX(0)}
+.abr-layer:hover{border-color:var(--lc);background:rgba(255,255,255,.06)}
+.abr-layer .ll-icon{font-size:24px;min-width:32px;text-align:center}
+.abr-layer .ll-body h4{font-size:14px;font-weight:700;color:#e0e0ff;margin-bottom:3px}
+.abr-layer .ll-body p{font-size:12px;color:#8888aa;line-height:1.7}
+.abr-layer .ll-body code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+
+/* ===== Simulcast SVG ===== */
+.sim-canvas-wrap{width:100%;max-width:800px;height:280px;background:rgba(0,0,0,.12);border-radius:14px;margin-top:20px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(20px);transition:all .6s}
+.sim-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.sim-canvas-wrap canvas{width:100%;height:100%}
+.sim-legend{display:flex;gap:16px;justify-content:center;margin-top:10px;flex-wrap:wrap}
+.sim-legend .sl{font-size:11px;color:#8888bb;display:flex;align-items:center;gap:5px}
+.sim-legend .sl .sd{width:10px;height:10px;border-radius:2px}
+
+/* ===== Jitter Buffer ===== */
+.jb-canvas-wrap{width:100%;max-width:800px;height:240px;background:rgba(0,0,0,.12);border-radius:14px;margin-top:20px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(20px);transition:all .6s}
+.jb-canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.jb-canvas-wrap canvas{width:100%;height:100%}
+.jb-controls{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;justify-content:center}
+.jb-btn{padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;transition:all .3s;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);color:#a78bfa}
+.jb-btn:hover{background:rgba(108,99,255,.18)}
+
+/* ===== Decision Matrix ===== */
+.dm-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.dm-wrap.vis{opacity:1;transform:translateY(0)}
+.dm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+@media(max-width:700px){.dm-grid{grid-template-columns:1fr}}
+.dm-cell{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:18px 16px;text-align:center;opacity:0;transform:translateY(16px);transition:all .5s}
+.dm-cell.vis{opacity:1;transform:translateY(0)}
+.dm-cell .dm-header{font-size:14px;font-weight:800;margin-bottom:10px}
+.dm-cell .dm-items{display:flex;flex-direction:column;gap:4px}
+.dm-cell .dm-item{font-size:11.5px;color:#8888aa;padding:4px 8px;border-radius:6px;background:rgba(255,255,255,.02);transition:all .3s}
+.dm-cell .dm-item:hover{background:rgba(108,99,255,.06)}
+.dm-cell .dm-item em{color:#a78bfa;font-style:normal;font-weight:600}
+.dm-cell.c1 .dm-header{color:#34d399}
+.dm-cell.c2 .dm-header{color:#fbbf24}
+.dm-cell.c3 .dm-header{color:#f87171}
+.dm-cell.c1{border-top:3px solid rgba(52,211,153,.4)}
+.dm-cell.c2{border-top:3px solid rgba(251,191,36,.4)}
+.dm-cell.c3{border-top:3px solid rgba(248,113,113,.4)}
+
+/* ===== KVS-Gap Section ===== */
+.gap-wrap{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.gap-wrap.vis{opacity:1;transform:translateY(0)}
+.gap-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+@media(max-width:650px){.gap-grid{grid-template-columns:1fr}}
+.gap-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:22px 18px;transition:all .5s}
+.gap-card.vis{opacity:1;transform:translateY(0)}
+.gap-card h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.gap-card .gap-status{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;margin-bottom:10px}
+.gap-card .gap-status.has{background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.25)}
+.gap-card .gap-status.miss{background:rgba(248,113,113,.1);color:#f87171;border:1px solid rgba(248,113,113,.25)}
+.gap-card .gap-status.part{background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.25)}
+.gap-card p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.gap-card ul{margin:6px 0 0 18px;font-size:12px;color:#8888aa;line-height:1.8}
+.gap-card code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+
+/* ===== Roadmap ===== */
+.road-wrap{width:100%;max-width:700px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.road-wrap.vis{opacity:1;transform:translateY(0)}
+.road-tl{position:relative;margin-top:28px}
+.road-line{position:absolute;left:22px;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,#6c63ff,#38bdf8,#34d399,#a78bfa);border-radius:2px}
+.road-node{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px;position:relative;opacity:0;transform:translateX(-20px);transition:all .6s}
+.road-node.vis{opacity:1;transform:translateX(0)}
+.road-dot{width:44px;height:44px;min-width:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;background:var(--rc);box-shadow:0 0 16px rgba(108,99,255,.3);position:relative;z-index:1}
+.road-body{flex:1;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:14px 18px;transition:all .3s;cursor:pointer}
+.road-body:hover{background:rgba(255,255,255,.06);border-color:var(--rc);transform:translateX(4px)}
+.road-body h4{font-size:15px;font-weight:700;color:#e0e0ff;margin-bottom:3px}
+.road-body p{font-size:12px;color:#8888aa;line-height:1.6}
+
+/* ===== Details ===== */
+details{border:1px solid rgba(255,255,255,.06);border-radius:10px;margin:10px 0;overflow:hidden}
+summary{padding:10px 16px;font-size:13px;font-weight:600;color:#6c63ff;cursor:pointer;background:rgba(26,26,46,.3);transition:all .2s}
+summary:hover{background:rgba(108,99,255,.06)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.04)}
+details>div,details>p{padding:12px 16px;font-size:12.5px;line-height:1.7;color:#b0b0d0}
+
+/* ===== Callout ===== */
+.callout{border-radius:10px;padding:14px 18px;margin:14px 0;border-left:4px solid;font-size:12.5px;line-height:1.7}
+.callout .ct{font-weight:700;font-size:12.5px;margin-bottom:6px}
+.callout.info{background:rgba(108,99,255,.06);border-left-color:#6c63ff;color:#b0b0d0}
+.callout.info .ct{color:#6c63ff}
+.callout.warning{background:rgba(245,158,11,.06);border-left-color:#f59e0b;color:#c8a84a}
+.callout.warning .ct{color:#f59e0b}
+.callout.danger{background:rgba(239,68,68,.06);border-left-color:#ef4444;color:#d08090}
+.callout.danger .ct{color:#ef4444}
+.callout.success{background:rgba(16,185,129,.06);border-left-color:#10b981;color:#6ee7b7}
+.callout.success .ct{color:#10b981}
+
+/* ===== Flow Arrow ===== */
+.flow-row{display:flex;align-items:center;gap:6px;margin:10px 0;flex-wrap:wrap;justify-content:center}
+.flow-box{padding:6px 14px;border-radius:8px;font-size:11.5px;font-weight:600;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:#c8c8e8;transition:all .3s;cursor:default}
+.flow-box:hover{background:rgba(108,99,255,.08);border-color:rgba(108,99,255,.2)}
+.flow-arr{color:rgba(108,99,255,.3);font-size:14px}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ============================================================ -->
+<!-- S1: Hero — 弱网全景 -->
+<!-- ============================================================ -->
+<div class="sec" id="s1">
+  <h2 class="sec-title" id="s1t">WebRTC 弱网对抗技术</h2>
+  <p class="sec-sub" id="s1s">
+    实时音视频通信的核心挑战：在不可靠的 IP 网络上维持可接受的视听质量。<br>
+    带宽预测确定"能发多少"，抗丢包保证"发的能到"，自适应码率做到"动态调节"， jitter buffer 实现"平滑播放"。<br>
+    本页系统性拆解 WebRTC 四大弱网支柱，为 LiveKit/KVS-WebRTC 开发奠定基础。
+  </p>
+  <div class="hero-canvas-wrap" id="heroWrap">
+    <canvas id="heroCanvas"></canvas>
+  </div>
+  <div class="hero-controls">
+    <button class="hero-btn bw" onclick="setNetMode('bw')">带宽受限</button>
+    <button class="hero-btn loss" onclick="setNetMode('loss')">随机丢包</button>
+    <button class="hero-btn jitter" onclick="setNetMode('jitter')">突发抖动</button>
+    <button class="hero-btn bw" onclick="setNetMode('normal')" style="background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.3);color:#6ee7b7">正常网络</button>
+  </div>
+  <div class="hero-stat" id="heroStat">
+    <div class="hs"><span class="hv bw-c" id="hsBw">2.4</span>Mbps 带宽估计</div>
+    <div class="hs"><span class="hv loss-c" id="hsLoss">1.2</span>% 丢包率</div>
+    <div class="hs"><span class="hv rtt-c" id="hsRtt">45</span>ms RTT</div>
+    <div class="hs"><span class="hv jit-c" id="hsJit">8</span>ms 抖动</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2: 弱网问题定义 -->
+<!-- ============================================================ -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" id="s2t">弱网的四维画像</h2>
+  <p class="sec-sub" id="s2s">
+    理解弱网，先要量化衡量。四个维度刻画网络质量，每个维度都有针对性的对抗手段。
+  </p>
+  <div class="overview-grid">
+    <div class="ov-card" style="--oc:#a78bfa" onclick="toggleDimDetail(0)">
+      <div class="ov-tag" style="--oc:#a78bfa">核心维度</div>
+      <div class="ov-icon">📉</div>
+      <div class="ov-name">带宽受限 <span style="font-size:10px;opacity:.5">▸ 点击展开</span></div>
+      <div class="ov-desc">可用带宽低于视频编码码率，导致排队延迟→丢包→卡顿。<br>典型场景：4G 弱信号、WiFi 拥塞共享</div>
+      <div class="dim-detail" id="dim0" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)">
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#a78bfa">根因：</strong>物理链路容量有限（如 4G 信号差仅 500kbps），或共享瓶颈链路被其他流占用（WiFi 多人同时看视频）</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#a78bfa">衡量方式：</strong>通过 GCC 等拥塞控制算法估计可用带宽（A_hat），对比当前编码码率判断是否受限</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#a78bfa">级联效应：</strong>带宽不足 → 路由器排队增长 → 延迟梯度上升 → 丢包发生 → GCC 降码率 → 画质下降</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#a78bfa">对抗手段：</strong>GCC 带宽估计 + 编码器自适应码率 + Simulcast/SVC 分层 + SFU 选流</p>
+        <p style="font-size:11.5px;color:#8888aa;line-height:1.8"><strong style="color:#a78bfa">板端现实：</strong>JY1C WiFi 带宽约 5-10Mbps，编码 1080p@2Mbps 通常够用，但 4G 回传场景带宽仅 500kbps-1Mbps</p>
+      </div>
+    </div>
+    <div class="ov-card" style="--oc:#fbbf24" onclick="toggleDimDetail(1)">
+      <div class="ov-tag" style="--oc:#fbbf24">核心维度</div>
+      <div class="ov-icon">📦</div>
+      <div class="ov-name">随机丢包 <span style="font-size:10px;opacity:.5">▸ 点击展开</span></div>
+      <div class="ov-desc">数据包在传输途中被路由器尾部丢弃或因链路错误丢失。<br>2%~20% 丢包都会严重影响质量</div>
+      <div class="dim-detail" id="dim1" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)">
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#fbbf24">根因：</strong>①路由器缓冲满 →tail drop（最常见）②无线链路干扰导致 CRC 错误③中间设备 MTU 不匹配导致大包被丢</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#fbbf24">衡量方式：</strong>发送端通过 RTP 序列号缺口检测丢包率；RTCP Receiver Report 中的丢包统计字段</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#fbbf24">影响分级：</strong>&lt;2% 基本无感；2-5% 轻微马赛克；5-10% 明显卡顿；10-20% 严重花屏；&gt;20% 无法正常通话</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#fbbf24">丢包模式：</strong><em>均匀丢包</em>（FEC 更有效）vs <em>突发丢包</em>（连续丢多个包，FEC 行列编码更强）</p>
+        <p style="font-size:11.5px;color:#8888aa;line-height:1.8"><strong style="color:#fbbf24">对抗手段：</strong>NACK 重传（低 RTT）→ FlexFEC 前向纠错（高 RTT/高丢包）→ PLI 关键帧刷新（严重丢包）</p>
+      </div>
+    </div>
+    <div class="ov-card" style="--oc:#38bdf8" onclick="toggleDimDetail(2)">
+      <div class="ov-tag" style="--oc:#38bdf8">核心维度</div>
+      <div class="ov-icon">🔄</div>
+      <div class="ov-name">延迟与 RTT <span style="font-size:10px;opacity:.5">▸ 点击展开</span></div>
+      <div class="ov-desc">信号传播+排队+处理延迟。RTT 直接决定 NACK 重传时效上限。<br>100ms+ 则重传价值递减</div>
+      <div class="dim-detail" id="dim2" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)">
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#38bdf8">组成部分：</strong><em>传播延迟</em>（光速/距离，如上海→旧金山 ≈ 60ms）+ <em>排队延迟</em>（路由器缓冲，0-100ms+ 不等）+ <em>处理延迟</em>（设备转发，通常 &lt;1ms）</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#38bdf8">衡量方式：</strong>STUN Binding Request/Response 的时间差；WebRTC 内部通过 TWCC 反馈计算</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#38bdf8">对重传的限制：</strong>播放缓冲 200ms 时，RTT &lt; 100ms 可重传 1 次；RTT &lt; 50ms 可重传 2 次；RTT &gt; 200ms 重传无用</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#38bdf8">对交互的影响：</strong>&lt;150ms 无感；150-300ms 感知迟钝；300-500ms 明显延迟；&gt;500ms 对话困难</p>
+        <p style="font-size:11.5px;color:#8888aa;line-height:1.8"><strong style="color:#38bdf8">对抗手段：</strong>高 RTT 场景放弃 NACK，改用 FEC 前向纠修；SFU 部署靠近用户降低 RTT</p>
+      </div>
+    </div>
+    <div class="ov-card" style="--oc:#34d399" onclick="toggleDimDetail(3)">
+      <div class="ov-tag" style="--oc:#34d399">核心维度</div>
+      <div class="ov-icon">〰️</div>
+      <div class="ov-name">突发抖动 <span style="font-size:10px;opacity:.5">▸ 点击展开</span></div>
+      <div class="ov-desc">包间延迟变化导致包到达时间不均匀。轻则音画不同步，重则缓冲欠载卡顿。</div>
+      <div class="dim-detail" id="dim3" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)">
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#34d399">根因：</strong>①路由器排队不均匀（交叉流量突发占用）②无线链路竞争（WiFi CSMA/CA 退避）③运营商流量整形（token bucket 突发）</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#34d399">衡量方式：</strong>计算连续包到达间隔的标准差（RFC 3550 Jitter 定义）；WebRTC 统计中的 <code>jitterBufferDelay / jitterBufferEmittedCount</code></p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#34d399">抖动模式：</strong><em>稳态低抖动</em>（局域网 &lt;1ms）→ <em>周期性抖动</em>（WiFi beacon 干扰，100ms 周期）→ <em>突发大抖动</em>（跨运营商，峰值 200ms+）</p>
+        <p style="font-size:11.5px;color:#9999bb;line-height:1.8;margin-bottom:6px"><strong style="color:#34d399">核心矛盾：</strong>缓冲越大→播放越平滑→延迟越高；缓冲越小→延迟越低→容易欠载卡顿</p>
+        <p style="font-size:11.5px;color:#8888aa;line-height:1.8"><strong style="color:#34d399">对抗手段：</strong>自适应 Jitter Buffer（NetEq）动态调整缓冲深度 + WSOLA 加速/减速播放 + PLC 丢包掩盖</p>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S3: GCC — 带宽预测核心 -->
+<!-- ============================================================ -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" id="s3t">GCC：Google 拥塞控制</h2>
+  <p class="sec-sub" id="s3s">
+    WebRTC 默认的带宽估计算法，由 Google 设计，基于<strong>延迟梯度</strong>和<strong>丢包率</strong>双信号驱动。<br>
+    核心思想：网络拥塞时排队延迟先升高（信号更早），丢包后发生（信号滞后），因此延迟梯度是更领先的拥塞指示器。
+  </p>
+  <div class="gcc-wrap" id="gccWrap">
+    <div class="gcc-flow">
+      <div class="gcc-step" onclick="showGccDetail(0)" style="--gc:#6c63ff">
+        <div class="gcc-num">1</div>
+        <div class="gcc-content">
+          <h4>到达时间滤波器 (Arrival-Time Filter)</h4>
+          <p>计算连续包组的<strong>到达间隔</strong> Δt<sub>a</sub> 与<strong>发送间隔</strong> Δt<sub>s</sub> 的差值。<br>
+          延迟梯度 <code>m(i) = Δt<sub>a</sub> - Δt<sub>s</sub></code> 反映了排队延迟变化。</p>
+        </div>
+      </div>
+      <div class="gcc-step" onclick="showGccDetail(1)" style="--gc:#a78bfa">
+        <div class="gcc-num">2</div>
+        <div class="gcc-content">
+          <h4>过载检测器 (Overuse Detector)</h4>
+          <p>将延迟梯度送入 <strong>Trendline Filter</strong>（线性回归或 Kalman Filter），<br>
+          判断当前网络状态：<code>Underuse</code> → <code>Normal</code> → <code>Overuse</code>。</p>
+        </div>
+      </div>
+      <div class="gcc-step" onclick="showGccDetail(2)" style="--gc:#f59e0b">
+        <div class="gcc-num">3</div>
+        <div class="gcc-content">
+          <h4>速率控制器 (Rate Controller)</h4>
+          <p>根据过载检测结果执行 <strong>AIMD</strong> 策略：<br>
+          <code>Overuse</code> → 乘性下降 (<code>×0.85</code>)<br>
+          <code>Normal</code> → 加性上升 (<code>+Δ</code>)<br>
+          <code>Underuse</code> → 保持当前估值</p>
+        </div>
+      </div>
+      <div class="gcc-step" onclick="showGccDetail(3)" style="--gc:#34d399">
+        <div class="gcc-num">4</div>
+        <div class="gcc-content">
+          <h4>丢失率修正 (Loss-Based Modifier)</h4>
+          <p>延迟梯度估值作为基准，再用丢包率做修正：<br>
+          丢包率 > 2% → <code>A<sub>recv</sub> × (1 - 0.5 × loss_rate)</code> 降码率<br>
+          丢包率 < 2% → <code>A<sub>recv</sub> × 1.05</code> 试探升码率</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="gcc-formula" id="gccDetail0">
+      <h4>延迟梯度计算详解</h4>
+      <code class="fm">
+<span class="cmt">// 包组定义：同一帧的 RTP 包组成一个包组</span>
+<span class="cmt">// i-th 包组的到达时间: t_a(i), 发送时间: t_s(i)</span>
+
+<span class="var">Δt_a</span>(i) = t_a(i) - t_a(i-1)     <span class="cmt">// 到达间隔</span>
+<span class="var">Δt_s</span>(i) = t_s(i) - t_s(i-1)     <span class="cmt">// 发送间隔</span>
+
+<span class="cmt">// 延迟梯度（排队延迟变化量）</span>
+<span class="var">m</span>(i) = <span class="var">Δt_a</span>(i) - <span class="var">Δt_s</span>(i)
+
+<span class="cmt">// Trendline Filter: 对最近 w 个梯度做线性回归</span>
+<span class="var">trendline_slope</span> = slope(<span class="var">m</span>(i-w), ..., <span class="var">m</span>(i))
+
+<span class="cmt">// 过载阈值</span>
+<span class="var">γ</span> = adaptive_threshold  <span class="cmt">// 自适应调整的阈值</span>
+      </code>
+    </div>
+
+    <div class="gcc-formula" id="gccDetail1" style="display:none">
+      <h4>过载检测状态机</h4>
+      <code class="fm">
+<span class="cmt">// 三个状态: Underuse / Normal / Overuse</span>
+
+<span class="var">if</span> trendline_slope > <span class="var">γ</span> <span class="var">then</span>
+    <span class="cmt">// 梯度超过上阈值 → 排队在增长</span>
+    overuse_counter++
+    <span class="var">if</span> overuse_counter >= overuse_threshold <span class="var">then</span>
+        state = <span class="op">OVERUSE</span>
+<span class="var">elif</span> trendline_slope < -<span class="var">γ</span> <span class="var">then</span>
+    <span class="cmt">// 梯度低于下阈值 → 排队在消退</span>
+    state = <span class="op">UNDERUSE</span>
+<span class="var">else</span>
+    state = <span class="op">NORMAL</span>
+
+<span class="cmt">// 自适应阈值 γ: 防止在噪声大的网络中误判</span>
+<span class="var">γ</span>(i) = <span class="var">γ</span>(i-1) + <span class="var">k_d</span> * (|m(i)| - <span class="var">γ</span>(i-1)) + Δ<sub>γ</sub>
+      </code>
+    </div>
+
+    <div class="gcc-formula" id="gccDetail2" style="display:none">
+      <h4>AIMD 速率调节</h4>
+      <code class="fm">
+<span class="cmt">// A_recv: 当前带宽估计值</span>
+<span class="cmt">// A_recv_last: 上一次过载时的带宽估计</span>
+
+<span class="var">switch</span>(state):
+  <span class="var">case</span> <span class="op">OVERUSE</span>:
+    <span class="cmt">// 乘性下降：快速退让</span>
+    <span class="var">A_recv</span> = <span class="var">A_recv_last</span> × <span class="var">β</span>   <span class="cmt">// β ≈ 0.85</span>
+
+  <span class="var">case</span> <span class="op">NORMAL</span>:
+    <span class="cmt">// 加性增长：缓慢试探</span>
+    <span class="var">A_recv</span> += <span class="var">Δ</span>              <span class="cmt">// Δ 按时间计算</span>
+    <span class="cmt">// 同时不超过延迟梯度的安全上限</span>
+    <span class="var">A_recv</span> = min(<span class="var">A_recv</span>, 1.5×<span class="var">A_recv_last</span>)
+
+  <span class="var">case</span> <span class="op">UNDERUSE</span>:
+    <span class="cmt">// 保持当前估值不变</span>
+    <span class="cmt">// 等待网络恢复确认</span>
+    <span class="var">A_recv</span> = <span class="var">A_recv</span>
+      </code>
+    </div>
+
+    <div class="gcc-formula" id="gccDetail3" style="display:none">
+      <h4>丢包率修正公式</h4>
+      <code class="fm">
+<span class="cmt">// loss_rate: 近期丢包率</span>
+<span class="cmt">// A_recv: 延迟梯度估计值</span>
+
+<span class="var">if</span> loss_rate > 0.10:
+    <span class="cmt">// 高丢包：强力降码率</span>
+    <span class="var">A_final</span> = <span class="var">A_recv</span> × (1 - 0.5 × loss_rate)
+
+<span class="var">elif</span> loss_rate > 0.02:
+    <span class="cmt">// 中等丢包：温和降码率</span>
+    <span class="var">A_final</span> = <span class="var">A_recv</span> × (1 - loss_rate)
+
+<span class="var">else</span>:
+    <span class="cmt">// 低丢包：试探升码率</span>
+    <span class="var">A_final</span> = <span class="var">A_recv</span> × 1.05
+
+<span class="cmt">// 最终带宽取延迟估计与丢包修正的较小值</span>
+<span class="var">target_bitrate</span> = min(<span class="var">A_delay</span>, <span class="var">A_final</span>)
+      </code>
+    </div>
+
+    <!-- Trendline 可视化 -->
+    <h3 style="font-size:15px;font-weight:700;color:#a78bfa;margin-top:28px;text-align:center">延迟梯度与 Trendline 检测</h3>
+    <div class="trend-canvas-wrap" id="trendWrap">
+      <canvas id="trendCanvas"></canvas>
+    </div>
+    <div class="trend-legend">
+      <div class="tl"><div class="td" style="background:#6c63ff"></div>到达间隔差 (m(i))</div>
+      <div class="tl"><div class="td" style="background:#f59e0b"></div>Trendline 斜率</div>
+      <div class="tl"><div class="td" style="background:rgba(248,113,113,.5);height:1px"></div>过载阈值 γ</div>
+    </div>
+
+    <!-- AIMD 可视化 -->
+    <h3 style="font-size:15px;font-weight:700;color:#a78bfa;margin-top:28px;text-align:center">AIMD 带宽调节曲线</h3>
+    <div class="aimd-canvas-wrap" id="aimdWrap">
+      <canvas id="aimdCanvas"></canvas>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: Transport-CC -->
+<!-- ============================================================ -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" id="s4t">Transport-CC 反馈机制</h2>
+  <p class="sec-sub" id="s4s">
+    GCC 的信号来源。接收端逐包记录到达时间，通过 RTCP Transport-CC Feedback 报文发送给发送端，<br>
+    发送端据此计算延迟梯度。比旧方案 REMB（接收端估计）更精确，已成为 WebRTC 主流。
+  </p>
+  <div class="tcc-wrap" id="tccWrap">
+    <div class="tcc-flow-diagram" id="tccDiagram">
+      <!-- 发送端 sends RTP packets -->
+      <div class="tcc-row" style="transition-delay:.1s">
+        <div class="tcc-side">发送端</div>
+        <div class="tcc-arrow">→</div>
+        <div class="tcc-pkt data">RTP #1 seq=1000 ts=160</div>
+        <div class="tcc-pkt data">RTP #2 seq=1001 ts=160</div>
+        <div class="tcc-pkt data">RTP #3 seq=1002 ts=320</div>
+        <div class="tcc-arrow">→</div>
+        <div class="tcc-side" style="text-align:left">接收端</div>
+      </div>
+      <div class="tcc-row" style="transition-delay:.25s">
+        <div class="tcc-side"></div>
+        <div class="tcc-arrow"></div>
+        <div class="tcc-pkt data" style="opacity:.4">t=0ms</div>
+        <div class="tcc-pkt data" style="opacity:.4">t=22ms</div>
+        <div class="tcc-pkt data" style="opacity:.4">t=65ms</div>
+        <div class="tcc-arrow"></div>
+        <div class="tcc-side"></div>
+      </div>
+      <!-- 接收端 sends Feedback -->
+      <div class="tcc-row" style="transition-delay:.45s">
+        <div class="tcc-side">发送端</div>
+        <div class="tcc-arrow">←</div>
+        <div class="tcc-pkt fb">Transport-CC FB</div>
+        <div class="tcc-pkt fb">recv_delta=[0, 22, 43]ms</div>
+        <div class="tcc-pkt fb">ref_time=1609720000</div>
+        <div class="tcc-arrow">←</div>
+        <div class="tcc-side" style="text-align:left">接收端</div>
+      </div>
+      <!-- 发送端计算 -->
+      <div class="tcc-row" style="transition-delay:.65s">
+        <div class="tcc-side">发送端</div>
+        <div class="tcc-arrow"></div>
+        <div class="tcc-pkt data" style="background:rgba(108,99,255,.25);border-color:rgba(108,99,255,.4)">利用 Feedback 计算</div>
+        <div class="tcc-pkt data" style="background:rgba(108,99,255,.25);border-color:rgba(108,99,255,.4)">延迟梯度 → GCC</div>
+        <div class="tcc-pkt data" style="background:rgba(52,211,153,.15);border-color:rgba(52,211,153,.3);color:#6ee7b7">→ 目标码率</div>
+        <div class="tcc-arrow"></div>
+        <div class="tcc-side"></div>
+      </div>
+    </div>
+    <div class="tcc-note">
+      <em>Transport-CC Feedback</em> 每 ~100ms 发送一次，包含自上次反馈以来的所有 RTP 包到达时间戳。<br>
+      发送端通过比较 <em>到达间隔 Δt<sub>a</sub></em> 与 <em>发送间隔 Δt<sub>s</sub></em>，精确计算排队延迟变化。<br>
+      这比旧方案 REMB（接收端估计后在 RTCP 中上报码率数值）更精确，因发送端掌握全局发送节奏。
+    </div>
+
+    <div class="callout info" style="margin-top:20px">
+      <div class="ct">Transport-CC vs REMB</div>
+      <strong>REMB (Receiver Estimated Maximum Bitrate)</strong>：接收端估算带宽后通过 RTCP REMB 消息告知发送端。<br>
+      问题：接收端缺少发送节奏信息，对突发流量的梯度计算不准确。<br>
+      <strong>Transport-CC</strong>：接收端只报告到达时间，计算逻辑移到发送端，与 GCC 配合更紧密。<br>
+      Chrome 75+ 已默认启用 Transport-CC，REMB 逐步弃用。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5: 带宽预测方案对比 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" id="s5t">带宽预测方案全景对比</h2>
+  <p class="sec-sub" id="s5s">
+    除 GCC 外，学术界和工业界还有多种拥塞控制方案。了解它们的差异，有助于选型和调试。
+  </p>
+  <div class="cmp-wrap" id="cmpWrap">
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th>方案</th>
+            <th>信号类型</th>
+            <th>估算位置</th>
+            <th>精度</th>
+            <th>收敛速度</th>
+            <th>WebRTC 采用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>GCC (send-side)</strong></td>
+            <td>延迟梯度 + 丢包</td>
+            <td>发送端</td>
+            <td class="good">高</td>
+            <td class="mid">中等</td>
+            <td class="good">默认</td>
+          </tr>
+          <tr>
+            <td><strong>REMB (recv-side)</strong></td>
+            <td>延迟梯度 + 丢包</td>
+            <td>接收端</td>
+            <td class="mid">中等</td>
+            <td class="mid">中等</td>
+            <td class="bad">弃用中</td>
+          </tr>
+          <tr>
+            <td><strong>NADA</strong></td>
+            <td>延迟 + 丢包 + ECN</td>
+            <td>接收端</td>
+            <td class="mid">中等</td>
+            <td class="good">快</td>
+            <td class="bad">未采用</td>
+          </tr>
+          <tr>
+            <td><strong>SCReAM</strong></td>
+            <td>延迟 + 丢包</td>
+            <td>发送端</td>
+            <td class="mid">中等</td>
+            <td class="good">快</td>
+            <td class="bad">未采用</td>
+          </tr>
+          <tr>
+            <td><strong>BBR</strong></td>
+            <td>BDP + RTprop</td>
+            <td>发送端</td>
+            <td class="good">高</td>
+            <td class="good">快</td>
+            <td class="bad">未采用</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warning" style="margin-top:18px">
+      <div class="ct">KVS-WebRTC 的现状</div>
+      KVS-WebRTC 作为轻量级 C 实现，<strong>缺少完整的 GCC 模块</strong>。它依赖应用层或 LiveKit SFU 端的带宽估计来指导码率调节。<br>
+      这意味着板端发送码率无法自适应网络状况，是弱网场景下的主要短板。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- S6: 抗丢包四维方案 -->
+<!-- ============================================================ -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" id="s6t">抗丢包四维方案</h2>
+  <p class="sec-sub" id="s6s">
+    丢包是弱网最直接的症状。NACK 重传、FEC 前向纠错、关键帧请求和音频专用方案各有适用场景，WebRTC 实战中联合使用。
+  </p>
+  <div class="al-wrap" id="alWrap">
+
+    <!-- ① NACK + RTX -->
+    <div style="width:100%;max-width:960px;margin-bottom:24px">
+      <div class="al-card" style="--ac:#a78bfa;width:100%;transition:all .5s">
+        <div class="al-title" style="font-size:20px">① NACK + RTX 重传</div>
+        <div class="al-subtitle" style="font-size:13px">检测丢包 → 请求重发 → 受 RTT 时效约束</div>
+        <div class="al-body" style="columns:2;column-gap:28px">
+          <p><strong>原理：</strong>接收端发现 RTP 序列号缺口后，发送 <em>RTCP NACK</em> 消息请求发送端重传对应包。NACK 消息格式：<code>FCI = (PID, BLP)</code>，PID 指明首个丢失包序号，BLP 用 bitmap 指示后续连续丢包，一条 NACK 最多报告 17 个丢包。</p>
+          <p><strong>RTX 机制：</strong>使用独立 SSRC 重传，避免 RTP 序列号冲突。发送端维护 <code>RtpRollingBuffer</code> 缓存最近发送的包供重传取用。原始包 seq=1000，重传包使用 RTX SSRC 不同的 seq 空间。</p>
+          <p><strong>时效约束：</strong>重传包必须在播放 deadline 前到达。播放缓冲 200ms 时：RTT &lt; 100ms 可重传 1 次；RTT &lt; 50ms 可重传 2 次；RTT &gt; 200ms 重传无意义。WebRTC 设定每个包最多 NACK 2-3 次后放弃。</p>
+          <p><strong>适用场景：</strong><em>低丢包 (1-5%)</em> + <em>低 RTT (&lt;100ms)</em>，消耗带宽极小（仅丢包量的 1-2 倍）。</p>
+          <p><strong>局限性：</strong>高 RTT 时完全失效；高丢包时大量 NACK 报文本身占带宽；无法抗突发性连续丢包（整个 GOP 丢失时重传来不及）。</p>
+        </div>
+
+        <div class="nack-tl" style="margin-top:14px">
+          <div style="font-size:11px;color:#6666aa;margin-bottom:6px;font-weight:700">NACK 时序流程 (RTT=100ms)</div>
+          <div class="nack-step">
+            <span class="ns-time">t=0ms</span>
+            <span class="ns-who tx">TX</span>
+            <span class="ns-what">发送 RTP <code>seq=100,101,103</code>（102 在路由器 tail drop）</span>
+          </div>
+          <div class="nack-step">
+            <span class="ns-time">t=50ms</span>
+            <span class="ns-who rx">RX</span>
+            <span class="ns-what">收到 101 后发现缺口 seq=102 → 发送 <code>RTCP NACK PID=102 BLP=0</code></span>
+          </div>
+          <div class="nack-step">
+            <span class="ns-time">t=100ms</span>
+            <span class="ns-who tx">TX</span>
+            <span class="ns-what">收到 NACK → 查 <code>RtpRollingBuffer</code> → 从 RTX SSRC 重传 <code>seq=102</code></span>
+          </div>
+          <div class="nack-step">
+            <span class="ns-time">t=150ms</span>
+            <span class="ns-who rx">RX</span>
+            <span class="ns-what">重传包到达 → 送入 Jitter Buffer 排序 → 解码恢复 ✓（deadline=200ms）</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② FEC 前向纠错 -->
+    <div style="width:100%;max-width:960px;margin-bottom:24px">
+      <div class="al-card" style="--ac:#34d399;width:100%;transition:all .6s">
+        <div class="al-title" style="font-size:20px">② FEC 前向纠错</div>
+        <div class="al-subtitle" style="font-size:13px">冗余编码 → 无需等待 → 零额外延迟恢复</div>
+        <div class="al-body" style="columns:2;column-gap:28px">
+          <p><strong>原理：</strong>发送端额外发送携带冗余信息的 FEC 包，接收端利用冗余信息重建丢失的媒体包，<em>无需反向请求</em>。恢复延迟 = 0（等 FEC 包组收齐即可解码），这是与 NACK 的关键差异。</p>
+          <p><strong>FlexFEC (RFC 8627)：</strong>当前 WebRTC 主推方案。支持行异或、列异或、行列异或三种编码，灵活选择保护粒度。行列编码可抗突发丢包（同一行/列丢 2+ 个包仍可恢复）。</p>
+          <p><strong>UlpFEC (RFC 5109)：</strong>早期方案，整包级别异或保护，保护粒度粗，已被 FlexFEC 取代。Chrome 已弃用。</p>
+          <p><strong>冗余率自适应：</strong>WebRTC 根据实时丢包率动态调节 FEC 冗余比例。丢包 5% 时加 ~10% FEC 冗余，丢包 15% 时加 ~30% 冗余。总发送码率 = 媒体码率 + FEC 开销，需在 GCC 带宽估计上限内分配。</p>
+          <p><strong>适用场景：</strong><em>中高丢包 (5-20%)</em> 或 <em>高 RTT (&gt;100ms)</em> NACK 重传失效时。是以带宽换可靠性的核心手段。</p>
+          <p><strong>局限性：</strong>消耗额外带宽（10-50% 额外开销）；行列编码增加发送延迟（需等整行/列包齐才发 FEC 包）；丢包超过 FEC 恢复能力时仍需 PLI 兜底。</p>
+        </div>
+        <details style="margin-top:10px">
+          <summary>FlexFEC 行列编码详解</summary>
+          <div style="font-size:12px;line-height:1.9;color:#b0b0d0">
+            <p><strong>4行×4列 媒体包 + 行FEC + 列FEC 编码：</strong></p>
+            <pre style="background:rgba(0,0,0,.2);padding:10px;border-radius:8px;font-size:11px;overflow-x:auto">
+  媒体包:  M1  M2  M3  M4  → 行FEC: R1 = M1⊕M2⊕M3⊕M4
+           M5  M6  M7  M8  → 行FEC: R2 = M5⊕M6⊕M7⊕M8
+           M9  M10 M11 M12 → 行FEC: R3 = M9⊕M10⊕M11⊕M12
+           M13 M14 M15 M16 → 行FEC: R4 = M13⊕M14⊕M15⊕M16
+           ↓    ↓    ↓    ↓
+  列FEC:   C1   C2   C3   C4
+           (各列异或)
+
+  丢失 M7: 用 R2⊕M5⊕M6⊕M8 恢复，或用 C3⊕M3⊕M11⊕M15 恢复
+  丢失 M7+M8: 仅 R2 就能同时恢复两个（行冗余包覆盖两个丢包）
+  丢失 M7+M11: R2 恢复 M7，C3 恢复 M11（行列联合恢复）
+  丢失 M7+M8+M11: R2 恢复 M7+M8，C3 恢复 M11（仍可恢复！）</pre>
+            <p><strong>关键优势：</strong>同一行丢任何 ≤1 个包，或行列交叉丢包，均可恢复。这是 FlexFEC 行列编码比纯行编码更强的地方。</p>
+          </div>
+        </details>
+        <div class="fec-grid-wrap" id="fecGridWrap">
+          <div class="fec-title">FlexFEC 4×4 行列编码示意</div>
+          <div class="fec-row fec-header-row">
+            <div class="fec-cell fec-label"></div>
+            <div class="fec-cell fec-col-label">列1</div>
+            <div class="fec-cell fec-col-label">列2</div>
+            <div class="fec-cell fec-col-label">列3</div>
+            <div class="fec-cell fec-col-label">列4</div>
+            <div class="fec-cell fec-label">行FEC</div>
+            <div class="fec-cell fec-xor-label"></div>
+          </div>
+          <div class="fec-row">
+            <div class="fec-cell fec-row-label">行1</div>
+            <div class="fec-cell media">M1<span>seq=1000</span></div>
+            <div class="fec-cell media">M2<span>seq=1001</span></div>
+            <div class="fec-cell media">M3<span>seq=1002</span></div>
+            <div class="fec-cell media">M4<span>seq=1003</span></div>
+            <div class="fec-cell row-fec">R1</div>
+            <div class="fec-cell fec-xor-label">R1=M1⊕M2⊕M3⊕M4</div>
+          </div>
+          <div class="fec-row">
+            <div class="fec-cell fec-row-label">行2</div>
+            <div class="fec-cell media">M5<span>seq=1004</span></div>
+            <div class="fec-cell media">M6<span>seq=1005</span></div>
+            <div class="fec-cell media lost">M7 ✗<span>seq=1006</span></div>
+            <div class="fec-cell media">M8<span>seq=1007</span></div>
+            <div class="fec-cell row-fec">R2</div>
+            <div class="fec-cell fec-xor-label">R2=M5⊕M6⊕M7⊕M8</div>
+          </div>
+          <div class="fec-row">
+            <div class="fec-cell fec-row-label">行3</div>
+            <div class="fec-cell media">M9<span>seq=1008</span></div>
+            <div class="fec-cell media">M10<span>seq=1009</span></div>
+            <div class="fec-cell media lost">M11 ✗<span>seq=1010</span></div>
+            <div class="fec-cell media">M12<span>seq=1011</span></div>
+            <div class="fec-cell row-fec">R3</div>
+            <div class="fec-cell fec-xor-label">R3=M9⊕M10⊕M11⊕M12</div>
+          </div>
+          <div class="fec-row">
+            <div class="fec-cell fec-row-label">行4</div>
+            <div class="fec-cell media">M13<span>seq=1012</span></div>
+            <div class="fec-cell media">M14<span>seq=1013</span></div>
+            <div class="fec-cell media">M15<span>seq=1014</span></div>
+            <div class="fec-cell media">M16<span>seq=1015</span></div>
+            <div class="fec-cell row-fec">R4</div>
+            <div class="fec-cell fec-xor-label">R4=M13⊕M14⊕M15⊕M16</div>
+          </div>
+          <div class="fec-row">
+            <div class="fec-cell fec-label"></div>
+            <div class="fec-cell col-fec">C1</div>
+            <div class="fec-cell col-fec">C2</div>
+            <div class="fec-cell col-fec">C3</div>
+            <div class="fec-cell col-fec">C4</div>
+            <div class="fec-cell fec-label"></div>
+            <div class="fec-cell fec-xor-label"></div>
+          </div>
+          <div class="fec-row fec-xor-bottom">
+            <div class="fec-cell fec-label"></div>
+            <div class="fec-cell fec-xor-col">C1=M1⊕M5⊕M9⊕M13</div>
+            <div class="fec-cell fec-xor-col">C2=M2⊕M6⊕M10⊕M14</div>
+            <div class="fec-cell fec-xor-col">C3=M3⊕M7⊕M11⊕M15</div>
+            <div class="fec-cell fec-xor-col">C4=M4⊕M8⊕M12⊕M16</div>
+            <div class="fec-cell fec-label"></div>
+            <div class="fec-cell fec-xor-label"></div>
+          </div>
+          <!-- Recovery explanations -->
+          <div class="fec-recovery">
+            <div class="fr-item fr-row"><span class="fr-icon">✔</span> 行FEC恢复：<strong>M7</strong> 丢失 → R2⊕M5⊕M6⊕M8 = M7</div>
+            <div class="fr-item fr-col"><span class="fr-icon">✔</span> 列FEC恢复：<strong>M11</strong> 丢失 → C3⊕M3⊕M7⊕M15 = M11 （行FEC也可恢复，双保险）</div>
+            <div class="fr-item fr-cross"><span class="fr-icon">★</span> 行列联合恢复：M7+M11 同时丢失 → R2恢复M7，C3恢复M11（行列交叉恢复！）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ PLI / FIR -->
+    <div style="width:100%;max-width:960px;margin-bottom:24px">
+      <div class="al-card" style="--ac:#f59e0b;width:100%;transition:all .6s">
+        <div class="al-title" style="font-size:20px">③ 关键帧请求 (PLI / FIR)</div>
+        <div class="al-subtitle" style="font-size:13px">严重丢包 → 放弃修补 → 全帧刷新重启解码</div>
+        <div class="al-body" style="columns:2;column-gap:28px">
+          <p><strong>PLI (Picture Loss Indication)：</strong>接收端检测到参考帧（I 帧或关键 P 帧）丢失，后续所有 P 帧无法解码时发送。发送端收到后立即编码一个新 I 帧。这是最常用的关键帧请求方式。</p>
+          <p><strong>FIR (Full Intra Request)：</strong>比 PLI 更强力，强制请求生成 I 帧，用于 SIMULCAST 层切换、MCU 合流布局变化、新订阅者加入等场景。FIR 带有命令序列号，防止乱序重复处理。</p>
+          <p><strong>触发时机：</strong>① NACK 重传超时（同一包 NACK 2-3 次）；② 解码器报告参考帧缺失；③ SFU 切换 Simulcast 层时发送 FIR；④ 新订阅者加入房间时。</p>
+          <p><strong>代价与风险：</strong>I 帧大小是 P 帧的 10-50 倍（1080p I 帧可达 100-200KB），会瞬间占用大量带宽，可能加剧拥塞形成恶性循环。必须配合 GCC 码率估计控制 I 帧大小。</p>
+          <p><strong>防抖策略：</strong>WebRTC 对 PLI/FIR 请求做限流，最小间隔 T_minPLI = 500ms（可配置），避免接收端反复请求 I 帧导致发送端码率爆炸。</p>
+        </div>
+        <div class="flow-row" style="margin-top:14px">
+          <div class="flow-box" style="border-color:rgba(248,113,113,.3);color:#f87171">严重丢包</div>
+          <div class="flow-arr">→</div>
+          <div class="flow-box" style="border-color:rgba(245,158,11,.3);color:#fbbf24">NACK 失效</div>
+          <div class="flow-arr">→</div>
+          <div class="flow-box" style="border-color:rgba(245,158,11,.3);color:#fbbf24">发送 PLI</div>
+          <div class="flow-arr">→</div>
+          <div class="flow-box" style="border-color:rgba(52,211,153,.3);color:#34d399">编码新 I 帧</div>
+          <div class="flow-arr">→</div>
+          <div class="flow-box" style="border-color:rgba(52,211,153,.3);color:#34d399">解码恢复</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 音频抗丢包 -->
+    <div style="width:100%;max-width:960px;margin-bottom:24px">
+      <div class="al-card" style="--ac:#38bdf8;width:100%;transition:all .6s">
+        <div class="al-title" style="font-size:20px">④ 音频抗丢包方案</div>
+        <div class="al-subtitle" style="font-size:13px">Opus In-band FEC + RED + PLC — 音频比视频更怕丢包</div>
+        <div class="al-body">
+          <p><strong>为什么音频更需要保护：</strong>人耳对音频断续极其敏感（50ms 静音即可感知），且音频码率极低（6-32kbps），FEC 开销占比小、收益大。视频丢一个 P 帧最多花屏，音频丢一个包就是明显卡顿。</p>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:14px">
+            <div style="background:rgba(0,0,0,.15);border-radius:10px;padding:14px">
+              <div style="font-size:13px;font-weight:700;color:#38bdf8;margin-bottom:6px">Opus In-band FEC</div>
+              <div style="font-size:11.5px;color:#9999bb;line-height:1.7">
+                编码器每帧嵌入前一帧的低码率副本。丢包时用副本替代，音质略降但不断续。<br>
+                <strong style="color:#c8c8e8">开销：</strong>约 20% 额外码率<br>
+                <strong style="color:#c8c8e8">SDP：</strong><code>useinbandfec=1</code><br>
+                <strong style="color:#c8c8e8">限制：</strong>只能恢复单包丢失
+              </div>
+            </div>
+            <div style="background:rgba(0,0,0,.15);border-radius:10px;padding:14px">
+              <div style="font-size:13px;font-weight:700;color:#818cf8;margin-bottom:6px">RED (RFC 2198)</div>
+              <div style="font-size:11.5px;color:#9999bb;line-height:1.7">
+                在 RTP 包头附加前 1-4 帧的完整编码数据。可恢复连续多包丢失。<br>
+                <strong style="color:#c8c8e8">开销：</strong>比 In-band FEC 更大（完整帧冗余）<br>
+                <strong style="color:#c8c8e8">状态：</strong>Chrome 已弃用 RED，改用 In-band FEC<br>
+                <strong style="color:#c8c8e8">优势：</strong>可抗连续 2-4 个包丢失
+              </div>
+            </div>
+            <div style="background:rgba(0,0,0,.15);border-radius:10px;padding:14px">
+              <div style="font-size:13px;font-weight:700;color:#34d399;margin-bottom:6px">PLC (Packet Loss Concealment)</div>
+              <div style="font-size:11.5px;color:#9999bb;line-height:1.7">
+                解码器基于前一帧信号特征做波形插值，掩盖 1-2 帧丢失。无需额外带宽。<br>
+                <strong style="color:#c8c8e8">开销：</strong>零带宽开销<br>
+                <strong style="color:#c8c8e8">内置：</strong>Opus 自带 PLC<br>
+                <strong style="color:#c8c8e8">限制：</strong>仅能掩盖 20-40ms 丢包
+              </div>
+            </div>
+          </div>
+
+          <pre style="background:rgba(0,0,0,.2);padding:12px;border-radius:8px;font-size:11px;font-family:'JetBrains Mono',monospace;color:#c8c8e8;line-height:1.8;overflow-x:auto;margin-top:14px"><code>// SDP fmtp:111 useinbandfec=1; maxaveragebitrate=24000
+a=fmtp:111 useinbandfec=1; maxaveragebitrate=24000
+
+// Opus In-band FEC 工作原理
+发送端编码:
+  Frame N:   [当前帧 20ms 音频 @24kbps] + [Frame N-1 低质量备份 @6kbps]
+  Frame N+1: [当前帧 20ms 音频 @24kbps] + [Frame N   低质量备份 @6kbps]
+
+接收端丢包恢复:
+  正常:  收到 N, N+1 → 正常解码播放
+  丢包:  丢失 Frame N → 从 Frame N+1 中提取低质量备份解码 → 音质下降但不断续
+  连丢:  丢失 N, N+1 → PLC 插值 40ms → FEC 无法恢复 → 短暂静音</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- 联合策略总结 -->
+    <div class="callout info" style="margin-top:6px;max-width:960px;width:100%">
+      <div class="ct">联合策略 — 弱网下的分层防护</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:8px">
+        <div>
+          <strong style="color:#a78bfa">丢包 &lt; 5%</strong><br>
+          <span style="font-size:12px;color:#9999bb;line-height:1.7">
+            视频：NACK 重传为主<br>
+            音频：Opus In-band FEC<br>
+            码率：GCC 正常 AIMD<br>
+            延迟目标：&lt; 100ms
+          </span>
+        </div>
+        <div>
+          <strong style="color:#fbbf24">丢包 5-20%</strong><br>
+          <span style="font-size:12px;color:#9999bb;line-height:1.7">
+            视频：NACK + FlexFEC<br>
+            音频：Opus FEC + RED<br>
+            码率：GCC 乘性下降<br>
+            延迟目标：100-300ms
+          </span>
+        </div>
+        <div>
+          <strong style="color:#f87171">丢包 &gt; 20%</strong><br>
+          <span style="font-size:12px;color:#9999bb;line-height:1.7">
+            视频：FlexFEC + PLI 刷新<br>
+            音频：降码率 + 强 FEC<br>
+            码率：激进降码率<br>
+            最后手段：Simulcast 切低层
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+<!-- ============================================================ -->
+<!-- S7: 自适应码率 (ABR) -->
+<!-- ============================================================ -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" id="s7t">自适应码率 (ABR)</h2>
+  <p class="sec-sub" id="s7s">
+    带宽预测给出了"天花板"，如何利用这个天花板？编码器自适应调节、Simulcast、SVC 三层架构协同工作。
+  </p>
+  <div class="abr-wrap" id="abrWrap">
+    <div class="abr-layers">
+      <div class="abr-layer" style="--lc:#6c63ff">
+        <div class="ll-icon">🎬</div>
+        <div class="ll-body">
+          <h4>编码器码率自适应</h4>
+          <p>WebRTC <code>BitrateAllocator</code> 将 GCC 估计的目标码率分配给各路流。<br>
+          编码器通过调整 <em>QP (量化参数)</em> 和 <em>帧率</em> 来匹配目标码率。<br>
+          关键：编码器必须<em>在一帧内</em>响应码率变化，否则迭代回路断裂。<br>
+          <code>VideoStreamEncoder::OnBitrateUpdated()</code> → 设置编码器目标码率。</p>
+        </div>
+      </div>
+      <div class="abr-layer" style="--lc:#34d399">
+        <div class="ll-icon">📐</div>
+        <div class="ll-body">
+          <h4>Simulcast 同时多流</h4>
+          <p>发送端同时编码多个空间/质量层（如 320p/640p/1280p），<br>
+          SFU 根据每个订阅者的带宽选择转发对应的层。<br>
+          LiveKit 默认启用 Simulcast（3层），这是房间视频的核心抗弱网手段。<br>
+          代价：发送端 CPU 和带宽开销 ×层数。</p>
+        </div>
+      </div>
+      <div class="abr-layer" style="--lc:#38bdf8">
+        <div class="ll-icon">🧬</div>
+        <div class="ll-body">
+          <h4>SVC 可伸缩视频编码</h4>
+          <p>单流内嵌多层：空间层（分辨率）+ 时间层（帧率）。比 Simulcast 节省带宽。<br>
+          VP9/AV1 支持 SVC，H.264 不支持。<br>
+          SFU 可按层过滤（strip 高层），实现带宽自适应转发。<br>
+          LiveKit 对 VP9 SVC 有实验性支持。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulcast 可视化 -->
+    <h3 style="font-size:15px;font-weight:700;color:#a78bfa;margin-top:28px;text-align:center">Simulcast 三层流选择示意</h3>
+    <div class="sim-canvas-wrap" id="simWrap">
+      <canvas id="simCanvas"></canvas>
+    </div>
+    <div class="sim-legend">
+      <div class="sl"><div class="sd" style="background:#6c63ff"></div>低流 320p ~150kbps</div>
+      <div class="sl"><div class="sd" style="background:#34d399"></div>中流 640p ~400kbps</div>
+      <div class="sl"><div class="sd" style="background:#38bdf8"></div>高流 1280p ~800kbps</div>
+    </div>
+
+    <div class="callout warning" style="margin-top:22px">
+      <div class="ct">板端 Simulcast 的现实约束</div>
+      JY1C (mipsel) CPU 性能有限，多路实时编码对 CPU 和内存压力大。<br>
+      当前 <code>lk_demo</code> 只发送单流 H.264，未启用 Simulcast。<br>
+      若需弱网自适应，建议依赖 <strong>SFU 端转码降分辨率</strong>（LiveKit 已支持），而非板端多流编码。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S8: Jitter Buffer -->
+<!-- ============================================================ -->
+<div class="sec" id="s8">
+  <h2 class="sec-title" id="s8t">Jitter Buffer 与延迟对抗</h2>
+  <p class="sec-sub" id="s8s">
+    网络抖动导致包到达时间不均匀。Jitter Buffer 通过短暂缓冲来平滑播放，但也引入额外延迟。<br>
+    核心矛盾：<strong>缓冲越大越平滑，延迟越高</strong>。自适应 Jitter Buffer 动态寻找平衡点。
+  </p>
+  <div class="jb-canvas-wrap" id="jbWrap">
+    <canvas id="jbCanvas"></canvas>
+  </div>
+  <div class="jb-controls">
+    <button class="jb-btn" onclick="setJitterMode('low')">低抖动</button>
+    <button class="jb-btn" onclick="setJitterMode('burst')">突发抖动</button>
+    <button class="jb-btn" onclick="setJitterMode('high')">持续高抖动</button>
+  </div>
+  <div style="margin-top:24px;max-width:860px;width:100%">
+    <div class="overview-grid" style="grid-template-columns:repeat(3,1fr);margin-top:0">
+      <div class="ov-card" style="--oc:#a78bfa">
+        <div class="ov-name" style="font-size:14px">自适应缓冲深度</div>
+        <div class="ov-desc" style="font-size:11.5px;line-height:1.7">
+          监测包到达间隔方差，动态调整缓冲目标延迟。<br>
+          音频：20ms~500ms<br>
+          视频：0~3000ms<br>
+          <code>NetEq</code> 是 WebRTC 音频 Jitter Buffer 的核心组件
+        </div>
+      </div>
+      <div class="ov-card" style="--oc:#34d399">
+        <div class="ov-name" style="font-size:14px">加速/减速播放</div>
+        <div class="ov-desc" style="font-size:11.5px;line-height:1.7">
+          缓冲欠载时：正常播放（PLC 掩盖）<br>
+          缓冲过深时：WSOLA 算法加速播放（变调不明显）<br>
+          利用加速/减速逐步将缓冲深度调向目标
+        </div>
+      </div>
+      <div class="ov-card" style="--oc:#38bdf8">
+        <div class="ov-name" style="font-size:14px">音视频同步</div>
+        <div class="ov-desc" style="font-size:11.5px;line-height:1.7">
+          RTP 时间戳 + NTP 时钟映射<br>
+          对齐音频和视频的渲染时刻<br>
+          同步误差 < 50ms 人眼不可感知
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S9: 弱网策略决策矩阵 -->
+<!-- ============================================================ -->
+<div class="sec" id="s9">
+  <h2 class="sec-title" id="s9t">弱网策略决策矩阵</h2>
+  <p class="sec-sub" id="s9s">
+    不同丢包率和 RTT 组合下，应该启用何种组合策略？这张矩阵是调试和配置的实战参考。
+  </p>
+  <div class="dm-wrap" id="dmWrap">
+    <div class="dm-grid">
+      <div class="dm-cell c1">
+        <div class="dm-header">丢包 &lt; 5%</div>
+        <div class="dm-items">
+          <div class="dm-item"><em>视频</em>：NACK 重传为主</div>
+          <div class="dm-item"><em>音频</em>：Opus In-band FEC</div>
+          <div class="dm-item"><em>码率</em>：GCC 正常 AIMD</div>
+          <div class="dm-item"><em>缓冲</em>：目标 ~60ms</div>
+          <div class="dm-item"><em>端到端延迟</em>：&lt; 100ms</div>
+        </div>
+      </div>
+      <div class="dm-cell c2">
+        <div class="dm-header">丢包 5-20%</div>
+        <div class="dm-items">
+          <div class="dm-item"><em>视频</em>：NACK + FlexFEC</div>
+          <div class="dm-item"><em>音频</em>：Opus FEC + RED</div>
+          <div class="dm-item"><em>码率</em>：GCC 乘性下降</div>
+          <div class="dm-item"><em>缓冲</em>：目标 ~120ms</div>
+          <div class="dm-item"><em>端到端延迟</em>：100-300ms</div>
+        </div>
+      </div>
+      <div class="dm-cell c3">
+        <div class="dm-header">丢包 &gt; 20%</div>
+        <div class="dm-items">
+          <div class="dm-item"><em>视频</em>：FlexFEC + PLI 刷新</div>
+          <div class="dm-item"><em>音频</em>：降码率 + 强 FEC</div>
+          <div class="dm-item"><em>码率</em>：激进降码率</div>
+          <div class="dm-item"><em>缓冲</em>：目标 ~200ms</div>
+          <div class="dm-item"><em>端到端延迟</em>：&gt; 300ms</div>
+          <div class="dm-item"><em>最后手段</em>：Simulcast 切低层</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout danger" style="margin-top:24px">
+      <div class="ct">丢包 &gt; 30% 的极端场景</div>
+      FEC 和 NACK 都可能失效。此时只剩两个选择：<br>
+      1. <strong>极度降码率</strong>（如降至 50kbps，仅传低帧率关键帧）维持基本连通<br>
+      2. <strong>暂停视频</strong>，仅保留音频通道（Opus 在 6kbps 仍可工作）<br>
+      LiveKit SFU 的订阅降级策略在此场景下自动触发。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S10: KVS-WebRTC 弱网短板分析 -->
+<!-- ============================================================ -->
+<div class="sec" id="s10">
+  <h2 class="sec-title" id="s10t">KVS-WebRTC 弱网能力现状</h2>
+  <p class="sec-sub" id="s10s">
+    对照完整 WebRTC 技术栈，分析 KVS-WebRTC（LiveKit 板端采用）的弱网能力缺口，为后续开发指明方向。
+  </p>
+  <div class="gap-wrap" id="gapWrap">
+    <div class="gap-grid">
+      <div class="gap-card">
+        <h4 style="color:#34d399">NACK 重传</h4>
+        <span class="gap-status has">已实现</span>
+        <p>基础 NACK + RTX 重传可用。支持 RTCP NACK 解析和 RTP 重传包发送。</p>
+        <ul>
+          <li><code>JitterBuffer</code> 负责丢包检测和 NACK 生成</li>
+          <li><code>RtpRollingBuffer</code> 缓存发送包用于重传</li>
+        </ul>
+      </div>
+      <div class="gap-card">
+        <h4 style="color:#fbbf24">GCC 拥塞控制</h4>
+        <span class="gap-status miss">未实现</span>
+        <p><strong>最大的短板</strong>。无延迟梯度和 AIMD 带宽估计，发送速率完全依赖应用层设定。</p>
+        <ul>
+          <li>无 Transport-CC Feedback 处理</li>
+          <li>无 Trendline Filter / Kalman Filter</li>
+          <li>编码器码率无法自适应调节</li>
+        </ul>
+      </div>
+      <div class="gap-card">
+        <h4 style="color:#f87171">FlexFEC 前向纠错</h4>
+        <span class="gap-status miss">未实现</span>
+        <p>无 FEC 编解码能力，中高丢包场景完全依赖 NACK 重传（高 RTT 时失效）。</p>
+        <ul>
+          <li>FlexFEC / UlpFEC 均未集成</li>
+          <li>音频 Opus In-band FEC 也未启用</li>
+        </ul>
+      </div>
+      <div class="gap-card">
+        <h4 style="color:#fbbf24">Jitter Buffer</h4>
+        <span class="gap-status part">部分实现</span>
+        <p>有基础包重排和缓冲，但缺乏自适应深度调节和 NetEq 式的加速/减速播放。</p>
+        <ul>
+          <li>固定缓冲深度，非自适应</li>
+          <li>无 WSOLA 加速算法</li>
+          <li>音频/视频同步未实现</li>
+        </ul>
+      </div>
+      <div class="gap-card">
+        <h4 style="color:#f87171">Simulcast / SVC</h4>
+        <span class="gap-status miss">未实现</span>
+        <p>仅支持单流发送，无法提供多分辨率选择。SFU 端需做转码降分辨率。</p>
+        <ul>
+          <li>无多空间层编码</li>
+          <li>无 SVC 时间/空间层封装</li>
+        </ul>
+      </div>
+      <div class="gap-card">
+        <h4 style="color:#fbbf24">PLI / FIR</h4>
+        <span class="gap-status part">部分实现</span>
+        <p>支持 RTCP PLI 消息的发送和接收，但关键帧编码请求的响应依赖编码器集成。</p>
+        <ul>
+          <li>PLI 消息收发可用</li>
+          <li>编码器侧 OnPictureLoss 未完整对接</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S11: 开发路线图 -->
+<!-- ============================================================ -->
+<div class="sec" id="s11">
+  <h2 class="sec-title" id="s11t">板端弱网增强路线图</h2>
+  <p class="sec-sub" id="s11s">
+    基于 KVS-WebRTC 现状和 LiveKit 架构，分阶段增强板端弱网能力。
+  </p>
+  <div class="road-wrap" id="roadWrap">
+    <div class="road-tl">
+      <div class="road-line"></div>
+      <div class="road-node" style="--rc:#6c63ff">
+        <div class="road-dot">1</div>
+        <div class="road-body">
+          <h4>Opus In-band FEC + PLI 完善</h4>
+          <p>最低成本最高收益。启用 Opus FEC 保护音频；完善 PLI→编码器 I 帧请求链路。预计 1-2 天。</p>
+        </div>
+      </div>
+      <div class="road-node" style="--rc:#38bdf8">
+        <div class="road-dot">2</div>
+        <div class="road-body">
+          <h4>自适应 Jitter Buffer</h4>
+          <p>基于到达间隔方差动态调整缓冲深度。实现简版 NetEq 加速/减速逻辑。预计 3-5 天。</p>
+        </div>
+      </div>
+      <div class="road-node" style="--rc:#34d399">
+        <div class="road-dot">3</div>
+        <div class="road-body">
+          <h4>FlexFEC 集成</h4>
+          <p>集成开源 FEC 库（如 OpenFEC / librpbfec），支持行列编码。按丢包率动态调节冗余率。预计 5-7 天。</p>
+        </div>
+      </div>
+      <div class="road-node" style="--rc:#a78bfa">
+        <div class="road-dot">4</div>
+        <div class="road-body">
+          <h4>简化版 GCC 发送端</h4>
+          <p>实现 Transport-CC Feedback 解析 + Trendline Filter + AIMD 速率控制。与 LiveKit SFU 的 Transport-CC 配合。预计 7-10 天。</p>
+        </div>
+      </div>
+      <div class="road-node" style="--rc:#f43f5e">
+        <div class="road-dot">5</div>
+        <div class="road-body">
+          <h4>SFU 联动优化</h4>
+          <p>利用 LiveKit SFU 的订阅降级、Simulcast 转码、带宽估计下推等能力，配合板端形成端到端闭环。持续迭代。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ===== 四维画像展开/收起 =====
+function toggleDimDetail(idx){
+  const el=document.getElementById('dim'+idx);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'block':'none';
+}
+window.toggleDimDetail=toggleDimDetail;
+
+// ===== Polyfill =====
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    if(typeof r==='number')r=[r,r,r,r];
+    this.moveTo(x+r[0],y);this.lineTo(x+w-r[1],y);this.quadraticCurveTo(x+w,y,x+w,y+r[1]);
+    this.lineTo(x+w,y+h-r[2]);this.quadraticCurveTo(x+w,y+h,x+w-r[2],y+h);
+    this.lineTo(x+r[3],y+h);this.quadraticCurveTo(x,y+h,x,y+h-r[3]);
+    this.lineTo(x,y+r[0]);this.quadraticCurveTo(x,y,x+r[0],y);this.closePath();
+  }
+}
+
+// ===== Intersection Observer =====
+const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('vis')})},{threshold:.15});
+document.querySelectorAll('.sec-title,.sec-sub,.hero-canvas-wrap,.overview-grid .ov-card,.gcc-wrap,.trend-canvas-wrap,.aimd-canvas-wrap,.tcc-wrap,.cmp-wrap,.al-wrap,.al-wrap .al-card,.fec-grid-wrap,.abr-wrap,.abr-wrap .abr-layer,.sim-canvas-wrap,.jb-canvas-wrap,.dm-wrap,.dm-wrap .dm-cell,.gap-wrap,.gap-wrap .gap-card,.road-wrap,.road-wrap .road-node').forEach(el=>io.observe(el));
+
+// ===== Particles =====
+document.querySelectorAll('.sec').forEach(s=>{for(let i=0;i<6;i++){const p=document.createElement('div');p.className='particle';p.style.left=Math.random()*100+'%';p.style.bottom='-4px';p.style.animationDuration=(6+Math.random()*8)+'s';p.style.animationDelay=Math.random()*6+'s';s.appendChild(p)}});
+
+// ========================================
+// Hero Canvas - Network Simulation
+// ========================================
+const heroC=document.getElementById('heroCanvas');
+const heroCtx=heroC.getContext('2d');
+let heroW,heroH;
+let netMode='normal';
+let packets=[];
+let heroT=0;
+
+function resizeHero(){
+  const r=heroC.parentElement.getBoundingClientRect();
+  heroW=heroC.width=r.width*window.devicePixelRatio;
+  heroH=heroC.height=r.height*window.devicePixelRatio;
+  heroCtx.scale(window.devicePixelRatio,window.devicePixelRatio);
+}
+resizeHero();
+window.addEventListener('resize',resizeHero);
+
+class Packet{
+  constructor(){
+    this.x=60;
+    this.y=heroH/(window.devicePixelRatio)*0.4+Math.random()*40-20;
+    this.baseY=this.y;
+    this.vx=1.5+Math.random()*1;
+    this.size=4+Math.random()*3;
+    this.lost=false;
+    this.delayed=false;
+    this.alpha=1;
+    this.color=netMode==='loss'?'#fbbf24':netMode==='bw'?'#a78bfa':'#6c63ff';
+    // Decide fate
+    if(netMode==='loss'&&Math.random()<0.2){this.lost=true;this.color='#f87171'}
+    if(netMode==='jitter'){this.delayed=Math.random()<0.3;this.vx*=(0.3+Math.random()*1.8)}
+    if(netMode==='bw'){this.vx*=0.5;this.size*=0.7}
+  }
+  update(){
+    if(this.lost&&this.x>heroW/(2*window.devicePixelRatio)){
+      this.alpha-=0.03;if(this.alpha<0)this.alpha=0;
+      this.y+=2;
+    }
+    this.x+=this.vx;
+    if(this.delayed){this.y=this.baseY+Math.sin(heroT*0.05+this.x*0.02)*15}
+  }
+  draw(ctx){
+    ctx.globalAlpha=this.alpha;
+    ctx.fillStyle=this.color;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    // glow
+    ctx.globalAlpha=this.alpha*0.3;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size*2.5,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;
+  }
+}
+
+// Network stats
+let statBw=2.4,statLoss=1.2,statRtt=45,statJit=8;
+let statTargets={bw:2.4,loss:1.2,rtt:45,jit:8};
+
+function setNetMode(m){
+  netMode=m;
+  if(m==='bw'){statTargets={bw:0.6,loss:0.5,rtt:120,jit:25}}
+  else if(m==='loss'){statTargets={bw:1.8,loss:15,rtt:80,jit:12}}
+  else if(m==='jitter'){statTargets={bw:2.0,loss:1.0,rtt:90,jit:65}}
+  else{statTargets={bw:2.4,loss:1.2,rtt:45,jit:8}}
+  document.querySelectorAll('.hero-btn').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+window.setNetMode=setNetMode;
+
+function drawHero(){
+  const W=heroW/window.devicePixelRatio, H=heroH/window.devicePixelRatio;
+  heroCtx.clearRect(0,0,W,H);
+
+  // Draw pipe
+  const pipeY=H*0.4;
+  heroCtx.strokeStyle='rgba(108,99,255,0.08)';
+  heroCtx.lineWidth=40;
+  heroCtx.beginPath();heroCtx.moveTo(40,pipeY);heroCtx.lineTo(W-40,pipeY);heroCtx.stroke();
+  heroCtx.lineWidth=42;heroCtx.strokeStyle='rgba(108,99,255,0.03)';heroCtx.stroke();
+
+  // Labels
+  heroCtx.font='bold 11px -apple-system,sans-serif';
+  heroCtx.fillStyle='rgba(167,139,250,0.6)';
+  heroCtx.textAlign='center';
+  heroCtx.fillText('发送端',40,pipeY-30);
+  heroCtx.fillText('接收端',W-40,pipeY-30);
+
+  // Network condition label
+  heroCtx.fillStyle='rgba(255,255,255,0.15)';
+  heroCtx.font='12px -apple-system,sans-serif';
+  const labels={normal:'正常网络',bw:'带宽受限',loss:'随机丢包',jitter:'突发抖动'};
+  heroCtx.fillText(labels[netMode],W/2,pipeY-30);
+
+  // Spawn packets
+  heroT++;
+  const spawnRate=netMode==='bw'?15:netMode==='jitter'?10:8;
+  if(heroT%spawnRate===0)packets.push(new Packet());
+
+  // Update and draw
+  packets.forEach(p=>{p.update();p.draw(heroCtx)});
+  packets=packets.filter(p=>p.x<W+20&&p.alpha>0);
+
+  // Animate stats
+  statBw+=(statTargets.bw-statBw)*0.03;
+  statLoss+=(statTargets.loss-statLoss)*0.03;
+  statRtt+=(statTargets.rtt-statRtt)*0.03;
+  statJit+=(statTargets.jit-statJit)*0.03;
+
+  document.getElementById('hsBw').textContent=statBw.toFixed(1);
+  document.getElementById('hsLoss').textContent=statLoss.toFixed(1);
+  document.getElementById('hsRtt').textContent=Math.round(statRtt);
+  document.getElementById('hsJit').textContent=Math.round(statJit);
+
+  requestAnimationFrame(drawHero);
+}
+drawHero();
+
+// ========================================
+// GCC Detail Switcher
+// ========================================
+let gccCurrent=0;
+function showGccDetail(idx){
+  for(let i=0;i<4;i++){
+    const el=document.getElementById('gccDetail'+i);
+    el.style.display=i===idx?'block':'none';
+  }
+  document.querySelectorAll('.gcc-step').forEach((s,i)=>s.classList.toggle('active',i===idx));
+  gccCurrent=idx;
+}
+window.showGccDetail=showGccDetail;
+
+// ========================================
+// Trendline Canvas
+// ========================================
+const trendC=document.getElementById('trendCanvas');
+const trendCtx=trendC.getContext('2d');
+let trendW,trendH;
+
+function resizeTrend(){
+  const r=trendC.parentElement.getBoundingClientRect();
+  trendW=trendC.width=r.width*window.devicePixelRatio;
+  trendH=trendC.height=r.height*window.devicePixelRatio;
+  trendCtx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+}
+
+const trendIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){resizeTrend();drawTrend();trendIo.unobserve(e.target)}})},{threshold:.2});
+trendIo.observe(document.getElementById('trendWrap'));
+
+let trendData=[];
+let trendOffsets=[];
+for(let i=0;i<120;i++){
+  // Simulate delay gradient: normal → overuse → recovery
+  let v;
+  if(i<30)v=(Math.random()-0.5)*5;
+  else if(i<60)v=(i-30)*0.8+Math.random()*3; // rising gradient
+  else if(i<80)v=(80-i)*0.5+Math.random()*3; // falling
+  else v=(Math.random()-0.5)*5;
+  trendData.push(v);
+}
+// Trendline (moving average slope)
+for(let i=0;i<trendData.length;i++){
+  if(i<10){trendOffsets.push(0);continue}
+  let sum=0;for(let j=i-9;j<=i;j++)sum+=trendData[j];
+  trendOffsets.push(sum/10);
+}
+
+function drawTrend(){
+  const W=trendW/window.devicePixelRatio,H=trendH/window.devicePixelRatio;
+  trendCtx.clearRect(0,0,W,H);
+
+  const pad={l:50,r:20,t:20,b:30};
+  const gW=W-pad.l-pad.r, gH=H-pad.t-pad.b;
+
+  // Grid
+  trendCtx.strokeStyle='rgba(255,255,255,0.04)';
+  trendCtx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+gH*i/4;
+    trendCtx.beginPath();trendCtx.moveTo(pad.l,y);trendCtx.lineTo(pad.l+gW,y);trendCtx.stroke();
+  }
+
+  // Threshold lines
+  const threshold=12;
+  const yScale=gH/60;
+  const yCenter=pad.t+gH/2;
+  trendCtx.strokeStyle='rgba(248,113,113,0.4)';
+  trendCtx.setLineDash([4,4]);
+  trendCtx.beginPath();trendCtx.moveTo(pad.l,yCenter-threshold*yScale);trendCtx.lineTo(pad.l+gW,yCenter-threshold*yScale);trendCtx.stroke();
+  trendCtx.strokeStyle='rgba(52,211,153,0.3)';
+  trendCtx.beginPath();trendCtx.moveTo(pad.l,yCenter+threshold*yScale);trendCtx.lineTo(pad.l+gW,yCenter+threshold*yScale);trendCtx.stroke();
+  trendCtx.setLineDash([]);
+
+  // Labels
+  trendCtx.fillStyle='rgba(248,113,113,0.5)';trendCtx.font='10px "JetBrains Mono",monospace';trendCtx.textAlign='right';
+  trendCtx.fillText('+γ',pad.l-6,yCenter-threshold*yScale+4);
+  trendCtx.fillStyle='rgba(52,211,153,0.4)';
+  trendCtx.fillText('-γ',pad.l-6,yCenter+threshold*yScale+4);
+  trendCtx.fillStyle='rgba(255,255,255,0.25)';
+  trendCtx.fillText('0',pad.l-6,yCenter+4);
+
+  // Delay gradient data
+  trendCtx.beginPath();
+  trendCtx.strokeStyle='#6c63ff';trendCtx.lineWidth=1.5;
+  for(let i=0;i<trendData.length;i++){
+    const x=pad.l+i*gW/trendData.length;
+    const y=yCenter-trendData[i]*yScale;
+    if(i===0)trendCtx.moveTo(x,y);else trendCtx.lineTo(x,y);
+  }
+  trendCtx.stroke();
+
+  // Trendline
+  trendCtx.beginPath();
+  trendCtx.strokeStyle='#f59e0b';trendCtx.lineWidth=2;
+  for(let i=0;i<trendOffsets.length;i++){
+    const x=pad.l+i*gW/trendOffsets.length;
+    const y=yCenter-trendOffsets[i]*yScale;
+    if(i===0)trendCtx.moveTo(x,y);else trendCtx.lineTo(x,y);
+  }
+  trendCtx.stroke();
+
+  // Overuse region highlight
+  trendCtx.fillStyle='rgba(248,113,113,0.06)';
+  trendCtx.fillRect(pad.l+30*gW/trendData.length,pad.t,30*gW/trendData.length,gH);
+
+  // Region labels
+  trendCtx.font='bold 10px -apple-system,sans-serif';trendCtx.textAlign='center';
+  trendCtx.fillStyle='rgba(255,255,255,0.2)';
+  trendCtx.fillText('Normal',pad.l+15*gW/trendData.length,H-10);
+  trendCtx.fillStyle='rgba(248,113,113,0.4)';
+  trendCtx.fillText('Overuse',pad.l+45*gW/trendData.length,H-10);
+  trendCtx.fillStyle='rgba(52,211,153,0.35)';
+  trendCtx.fillText('Recovery',pad.l+70*gW/trendData.length,H-10);
+  trendCtx.fillStyle='rgba(255,255,255,0.2)';
+  trendCtx.fillText('Normal',pad.l+100*gW/trendData.length,H-10);
+}
+
+// ========================================
+// AIMD Canvas
+// ========================================
+const aimdC=document.getElementById('aimdCanvas');
+const aimdCtx=aimdC.getContext('2d');
+let aimdW,aimdH;
+
+function resizeAimd(){
+  const r=aimdC.parentElement.getBoundingClientRect();
+  aimdW=aimdC.width=r.width*window.devicePixelRatio;
+  aimdH=aimdC.height=r.height*window.devicePixelRatio;
+  aimdCtx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+}
+
+const aimdIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){resizeAimd();drawAimd();aimdIo.unobserve(e.target)}})},{threshold:.2});
+aimdIo.observe(document.getElementById('aimdWrap'));
+
+// Generate AIMD-like bandwidth curve
+let aimdBw=[800];
+let aimdState='increase';
+for(let i=1;i<200;i++){
+  if(aimdState==='increase'){
+    let nv=aimdBw[i-1]+8+Math.random()*4;
+    if(nv>1200||Math.random()<0.02){aimdState='decrease';nv=aimdBw[i-1]*0.85}
+    aimdBw.push(nv);
+  }else{
+    let nv=aimdBw[i-1]*0.85;
+    if(nv<600){aimdState='increase';nv+=5}
+    aimdBw.push(nv);
+  }
+}
+// Smoothing
+for(let pass=0;pass<3;pass++){
+  for(let i=1;i<aimdBw.length-1;i++){
+    aimdBw[i]=(aimdBw[i-1]+aimdBw[i]+aimdBw[i+1])/3;
+  }
+}
+
+function drawAimd(){
+  const W=aimdW/window.devicePixelRatio,H=aimdH/window.devicePixelRatio;
+  aimdCtx.clearRect(0,0,W,H);
+
+  const pad={l:55,r:20,t:20,b:30};
+  const gW=W-pad.l-pad.r, gH=H-pad.t-pad.b;
+
+  // Grid
+  aimdCtx.strokeStyle='rgba(255,255,255,0.04)';aimdCtx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+gH*i/4;
+    aimdCtx.beginPath();aimdCtx.moveTo(pad.l,y);aimdCtx.lineTo(pad.l+gW,y);aimdCtx.stroke();
+    aimdCtx.fillStyle='rgba(255,255,255,0.2)';aimdCtx.font='10px "JetBrains Mono",monospace';aimdCtx.textAlign='right';
+    aimdCtx.fillText((1500-i*300)+'',pad.l-8,y+4);
+  }
+
+  // Y label
+  aimdCtx.save();aimdCtx.translate(12,pad.t+gH/2);aimdCtx.rotate(-Math.PI/2);
+  aimdCtx.fillStyle='rgba(255,255,255,0.2)';aimdCtx.font='10px -apple-system,sans-serif';aimdCtx.textAlign='center';
+  aimdCtx.fillText('kbps',0,0);aimdCtx.restore();
+
+  // Draw bandwidth curve
+  aimdCtx.beginPath();aimdCtx.strokeStyle='#6c63ff';aimdCtx.lineWidth=2;
+  for(let i=0;i<aimdBw.length;i++){
+    const x=pad.l+i*gW/aimdBw.length;
+    const y=pad.t+gH*(1-aimdBw[i]/1500);
+    if(i===0)aimdCtx.moveTo(x,y);else aimdCtx.lineTo(x,y);
+  }
+  aimdCtx.stroke();
+
+  // Fill under curve
+  const lastX=pad.l+(aimdBw.length-1)*gW/aimdBw.length;
+  aimdCtx.lineTo(lastX,pad.t+gH);aimdCtx.lineTo(pad.l,pad.t+gH);aimdCtx.closePath();
+  const grad=aimdCtx.createLinearGradient(0,pad.t,0,pad.t+gH);
+  grad.addColorStop(0,'rgba(108,99,255,0.15)');grad.addColorStop(1,'rgba(108,99,255,0.01)');
+  aimdCtx.fillStyle=grad;aimdCtx.fill();
+
+  // Mark overuse points (steep drops)
+  aimdCtx.fillStyle='#f87171';
+  for(let i=1;i<aimdBw.length;i++){
+    if(aimdBw[i]<aimdBw[i-1]*0.88){
+      const x=pad.l+i*gW/aimdBw.length;
+      const y=pad.t+gH*(1-aimdBw[i]/1500);
+      aimdCtx.beginPath();aimdCtx.arc(x,y,3,0,Math.PI*2);aimdCtx.fill();
+    }
+  }
+
+  // Legend
+  aimdCtx.font='10px -apple-system,sans-serif';
+  aimdCtx.fillStyle='#6c63ff';aimdCtx.fillRect(pad.l+10,pad.t+10,16,2);
+  aimdCtx.fillStyle='rgba(255,255,255,0.4)';aimdCtx.textAlign='left';
+  aimdCtx.fillText('GCC 带宽估计',pad.l+30,pad.t+14);
+  aimdCtx.fillStyle='#f87171';aimdCtx.beginPath();aimdCtx.arc(pad.l+18,pad.t+26,3,0,Math.PI*2);aimdCtx.fill();
+  aimdCtx.fillStyle='rgba(255,255,255,0.4)';
+  aimdCtx.fillText('Overuse 降码率点',pad.l+30,pad.t+30);
+}
+
+// FEC visualization replaced with HTML grid
+
+
+// ========================================
+// Simulcast Canvas
+// ========================================
+const simC=document.getElementById('simCanvas');
+const simCtx=simC.getContext('2d');
+let simW,simH;
+
+function resizeSim(){
+  const r=simC.parentElement.getBoundingClientRect();
+  simW=simC.width=r.width*window.devicePixelRatio;
+  simH=simC.height=r.height*window.devicePixelRatio;
+  simCtx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+}
+
+const simIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){resizeSim();drawSimulcast();simIo.unobserve(e.target)}})},{threshold:.2});
+simIo.observe(document.getElementById('simWrap'));
+
+function drawSimulcast(){
+  const W=simW/window.devicePixelRatio,H=simH/window.devicePixelRatio;
+  simCtx.clearRect(0,0,W,H);
+
+  const layers=[
+    {name:'低流',res:'320×180',bw:'~150kbps',color:'#6c63ff',h:40,w:90},
+    {name:'中流',res:'640×360',bw:'~400kbps',color:'#34d399',h:70,w:160},
+    {name:'高流',res:'1280×720',bw:'~800kbps',color:'#38bdf8',h:110,w:280},
+  ];
+
+  // Draw sender side
+  const sx=W*0.18;
+  simCtx.fillStyle='rgba(255,255,255,0.12)';simCtx.font='bold 12px -apple-system,sans-serif';simCtx.textAlign='center';
+  simCtx.fillText('发送端',sx,H/2-130);
+  simCtx.strokeStyle='rgba(108,99,255,0.15)';simCtx.lineWidth=1;
+  simCtx.beginPath();simCtx.roundRect(sx-70,H/2-120,140,250,10);simCtx.stroke();
+
+  layers.forEach((l,i)=>{
+    const lx=sx-l.w/2;
+    const ly=H/2-100+i*80;
+    simCtx.fillStyle=l.color+'18';simCtx.strokeStyle=l.color+'40';simCtx.lineWidth=1;
+    simCtx.beginPath();simCtx.roundRect(lx,ly,l.w,l.h,6);simCtx.fill();simCtx.stroke();
+    simCtx.fillStyle=l.color;simCtx.font='bold 11px -apple-system,sans-serif';simCtx.textAlign='center';
+    simCtx.fillText(l.name,sx,ly+l.h/2-6);
+    simCtx.fillStyle='rgba(255,255,255,0.35)';simCtx.font='9px "JetBrains Mono",monospace';
+    simCtx.fillText(l.res+' '+l.bw,sx,ly+l.h/2+10);
+  });
+
+  // SFU
+  const sfuX=W*0.5;
+  simCtx.fillStyle='rgba(255,255,255,0.12)';simCtx.font='bold 12px -apple-system,sans-serif';simCtx.textAlign='center';
+  simCtx.fillText('LiveKit SFU',sfuX,H/2-130);
+  simCtx.strokeStyle='rgba(167,139,250,0.2)';simCtx.lineWidth=1;
+  simCtx.beginPath();simCtx.roundRect(sfuX-50,H/2-120,100,250,10);simCtx.stroke();
+
+  // Arrows sender → SFU
+  layers.forEach((l,i)=>{
+    const y=H/2-100+i*80+l.h/2;
+    simCtx.strokeStyle=l.color+'40';simCtx.lineWidth=1;simCtx.setLineDash([3,3]);
+    simCtx.beginPath();simCtx.moveTo(sx+70,y);simCtx.lineTo(sfuX-50,y);simCtx.stroke();
+    simCtx.setLineDash([]);
+  });
+
+  // Receivers
+  const receivers=[
+    {name:'订阅者A\n(好网络)',layer:2,x:W*0.82,color:'#38bdf8'},
+    {name:'订阅者B\n(弱网)',layer:0,x:W*0.82,color:'#6c63ff'},
+  ];
+
+  receivers.forEach((rv,ri)=>{
+    const ry=H/2-80+ri*150;
+    simCtx.fillStyle='rgba(255,255,255,0.08)';simCtx.strokeStyle=rv.color+'30';simCtx.lineWidth=1;
+    simCtx.beginPath();simCtx.roundRect(rv.x-55,ry-25,110,50,8);simCtx.fill();simCtx.stroke();
+    simCtx.fillStyle='rgba(255,255,255,0.3)';simCtx.font='10px -apple-system,sans-serif';simCtx.textAlign='center';
+    const lines=rv.name.split('\n');
+    simCtx.fillText(lines[0],rv.x,ry-5);
+    simCtx.fillStyle=rv.color+'99';simCtx.font='9px -apple-system,sans-serif';
+    simCtx.fillText(lines[1],rv.x,ry+10);
+
+    // Arrow SFU → receiver
+    const layer=layers[rv.layer];
+    const srcY=H/2-100+rv.layer*80+layer.h/2;
+    simCtx.strokeStyle=rv.color+'40';simCtx.lineWidth=1.5;simCtx.setLineDash([4,3]);
+    simCtx.beginPath();simCtx.moveTo(sfuX+50,srcY);simCtx.lineTo(rv.x-55,ry);simCtx.stroke();
+    simCtx.setLineDash([]);
+
+    // Label on arrow
+    simCtx.fillStyle=rv.color+'88';simCtx.font='bold 9px -apple-system,sans-serif';
+    simCtx.fillText(layer.name+' '+layer.res,sfuX+55+(rv.x-55-sfuX-55)/2,ry-8);
+  });
+}
+
+// ========================================
+// Jitter Buffer Canvas
+// ========================================
+const jbC=document.getElementById('jbCanvas');
+const jbCtx=jbC.getContext('2d');
+let jbW,jbH;
+let jitterMode='low';
+
+function resizeJb(){
+  const r=jbC.parentElement.getBoundingClientRect();
+  jbW=jbC.width=r.width*window.devicePixelRatio;
+  jbH=jbC.height=r.height*window.devicePixelRatio;
+  jbCtx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+}
+
+const jbIo=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){resizeJb();animateJB();jbIo.unobserve(e.target)}})},{threshold:.2});
+jbIo.observe(document.getElementById('jbWrap'));
+
+function setJitterMode(m){jitterMode=m;drawJB()}
+window.setJitterMode=setJitterMode;
+
+let jbPackets=[];
+let jbTime=0;
+
+function generateJBPackets(){
+  const baseInterval=20; // 20ms per packet
+  const packets=[];
+  for(let i=0;i<40;i++){
+    let delay=0;
+    if(jitterMode==='burst'){
+      delay=i>=15&&i<=20?(Math.random()*80+40):Math.random()*5;
+    }else if(jitterMode==='high'){
+      delay=Math.random()*60+10;
+    }else{
+      delay=Math.random()*8;
+    }
+    packets.push({seq:1000+i,schedTime:i*baseInterval,arrivalTime:i*baseInterval+delay,delay:delay});
+  }
+  return packets;
+}
+
+jbPackets=generateJBPackets();
+
+function drawJB(){
+  const W=jbW/window.devicePixelRatio,H=jbH/window.devicePixelRatio;
+  jbCtx.clearRect(0,0,W,H);
+
+  const pad={l:50,r:20,t:35,b:40};
+  const gW=W-pad.l-pad.r, gH=H-pad.t-pad.b;
+  const totalTime=800; // ms range
+
+  // Schedule line (ideal)
+  jbCtx.strokeStyle='rgba(108,99,255,0.15)';jbCtx.lineWidth=1;
+  jbCtx.setLineDash([4,4]);
+  jbCtx.beginPath();jbCtx.moveTo(pad.l,pad.t+gH*0.2);jbCtx.lineTo(pad.l+gW,pad.t+gH*0.2);jbCtx.stroke();
+  jbCtx.setLineDash([]);
+  jbCtx.fillStyle='rgba(108,99,255,0.3)';jbCtx.font='9px -apple-system,sans-serif';jbCtx.textAlign='right';
+  jbCtx.fillText('理想到达',pad.l-6,pad.t+gH*0.2+4);
+
+  // Play-out deadline
+  const playoutDelay=jitterMode==='high'?120:jitterMode==='burst'?80:30;
+  const playoutY=pad.t+gH*0.2+playoutDelay/totalTime*gH;
+  jbCtx.strokeStyle='rgba(245,158,11,0.3)';jbCtx.lineWidth=1;jbCtx.setLineDash([4,4]);
+  jbCtx.beginPath();jbCtx.moveTo(pad.l,playoutY);jbCtx.lineTo(pad.l+gW,playoutY);jbCtx.stroke();
+  jbCtx.setLineDash([]);
+  jbCtx.fillStyle='rgba(245,158,11,0.5)';jbCtx.font='9px -apple-system,sans-serif';
+  jbCtx.fillText('播放线 (+'+playoutDelay+'ms)',pad.l-6,playoutY+4);
+
+  // Draw packets
+  jbCtx.fillStyle='rgba(255,255,255,0.2)';jbCtx.font='9px -apple-system,sans-serif';jbCtx.textAlign='center';
+  jbCtx.fillText('时间 →',W/2,H-10);
+
+  const pktW=Math.max(3,gW/jbPackets.length-2);
+  jbPackets.forEach((p,i)=>{
+    const x=pad.l+p.schedTime/totalTime*gW;
+    const y=pad.t+gH*0.2+p.delay/totalTime*gH;
+
+    const late=p.delay>playoutDelay;
+    const color=late?'#f87171':'#34d399';
+
+    jbCtx.fillStyle=color+'30';jbCtx.strokeStyle=color+'60';jbCtx.lineWidth=0.5;
+    jbCtx.beginPath();jbCtx.roundRect(x-pktW/2,y-8,pktW,16,3);jbCtx.fill();jbCtx.stroke();
+    if(!late){
+      jbCtx.fillStyle=color;jbCtx.font='8px "JetBrains Mono",monospace';jbCtx.textAlign='center';
+      jbCtx.fillText(p.seq%10,x,y+3);
+    }
+  });
+
+  // Jitter buffer region
+  const bufStart=pad.l;
+  const bufEnd=pad.l+playoutDelay/totalTime*gW;
+  jbCtx.fillStyle='rgba(52,211,153,0.04)';
+  jbCtx.fillRect(bufStart,pad.t,bufEnd,gH);
+  jbCtx.fillStyle='rgba(52,211,153,0.3)';jbCtx.font='9px -apple-system,sans-serif';jbCtx.textAlign='center';
+  jbCtx.fillText('Jitter Buffer',bufStart+bufEnd/2,pad.t+14);
+
+  // Stats
+  const latePkts=jbPackets.filter(p=>p.delay>playoutDelay).length;
+  jbCtx.fillStyle='rgba(255,255,255,0.15)';jbCtx.font='10px -apple-system,sans-serif';jbCtx.textAlign='left';
+  jbCtx.fillText('迟到的包: '+latePkts+'/'+jbPackets.length+' (播放线外 = 丢帧)',pad.l,H-25);
+  jbCtx.fillText('缓冲延迟: '+playoutDelay+'ms (抖动越大需要越深)',pad.l,H-10);
+}
+
+function animateJB(){
+  jbPackets=generateJBPackets();
+  drawJB();
+  setTimeout(()=>{if(document.visibilityState==='visible')animateJB()},2000);
+}
+
+// ========================================
+// Scroll Reveal for missed elements
+// ========================================
+setTimeout(()=>{
+  document.querySelectorAll('.sec-title,.sec-sub,.hero-canvas-wrap,.overview-grid .ov-card,.gcc-wrap,.trend-canvas-wrap,.aimd-canvas-wrap,.tcc-wrap,.tcc-row,.cmp-wrap,.al-wrap,.al-wrap .al-card,.fec-grid-wrap,.abr-wrap,.abr-wrap .abr-layer,.sim-canvas-wrap,.jb-canvas-wrap,.dm-wrap,.dm-wrap .dm-cell,.gap-wrap,.gap-wrap .gap-card,.road-wrap,.road-wrap .road-node').forEach(el=>io.observe(el));
+},500);
+</script>
+</body>
+</html>

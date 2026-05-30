@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AV Stack — 音视频 · Linux · 嵌入式</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+/* ===== Index Page Overrides ===== */
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.site-title{font-size:clamp(36px,7vw,64px);font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,#e0e0ff 30%,#6c63ff 70%,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.15;margin-bottom:12px}
+.site-sub{font-size:clamp(14px,2vw,18px);color:#7777aa;text-align:center;max-width:600px;line-height:1.7;margin-bottom:8px}
+.site-tags{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.site-tags span{font-size:11px;font-weight:600;padding:4px 14px;border-radius:20px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25);color:#a78bfa;transition:all .3s}
+.site-tags span:hover{background:rgba(108,99,255,.22);transform:translateY(-1px)}
+
+/* Section heading */
+.col-title{font-size:clamp(20px,3vw,28px);font-weight:800;text-align:center;margin-bottom:8px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.3}
+.col-desc{text-align:center;color:#7777aa;font-size:clamp(12px,1.5vw,14px);max-width:640px;margin:0 auto 32px;line-height:1.7}
+
+/* Column card grid — 3 cols on desktop */
+.col-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1080px;width:100%;margin:0 auto}
+@media(max-width:900px){.col-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:580px){.col-grid{grid-template-columns:1fr}}
+
+/* Column card */
+.col-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:28px 22px 22px;transition:all .4s;position:relative;overflow:hidden;cursor:default;text-decoration:none;display:block;opacity:0;transform:translateY(24px)}
+.col-card.vis{opacity:1;transform:translateY(0)}
+.col-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--cc,#6c63ff);opacity:0;transition:opacity .3s}
+.col-card:hover{border-color:var(--cc,#6c63ff);background:rgba(255,255,255,.05);transform:translateY(-4px)!important;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.col-card:hover::before{opacity:1}
+
+.col-card .icon{font-size:28px;margin-bottom:12px;display:block}
+.col-card h3{font-size:17px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.col-card .cnt{font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(108,99,255,.12);color:#a78bfa;display:inline-block;margin-bottom:10px}
+.col-card p{font-size:12.5px;color:#8888aa;line-height:1.7;margin-bottom:14px}
+
+/* Article list inside card */
+.col-card ul{list-style:none;padding:0;margin:0}
+.col-card ul li{padding:5px 0;border-top:1px solid rgba(255,255,255,.04)}
+.col-card ul li a{font-size:12.5px;color:#9999bb;text-decoration:none;display:flex;align-items:center;gap:6px;transition:color .2s}
+.col-card ul li a:hover{color:#d0d0f0}
+.col-card ul li a .dot{width:4px;height:4px;border-radius:50%;background:var(--cc,#6c63ff);flex-shrink:0;opacity:.6}
+
+/* Footer */
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<!-- ===== Hero ===== -->
+<section class="sec hero-sec">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:22%;animation-duration:18s;animation-delay:2s"></div>
+  <div class="particle" style="left:45%;animation-duration:14s;animation-delay:4s"></div>
+  <div class="particle" style="left:68%;animation-duration:16s;animation-delay:1s"></div>
+  <div class="particle" style="left:85%;animation-duration:20s;animation-delay:3s"></div>
+
+  <h1 class="site-title">AV Stack</h1>
+  <p class="site-sub">从内核驱动到流媒体协议，深入音视频开发的每一层</p>
+  <div class="site-tags">
+    <span>Linux ALSA / V4L2</span>
+    <span>H.264 / MP4</span>
+    <span>WebRTC / LiveKit</span>
+    <span>DTLS / SRTP</span>
+    <span>Embedded IPC</span>
+  </div>
+  <div class="scroll-hint">&#x25BD;</div>
+</section>
+
+<!-- ===== Linux Media Subsystem ===== -->
+<section class="sec" id="linux-media">
+  <h2 class="col-title">Linux 媒体子系统</h2>
+  <p class="col-desc">从 ALSA/V4L2 内核接口到用户态采集链路，拆解 IPC 设备音视频数据如何从硬件到达应用层</p>
+  <div class="col-grid">
+    <a class="col-card" style="--cc:#34d399" href="linux_alsa_audio_learn.html">
+      <span class="icon">&#x1F3A4;</span>
+      <h3>ALSA 音频采集</h3>
+      <span class="cnt">完整</span>
+      <p>PCM / Mixer / Channel 映射，嵌入式音频管线全链路拆解</p>
+    </a>
+    <a class="col-card" style="--cc:#34d399" href="linux_v4l2_video_learn.html">
+      <span class="icon">&#x1F3A5;</span>
+      <h3>V4L2 视频采集</h3>
+      <span class="cnt">完整</span>
+      <p>Buffer 队列 / 多平面 / DMA-BUF，V4L2 子系统全景</p>
+    </a>
+    <div class="col-card" style="--cc:#34d399;opacity:.45;cursor:default">
+      <span class="icon">&#x1F4F7;</span>
+      <h3>ISP · 传感器管线</h3>
+      <span class="cnt">规划中</span>
+      <p>Media Controller / V4L2 Subdev / 3A 算法接入</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Codec & Container ===== -->
+<section class="sec" id="codec">
+  <h2 class="col-title">编解码与容器</h2>
+  <p class="col-desc">H.264 码流结构、MP4 容器解析、块效应诊断——理解视频数据的物理形态</p>
+  <div class="col-grid">
+    <a class="col-card" style="--cc:#fbbf24" href="h264_blockiness_demo.html">
+      <span class="icon">&#x1F9EA;</span>
+      <h3>H.264 块效应可视化</h3>
+      <span class="cnt">交互式</span>
+      <p>QP 对块效应的影响，宏块边界可视化诊断</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="mp4_container_deep_dive.html">
+      <span class="icon">&#x1F4C4;</span>
+      <h3>MP4 容器深度解析</h3>
+      <span class="cnt">完整</span>
+      <p>Box 树 / stbl 索引 / moov 优化 / fragmented MP4</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="av_quality_assessment.html">
+      <span class="icon">&#x1F4CA;</span>
+      <h3>图像与视频质量评估</h3>
+      <span class="cnt">完整</span>
+      <p>PSNR / SSIM / VMAF 指标原理与实战评估方法</p>
+    </a>
+  </div>
+</section>
+
+<!-- ===== Video Pipeline ===== -->
+<section class="sec" id="pipeline">
+  <h2 class="col-title">端侧视频通路</h2>
+  <p class="col-desc">Sensor → ISP → Encoder → Muxer，嵌入式 IPC 完整视频数据流</p>
+  <div class="col-grid">
+    <a class="col-card" style="--cc:#f472b6" href="video_pipeline_complete.html">
+      <span class="icon">&#x1F527;</span>
+      <h3>采集 · ISP · 编码</h3>
+      <span class="cnt">完整</span>
+      <p>端侧视频完整通路，从传感器到编码输出的每一跳</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="end_side_video_issues.html">
+      <span class="icon">&#x1F50D;</span>
+      <h3>端侧问题全景</h3>
+      <span class="cnt">完整</span>
+      <p>花屏 / 绿屏 / 卡顿 / 同步 drift 全诊断手册</p>
+    </a>
+    <div class="col-card" style="--cc:#f472b6;opacity:.45;cursor:default">
+      <span class="icon">&#x2699;&#xFE0F;</span>
+      <h3>码率控制策略</h3>
+      <span class="cnt">规划中</span>
+      <p>CBR / VBR / AVBR 参数调优与弱网适配</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Realtime Streaming ===== -->
+<section class="sec" id="streaming">
+  <h2 class="col-title">实时流媒体</h2>
+  <p class="col-desc">WebRTC 协议栈、LiveKit SFU 架构、弱网对抗——从信令到媒体传输的全链路</p>
+  <div class="col-grid">
+    <a class="col-card" style="--cc:#38bdf8" href="livekit_overview_learn.html">
+      <span class="icon">&#x1F512;</span>
+      <h3>LiveKit 安全纵览</h3>
+      <span class="cnt">交互式</span>
+      <p>ICE / DTLS / SRTP 安全层纵览，建立整体认知</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="livekit_protocols_learn.html">
+      <span class="icon">&#x1F4E1;</span>
+      <h3>协议栈全景</h3>
+      <span class="cnt">交互式</span>
+      <p>SDP / ICE / DTLS / SRTP / RTP 各层协议交互流程</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="livekit_streaming_interactive.html">
+      <span class="icon">&#x1F680;</span>
+      <h3>推流全流程</h3>
+      <span class="cnt">交互式</span>
+      <p>从 Join 到出图，LiveKit IPC 完整推流技术详解</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="livekit_ipc_design_spec.html">
+      <span class="icon">&#x1F4BB;</span>
+      <h3>IPC 设计规范</h3>
+      <span class="cnt">完整</span>
+      <p>LiveKit IPC 方案架构设计文档 v1.0</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="webrtc_weak_network_learn.html">
+      <span class="icon">&#x1F309;</span>
+      <h3>弱网对抗技术</h3>
+      <span class="cnt">完整</span>
+      <p>FEC / NACK / GCC / RED / 重传策略全解析</p>
+    </a>
+    <div class="col-card" style="--cc:#38bdf8;opacity:.45;cursor:default">
+      <span class="icon">&#x2601;&#xFE0F;</span>
+      <h3>Cloud 适配实践</h3>
+      <span class="cnt">Markdown</span>
+      <p>LiveKit Cloud 连接、ALPN 修复与端到端验证</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Security ===== -->
+<section class="sec" id="security">
+  <h2 class="col-title">安全与加密</h2>
+  <p class="col-desc">对称加密、密钥交换、数字签名、哈希认证——WebRTC 安全层的技术基石</p>
+  <div class="col-grid">
+    <a class="col-card" style="--cc:#a78bfa" href="livekit_security_animation.html">
+      <span class="icon">&#x1F504;</span>
+      <h3>安全技术交互式学习</h3>
+      <span class="cnt">交互式</span>
+      <p>完整的 WebRTC 安全交互式教程入口</p>
+    </a>
+    <a class="col-card" style="--cc:#a78bfa" href="livekit_security_deep_dive.html">
+      <span class="icon">&#x1F6E1;&#xFE0F;</span>
+      <h3>安全技术深度解析</h3>
+      <span class="cnt">完整</span>
+      <p>ICE / DTLS / SRTP 各安全层的深度技术分析</p>
+    </a>
+    <div class="col-card" style="--cc:#a78bfa">
+      <span class="icon">&#x1F510;</span>
+      <h3>加密原语系列</h3>
+      <span class="cnt">8 篇</span>
+      <p></p>
+      <ul>
+        <li><a href="livekit_aes_learn.html"><span class="dot"></span>AES 对称加密</a></li>
+        <li><a href="livekit_asym_encrypt_learn.html"><span class="dot"></span>非对称加密</a></li>
+        <li><a href="livekit_ecdhe_learn.html"><span class="dot"></span>ECDHE 密钥交换</a></li>
+        <li><a href="livekit_ecdsa_learn.html"><span class="dot"></span>ECDSA 签名与证书</a></li>
+        <li><a href="livekit_hmac_learn.html"><span class="dot"></span>HMAC 消息认证</a></li>
+        <li><a href="livekit_sha256_learn.html"><span class="dot"></span>SHA-256 哈希</a></li>
+        <li><a href="livekit_jwt_ice_learn.html"><span class="dot"></span>JWT + ICE 认证</a></li>
+        <li><a href="livekit_trustchain_learn.html"><span class="dot"></span>信任链完整性</a></li>
+      </ul>
+    </div>
+    <div class="col-card" style="--cc:#a78bfa">
+      <span class="icon">&#x1F517;</span>
+      <h3>传输安全系列</h3>
+      <span class="cnt">2 篇</span>
+      <p></p>
+      <ul>
+        <li><a href="livekit_dtlsp_learn.html"><span class="dot"></span>DTLS 握手 + 证书</a></li>
+        <li><a href="livekit_wss_learn.html"><span class="dot"></span>WSS 信令通道</a></li>
+      </ul>
+      <ul style="margin-top:10px">
+        <li><a href="livekit_quiz_learn.html"><span class="dot"></span>概念速查 + 记忆测验</a></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Embedded Practice ===== -->
+<section class="sec" id="embedded">
+  <h2 class="col-title">嵌入式工程实践</h2>
+  <p class="col-desc">eMMC 存储、BLE 外设、CI/CD——IPC 产品落地的工程经验</p>
+  <div class="col-grid">
+    <div class="col-card" style="--cc:#f97316;opacity:.55;cursor:default">
+      <span class="icon">&#x1F4BE;</span>
+      <h3>eMMC 调试与时序</h3>
+      <span class="cnt">待整理</span>
+      <p>50MHz 回归、RX 相位余量、sdhci_set_clock 分析</p>
+    </div>
+    <div class="col-card" style="--cc:#f97316;opacity:.55;cursor:default">
+      <span class="icon">&#x1F4E1;</span>
+      <h3>BLE 蓝牙项圈</h3>
+      <span class="cnt">待整理</span>
+      <p>Petkit_P3D 设备扫描、内存泄漏修复、BlueZ D-Bus</p>
+    </div>
+    <a class="col-card" style="--cc:#f97316" href="https://github.com/nicekate/avstack/blob/main/docs/如何从0-1构建GitLab-CI-CD-Pipeline.md" target="_blank">
+      <span class="icon">&#x1F680;</span>
+      <h3>GitLab CI/CD</h3>
+      <span class="cnt">Markdown</span>
+      <p>从零构建嵌入式项目的持续集成与交付流水线</p>
+    </a>
+    <a class="col-card" style="--cc:#f97316" href="如何发布版本.html">
+      <span class="icon">&#x1F4E6;</span>
+      <h3>版本发布流程</h3>
+      <span class="cnt">完整</span>
+      <p>嵌入式产品版本发布、tag 管理与交付物清单</p>
+    </a>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  Built with raw HTML + CSS. No framework. No build step.<br>
+  <a href="https://github.com/nicekate" target="_blank">GitHub</a>
+</footer>
+
+<script>
+// Intersection Observer for scroll-reveal
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('vis');
+      obs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.15 });
+document.querySelectorAll('.col-card, .site-title, .site-sub').forEach(el => obs.observe(el));
+
+// Auto-add .vis to hero elements
+setTimeout(() => {
+  document.querySelector('.site-title')?.classList.add('vis');
+  setTimeout(() => document.querySelector('.site-sub')?.classList.add('vis'), 120);
+}, 100);
+</script>
+</body>
+</html>

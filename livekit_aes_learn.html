@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AES 对称加密 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero Demo ===== */
+.hero-demo{width:100%;max-width:900px;margin-top:36px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-demo.vis{opacity:1;transform:translateY(0)}
+.hero-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.hero-col{border-radius:14px;padding:16px;border:1px solid rgba(255,255,255,.04)}
+.hero-col.ctr{background:rgba(244,63,94,.02);border-color:rgba(244,63,94,.1)}
+.hero-col.gcm{background:rgba(52,211,153,.02);border-color:rgba(52,211,153,.1)}
+.hero-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.hero-col.ctr .hero-tag{color:#f43f5e}
+.hero-col.gcm .hero-tag{color:#34d399}
+.hero-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:#a0a0c8}
+.hero-row .step{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.hero-col.ctr .step{background:rgba(244,63,94,.12);color:#f43f5e}
+.hero-col.gcm .step{background:rgba(52,211,153,.12);color:#34d399}
+.hero-result{margin-top:10px;padding:8px 12px;border-radius:8px;font-size:11px;font-weight:700}
+.hero-col.ctr .hero-result{background:rgba(244,63,94,.08);color:#fca5a5}
+.hero-col.gcm .hero-result{background:rgba(52,211,153,.08);color:#6ee7b7}
+
+/* ===== Playground ===== */
+.pg{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.pg.vis{opacity:1;transform:translateY(0)}
+.pg-row{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
+.pg-group{flex:1;min-width:280px}
+.pg-label{font-size:10px;font-weight:700;color:#6c63ff;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.pg-input{width:100%;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:13px;color:#d0d0f0;outline:none;transition:border-color .3s}
+.pg-input:focus{border-color:rgba(108,99,255,.4)}
+.pg-input::placeholder{color:#444466}
+.pg-hex{width:100%;background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;color:#8888aa;word-break:break-all;line-height:1.6;min-height:40px}
+.pg-out-panel{margin-top:12px;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.04)}
+.pg-tab-row{display:flex;background:rgba(0,0,0,.15)}
+.pg-tab{flex:1;padding:10px;text-align:center;font-size:11px;font-weight:700;cursor:pointer;transition:all .3s;border-bottom:2px solid transparent;color:#555577}
+.pg-tab:hover{color:#9999bb}
+.pg-tab.active.ctr{color:#f43f5e;border-color:#f43f5e;background:rgba(244,63,94,.04)}
+.pg-tab.active.gcm{color:#34d399;border-color:#34d399;background:rgba(52,211,153,.04)}
+.pg-body{padding:16px;min-height:120px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11px;line-height:1.7;color:#8888aa}
+.pg-body .enc{color:#a78bfa}.pg-body .tag{color:#34d399;font-weight:700}.pg-body .fail{color:#f43f5e;font-weight:700}.pg-body .ok{color:#34d399;font-weight:700}
+.pg-tamper{margin-top:10px;display:flex;gap:8px;align-items:center}
+.pg-tbtn{padding:7px 14px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .25s;border:1px solid;background:none}
+.pg-tbtn.atk{border-color:rgba(244,63,94,.25);color:#fca5a5}
+.pg-tbtn.atk:hover{background:rgba(244,63,94,.15)}
+.pg-tbtn.rst{border-color:rgba(108,99,255,.25);color:#b0b0e0}
+.pg-tbtn.rst:hover{background:rgba(108,99,255,.15)}
+.pg-tamper-status{font-size:11px;color:#8888aa}
+
+/* ===== CTR Breakdown ===== */
+.brk{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.brk.vis{opacity:1;transform:translateY(0)}
+.brk-steps{display:flex;gap:8px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+.brk-dot{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.04);color:#555;border:1px solid rgba(255,255,255,.06)}
+.brk-dot:hover{background:rgba(108,99,255,.1);color:#aaa}
+.brk-dot.active{background:#6c63ff;color:#fff;border-color:#6c63ff;box-shadow:0 0 14px rgba(108,99,255,.4)}
+.brk-dot.done{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.25)}
+.brk-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:300px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.brk-canvas canvas{width:100%;height:100%}
+.brk-detail{margin-top:14px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:70px}
+.brk-detail strong{color:#e0e0ff}
+.brk-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.brk-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+
+/* ===== GCM Breakdown ===== */
+.gcm{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.gcm.vis{opacity:1;transform:translateY(0)}
+.gcm-steps{display:flex;gap:8px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+.gcm-dot{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.04);color:#555;border:1px solid rgba(255,255,255,.06)}
+.gcm-dot:hover{background:rgba(52,211,153,.1);color:#aaa}
+.gcm-dot.active{background:#34d399;color:#fff;border-color:#34d399;box-shadow:0 0 14px rgba(52,211,153,.4)}
+.gcm-dot.done{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.25)}
+.gcm-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:300px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.gcm-canvas canvas{width:100%;height:100%}
+.gcm-detail{margin-top:14px;padding:18px 24px;background:rgba(52,211,153,.03);border:1px solid rgba(52,211,153,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0d0c0;min-height:70px}
+.gcm-detail strong{color:#e0ffe0}
+.gcm-detail em{color:#34d399;font-style:normal;font-weight:600}
+.gcm-detail code{background:rgba(52,211,153,.1);color:#6ee7b7;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+
+/* ===== Project Card ===== */
+.proj{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.proj.vis{opacity:1;transform:translateY(0)}
+.proj-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;margin-top:14px;opacity:0;transform:translateX(-16px);transition:all .6s}
+.proj-card.vis{opacity:1;transform:translateX(0)}
+.proj-card .pt-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.proj-card .pt-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.proj-card .pt-desc{font-size:12.5px;color:#8888bb;line-height:1.75}
+.proj-card .pt-desc em{color:#6c63ff;font-style:normal;font-weight:600}
+.proj-card .pt-desc code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.proj-code{background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto;margin-top:10px}
+.proj-code .kw{color:#cba6f7}.proj-code .str{color:#a6e3a1}.proj-code .cmt{color:#6c7086}.proj-code .fn{color:#89b4fa}
+
+/* ===== Compare ===== */
+.cmp{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cmp.vis{opacity:1;transform:translateY(0)}
+.cmp-tbl{width:100%;border-collapse:collapse;margin-top:20px;font-size:12.5px}
+.cmp-tbl th{text-align:left;background:rgba(108,99,255,.06);color:#b0b0e0;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.cmp-tbl td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.03);color:#a0a0c8;line-height:1.6;vertical-align:top}
+.cmp-tbl tr:nth-child(even) td{background:rgba(255,255,255,.01)}
+.cmp-tbl code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px}
+.cmp-verdict{margin-top:16px;padding:14px 18px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);border-radius:10px;font-size:12.5px;line-height:1.7;color:#a0c8b0}
+.cmp-verdict em{color:#34d399;font-style:normal;font-weight:600}
+
+@media(max-width:700px){.hero-cols{grid-template-columns:1fr}.brk-canvas,.gcm-canvas{height:220px}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Hero ========== -->
+<div class="sec" id="s1">
+  <div class="sec-title" data-reveal>AES 对称加密：CTR vs GCM</div>
+  <div class="sec-sub" data-reveal>对称加密 = 加密解密用同一个密钥。项目里用两种 AES 模式：<br><strong style="color:#f43f5e">AES-128-CTR</strong> 加密 SRTP 视频帧，<strong style="color:#34d399">AES-128-GCM</strong> 加密 TLS 信令。</div>
+  <div class="hero-demo" data-reveal>
+    <div class="hero-cols">
+      <div class="hero-col ctr">
+        <div class="hero-tag">AES-128-CTR (SRTP)</div>
+        <div class="hero-row"><div class="step">1</div>明文 "Hello" → AES-CTR 加密 → 密文</div>
+        <div class="hero-row"><div class="step">2</div>额外计算 HMAC-SHA1 → auth tag (10B)</div>
+        <div class="hero-row"><div class="step">3</div><strong>篡改密文一个 bit</strong> → 解密得乱码但不报错</div>
+        <div class="hero-row"><div class="step">4</div>auth tag 不匹配 → 丢弃 (但乱码已解密)</div>
+        <div class="hero-result">⚠️ 加密和认证分离 — 先解密再验证，可能泄露明文结构</div>
+      </div>
+      <div class="hero-col gcm">
+        <div class="hero-tag">AES-128-GCM (TLS)</div>
+        <div class="hero-row"><div class="step">1</div>明文 "Hello" → AES-GCM 加密+认证 → 密文 + tag</div>
+        <div class="hero-row"><div class="step">2</div>GHASH 一次性计算认证（含 AAD）</div>
+        <div class="hero-row"><div class="step">3</div><strong>篡改密文一个 bit</strong> → tag 验证失败</div>
+        <div class="hero-row"><div class="step">4</div>直接拒绝，<strong>不尝试解密</strong></div>
+        <div class="hero-result">✅ 加密认证一体化 — 先验证再解密，篡改绝不泄露任何信息</div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 2. Playground ========== -->
+<div class="sec" id="s2">
+  <div class="sec-title" data-reveal>动手实验</div>
+  <div class="sec-sub" data-reveal>输入明文和密钥，观察 CTR 和 GCM 的加密输出。点击"篡改密文"观察解密差异。</div>
+  <div class="pg" data-reveal>
+    <div class="pg-row">
+      <div class="pg-group">
+        <div class="pg-label">明文 (Plaintext)</div>
+        <input class="pg-input" id="pgPlain" value="Hello LiveKit!" spellcheck="false" oninput="pgCalc()">
+      </div>
+      <div class="pg-group">
+        <div class="pg-label">密钥 (Hex, 32字符=128bit)</div>
+        <input class="pg-input" id="pgKey" value="0123456789abcdef0123456789abcdef" maxlength="32" spellcheck="false" oninput="pgCalc()">
+      </div>
+    </div>
+    <div class="pg-row">
+      <div class="pg-group">
+        <div class="pg-label">IV / Nonce (Hex, 24字符=96bit)</div>
+        <input class="pg-input" id="pgIv" value="23456789abcdef0123456789" maxlength="24" spellcheck="false" oninput="pgCalc()">
+      </div>
+    </div>
+    <div class="pg-out-panel">
+      <div class="pg-tab-row">
+        <div class="pg-tab ctr active" onclick="pgTab('ctr')">AES-128-CTR</div>
+        <div class="pg-tab gcm" onclick="pgTab('gcm')">AES-128-GCM</div>
+      </div>
+      <div class="pg-body" id="pgBody"></div>
+    </div>
+    <div class="pg-tamper">
+      <span class="pg-tamper-status" id="pgStatus">正常状态</span>
+      <button class="pg-tbtn atk" onclick="pgTamper()">🎭 篡改密文第1个字节</button>
+      <button class="pg-tbtn rst" onclick="pgReset()">重置</button>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 3. CTR Breakdown ========== -->
+<div class="sec" id="s3">
+  <div class="sec-title" data-reveal>CTR 模式拆解：流式加密</div>
+  <div class="sec-sub" data-reveal>CTR 的精髓：把 AES 块加密变成流加密。<br>不需要填充，不需要等数据凑齐一个块。</div>
+  <div class="brk" data-reveal>
+    <div class="brk-steps" id="brkSteps"></div>
+    <div class="brk-canvas" id="brkCanvas"><canvas id="brkC"></canvas></div>
+    <div class="brk-detail" id="brkDetail">点击上方步骤编号开始。</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 4. GCM Breakdown ========== -->
+<div class="sec" id="s4">
+  <div class="sec-title" data-reveal>GCM 模式拆解：加密 + 认证一体化</div>
+  <div class="sec-sub" data-reveal>GCM = CTR 加密 + GHASH 认证。一趟遍历同时完成加密和完整性保护。</div>
+  <div class="gcm" data-reveal>
+    <div class="gcm-steps" id="gcmSteps"></div>
+    <div class="gcm-canvas" id="gcmCanvas"><canvas id="gcmC"></canvas></div>
+    <div class="gcm-detail" id="gcmDetail">点击上方步骤编号开始。</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 5. Project: SRTP ========== -->
+<div class="sec" id="s5">
+  <div class="sec-title" data-reveal>项目应用：SRTP 用的是 AES-CTR</div>
+  <div class="sec-sub" data-reveal>为什么 SRTP 选了"旧"的 CTR 而不是"新"的 GCM？<br>这是历史原因，也是 WebRTC 标准演进的结果。</div>
+  <div class="proj" data-reveal id="proj">
+    <div class="proj-card" data-reveal style="border-left:3px solid #f43f5e">
+      <div class="pt-tag" style="color:#f43f5e">Layer 6 — SRTP 加密</div>
+      <div class="pt-title">AES-128-CTR + HMAC-SHA1-80</div>
+      <div class="pt-desc">
+        每个 RTP 包独立加密：从包头获取 <em>SSRC + SeqNum</em>，与 <em>ROC</em> 拼成 12 字节 IV，再和 <em>master_salt</em> 异或得到计数器初始值。<br><br>
+        <em>加密流程：</em><code>IV = (SSRC∥ROC∥Seq∥0x000000) ⊕ salt</code> → AES(IV)=keystream → keystream ⊕ payload = 密文<br><br>
+        <em>认证流程：</em>对整个 RTP 包（含加密后 payload）做 HMAC-SHA1，取前 10 字节作 auth tag 附加在包尾。<br><br>
+        <em>开销：</em>每包 +10 字节 auth tag。以 MTU 1000B、15fps 计算 ≈ 9KB/min 额外开销。<br><br>
+        <em>为什么不用 GCM？</em>SRTP 标准制定于 2004 年（RFC 3711），当时 GCM 尚未成熟。2017 年的 RFC 7714 才定义了 <code>SRTP_AES128_GCM</code>，但 WebRTC 主流实现仍以 CTR 为主。
+      </div>
+      <div class="proj-code"><span class="cmt">// SrtpSession.c — 加密 + 认证</span>
+<span class="fn">srtp_protect</span>(ctx, rtp_buf, &amp;len);
+  <span class="cmt">// 1. IV = (SSRC || ROC || SeqNum || 0x000000) XOR master_salt</span>
+  <span class="cmt">// 2. AES-128-CTR: 对每个 16B 块，AES(IV+counter) → keystream</span>
+  <span class="cmt">// 3. keystream XOR payload → 密文</span>
+  <span class="cmt">// 4. HMAC-SHA1(整个RTP包) → 取前10字节作auth tag</span>
+  <span class="cmt">// 5. 附加 auth tag 到包尾</span>
+
+<span class="fn">srtp_unprotect</span>(ctx, rtp_buf, &amp;len);
+  <span class="cmt">// 1. 计算 ROC (Roll-Over Counter)</span>
+  <span class="cmt">// 2. 检查重放窗口 (128 packets)</span>
+  <span class="cmt">// 3. 验证 auth tag (HMAC-SHA1)</span>
+  <span class="cmt">// 4. 验证通过 → 计算 IV → 解密 payload</span>
+  <span class="cmt">// 5. 验证失败 → 丢弃</span></div>
+    </div>
+    <div class="proj-card" data-reveal style="border-left:3px solid #34d399">
+      <div class="pt-tag" style="color:#34d399">Layer 2 — TLS 信令</div>
+      <div class="pt-title">AES-128-GCM</div>
+      <div class="pt-desc">
+        TLS 1.2 信令通道使用 GCM 模式。CTR 加密 + GHASH 认证一次遍历完成。<br><br>
+        <em>为什么 TLS 用 GCM？</em>TLS 1.2 (2008) 设计时 GCM 已经成熟可选（RFC 5288），比 CTR+HMAC 更高效。浏览器和 CDN 都优先选择 GCM。<br><br>
+        <em>GCM 的 AAD 优势：</em>额外认证数据（如 TLS 序号）参与 GHASH 计算但不加密，GCM 天然支持。CTR+HMAC 需要手动把 AAD 拼进 HMAC 输入。
+      </div>
+      <div class="proj-code"><span class="cmt">// Tls_mbedtls.c — 密码套件配置</span>
+<span class="cmt">// 优先选择带 GCM 的套件</span>
+<span class="kw">static</span> <span class="kw">const</span> <span class="kw">int</span> ciphersuites[] = {
+  MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+  <span class="cmt">// ← CTR 加密 + GCM 认证，取代旧的 CBC+HMAC</span>
+  <span class="cmt">// 没有 AES-128-CTR + HMAC 的套件</span>
+  0
+};</div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 6. Compare ========== -->
+<div class="sec" id="s6">
+  <div class="sec-title" data-reveal>CTR vs GCM：完整对比</div>
+  <div class="sec-sub" data-reveal>两者都基于 AES 块加密，但安全模型和效率差异显著。</div>
+  <div class="cmp" data-reveal id="cmp"></div>
+</div>
+
+</div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+// AES-128-CTR (simplified demo, single block)
+// =========================================================
+var AES_SBOX=new Uint8Array([0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16]);
+var AES_RCON=[0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36];
+function xtime(a){return((a<<1)^((a>>7)*0x1b))&0xff;}
+function aesSubBytes(s){for(var i=0;i<16;i++)s[i]=AES_SBOX[s[i]];}
+function aesShiftRows(s){var t;t=s[1];s[1]=s[5];s[5]=s[9];s[9]=s[13];s[13]=t;t=s[2];s[2]=s[10];s[10]=t;t=s[6];s[6]=s[14];s[14]=t;t=s[15];s[15]=s[11];s[11]=s[7];s[7]=s[3];s[3]=t;}
+function aesMixColumns(s){for(var c=0;c<4;c++){var i=4*c,a0=s[i],a1=s[i+1],a2=s[i+2],a3=s[i+3];s[i]  =xtime(a0)^xtime(a1)^a1^a2^a3;s[i+1]=a0^xtime(a1)^xtime(a2)^a2^a3;s[i+2]=a0^a1^xtime(a2)^xtime(a3)^a3;s[i+3]=xtime(a0)^a0^a1^a2^xtime(a3);}}
+function aesKeyExpansion(key){var w=new Uint8Array(176);w.set(key);for(var i=4;i<44;i++){var o=4*i,t0=w[o-4],t1=w[o-3],t2=w[o-2],t3=w[o-1];if(i%4===0){var tmp=t0;t0=AES_SBOX[t1]^AES_RCON[i/4-1];t1=AES_SBOX[t2];t2=AES_SBOX[t3];t3=AES_SBOX[tmp];}w[o]=w[o-16]^t0;w[o+1]=w[o-15]^t1;w[o+2]=w[o-14]^t2;w[o+3]=w[o-13]^t3;}return w;}
+function aesAddRoundKey(s,rk,r){var o=r*16;for(var i=0;i<16;i++)s[i]^=rk[o+i];}
+function aesEncryptBlock(key,pt){var rk=aesKeyExpansion(key),s=new Uint8Array(pt);aesAddRoundKey(s,rk,0);for(var r=1;r<=9;r++){aesSubBytes(s);aesShiftRows(s);aesMixColumns(s);aesAddRoundKey(s,rk,r);}aesSubBytes(s);aesShiftRows(s);aesAddRoundKey(s,rk,10);return s;}
+function hexToBytes(h){var b=new Uint8Array(h.length/2);for(var i=0;i<h.length;i+=2)b[i/2]=parseInt(h.substr(i,2),16);return b;}
+function bytesToHex(b){var h='';for(var i=0;i<b.length;i++)h+=b[i].toString(16).padStart(2,'0');return h;}
+
+function aesCtrDemo(keyHex,ivHex,plainBytes){var key=keyHex.length?hexToBytes(keyHex):new Uint8Array(16);var iv=ivHex.length?hexToBytes(ivHex):new Uint8Array(16);while(key.length<16)key=new Uint8Array([...key,0]);while(iv.length<16)iv=new Uint8Array([...iv,0]);var out=new Uint8Array(plainBytes.length);for(var offset=0;offset<plainBytes.length;offset+=16){var counter=new Uint8Array(16);for(var j=0;j<12&&j<iv.length;j++)counter[j]=iv[j];counter[12]=((offset/16)>>>24)&0xff;counter[13]=((offset/16)>>>16)&0xff;counter[14]=((offset/16)>>>8)&0xff;counter[15]=(offset/16)&0xff;var ks=aesEncryptBlock(key,counter);var end=Math.min(offset+16,plainBytes.length);for(var j=offset;j<end;j++)out[j]=plainBytes[j]^ks[j-offset];}return out;}
+
+// =========================================================
+// Playground
+// =========================================================
+var pgMode='ctr';
+var pgTampered=false;
+var pgOrgCipher=[];
+
+function pgCalc(){
+  var plain=document.getElementById('pgPlain').value;
+  var keyHex=document.getElementById('pgKey').value.replace(/[^0-9a-fA-F]/g,'').substring(0,32);
+  var ivHex=document.getElementById('pgIv').value.replace(/[^0-9a-fA-F]/g,'').substring(0,24);
+  var plainBytes=new TextEncoder().encode(plain);
+  var cipher=aesCtrDemo(keyHex,ivHex,plainBytes);
+  pgOrgCipher=Array.from(cipher);
+  pgTampered=false;
+  document.getElementById('pgStatus').textContent='正常状态';
+  document.getElementById('pgStatus').style.color='#8888aa';
+  pgRender(plainBytes,cipher,keyHex,ivHex,false);
+}
+
+function pgRender(plain,cipher,keyHex,ivHex,tampered){
+  var h='<div style="margin-bottom:6px"><strong>密文 (Hex):</strong></div>';
+  h+='<div style="color:#a78bfa;word-break:break-all;margin-bottom:12px">'+bytesToHex(cipher)+'</div>';
+  if(tampered){
+    var decPlain=aesCtrDemo(keyHex,ivHex,cipher);
+    h+='<div style="margin-bottom:6px"><strong>CTR 解密结果:</strong></div>';
+    h+='<div style="color:#fca5a5;margin-bottom:6px;word-break:break-all">';
+    try{h+=new TextDecoder({fatal:true}).decode(decPlain)}catch(e){h+='[无法解码为文本 — 乱码]'}
+    h+='</div>';
+    h+='<div class="fail">⚠️ CTR 解密不报错！篡改后的密文被"正常"解密为乱码</div>';
+    h+='<div style="margin-top:8px"><strong>GCM 解密结果:</strong></div>';
+    h+='<div style="color:#34d399" class="ok">✅ auth tag 验证失败 → 直接拒绝，不尝试解密</div>';
+  }
+  document.getElementById('pgBody').innerHTML=h;
+}
+
+function pgTab(mode){
+  pgMode=mode;
+  document.querySelectorAll('.pg-tab').forEach(function(t){t.classList.remove('active')});
+  document.querySelector('.pg-tab.'+mode).classList.add('active');
+  pgCalc();
+}
+function pgTamper(){
+  if(pgOrgCipher.length===0)return;
+  pgTampered=true;
+  var cipher=pgOrgCipher.slice();
+  cipher[0]^=0xff;
+  var keyHex=document.getElementById('pgKey').value.replace(/[^0-9a-fA-F]/g,'').substring(0,32);
+  var ivHex=document.getElementById('pgIv').value.replace(/[^0-9a-fA-F]/g,'').substring(0,24);
+  document.getElementById('pgStatus').textContent='已篡改密文第1个字节！';
+  document.getElementById('pgStatus').style.color='#f43f5e';
+  pgRender(new TextEncoder().encode(document.getElementById('pgPlain').value),new Uint8Array(cipher),keyHex,ivHex,true);
+}
+function pgReset(){pgTampered=false;pgCalc()}
+
+// =========================================================
+// CTR Breakdown
+// =========================================================
+var brkData=[
+  {title:'Step 1: 构造计数器 (IV + Counter)',
+   detail:'<em>IV</em> = 12 字节随机 nonce，<em>Counter</em> = 4 字节块序号。<br><br>拼接：<code>IV (12B) ∥ Counter (4B)</code> = 16 字节输入<br><br>SRTP 中的 IV 特殊构造：<code>SSRC(4) ∥ ROC(4) ∥ SeqNum(2) ∥ 0x000000(2) ⊕ master_salt</code><br><br>每加密一个 16B 块，Counter +1。相同 IV + 相同 Counter 永远产生相同 keystream → 所以 IV 绝不能重复！',
+   boxes:[{label:'IV (12B)',color:'#38bdf8',hex:'23456789abcd...'},{label:'Counter (4B)',color:'#f59e0b',hex:'00000001'}]},
+  {title:'Step 2: AES 块加密生成 keystream',
+   detail:'把 16 字节的 (IV∥Counter) 送入 AES-128：<br><br><code>Keystream = AES(Key, IV∥Counter)</code><br><br>AES 是一个<em>置换</em>——相同的输入永远产生相同的 16 字节输出。攻击者即使知道 IV 和 Counter，没有 Key 也算不出 keystream（AES 的安全性保证）。<br><br>keystream 看起来像随机字节，但它<em>是确定性的</em>——持有 Key 的接收方能算出完全一样的 keystream。',
+   boxes:[{label:'IV∥Counter (16B)',color:'#38bdf8',hex:'2345...0001'},{label:'→ AES-128 →',color:'#6c63ff',hex:''},{label:'Keystream (16B)',color:'#a78bfa',hex:'e3b0c442...'}]},
+  {title:'Step 3: XOR 明文 = 密文',
+   detail:'<code>Ciphertext = Plaintext ⊕ Keystream</code><br><br>XOR 的数学性质：<br>• P ⊕ K = C（加密）<br>• C ⊕ K = P（解密）<br>• 加密和解密是<strong>同一个操作</strong>！<br><br>CTR 模式的优势：<br>• 不需要填充（最后一块不足 16B 也没关系）<br>• 可并行（每个块独立加密）<br>• 可随机访问（解密第 N 块只需算第 N 个 keystream）',
+   boxes:[{label:'Plaintext (≤16B)',color:'#34d399',hex:'Hello LiveKit!'},{label:'⊕ Keystream',color:'#a78bfa',hex:'e3b0c442...'},{label:'= Ciphertext',color:'#f43f5e',hex:'d6d6a02b...'}]},
+  {title:'Step 4: 解密 = 再次 XOR',
+   detail:'接收方用同样的 Key 和 IV∥Counter，算出相同的 keystream：<br><br><code>Plaintext = Ciphertext ⊕ Keystream</code><br><br>⚠️ CTR 的致命弱点：<br>• 没有<em>完整性保护</em>——如果攻击者篡改了密文的某个 bit，解密后对应位置的明文 bit 也翻转了<br>• 解密方不报错，只会看到一个"奇怪"的明文<br>• 这就是为什么 SRTP 必须额外加 HMAC-SHA1 auth tag<br><br>注意顺序：SRTP 是先解密再验证 auth tag。理论上这泄露了明文的结构信息（标签验证失败的包，明文已经被解密了）。GCM 则是先验证再解密。',
+   boxes:[{label:'Ciphertext',color:'#f43f5e',hex:'d6d6a02b...'},{label:'⊕ Keystream',color:'#a78bfa',hex:'e3b0c442...'},{label:'= Plaintext ✓',color:'#34d399',hex:'Hello LiveKit!'}]},
+  {title:'Step 5: HMAC-SHA1 认证 (SRTP 额外加)',
+   detail:'CTR 模式加密完成后，SRTP 额外计算 auth tag：<br><br><code>HMAC-SHA1(auth_key, 整个RTP包)</code> → 取前 10 字节 = auth tag<br><br>接收方先验证 auth tag：<br>• 匹配 → 解密 payload<br>• 不匹配 → 丢弃包<br><br>这就是 SRTP 的 "CTR + HMAC" 两步方案。比 GCM 的 "一步完成" 更复杂也更低效，但这是 2004 年的标准选择。<br><br>代码：<code>SrtpSession.c — srtp_protect() / srtp_unprotect()</code>',
+   boxes:[{label:'整个 RTP 包',color:'#38bdf8',hex:'[Header][EncPayload]'},{label:'→ HMAC-SHA1 →',color:'#6c63ff',hex:''},{label:'Auth Tag (10B)',color:'#f59e0b',hex:'a78bfa...'}]}
+];
+var brkStep=0;
+
+function renderBrk(step){
+  brkStep=step;
+  document.querySelectorAll('.brk-dot').forEach(function(d,i){d.classList.remove('active','done');if(i===step)d.classList.add('active');else if(i<step)d.classList.add('done')});
+  renderBrkCanvas(step);
+  document.getElementById('brkDetail').innerHTML='<strong>'+brkData[step].title+'</strong><br><br>'+brkData[step].detail;
+}
+
+function renderBrkCanvas(step){
+  var canvas=document.getElementById('brkC');
+  var container=document.getElementById('brkCanvas');
+  var w=container.clientWidth,h=container.clientHeight;
+  canvas.width=w*2;canvas.height=h*2;
+  canvas.style.width=w+'px';canvas.style.height=h+'px';
+  var ctx=canvas.getContext('2d');
+  ctx.scale(2,2);ctx.clearRect(0,0,w,h);
+  var sd=brkData[step];
+  var boxW=Math.min(170,(w-40)/sd.boxes.length-12);
+  var boxH=56;
+  var totalW=sd.boxes.length*boxW+(sd.boxes.length-1)*28;
+  var startX=(w-totalW)/2;
+  var y=h/2-boxH/2;
+  sd.boxes.forEach(function(b,i){
+    var x=startX+i*(boxW+28);
+    ctx.fillStyle=b.color+'16';ctx.strokeStyle=b.color+'38';ctx.lineWidth=1.5;
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,boxW,boxH,10);ctx.fill();ctx.stroke()}
+    else{ctx.fillRect(x,y,boxW,boxH);ctx.strokeRect(x,y,boxW,boxH)}
+    ctx.fillStyle=b.color;ctx.font='10px -apple-system,sans-serif';ctx.textAlign='center';
+    ctx.fillText(b.label,x+boxW/2,y-8);
+    ctx.fillStyle='#8888aa';ctx.font='10px "JetBrains Mono",monospace';
+    var hex=b.hex;if(hex.length>20)hex=hex.substring(0,18)+'...';
+    ctx.fillText(hex,x+boxW/2,y+boxH/2+4);
+    if(i<sd.boxes.length-1){
+      var ax=x+boxW+4,ay=y+boxH/2;
+      ctx.strokeStyle='rgba(108,99,255,.22)';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(ax+20,ay);ctx.stroke();
+      ctx.fillStyle='rgba(108,99,255,.35)';ctx.beginPath();
+      ctx.moveTo(ax+20,ay-4);ctx.lineTo(ax+26,ay);ctx.lineTo(ax+20,ay+4);ctx.fill();
+    }
+  });
+}
+
+// =========================================================
+// GCM Breakdown
+// =========================================================
+var gcmData=[
+  {title:'Step 1: CTR 加密（与 CTR 模式相同）',
+   detail:'GCM 的加密部分就是标准的 CTR：<br><br><code>Ciphertext = Plaintext ⊕ AES(Key, IV∥Counter)</code><br><br>和单独 CTR 的区别：稍后还要计算认证 tag，密文的任何篡改都会被 tag 检测出来。',
+   boxes:[{label:'IV∥Counter (16B)',color:'#38bdf8',hex:'2345...0001'},{label:'→ AES-128 →',color:'#34d399',hex:''},{label:'Keystream',color:'#a78bfa',hex:'e3b0c442...'},{label:'⊕ Plaintext',color:'#34d399',hex:'Hello...'},{label:'= Ciphertext',color:'#f43f5e',hex:'d6d6a02b...'}]},
+  {title:'Step 2: GHASH 计算认证标签',
+   detail:'GCM 的核心创新——<em>GHASH</em>：<br><br>在有限域 GF(2¹²⁸) 上做多项式乘法，把密文块和额外的认证数据 (AAD) 混合计算出一个 128-bit 标签。<br><br><code>Tag = GHASH(H, AAD, Ciphertext) ⊕ AES(Key, IV∥0)</code><br><br>• <em>H = AES(Key, 0¹²⁸)</em>——哈希子密钥<br>• AAD = Additional Authenticated Data（如 TLS 序号，不需要加密但需要认证）<br>• 最终 tag 既要依赖密文内容，也要依赖 AAD',
+   boxes:[{label:'H (hash key)',color:'#34d399',hex:'AES(Key,0)'},{label:'AAD',color:'#38bdf8',hex:'[seq_num]'},{label:'Ciphertext',color:'#f43f5e',hex:'d6d6a02b...'},{label:'→ GHASH →',color:'#34d399',hex:''},{label:'Tag (16B)',color:'#f59e0b',hex:'e91b...'}]},
+  {title:'Step 3: 发送密文 + Tag',
+   detail:'发送方输出：<code>Ciphertext ∥ Tag</code><br><br>接收方持有同样的 Key、IV 和 H，可以：<br>1. 重新计算 GHASH(AAD, Ciphertext) <br>2. 与收到的 Tag 比较<br>3. 匹配 → 解密；不匹配 → 丢弃<br><br><em>关键安全属性：</em>接收方<em>先验证 Tag 再解密</em>。任何篡改在解密之前就被发现——这是 GCM 比 CTR+HMAC 更安全的根本原因。',
+   boxes:[{label:'Ciphertext',color:'#f43f5e',hex:'d6d6a02b...'},{label:'Tag (16B)',color:'#f59e0b',hex:'e91b...'}]},
+  {title:'Step 4: 篡改 = 立即拒绝',
+   detail:'假设攻击者修改了密文的某个字节：<br><br>1. 接收方重新计算 GHASH → 新 Tag ≠ 原 Tag<br>2. <strong style="color:#f43f5e">Tag 不匹配 → 直接拒绝，不尝试解密</strong><br>3. 攻击者无法得知明文长什么样<br><br>对比 CTR+HMAC（SRTP 方案）：<br>1. 接收方先计算 HMAC → 不匹配 → 丢弃<br>2. 但某些实现会先解密再验证（虽然 libsrtp2 是先验证的）<br><br>GCM 的"先验证再解密"是密码学最佳实践（<em>encrypt-then-MAC</em>）。',
+   boxes:[{label:'篡改密文',color:'#f43f5e',hex:'d7d6a02b...'},{label:'重算 Tag',color:'#34d399',hex:'abc1...'},{label:'≠ 原 Tag',color:'#f43f5e',hex:'e91b...'},{label:'→ 拒绝!',color:'#f43f5e',hex:''}]}
+];
+var gcmStep=0;
+
+function renderGcm(step){
+  gcmStep=step;
+  document.querySelectorAll('.gcm-dot').forEach(function(d,i){d.classList.remove('active','done');if(i===step)d.classList.add('active');else if(i<step)d.classList.add('done')});
+  renderGcmCanvas(step);
+  document.getElementById('gcmDetail').innerHTML='<strong>'+gcmData[step].title+'</strong><br><br>'+gcmData[step].detail;
+}
+
+function renderGcmCanvas(step){
+  var canvas=document.getElementById('gcmC');
+  var container=document.getElementById('gcmCanvas');
+  var w=container.clientWidth,h=container.clientHeight;
+  canvas.width=w*2;canvas.height=h*2;
+  canvas.style.width=w+'px';canvas.style.height=h+'px';
+  var ctx=canvas.getContext('2d');
+  ctx.scale(2,2);ctx.clearRect(0,0,w,h);
+  var sd=gcmData[step];
+  var boxW=Math.min(150,(w-40)/sd.boxes.length-10);
+  var boxH=52;
+  var totalW=sd.boxes.length*boxW+(sd.boxes.length-1)*24;
+  var startX=(w-totalW)/2;
+  var y=h/2-boxH/2;
+  sd.boxes.forEach(function(b,i){
+    var x=startX+i*(boxW+24);
+    ctx.fillStyle=b.color+'16';ctx.strokeStyle=b.color+'38';ctx.lineWidth=1.5;
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,boxW,boxH,10);ctx.fill();ctx.stroke()}
+    else{ctx.fillRect(x,y,boxW,boxH);ctx.strokeRect(x,y,boxW,boxH)}
+    ctx.fillStyle=b.color;ctx.font='10px -apple-system,sans-serif';ctx.textAlign='center';
+    ctx.fillText(b.label,x+boxW/2,y-8);
+    if(b.hex){
+      ctx.fillStyle='#8888aa';ctx.font='10px "JetBrains Mono",monospace';
+      var hex=b.hex;if(hex.length>18)hex=hex.substring(0,16)+'...';
+      ctx.fillText(hex,x+boxW/2,y+boxH/2+4);
+    }
+    if(i<sd.boxes.length-1){
+      var ax=x+boxW+3,ay=y+boxH/2;
+      ctx.strokeStyle='rgba(52,211,153,.2)';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(ax+18,ay);ctx.stroke();
+      ctx.fillStyle='rgba(52,211,153,.3)';ctx.beginPath();
+      ctx.moveTo(ax+18,ay-3);ctx.lineTo(ax+22,ay);ctx.lineTo(ax+18,ay+3);ctx.fill();
+    }
+  });
+}
+
+// =========================================================
+// Compare Table
+// =========================================================
+function renderCmp(){
+  var rows=[
+    ['加密模式','Counter (CTR)','CTR + GHASH 一体化'],
+    ['完整性保护','需额外 HMAC-SHA1','内置 GHASH 认证'],
+    ['认证标签','HMAC-SHA1-80 (10B)','GCM Tag (16B)'],
+    ['附加数据 (AAD)','手动拼入 HMAC 输入','原生 GHASH 支持'],
+    ['先验证再解密','取决于实现 (SRTP: 可能先解密)','强制先验证再解密'],
+    ['填充需求','不需要','不需要'],
+    ['并行加密','支持','支持'],
+    ['本项目用途','SRTP 媒体加密','TLS 信令加密'],
+    ['标准制定','RFC 3711 (2004)','RFC 5288 (2008)'],
+    ['密钥来源','DTLS 握手导出','TLS 握手导出'],
+    ['密钥长度','16B key + 14B salt / 方向','16B key / 方向'],
+    ['带宽开销','10B auth/msg','16B tag/msg'],
+    ['未来趋势','→ SRTP_AES128_GCM (RFC 7714)','主流选择，无替代方案']
+  ];
+  var h='<table class="cmp-tbl"><tr><th>属性</th><th style="color:#f43f5e">AES-128-CTR (SRTP)</th><th style="color:#34d399">AES-128-GCM (TLS)</th></tr>';
+  rows.forEach(function(r){h+='<tr><td><strong>'+r[0]+'</strong></td><td>'+r[1]+'</td><td>'+r[2]+'</td></tr>'});
+  h+='</table>';
+  h+='<div class="cmp-verdict"><strong>总结：</strong>CTR 简单但需要额外的 HMAC 做完整性（两步走）；GCM 一步到位效率更高也更安全。<em>SRTP 用 CTR 是历史包袱，未来的 WebRTC 实现应该迁移到 GCM。</em></div>';
+  document.getElementById('cmp').innerHTML=h;
+}
+
+// =========================================================
+// Init
+// =========================================================
+(function(){
+  pgCalc();
+
+  // CTR breakdown dots
+  var bd='';
+  for(var i=0;i<5;i++) bd+='<div class="brk-dot'+(i===0?' active':'')+'" onclick="renderBrk('+i+')">'+(i+1)+'</div>';
+  document.getElementById('brkSteps').innerHTML=bd;
+
+  // GCM breakdown dots
+  var gd='';
+  for(var i=0;i<4;i++) gd+='<div class="gcm-dot'+(i===0?' active':'')+'" onclick="renderGcm('+i+')">'+(i+1)+'</div>';
+  document.getElementById('gcmSteps').innerHTML=gd;
+
+  renderBrk(0);
+  renderGcm(0);
+  renderCmp();
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<8;i++){
+      var p=document.createElement('div');p.className='particle';
+      p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+      p.style.animationDuration=(8+Math.random()*14)+'s';
+      p.style.animationDelay=(Math.random()*10)+'s';
+      p.style.width=p.style.height=(1+Math.random()*2)+'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*350;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+  document.querySelectorAll('.hero-demo,.pg,.brk,.gcm,.proj,.cmp').forEach(function(el){obs.observe(el)});
+
+  window.addEventListener('resize',function(){renderBrkCanvas(brkStep);renderGcmCanvas(gcmStep)});
+})();
+</script>
+</body>
+</html>

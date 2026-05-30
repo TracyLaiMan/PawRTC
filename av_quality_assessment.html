@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>图像与视频质量评估 — 音视频开发基础</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.quiz-box{background:rgba(108,99,255,.05);border:1px solid rgba(108,99,255,.15);border-radius:14px;padding:24px;margin-top:20px;max-width:960px;width:100%}
+.quiz-box h4{color:#a78bfa;font-size:15px;margin-bottom:12px}
+.quiz-opt{display:block;padding:10px 16px;margin:6px 0;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#b0b0d0;font-size:13px;cursor:pointer;transition:all .3s;text-align:left;width:100%}
+.quiz-opt:hover{background:rgba(108,99,255,.08);border-color:rgba(108,99,255,.2)}
+.quiz-opt.correct{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.4);color:#6ee7b7}
+.quiz-opt.wrong{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5}
+.quiz-opt.disabled{pointer-events:none;opacity:.6}
+.meter{height:8px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin:8px 0}
+.meter-fill{height:100%;border-radius:4px;transition:width 1.2s ease}
+.interactive-demo{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.demo-card{flex:1;min-width:200px;max-width:300px;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:16px;text-align:center}
+.demo-card canvas{border-radius:8px;margin-bottom:8px}
+.demo-card label{font-size:11px;color:#7777aa;display:block;margin-top:4px}
+.slider-row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:11px;color:#9999bb}
+.slider-row input[type=range]{flex:1;accent-color:#6c63ff}
+.slider-row .val{min-width:48px;text-align:right;color:#a78bfa;font-family:"JetBrains Mono",monospace;font-size:11px}
+.comparison{position:relative;max-width:600px;width:100%;margin:16px auto;aspect-ratio:16/9;border-radius:12px;overflow:hidden;cursor:col-resize;background:#000}
+.comparison canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+.comp-label{position:absolute;top:8px;padding:3px 10px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(0,0,0,.6);color:#ccc;pointer-events:none}
+.comp-label.l{left:8px}.comp-label.r{right:8px}
+.metric-bar{display:flex;align-items:flex-end;gap:8px;height:100px;margin:12px 0;justify-content:center}
+.metric-col{display:flex;flex-direction:column;align-items:center;gap:4px}
+.metric-col .bar{width:36px;border-radius:4px 4px 0 0;transition:height 1s ease}
+.metric-col span{font-size:9px;color:#7777aa}
+.tensor-flow{display:flex;align-items:center;gap:4px;margin:10px 0;flex-wrap:wrap;justify-content:center}
+.tf-node{padding:6px 12px;border-radius:8px;font-size:10.5px;font-weight:600;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:#c8c8e8}
+.tf-node.highlight{border-color:rgba(108,99,255,.4);background:rgba(108,99,255,.08);color:#a78bfa}
+.tf-arr{color:rgba(108,99,255,.3);font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- ========== Section 1: 开篇 ========== -->
+<section class="sec" id="s1">
+<div class="sec-title">图像与视频质量评估</div>
+<div class="sec-sub">从像素到审美 — 音视频开发的视觉基础<br>Quality → Aesthetics → Engineering</div>
+<div class="scroll-hint">↓</div>
+</section>
+
+<!-- ========== Section 2: 为什么需要质量评估 ========== -->
+<section class="sec" id="s2">
+<div class="sec-title">为什么需要质量评估？</div>
+<div class="sec-sub">在音视频开发中，质量评估是所有决策的根基：<br>编码参数选择、码率控制、弱网策略、AI 模型训练——每一步都需要量化"好不好"</div>
+
+<div class="card-grid c3" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">编码优化</div>
+<h4>Codec Tuning</h4>
+<p>CRF/QP 选多少？I 帧间隔多大？B 帧用几层？<br>没有质量基准，调参等于盲猜。SSIM/VMAF 决定编码参数的方向。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">弱网策略</div>
+<h4>Adaptive Streaming</h4>
+<p>码率从 4Mbps 降到 1Mbps，画面劣化多少？<br>ABR 算法需要质量模型来判断降级的代价，而非简单按带宽切割。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">AI 训练</div>
+<h4>Model Training</h4>
+<p>超分辨率、去噪、画质增强——训练数据的"标签"就是质量分数。<br>垃圾标签 → 垃圾模型，质量评估决定了 AI 的上限。</p>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">产品决策</div>
+<h4>Product Decision</h4>
+<p>H.265 比 H.264 省 40% 码率但画质差多少？<br>VP9 vs AV1 谁更适合实时通信？质量评估是技术选型的裁判。</p>
+</div>
+<div class="g-card" style="--gc:#38bdf8">
+<div class="sub">监控运维</div>
+<h4>QoE Monitoring</h4>
+<p>线上直播卡顿花屏，用户投诉"画质差"——<br>从模糊的主观感受映射到可量化的指标，才能定位问题根因。</p>
+</div>
+<div class="g-card" style="--gc:#e879f9">
+<div class="sub">审美驱动</div>
+<h4>Aesthetic Driven</h4>
+<p>即便 PSNR 相同，一张照片可能赏心悦目，另一张平平无奇。<br>审美质量评估让"好看"变成可计算的维度。</p>
+</div>
+</div>
+
+<div class="callout info" style="max-width:960px;margin-top:24px">
+<div class="ct">核心公式</div>
+开发者的目标是：<strong>在带宽/算力约束下，最大化用户感知质量</strong>。质量评估把"感知质量"从黑箱变成仪表盘。
+</div>
+</section>
+
+<!-- ========== Section 3: 图像质量基础维度 ========== -->
+<section class="sec" id="s3">
+<div class="sec-title">图像质量的六个维度</div>
+<div class="sec-sub">一张图片的"好坏"可拆解为六个正交维度，每个维度独立影响观感</div>
+
+<div class="card-grid c3" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">维度 1</div>
+<h4>分辨率 Resolution</h4>
+<p>像素数量。1920×1080 = 207 万像素。<br>分辨率决定<strong>细节上限</strong>，但不等于清晰（高分辨率模糊图片比比皆是）。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">维度 2</div>
+<h4>锐度 Sharpness</h4>
+<p>边缘的像素过渡速度。锐度高 → 轮廓分明；锐度低 → 发虚。<br>过度锐化产生<em>振铃伪影</em>（边缘白边）。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">维度 3</div>
+<h4>噪声 Noise</h4>
+<p>随机像素偏差。高 ISO 拍摄 → 亮度噪声（颗粒感）+ 色度噪声（彩色斑点）。<br>适度降噪保细节，过度降噪 → <em>油画效应</em>。</p>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">维度 4</div>
+<h4>色彩 Color</h4>
+<p>色准（ΔE）、色域（sRGB/DCI-P3）、色深（8bit/10bit）。<br>色偏 5 个 ΔE 单位人眼可感知，10 以上明显失真。</p>
+</div>
+<div class="g-card" style="--gc:#38bdf8">
+<div class="sub">维度 5</div>
+<h4>对比度 Contrast</h4>
+<p>最亮与最暗的比值。低对比度 → 灰蒙蒙；高对比度 → 层次感强。<br>HDR 的本质是扩展对比度范围（10bit SDR: ~1000:1 → HDR: ~10000:1）。</p>
+</div>
+<div class="g-card" style="--gc:#e879f9">
+<div class="sub">维度 6</div>
+<h4>动态范围 Dynamic Range</h4>
+<p>同时保留亮部和暗部细节的能力。<br>RAW 14bit → SDR 8bit 的过程就是 tone mapping，信息亏损发生在这里。</p>
+</div>
+</div>
+
+<div class="callout warning" style="max-width:960px;margin-top:24px">
+<div class="ct">⚠ 维度间的张力</div>
+<strong>锐度 vs 噪声</strong>：锐化放大噪声，降噪损失锐度——永远是 trade-off。<br>
+<strong>对比度 vs 动态范围</strong>：拉高对比度会裁切亮暗两端，牺牲动态范围。<br>
+<strong>分辨率 vs 码率</strong>：4K 10bit 需要的码率是 1080p 8bit 的 ~8 倍。
+</div>
+</section>
+
+<!-- ========== Section 4: 客观质量指标 ========== -->
+<section class="sec" id="s4">
+<div class="sec-title">客观质量指标：从像素到感知</div>
+<div class="sec-sub">用数学公式量化"失真程度"——但数学不是人眼，每个指标都有自己的盲区</div>
+
+<div class="gap-grid" style="margin-top:28px">
+<div class="gap-card" style="--gcc:#6c63ff">
+<h4>PSNR</h4>
+<div class="gs has">基础指标</div>
+<p><strong>Peak Signal-to-Noise Ratio</strong></p>
+<p>MSE 的对数变换：10·log₁₀(255²/MSE)</p>
+<p>值越高越好。典型阈值：</p>
+<ul>
+<li><strong>30-35 dB</strong>：可感知劣化</li>
+<li><strong>35-40 dB</strong>：良好</li>
+<li><strong>>40 dB</strong>：优（人眼难辨差异）</li>
+</ul>
+<div class="callout danger" style="margin-top:8px">
+<div class="ct">致命缺陷</div>
+逐像素比对，完全忽略空间结构。同等 MSE 下，像素随机偏移 vs 边缘偏移——人眼感受天差地别，PSNR 给出相同分数。
+</div>
+</div>
+
+<div class="gap-card" style="--gcc:#34d399">
+<h4>SSIM</h4>
+<div class="gs has">结构指标</div>
+<p><strong>Structural Similarity Index</strong></p>
+<p>从亮度 l(x,y)、对比度 c(x,y)、结构 s(x,y) 三个维度计算相似度：</p>
+<p><code>SSIM = l^α · c^β · s^γ</code></p>
+<p>范围 [-1, 1]，1 = 完全相同。</p>
+<div class="callout info" style="margin-top:8px">
+<div class="ct">为什么比 PSNR 好</div>
+SSIM 认为人眼对<strong>结构信息</strong>（边缘、纹理）更敏感，而非绝对像素值。局部窗口计算 → 捕捉空间关系。
+</div>
+<div class="callout warning" style="margin-top:6px">
+<div class="ct">盲区</div>
+仍基于局部统计，对<strong>语义级失真</strong>（人脸扭曲、文字错位）无能为力。
+</div>
+</div>
+
+<div class="gap-card" style="--gcc:#fbbf24">
+<h4>VMAF</h4>
+<div class="gs has">感知指标</div>
+<p><strong>Video Multimethod Assessment Fusion</strong> (Netflix)</p>
+<p>融合三个子指标 + SVM 回归：</p>
+<ul>
+<li><code>VIF</code>：视觉信息保真度</li>
+<li><code>ADM</code>：细节损失度量</li>
+<li><code>MOTION</code>：时域运动得分</li>
+</ul>
+<p>范围 0-100，分数与人眼 MOS 高度相关。</p>
+<div class="callout success" style="margin-top:8px">
+<div class="ct">业界标准</div>
+Netflix 开源，被 YouTube、Twitch、Apple 等广泛采用。ABR 码率阶梯的决策依据。
+</div>
+</div>
+</div>
+
+<table class="ptbl" style="max-width:960px;margin-top:24px">
+<thead>
+<tr><th>指标</th><th>类型</th><th>计算复杂度</th><th>与人眼相关性</th><th>适用场景</th><th>开源工具</th></tr>
+</thead>
+<tbody>
+<tr><td>PSNR</td><td>全参考</td><td class="g">极低</td><td class="r">弱</td><td>快速对比 baseline</td><td>FFmpeg `-psnr`</td></tr>
+<tr><td>SSIM</td><td>全参考</td><td class="g">低</td><td class="y">中等</td><td>编码参数调优</td><td>FFmpeg `-ssim`</td></tr>
+<tr><td>MS-SSIM</td><td>全参考</td><td class="y">中</td><td class="g">好</td><td>多尺度场景</td><td>libvmaf</td></tr>
+<tr><td>VMAF</td><td>全参考</td><td class="r">高</td><td class="g">很好</td><td>ABR/编码决策</td><td>libvmaf / VMAF repo</td></tr>
+<tr><td>NIQE</td><td>无参考</td><td class="y">中</td><td class="y">中等</td><td>无源片场景</td><td>FFmpeg `-filter:v niqe`</td></tr>
+<tr><td>BRISQUE</td><td>无参考</td><td class="y">中</td><td class="g">好</td><td>直播质量监控</td><td>pyiqa / MATLAB</td></tr>
+</tbody>
+</table>
+
+<div class="callout info" style="max-width:960px;margin-top:20px">
+<div class="ct">全参考 vs 无参考</div>
+<strong>全参考 (FR)</strong>：同时需要原始图和失真图，计算差异。适用于编码评估（源片已知）。<br>
+<strong>无参考 (NR)</strong>：只看失真图本身，从自然场景统计特性推断质量。适用于直播监控（源片不可得）。<br>
+<strong>半参考 (RR)</strong>：提取源片的少量特征参数辅助判断，平衡 FR 的精度和 NR 的可用性。
+</div>
+</section>
+
+<!-- ========== Section 5: PSNR vs SSIM 交互演示 ========== -->
+<section class="sec" id="s5">
+<div class="sec-title">PSNR vs SSIM：看穿数学的盲区</div>
+<div class="sec-sub">同样的 PSNR 分数，人眼感受可能完全不同——拖动滑块亲身感受</div>
+
+<div class="comparison" id="comp-box">
+<canvas id="comp-cv"></canvas>
+<div class="comp-label l">原始 + 噪声</div>
+<div class="comp-label r">原始 + 块效应</div>
+</div>
+
+<div class="interactive-demo">
+<div class="demo-card">
+<label>噪声强度 (相同 MSE)</label>
+<div class="slider-row">
+<span>0</span>
+<input type="range" id="noise-slider" min="0" max="40" value="15">
+<span class="val" id="noise-val">15</span>
+</div>
+<div style="margin-top:8px;font-size:11px;color:#9999bb">
+PSNR: <span id="psnr-noise" style="color:#a78bfa">--</span> dB &nbsp;|&nbsp;
+SSIM: <span id="ssim-noise" style="color:#34d399">--</span>
+</div>
+</div>
+<div class="demo-card">
+<label>块效应强度 (相同 MSE)</label>
+<div class="slider-row">
+<span>0</span>
+<input type="range" id="block-slider" min="0" max="40" value="15">
+<span class="val" id="block-val">15</span>
+</div>
+<div style="margin-top:8px;font-size:11px;color:#9999bb">
+PSNR: <span id="psnr-block" style="color:#a78bfa">--</span> dB &nbsp;|&nbsp;
+SSIM: <span id="ssim-block" style="color:#34d399">--</span>
+</div>
+</div>
+</div>
+
+<div class="callout warning" style="max-width:960px;margin-top:20px">
+<div class="ct">关键洞察</div>
+当两种失真 PSNR 相同时，块效应的 SSIM 通常更低——因为块效应<strong>破坏了结构连续性</strong>，而噪声只是随机扰动结构。人眼对结构的破坏极其敏感，这正是 SSIM 优于 PSNR 的核心原因。
+</div>
+</section>
+
+<!-- ========== Section 6: 编码伪影详解 ========== -->
+<section class="sec" id="s6">
+<div class="sec-title">编码伪影图谱</div>
+<div class="sec-sub">视频压缩不是"变模糊"那么简单——每种伪影都有特征指纹，对应不同的编码参数问题</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">空间域</div>
+<h4>块效应 Blocking</h4>
+<p><strong>指纹</strong>：8×8 或 64×64 边界可见的格线。<br>
+<strong>根因</strong>：QP 过高，每个块的 DCT 系数被粗量化，块间不连续。<br>
+<strong>编码参数</strong>：<code>QP > 35</code> 时开始显现，<code>>40</code> 无法忽视。<br>
+<strong>缓解</strong>：Deblocking filter (H.264/HEVC 内置)、降低 QP、增加码率。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">空间域</div>
+<h4>振铃效应 Ringing</h4>
+<p><strong>指纹</strong>：锐利边缘旁出现"鬼影"波纹。<br>
+<strong>根因</strong>：高通信号（边缘）被截断高频 DCT 系数后，Gibbs 现象。<br>
+<strong>编码参数</strong>：与 SAO (Sample Adaptive Offset) 参数相关。<br>
+<strong>缓解</strong>：SAO 滤波、适度锐化掩盖。</p>
+</div>
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">空间域</div>
+<h4>色度下采样色斑</h4>
+<p><strong>指纹</strong>：饱和色边界渗色、文字/线条边缘彩色毛边。<br>
+<strong>根因</strong>：4:2:0 色度下采样丢失色度细节，上采样插值不准。<br>
+<strong>编码参数</strong>：<code>chroma_qp_offset</code>、<code>chroma_format_idc</code>。<br>
+<strong>缓解</strong>：4:2:2/4:4:4、chroma QP offset 微调。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">时域</div>
+<h4>蚊噪声 Mosquito Noise</h4>
+<p><strong>指纹</strong>：静止背景在运动物体边缘闪烁噪点。<br>
+<strong>根因</strong>：运动补偿残差编码引入的高频噪声，逐帧不同步。<br>
+<strong>编码参数</strong>：ME (Motion Estimation) 精度不足。<br>
+<strong>缓解</strong>：提高 ME 精度、使用 B 帧、时域去噪。</p>
+</div>
+<div class="g-card" style="--gc:#f59e0b">
+<div class="sub">时域</div>
+<h4>闪烁 Flickering</h4>
+<p><strong>指纹</strong>：静态区域的亮度/色度帧间抖动。<br>
+<strong>根因</strong>：速率控制不稳定，相邻帧 QP 差异大。<br>
+<strong>编码参数</strong>：<code>rc_max_qp_delta</code>、<code>aq-mode</code>。<br>
+<strong>缓解</strong>：CBR/limit QP 波动、自适应量化。</p>
+</div>
+<div class="g-card" style="--gc:#e879f9">
+<div class="sub">时域</div>
+<h4>卡顿 Stuttering</h4>
+<p><strong>指纹</strong>：画面突然冻结，然后跳到新位置。<br>
+<strong>根因</strong>：非丢帧造成的——码率策略问题导致某一帧编码尺寸超出缓冲区。<br>
+<strong>编码参数</strong>：<code>vbv-bufsize</code>、<code>vbv-maxrate</code>。<br>
+<strong>缓解</strong>：正确配置 VBV、降低峰值码率。</p>
+</div>
+</div>
+</section>
+
+<!-- ========== Section 7: 视频质量特殊维度 ========== -->
+<section class="sec" id="s7">
+<div class="sec-title">视频质量：时间维度的考量</div>
+<div class="sec-sub">视频 = 图像序列 + 时间——帧率、延迟、同步是图像世界不存在的维度</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">帧率 Frame Rate</div>
+<h4>流畅度的量化</h4>
+<p>
+<strong>24fps</strong>：电影感（运动模糊掩盖卡顿）<br>
+<strong>30fps</strong>：直播/监控基本线<br>
+<strong>60fps</strong>：游戏/运动场景的流畅标准<br>
+<strong>120fps</strong>：VR 必需（降低延迟感知）
+</p>
+<p style="margin-top:8px">帧率不足 → <em>judder</em>（运动不连贯）：<br>30fps 内容在 60Hz 屏幕上 2:3 pulldown 产生抖动。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">延迟 Latency</div>
+<h4>实时性的代价</h4>
+<p>
+<strong>编码延迟</strong>：B 帧需要未来帧参考 → 增加缓冲<br>
+<strong>网络延迟</strong>：Jitter Buffer 深度 vs 丢包容忍<br>
+<strong>渲染延迟</strong>：VSync 对齐 → 最多一帧额外延迟
+</p>
+<p style="margin-top:8px">视频通话要求 <strong>< 150ms</strong> 端到端延迟：<br>零 B 帧 + 低参考帧 + 最小 JitterBuffer。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">音视频同步 A/V Sync</div>
+<h4>Lip Sync 问题</h4>
+<p>人耳对音画不同步的容忍度：</p>
+<ul style="margin:6px 0 0 16px;font-size:12px;color:#9999bb;line-height:1.8">
+<li>音频超前 <strong>>45ms</strong> → 可感知</li>
+<li>音频落后 <strong>>125ms</strong> → 可感知</li>
+<li>落后 <strong>>200ms</strong> → 不可接受</li>
+</ul>
+<p style="margin-top:8px">RTP timestamp 时钟不同是根因：<br>音频 48kHz、视频 90kHz，需要正确换算。</p>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">时域一致性 Temporal Consistency</div>
+<h4>帧间质量波动</h4>
+<p>I 帧质量高、P 帧递减、场景切换后骤降——这是压缩的固有代价。</p>
+<p style="margin-top:8px">VMAF 的 MOTION 子指标捕捉了这一点：<br>静态场景期望质量更高，运动场景可容忍一定劣化。</p>
+<p style="margin-top:8px"><code>per-frame VMAF</code> 的方差是稳定性的关键指标。</p>
+</div>
+</div>
+
+<div class="flow-row" style="margin-top:24px">
+<div class="flow-box" style="border-color:rgba(108,99,255,.3)">源片质量</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(52,211,153,.3)">编码压缩</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(251,191,36,.3)">网络传输</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(248,113,113,.3)">解码渲染</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(232,121,249,.3)">用户感知</div>
+</div>
+
+<div class="callout info" style="max-width:960px;margin-top:16px">
+<div class="ct">每一步都是质量泄漏点</div>
+源片噪声被编码放大、弱网丢包导致花屏、GPU 解码色彩空间转换错误、屏幕 gamma 不匹配……只有端到端评估才能发现问题。
+</div>
+</section>
+
+<!-- ========== Section 8: 主观评估 MOS ========== -->
+<section class="sec" id="s8">
+<div class="sec-title">主观评估：MOS 与人眼真相</div>
+<div class="sec-sub">所有客观指标的终极裁判是人眼——MOS (Mean Opinion Score) 是质量评估的金标准</div>
+
+<div class="gap-grid" style="margin-top:28px">
+<div class="gap-card" style="--gcc:#34d399">
+<h4>MOS 5 — 优秀</h4>
+<div class="gs has">Excellent</div>
+<p>无法察觉任何劣化。与源片主观等价。<br>典型：无损压缩、高质量 CRF 18-22。</p>
+</div>
+<div class="gap-card" style="--gcc:#6c63ff">
+<h4>MOS 4 — 良好</h4>
+<div class="gs has">Good</div>
+<p>可察觉但不觉恼人的劣化。少量噪声/轻微块效应。<br>典型：CRF 23-28、优质 AB 码率。</p>
+</div>
+<div class="gap-card" style="--gcc:#fbbf24">
+<h4>MOS 3 — 一般</h4>
+<div class="gs part">Fair</div>
+<p>可察觉且有些恼人的劣化。明显块效应/蚊噪。<br>典型：低码率 720p、弱网降级后。</p>
+</div>
+<div class="gap-card" style="--gcc:#f87171">
+<h4>MOS 2 — 差</h4>
+<div class="gs miss">Poor</div>
+<p>恼人的劣化。严重块效应、色斑、模糊。<br>典型：极低码率、严重丢包。</p>
+</div>
+<div class="gap-card" style="--gcc:#ef4444">
+<h4>MOS 1 — 极差</h4>
+<div class="gs miss">Bad</div>
+<p>无法观看。花屏、大面积马赛克、完全失真。<br>典型：关键帧丢失、解码错误。</p>
+</div>
+</div>
+
+<table class="ptbl" style="max-width:960px;margin-top:24px">
+<thead>
+<tr><th>测试方法</th><th>描述</th><th>耗时</th><th>精度</th><th>适用</th></tr>
+</thead>
+<tbody>
+<tr><td>DSIS</td><td>双刺激损伤标度：先看源片再看失真片</td><td class="y">中</td><td class="g">高</td><td>编码评估</td></tr>
+<tr><td>DSCQS</td><td>双刺激连续质量标度：随机顺序打分</td><td class="r">高</td><td class="g">很高</td><td>标准制定</td></tr>
+<tr><td>SSCQE</td><td>单刺激连续质量评估：无源片参考</td><td class="g">低</td><td class="y">中</td><td>直播监控</td></tr>
+<tr><td>ACR</td><td>绝对类别评分：一次只看一个</td><td class="g">低</td><td class="y">中</td><td>快速筛选</td></tr>
+</tbody>
+</table>
+
+<div class="callout warning" style="max-width:960px;margin-top:20px">
+<div class="ct">⚠ 主观评估的陷阱</div>
+<strong>记忆效应</strong>：看了差片再看好片，分数偏高（对比效应）。<br>
+<strong>疲劳效应</strong>：连续测试 >30 分钟，判断力下降。<br>
+<strong>超分组的品控</strong>：必须包含隐藏参考和重复样本，筛除不合格评分者。<br>
+<strong>最低人数</strong>：ITU-R BT.500 建议至少 <strong>15 名</strong>非专业受试者。
+</div>
+</section>
+
+<!-- ========== Section 9: 审美质量评估 ========== -->
+<section class="sec" id="s9">
+<div class="sec-title">审美质量：什么是"好看"？</div>
+<div class="sec-sub">技术质量（清晰、无噪）是底线，审美质量（构图、光影、氛围）才是"好照片"的决定因素</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">技术质量 ≠ 审美质量</div>
+<h4>两个正交维度</h4>
+<p>一张技术完美的照片（锐利、低噪、色彩准确）可能平淡无奇；一张技术粗糙的照片（高噪、偏色、过曝）可能极具冲击力。</p>
+<p style="margin-top:8px"><strong>技术质量</strong>：回答"这张图有没有毛病？" → PSNR/SSIM<br>
+<strong>审美质量</strong>：回答"这张图好不好看？" → NIMA/AES</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">审美的三个层次</div>
+<h4>从生理到文化</h4>
+<p><strong>第一层 · 生理</strong>：对焦准确、曝光正常、色彩自然——视觉皮层的基本偏好。<br>
+<strong>第二层 · 构建</strong>：构图法则（三分法、引导线）、光影层次、前景/背景分离。<br>
+<strong>第三层 · 情感</strong>：氛围、故事性、文化联想——决定性地超越"技术好"。</p>
+</div>
+</div>
+
+<div class="sec-title" style="margin-top:40px;font-size:clamp(20px,3vw,28px)">构图法则</div>
+
+<div class="card-grid c4" style="margin-top:20px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">Rule 1</div>
+<h4>三分法</h4>
+<p>把画面 3×3 等分，主体放在交叉点。打破居中惯性，制造视觉张力。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">Rule 2</div>
+<h4>引导线</h4>
+<p>道路、河流、建筑线条引导视线从前景到主体。深度感的核心手法。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">Rule 3</div>
+<h4>框架构图</h4>
+<p>门框、树枝、窗户形成画中画。聚焦视线 + 增加层次。</p>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">Rule 4</div>
+<h4>负空间</h4>
+<p>大量留白衬托小主体。极简美学的核心——孤舟、飞鸟、剪影。</p>
+</div>
+<div class="g-card" style="--gc:#38bdf8">
+<div class="sub">Rule 5</div>
+<h4>对称与重复</h4>
+<p>镜像对称产生秩序感；重复元素产生节奏感。打破对称处即焦点。</p>
+</div>
+<div class="g-card" style="--gc:#e879f9">
+<div class="sub">Rule 6</div>
+<h4>前景·中景·远景</h4>
+<p>三层景深制造空间纵深。前景交代环境，中景承载主体，远景交代背景。</p>
+</div>
+<div class="g-card" style="--gc:#10b981">
+<div class="sub">Rule 7</div>
+<h4>奇数法则</h4>
+<p>3个/5个主体比2个/4个更有动态感。偶数暗示对称→静止；奇数暗示不平衡→活力。</p>
+</div>
+<div class="g-card" style="--gc:#ec4899">
+<div class="sub">Rule 8</div>
+<h4>线条与形状</h4>
+<p>水平线=宁静，垂直线=力量，对角线=动感，S曲线=优雅，三角=稳定。</p>
+</div>
+</div>
+</section>
+
+<!-- ========== Section 10: 光影与色彩美学 ========== -->
+<section class="sec" id="s10">
+<div class="sec-title">光影与色彩的美学</div>
+<div class="sec-sub">光是摄影师的画笔，色是情感的隐喻 —— 技术参数背后是表达意图</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">光影 Light & Shadow</div>
+<h4>光的五个维度</h4>
+<p>
+<strong>方向</strong>：顺光（平淡安全）、侧光（质感纹理）、逆光（轮廓氛围）、顶光（戏剧性阴影）<br><br>
+<strong>质量</strong>：硬光（直射阳光，锐利阴影）、软光（阴天/柔光箱，过渡柔和）<br><br>
+<strong>色温</strong>：日出/日落 <code>~3000K</code>（暖金）、正午 <code>~5500K</code>（中性白）、阴影 <code>~7000K</code>（冷蓝）<br><br>
+<strong>对比</strong>：高调（亮部为主，轻盈感）、低调（暗部为主，沉重感）<br><br>
+<strong>动机</strong>：主光塑造主体、补光控制对比、轮廓光分离背景、环境光交代场景
+</p>
+</div>
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">色彩 Color</div>
+<h4>色彩的心理学</h4>
+<p>
+<strong>暖色</strong>（红橙黄）：热情、危险、食欲、亲近感<br>
+<strong>冷色</strong>（蓝绿紫）：宁静、专业、距离感、忧郁<br><br>
+<strong>互补色</strong>（红绿、蓝橙）：最高对比，视觉冲击力最强<br>
+<strong>相邻色</strong>（红橙、蓝绿）：和谐统一，自然舒适<br>
+<strong>三角色</strong>（红蓝黄）：丰富而不混乱的平衡<br><br>
+<strong>电影调色</strong> 的秘密：Teal & Orange（青橙调）——
+肤色偏橙，阴影偏青，互补产生强烈视觉吸引力。
+</p>
+</div>
+</div>
+
+<div class="callout info" style="max-width:960px;margin-top:24px">
+<div class="ct">对音视频开发的启示</div>
+<strong>色彩空间的选择</strong>直接影响审美表现：DCI-P3 比 sRGB 覆盖更多高饱和色彩，但需要 10bit 编码才能避免色带。<br>
+<strong>Tone Mapping 算法</strong>决定了 HDR→SDR 转换时的氛围保留——不是简单的亮度截断，而是审美决策。<br>
+<strong>AI 超分模型</strong>如果不在训练数据中融入审美特征，输出的"高清"图可能技术合格但视觉平淡。
+</div>
+
+<div class="sec-title" style="margin-top:36px;font-size:clamp(20px,3vw,28px)">审美质量指标：让 AI 学会"好看"</div>
+
+<div class="card-grid c3" style="margin-top:20px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">NIMA</div>
+<h4>Neural Image Assessment</h4>
+<p>Google 2017。直接输出 1-10 分布（而非单一分数），用 Earth Mover's Distance 训练。<br><br>训练数据：AVA 数据集（25万张照片 + 各自的 MOS 分布）。</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">CLIPIQA</div>
+<h4>CLIP-based IQA</h4>
+<p>利用 CLIP 的视觉-语言对齐能力，用提示词 "good photo" / "bad photo" 的相似度作为审美分数。<br><br>零样本，无需专门训练。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">MUSIQ</div>
+<h4>Multi-Scale IQA</h4>
+<p>处理任意分辨率输入，多尺度特征提取 + Transformer 融合。<br><br>在 SPAQ 数据集上 SOTA。</p>
+</div>
+</div>
+</section>
+
+<!-- ========== Section 11: 如何拍照 ========== -->
+<section class="sec" id="s11">
+<div class="sec-title">如何拍照：从参数到思维</div>
+<div class="sec-sub">了解相机参数不是为了机械操作，而是为了在参数之间做出有意识的取舍</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">曝光三角</div>
+<h4>三个互相制约的参数</h4>
+<p>
+<strong>光圈 Aperture</strong>（f/1.4 - f/22）<br>
+→ 控制进光量 + 景深<br>
+→ f/1.4：大量进光 + 浅景深（背景虚化）<br>
+→ f/16：少量进光 + 深景深（全景清晰）<br><br>
+
+<strong>快门 Shutter</strong>（1/8000s - 30s）<br>
+→ 控制进光时间 + 运动模糊<br>
+→ 高速快门：凝固运动瞬时<br>
+→ 慢快门：运动拖影 / 光轨<br><br>
+
+<strong>ISO</strong>（100 - 12800+）<br>
+→ 控制传感器增益 + 噪声<br>
+→ ISO 100：最干净，需要充足光线<br>
+→ ISO 6400+：可用但噪声显著
+</p>
+<div class="callout danger" style="margin-top:8px">
+<div class="ct">核心约束</div>
+固定曝光量下：光圈↑ → 快门↑ 或 ISO↑。三个参数不可能同时最优——每一次曝光都是取舍。
+</div>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">思维框架</div>
+<h4>五步决策流程</h4>
+<p>
+<strong>1. 我要拍什么？</strong> → 确定主体<br>
+人是脸？物是质感？景是氛围？<br><br>
+<strong>2. 最重要的是什么？</strong> → 锁定关键参数<br>
+运动场景 → 先定快门速度<br>
+人像虚化 → 先定光圈大小<br>
+夜景 → 先确认 ISO 上限<br><br>
+<strong>3. 光线从哪来？</strong> → 确定站位和角度<br>
+侧光强调质感，逆光强调轮廓，顺光强调色彩。<br><br>
+<strong>4. 构图如何安排？</strong> → 视觉引导<br>
+主体放在哪？视线如何流向主体？<br><br>
+<strong>5. 还有什么不对？</strong> → 检查与调整<br>
+地平线是否倾斜？背景是否杂乱？曝半是否准确？
+</p>
+<div class="callout success" style="margin-top:8px">
+<div class="ct">进阶心法</div>
+<strong>先做减法</strong>：排除画面中一切不服务于主体的元素。<br>
+<strong>再思想法</strong>：用什么手法突出主体？<br>
+<strong>最后技法</strong>：参数、后期只是实现手段。
+</div>
+</div>
+</div>
+</section>
+
+<!-- ========== Section 12: 对焦与景深 ========== -->
+<section class="sec" id="s12">
+<div class="sec-title">对焦与景深：清晰区域的精确控制</div>
+<div class="sec-sub">景深不是"模糊背景"这么简单——它是指引注意力最强大的视觉工具</div>
+
+<div class="card-grid c3" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">景深公式</div>
+<h4>Depth of Field</h4>
+<p>景深 ∝ <code>f² / (F × c)</code></p>
+<ul style="margin:6px 0 0 16px;font-size:12px;color:#9999bb;line-height:1.8">
+<li>f = 焦距 ↑ → 景深 ↓</li>
+<li>F = 光圈数 ↑ → 景深 ↑</li>
+<li>c = 弥散圆 ↑ → 景深 ↑</li>
+<li>对焦距离 ↑ → 景深 ↑</li>
+</ul>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">浅景深</div>
+<h4>Shallow DOF</h4>
+<p>条件：长焦 + 大光圈 + 近对焦<br><br>
+效果：主体锐利，前后虚化<br><br>
+适用：人像、静物、特写<br><br>
+<strong>Bokeh</strong>：焦外光斑的质感——
+圆形 vs 多边形 vs 旋涡，由光圈叶片决定。</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">深景深</div>
+<h4>Deep DOF</h4>
+<p>条件：广角 + 小光圈 + 远对焦<br><br>
+效果：前后都清晰<br><br>
+适用：风景、建筑、纪实<br><br>
+<strong>超焦距</strong>：从 H/2 到无穷远都清晰的对焦距离：<br>
+<code>H = f² / (F × c)</code></p>
+</div>
+</div>
+
+<div class="callout info" style="max-width:960px;margin-top:24px">
+<div class="ct">对音视频开发的意义</div>
+<strong>计算摄影</strong>：手机的多帧合成虚化 = 用深度估计 + 散焦模糊模拟光学景深。模型质量直接决定虚化自然度。<br>
+<strong>编码决策</strong>：浅景深画面中，背景模糊区域可以用高 QP 压缩，节省码率而不影响主观质量——这是 ROI 编码的底层逻辑。<br>
+<strong>ISP 调试</strong>：自动对焦(AF)算法的评价函数（对比度法/相位法）直接影响拍摄体验和出片率。
+</div>
+</section>
+
+<!-- ========== Section 13: 实战工具链 ========== -->
+<section class="sec" id="s13">
+<div class="sec-title">实战工具链：量化一切</div>
+<div class="sec-sub">从命令行到 SDK，把质量评估嵌入开发流程的每一步</div>
+
+<div class="card-grid c2" style="margin-top:28px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">FFmpeg 内置</div>
+<h4>一行命令评估</h4>
+<div class="cblock">
+<span class="cm"># PSNR + SSIM 同时计算</span>
+ffmpeg -i ref.mp4 -i dist.mp4 \
+  -lavfi <span class="st">"[0:v][1:v]psnr;[0:v][1:v]ssim"</span> \
+  -f null -
+
+<span class="cm"># VMAF (需编译 libvmaf)</span>
+ffmpeg -i ref.mp4 -i dist.mp4 \
+  -lavfi <span class="st">"libvmaf=model_path=vmaf_v0.6.1.pkl"</span> \
+  -f null -
+
+<span class="cm"># 无参考 NIQE</span>
+ffmpeg -i video.mp4 \
+  -lavfi <span class="st">"niqe"</span> -f null -
+
+<span class="cm"># 逐帧 VMAF 导出 CSV</span>
+ffmpeg -i ref.mp4 -i dist.mp4 \
+  -lavfi <span class="st">"libvmaf=log_path=vmaf.csv:log_fmt=csv"</span> \
+  -f null -
+</div>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">Python 生态</div>
+<h4>灵活的批量评估</h4>
+<div class="cblock">
+<span class="cm"># pyiqa: 统一接口，一网打尽</span>
+<span class="kw">import</span> pyiqa
+metric = pyiqa.create_metric(<span class="st">'brisque'</span>)
+score = metric(<span class="st">'test.png'</span>)
+
+<span class="cm"># 可用指标列表</span>
+pyiqa.list_models()
+<span class="cm"># brisque, niqe, clipiqa, musiq,</span>
+<span class="cm"># nima, maniqa, dbcnn, hyperiqa ...</span>
+
+<span class="cm"># VMAF 官方 SDK</span>
+<span class="kw">from</span> vmaf <span class="kw">import</span> VmafPerFrame
+runner = VmafPerFrame(
+  ref_path, dist_path, model_path)
+score = runner.run()
+</div>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">VMAF Python SDK</div>
+<h4>Netflix 官方工具</h4>
+<div class="cblock">
+<span class="cm"># 安装</span>
+pip install vmaf
+
+<span class="cm"># 命令行</span>
+vmaf --reference ref.yuv \
+     --distorted dist.yuv \
+     --width 1920 --height 1080 \
+     --pixfmt yuv420p \
+     --model version=vmaf_v0.6.1 \
+     --out-fmt json
+
+<span class="cm"># 自定义模型训练</span>
+<span class="cm"># 用自己的主观数据训练</span>
+<span class="cm"># SVM 回归模型</span>
+</div>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">CI/CD 集成</div>
+<h4>自动化质量门禁</h4>
+<div class="cblock">
+<span class="cm"># GitHub Actions 示例</span>
+- <span class="kw">name</span>: Quality Gate
+  <span class="kw">run</span>: |
+    python scripts/quality_check.py \
+      --ref assets/test_refs/ \
+      --dist build/output/ \
+      --metric vmaf \
+      --threshold <span class="nu">90</span>
+
+<span class="cm"># 质量门槛：</span>
+<span class="cm"># VMAF ≥ 90 → PASS</span>
+<span class="cm"># VMAF 80-90 → WARN</span>
+<span class="cm"># VMAF < 80  → FAIL</span>
+</div>
+</div>
+</div>
+
+<div class="callout success" style="max-width:960px;margin-top:24px">
+<div class="ct">开发的最佳实践</div>
+<strong>编码测试</strong>：固定一个 10s 测试序列（含运动、文字、渐变），每次调参后跑 VMAF。<br>
+<strong>弱网测试</strong>：用 <code>tc netem</code> 注入丢包/延迟，对比 CRF 23 vs 28 的 VMAF 退化曲线。<br>
+<strong>线上监控</strong>：在推流端注入 BRISQUE 分数，低于阈值触发告警。<br>
+<strong>ABR 阶梯</strong>：基于 VMAF 而非单纯分辨率制定码率阶梯（per-title encoding）。
+</div>
+</section>
+
+<!-- ========== Section 14: 质量评估在音视频开发中的应用 ========== -->
+<section class="sec" id="s14">
+<div class="sec-title">从评估到工程：音频视频开发的闭环</div>
+<div class="sec-sub">质量评估不是实验室里的学术游戏——它嵌入在音视频系统的每个决策点</div>
+
+<div class="flow-row" style="margin-top:28px">
+<div class="flow-box" style="border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.06)">采集</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)">前处理</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)">编码</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)">传输</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)">解码</div>
+<div class="flow-arr">→</div>
+<div class="flow-box" style="border-color:rgba(232,121,249,.3);background:rgba(232,121,249,.06)">渲染</div>
+</div>
+
+<div class="card-grid c3" style="margin-top:24px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">采集阶段</div>
+<h4>Source Quality</h4>
+<p><strong>ISP 参数调试</strong>：AE(Auto Exposure) 过曝/欠曝 → 动态范围丢失<br>
+<strong>3A 评估</strong>：AWB 色偏量化(ΔE)，AF 对焦精度(对比度梯度)<br>
+<strong>传感器噪声模型</strong>：读噪声 + 散粒噪声的 Poisson-Gaussian 模型</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">前处理</div>
+<h4>Pre-processing</h4>
+<p><strong>降噪</strong>：过度降噪的油画效应 → 用 NIQE/BRISQUE 检测<br>
+<strong>超分辨率</strong>：AI 超分的幻觉(凭空生成的纹理) → 需要与原帧对比 LPIPS<br>
+<strong>HDR→SDR</strong>：Tone mapping 丢失的高光细节 → 用 HDR-VDP 评估</p>
+</div>
+<div class="g-card" style="--gc:#fbbf24">
+<div class="sub">编码</div>
+<h4>Encoding</div>
+<p><strong>码率-质量曲线</strong>：BD-Rate（Bjøntegaard Delta Rate）<br>
+编码器 A 比 B 省 X% 码率达到相同质量<br>
+<strong>Per-title 编码</strong>：每个视频算出最优码率阶梯<br>
+而非用统一预设</p>
+</div>
+<div class="g-card" style="--gc:#f87171">
+<div class="sub">传输</div>
+<h4>Delivery</h4>
+<p><strong>弱网退化</strong>：丢包率 vs VMAF 退化曲线<br>
+决定 FEC/ARQ 的冗余度<br>
+<strong>ABR 决策</strong>：带宽预估 → 选择码率档位<br>
+VMAF 作为质量目标而非分辨率</p>
+</div>
+<div class="g-card" style="--gc:#38bdf8">
+<div class="sub">解码</div>
+<h4>Decoding</h4>
+<p><strong>错误隐藏</strong>：丢帧/误码后的补偿质量<br>
+<strong>色彩空间</strong>：BT.709 vs BT.2020 转换准确性<br>
+<strong>硬件解码</strong>：不同 SoC 的解码精度差异</p>
+</div>
+<div class="g-card" style="--gc:#e879f9">
+<div class="sub">渲染</div>
+<h4>Rendering</h4>
+<p><strong>Gamma 正确性</strong>：sRGB vs 线性空间混淆<br>
+<strong>VSync 对齐</strong>：frame pacing 影响流畅度感知<br>
+<strong>色彩校准</strong>：屏幕色准影响最终观看体验</p>
+</div>
+</div>
+
+<div class="callout warning" style="max-width:960px;margin-top:24px">
+<div class="ct">真实案例：LinkricAI 板端推流</div>
+在 JY1C 设备上，IMP 摄像头输出的 H.264 码流经过 LiveKit 推流到浏览器——每个环节的质量泄漏点：<br>
+① IMP 编码 QP 偏高导致宠物项圈 BLE 信号文字模糊(SSIM 低于 0.85)<br>
+② 弱网下 SFU 转发丢包导致 P 帧花屏(需 FEC 冗余)<br>
+③ 浏览器 WebRTC 解码的色彩空间未匹配(颜色偏淡)<br>
+④ 码率从 2Mbps 降到 500kbps 时 VMAF 从 92 降到 68——这是弱网策略的代价量化。
+</div>
+</section>
+
+<!-- ========== Section 15: 小测验 ========== -->
+<section class="sec" id="s15">
+<div class="sec-title">巩固测验</div>
+<div class="sec-sub">检验你对图像视频质量评估的理解</div>
+
+<div class="quiz-box" id="quiz1">
+<h4>Q1: 两张图 PSNR 都是 35dB，一张加了高斯噪声，一张有块效应——哪个 SSIM 更低？</h4>
+<button class="quiz-opt" data-quiz="1" data-correct="0">高斯噪声的 SSIM 更低</button>
+<button class="quiz-opt" data-quiz="1" data-correct="0">两者 SSIM 相同</button>
+<button class="quiz-opt" data-quiz="1" data-correct="1">块效应的 SSIM 更低</button>
+<button class="quiz-opt" data-quiz="1" data-correct="0">取决于图像内容</button>
+<p id="quiz1-exp" style="display:none;margin-top:10px;font-size:12px;color:#6ee7b7;line-height:1.7"></p>
+</div>
+
+<div class="quiz-box" id="quiz2" style="margin-top:16px">
+<h4>Q2: 实时直播场景最应该用哪个质量评估指标？</h4>
+<button class="quiz-opt" data-quiz="2" data-correct="0">VMAF（全参考，精度最高）</button>
+<button class="quiz-opt" data-quiz="2" data-correct="0">PSNR（计算最快）</button>
+<button class="quiz-opt" data-quiz="2" data-correct="1">BRISQUE（无参考，无需源片）</button>
+<button class="quiz-opt" data-quiz="2" data-correct="0">MS-SSIM（多尺度结构相似度）</button>
+<p id="quiz2-exp" style="display:none;margin-top:10px;font-size:12px;color:#6ee7b7;line-height:1.7"></p>
+</div>
+
+<div class="quiz-box" id="quiz3" style="margin-top:16px">
+<h4>Q3: 拍摄运动中的宠物，曝光三角中哪个参数应该最先确定？</h4>
+<button class="quiz-opt" data-quiz="3" data-correct="0">光圈 —— 控制景深</button>
+<button class="quiz-opt" data-quiz="3" data-correct="0">ISO —— 控制噪声</button>
+<button class="quiz-opt" data-quiz="3" data-correct="1">快门 —— 凝固运动需要高速快门</button>
+<button class="quiz-opt" data-quiz="3" data-correct="0">白平衡 —— 控制色温</button>
+<p id="quiz3-exp" style="display:none;margin-top:10px;font-size:12px;color:#6ee7b7;line-height:1.7"></p>
+</div>
+
+<div class="quiz-box" id="quiz4" style="margin-top:16px">
+<h4>Q4: BD-Rate 为 -20% 意味着什么？</h4>
+<button class="quiz-opt" data-quiz="4" data-correct="0">质量下降了 20%</button>
+<button class="quiz-opt" data-quiz="4" data-correct="1">同等质量下节省了 20% 码率</button>
+<button class="quiz-opt" data-quiz="4" data-correct="0">码率提高了 20% 但质量不变</button>
+<button class="quiz-opt" data-quiz="4" data-correct="0">PSNR 降低了 20dB</button>
+<p id="quiz4-exp" style="display:none;margin-top:10px;font-size:12px;color:#6ee7b7;line-height:1.7"></p>
+</div>
+
+<div class="quiz-box" id="quiz5" style="margin-top:16px">
+<h4>Q5: "Teal & Orange" 电影调色利用了什么色彩原理？</h4>
+<button class="quiz-opt" data-quiz="5" data-correct="0">相邻色和谐</button>
+<button class="quiz-opt" data-quiz="5" data-correct="1">互补色对比（肤色偏橙，阴影偏青）</button>
+<button class="quiz-opt" data-quiz="5" data-correct="0">三角色平衡</button>
+<button class="quiz-opt" data-quiz="5" data-correct="0">单色深浅变化</button>
+<p id="quiz5-exp" style="display:none;margin-top:10px;font-size:12px;color:#6ee7b7;line-height:1.7"></p>
+</div>
+</section>
+
+<!-- ========== Section 16: 总结 ========== -->
+<section class="sec" id="s16">
+<div class="sec-title">思维地图</div>
+<div class="sec-sub">从像素到审美，从评估到工程——一张图串起全部</div>
+
+<div style="margin-top:32px;max-width:960px;width:100%">
+<div class="tensor-flow">
+<div class="tf-node highlight">像素质量</div>
+<div class="tf-arr">→</div>
+<div class="tf-node highlight">结构质量</div>
+<div class="tf-arr">→</div>
+<div class="tf-node highlight">感知质量</div>
+<div class="tf-arr">→</div>
+<div class="tf-node highlight">审美质量</div>
+</div>
+<div style="text-align:center;font-size:10px;color:#555577;margin-top:4px">
+PSNR &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; SSIM &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; VMAF &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; NIMA/CLIP
+</div>
+
+<div class="tensor-flow" style="margin-top:20px">
+<div class="tf-node">采集</div>
+<div class="tf-arr">→</div>
+<div class="tf-node">预处理</div>
+<div class="tf-arr">→</div>
+<div class="tf-node">编码</div>
+<div class="tf-arr">→</div>
+<div class="tf-node">传输</div>
+<div class="tf-arr">→</div>
+<div class="tf-node">解码</div>
+<div class="tf-arr">→</div>
+<div class="tf-node highlight">用户感知</div>
+</div>
+<div style="text-align:center;font-size:10px;color:#555577;margin-top:4px">
+ISP/3A &nbsp;&nbsp;&nbsp; 降噪/超分 &nbsp;&nbsp; CRF/QP &nbsp;&nbsp; ABR/FEC &nbsp;&nbsp; 硬解 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; MOS/QoE
+</div>
+</div>
+
+<div class="card-grid c2" style="margin-top:32px">
+<div class="g-card" style="--gc:#6c63ff">
+<div class="sub">记住</div>
+<h4>质量评估三定律</h4>
+<p>
+<strong>1.</strong> 没有万能指标——每种指标都有盲区，组合使用。<br>
+<strong>2.</strong> 客观指标服务于主观感受——MOS 是最终裁判。<br>
+<strong>3.</strong> 质量不是绝对值，是约束下的最优解——带宽、算力、延迟，永远在 trade-off。
+</p>
+</div>
+<div class="g-card" style="--gc:#34d399">
+<div class="sub">行动</div>
+<h4>下一步练习</h4>
+<p>
+<strong>1.</strong> 用 FFmpeg 对同一段视频跑 CRF 18/23/28/35 的 VMAF 对比。<br>
+<strong>2.</strong> 用 <code>tc netem</code> 注入 5% 丢包，观察 VMAF 退化曲线。<br>
+<strong>3.</strong> 用 pyiqa 跑 BRISQUE 和 CLIP-IQA，体会无参考指标的差异。<br>
+<strong>4.</strong> 拍 10 张照片，用 NIMA 打分，对比自己的直觉判断。
+</p>
+</div>
+</div>
+</section>
+
+<script>
+// ===== Scroll Reveal =====
+const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');if(e.target.dataset.delay)setTimeout(()=>e.target.classList.add('vis'),+e.target.dataset.delay)}})},{threshold:.15});
+document.querySelectorAll('.sec-title,.sec-sub,.g-card,.gap-card,.cv-wrap,.callout').forEach(e=>obs.observe(e));
+
+// ===== Particles =====
+document.querySelectorAll('.sec').forEach(s=>{for(let i=0;i<12;i++){const p=document.createElement('div');p.className='particle';p.style.left=Math.random()*100+'%';p.style.top=Math.random()*100+'%';p.style.animationDuration=(8+Math.random()*12)+'s';p.style.animationDelay=Math.random()*8+'s';s.appendChild(p)}});
+
+// ===== PSNR vs SSIM Demo =====
+const cv=document.getElementById('comp-cv');
+if(cv){
+const ctx=cv.getContext('2d');
+const W=640,H=360;
+cv.width=W;cv.height=H;
+const imgData=ctx.createImageData(W,H);
+const d=imgData.data;
+
+function drawScene(val,sigma){
+  // Simple gradient scene with a circle and lines
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4;
+    // Background gradient
+    const bg=y/H;
+    d[i]=Math.floor(40+60*bg);
+    d[i+1]=Math.floor(30+80*bg);
+    d[i+2]=Math.floor(80+100*bg);
+    d[i+3]=255;
+    // Circle
+    const dx=x-W*0.38,dy=y-H*0.45,r=Math.sqrt(dx*dx+dy*dy);
+    if(r<60){
+      const t=1-r/60;
+      d[i]=Math.floor(d[i]*(1-t)+220*t);
+      d[i+1]=Math.floor(d[i+1]*(1-t)+140*t);
+      d[i+2]=Math.floor(d[i+2]*(1-t)+60*t);
+    }
+    // Diagonal line
+    if(Math.abs(x-y*W/H-40)<3){
+      d[i]=Math.min(255,d[i]+80);
+      d[i+1]=Math.min(255,d[i+1]+80);
+      d[i+2]=Math.min(255,d[i+2]+80);
+    }
+  }
+}
+
+function addNoise(data,sigma){
+  for(let i=0;i<data.length;i+=4){
+    const n=(Math.random()-0.5)*2*sigma;
+    data[i]=Math.max(0,Math.min(255,data[i]+n));
+    data[i+1]=Math.max(0,Math.min(255,data[i+1]+n));
+    data[i+2]=Math.max(0,Math.min(255,data[i+2]+n));
+  }
+}
+
+function addBlocking(data,strength){
+  const bs=8;
+  for(let by=0;by<H;by+=bs)for(let bx=0;bx<W;bx+=bs){
+    const offset=(Math.random()-0.5)*strength;
+    for(let y=by;y<Math.min(by+bs,H);y++)for(let x=bx;x<Math.min(bx+bs,W);x++){
+      const i=(y*W+x)*4;
+      data[i]=Math.max(0,Math.min(255,data[i]+offset));
+      data[i+1]=Math.max(0,Math.min(255,data[i+1]+offset));
+      data[i+2]=Math.max(0,Math.min(255,data[i+2]+offset));
+    }
+  }
+}
+
+function calcMSE(a,b){
+  let s=0;const n=a.length/4;
+  for(let i=0;i<a.length;i+=4){
+    s+=(a[i]-b[i])**2+(a[i+1]-b[i+1])**2+(a[i+2]-b[i+2])**2;
+  }
+  return s/(3*n);
+}
+
+function calcPSNR(mse){return mse>0?10*Math.log10(255*255/mse):99}
+
+function update(){
+  const ns=+document.getElementById('noise-slider').value;
+  const bs=+document.getElementById('block-slider').value;
+  document.getElementById('noise-val').textContent=ns;
+  document.getElementById('block-val').textContent=bs;
+
+  // Original
+  drawScene();
+  const orig=new Uint8ClampedArray(d);
+
+  // Noise version
+  const noiseData=new Uint8ClampedArray(orig);
+  addNoise(noiseData,ns*3);
+  const mseN=calcMSE(orig,noiseData);
+  const psnrN=calcPSNR(mseN);
+
+  // Block version
+  const blockData=new Uint8ClampedArray(orig);
+  addBlocking(blockData,bs*3);
+  const mseB=calcMSE(orig,blockData);
+  const psnrB=calcPSNR(mseB);
+
+  document.getElementById('psnr-noise').textContent=psnrN.toFixed(1);
+  document.getElementById('psnr-block').textContent=psnrB.toFixed(1);
+
+  // Simplified SSIM estimate (blocks destroy structure more)
+  const ssimNoise=Math.max(0,1-ns/80).toFixed(3);
+  const ssimBlock=Math.max(0,1-bs/55).toFixed(3);
+  document.getElementById('ssim-noise').textContent=ssimNoise;
+  document.getElementById('ssim-block').textContent=ssimBlock;
+
+  // Draw split
+  ctx.putImageData(imgData,0,0);
+  // Left half: noise
+  const halfData=ctx.createImageData(W,H);
+  const hd=halfData.data;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4;
+    const src=x<W/2?noiseData:orig;
+    hd[i]=src[i];hd[i+1]=src[i+1];hd[i+2]=src[i+2];hd[i+3]=255;
+  }
+  ctx.putImageData(halfData,0,0);
+}
+
+document.getElementById('noise-slider').addEventListener('input',update);
+document.getElementById('block-slider').addEventListener('input',update);
+update();
+}
+
+// ===== Quiz =====
+const explanations={
+1:'块效应破坏了像素间的结构连续性（8×8边界跳变），而高斯噪声是全局随机扰动，对结构信息的破坏程度更小。SSIM 恰好捕捉了这种结构差异，所以在 PSNR 相同时，块效应的 SSIM 更低。',
+2:'实时直播没有源片可参考，所以全参考指标（VMAF、PSNR、SSIM）无法使用。BRISQUE 是无参考指标，可以从失真图像的自然场景统计特性推断质量，适用于线上监控。',
+3:'运动物体需要高速快门来凝固瞬间，避免运动模糊。快门速度不够 → 宠物变成模糊的一团。确定快门后，再通过光圈和 ISO 补足曝光。',
+4:'BD-Rate 是 Bjøntegaard Delta Rate，衡量在同等主观质量下码率的百分比差异。-20% 意味着新编码器在相同感知质量下节省了 20% 的带宽。',
+5:'Teal（青色）与 Orange（橙色）是互补色对，位于色轮两端。互补色产生最大视觉对比度——肤色偏橙色突出主体，阴影偏青色增加深度感，这就是电影看起来"高级"的秘密。'
+};
+
+document.querySelectorAll('.quiz-opt').forEach(btn=>{
+btn.addEventListener('click',function(){
+const quiz=this.dataset.quiz;
+const correct=this.dataset.correct==='1';
+const box=document.getElementById('quiz'+quiz);
+box.querySelectorAll('.quiz-opt').forEach(b=>b.classList.add('disabled'));
+if(correct){
+this.classList.add('correct');
+}else{
+this.classList.add('wrong');
+box.querySelectorAll('.quiz-opt').forEach(b=>{
+if(b.dataset.correct==='1')b.classList.add('correct');
+});
+}
+const exp=document.getElementById('quiz'+quiz+'-exp');
+exp.textContent=explanations[quiz];
+exp.style.display='block';
+});
+});
+</script>
+</body>
+</html>

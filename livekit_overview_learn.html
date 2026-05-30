@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveKit IPC 安全纵览</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* Hero Canvas */
+#heroCanvas{width:100%;max-width:900px;height:260px;display:block;margin:20px auto 0;opacity:.9}
+
+/* Layer cards */
+.layer-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:960px;width:100%;margin-top:32px}
+.layer-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:24px 20px;cursor:pointer;transition:all .4s;position:relative;opacity:0;transform:translateY(24px)}
+.layer-card.vis{opacity:1;transform:translateY(0)}
+.layer-card:hover{border-color:var(--lc);background:rgba(255,255,255,.06);transform:translateY(-4px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.layer-num{font-size:12px;font-weight:700;color:var(--lc);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.layer-name{font-size:20px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.layer-pos{font-size:14px;color:#9999bb;line-height:1.6}
+.layer-keys{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.layer-key{font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.05);color:var(--lc);border:1px solid rgba(255,255,255,.08)}
+.layer-arrow{position:absolute;right:-14px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.15);font-size:18px;pointer-events:none}
+/* Arrow for 3-col: between col1→col2 and col2→col3 cards, and row transitions handled by CSS */
+.layer-grid .layer-card:nth-child(3n+1) .layer-arrow,
+.layer-grid .layer-card:nth-child(3n+2) .layer-arrow{display:block}
+.layer-grid .layer-card:nth-child(3n) .layer-arrow,
+.layer-grid .layer-card:last-child .layer-arrow{display:none}
+
+/* Crypto cards */
+.crypto-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:960px;width:100%;margin-top:32px}
+.crypto-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:28px 24px;cursor:pointer;transition:all .4s;opacity:0;transform:translateY(24px)}
+.crypto-card.vis{opacity:1;transform:translateY(0)}
+.crypto-card:hover{border-color:var(--cc);background:rgba(255,255,255,.06);transform:translateY(-4px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.crypto-icon{font-size:28px;margin-bottom:10px}
+.crypto-name{font-size:20px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.crypto-metaphor{font-size:14px;color:var(--cc);font-style:italic;margin-bottom:8px}
+.crypto-layers{font-size:13px;color:#8888aa;line-height:1.7}
+.crypto-layers span{color:var(--cc);font-weight:600}
+
+/* Trust chain */
+.chain-col{display:flex;flex-direction:column;align-items:center;gap:0;max-width:420px;width:100%;margin-top:32px}
+.chain-block{width:100%;padding:16px 20px;border-radius:10px;text-align:center;font-weight:700;font-size:15px;cursor:pointer;transition:all .5s;position:relative;border:2px solid var(--cc,.3);background:rgba(255,255,255,.04);opacity:0;transform:translateY(20px)}
+.chain-block.vis{opacity:1;transform:translateY(0)}
+.chain-block:hover{background:rgba(255,255,255,.08)}
+.chain-block.broken{background:rgba(244,63,94,.15)!important;border-color:#f43f5e!important;text-decoration:line-through;color:#999!important}
+.chain-block.broken+.chain-conn,.chain-block.broken~.chain-block{opacity:.25;filter:grayscale(.8)}
+.chain-conn{width:3px;height:20px;background:rgba(255,255,255,.12);transition:all .5s}
+.chain-risk{margin-top:20px;padding:14px 20px;border-radius:10px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);font-size:13px;color:#f4a0b0;line-height:1.7;max-width:420px;text-align:center;opacity:0;transition:all .6s}
+.chain-risk.vis{opacity:1}
+.chain-deep{margin-top:18px;display:inline-block;padding:10px 28px;border-radius:10px;background:linear-gradient(135deg,#a78bfa,#6c63ff);color:#fff;font-weight:700;font-size:14px;text-decoration:none;transition:transform .3s}
+.chain-deep:hover{transform:scale(1.05)}
+
+/* Roadmap */
+.road-map{max-width:700px;width:100%;margin-top:32px;position:relative}
+.road-line{position:absolute;left:22px;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,#6c63ff,#38bdf8,#34d399,#a78bfa,#f43f5e);border-radius:2px}
+.road-node{display:flex;align-items:flex-start;gap:18px;margin-bottom:16px;position:relative;opacity:0;transform:translateX(-20px);transition:all .6s}
+.road-node.vis{opacity:1;transform:translateX(0)}
+.road-dot{width:44px;height:44px;min-width:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;background:var(--rc);box-shadow:0 0 16px rgba(108,99,255,.3);position:relative;z-index:1}
+.road-card{flex:1;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;cursor:pointer;transition:all .3s;text-decoration:none;display:block}
+.road-card:hover{background:rgba(255,255,255,.06);border-color:var(--rc);transform:translateX(4px)}
+.road-card-title{font-size:16px;font-weight:700;color:#e0e0ff;margin-bottom:4px}
+.road-card-desc{font-size:13px;color:#8888aa;line-height:1.6}
+.road-final{margin-top:24px;text-align:center}
+.road-final a{display:inline-block;padding:14px 40px;border-radius:12px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:#fff;font-weight:700;font-size:15px;text-decoration:none;transition:transform .3s}
+.road-final a:hover{transform:scale(1.05)}
+
+/* PKI / concept cards */
+.concept-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:960px;width:100%;margin-top:32px}
+.concept-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:24px 20px;transition:all .4s;opacity:0;transform:translateY(24px)}
+.concept-card.vis{opacity:1;transform:translateY(0)}
+.concept-card:hover{background:rgba(255,255,255,.06);transform:translateY(-4px)!important;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.concept-card h3{font-size:18px;font-weight:800;margin-bottom:8px;color:var(--cc)}
+.concept-card .metaphor{font-size:13px;color:var(--cc);font-style:italic;margin-bottom:10px}
+.concept-card .explain{font-size:13px;color:#9999bb;line-height:1.8}
+.concept-card .explain b{color:#e0e0ff}
+.concept-card .explain code{background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--cc)}
+/* PKI flow */
+.pki-flow{margin-top:28px;max-width:840px;width:100%;opacity:0;transform:translateY(20px);transition:all .7s}
+.pki-flow.vis{opacity:1;transform:translateY(0)}
+.pki-steps{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin-top:16px}
+.pki-step{text-align:center;flex:1;min-width:0;position:relative}
+.pki-step .pki-box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 8px;margin:0 4px;font-size:12px;color:#bbb;line-height:1.6;transition:all .3s}
+.pki-step .pki-box b{display:block;color:#e0e0ff;font-size:13px;margin-bottom:4px}
+.pki-step .pki-box:hover{border-color:var(--sc);background:rgba(255,255,255,.07)}
+.pki-step .pki-arr{color:rgba(255,255,255,.2);font-size:16px;display:flex;align-items:center;justify-content:center;width:24px}
+.pki-note{margin-top:14px;text-align:center;font-size:12px;color:#7777aa;line-height:1.7}
+.pki-note span{color:#f43f5e;font-weight:700}
+.pki-note em{color:#34d399;font-style:normal;font-weight:700}
+
+@media(max-width:700px){
+  .layer-grid{grid-template-columns:1fr}
+  .crypto-grid{grid-template-columns:1fr}
+  .concept-grid{grid-template-columns:1fr}
+  .layer-arrow{display:none!important}
+  .pki-steps{flex-wrap:wrap;gap:8px}
+  .pki-step .pki-arr{display:none}
+}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ============================================================ -->
+<!-- S1: Hero — 安全全景 -->
+<!-- ============================================================ -->
+<div class="sec" id="s1">
+  <div class="sec-title" data-reveal>LiveKit IPC 安全架构全景</div>
+  <div class="sec-sub" data-reveal>板端 → SFU → 浏览器，六层加密保护无一裸奔<br>点击下方每一层，深入了解其安全机制</div>
+  <canvas id="heroCanvas"></canvas>
+  <div class="scroll-hint">↓ 向下滚动</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2: 基础概念 — 证书 / 数字签名 / CA -->
+<!-- ============================================================ -->
+<div class="sec" id="s2">
+  <div class="sec-title" data-reveal>理解证书、签名与信任</div>
+  <div class="sec-sub" data-reveal>六层安全模型建立在三个密码学原语之上 —— 不懂它们，就无法理解"为什么自签名证书也能可信"</div>
+  <div class="concept-grid">
+    <div class="concept-card" style="--cc:#38bdf8" data-reveal data-delay="0">
+      <h3>非对称密钥对</h3>
+      <div class="metaphor">一把钥匙两把锁 —— 公钥公开，私钥保密</div>
+      <div class="explain">
+        每人生成一对密钥：<b>私钥</b>只自己持有，<b>公钥</b>可以任意分发。<br>
+        • <b>加密</b>：别人用你的公钥加密 → 只有你的私钥能解密<br>
+        • <b>签名</b>：你用私钥签名 → 所有人用你的公钥验证<br>
+        常见算法：<code>ECDSA P-256</code>（WebRTC 选用）、<code>RSA-2048</code>（HTTPS 常用）
+      </div>
+    </div>
+    <div class="concept-card" style="--cc:#34d399" data-reveal data-delay="1">
+      <h3>数字签名</h3>
+      <div class="metaphor">亲笔签名 —— 不可伪造，不可抵赖</div>
+      <div class="explain">
+        发送方对消息做 <b>哈希</b> → 用 <b>私钥加密哈希</b> → 得到签名。<br>
+        接收方：<b>用公钥解密签名</b> → 自己算哈希 → 比对是否一致。<br>
+        一致 = 消息确实来自私钥持有者，且未被篡改。<br>
+        LiveKit 项目中的签名：<code>ECDSA</code> 签 DTLS 证书、<code>HMAC</code> 签 JWT / STUN
+      </div>
+    </div>
+    <div class="concept-card" style="--cc:#a78bfa" data-reveal data-delay="2">
+      <h3>X.509 数字证书</h3>
+      <div class="metaphor">派出所开的身份证 —— 证明"公钥属于谁"</div>
+      <div class="explain">
+        证书 = <b>公钥 + 身份信息 + 签发者签名</b> 三合一。<br>
+        有了证书，你不需要亲自认识对方，只需要信任签发者。<br>
+        证书内容示例：<code>Subject=*.livekit.cloud</code>、<code>Issuer=Let's Encrypt</code>、<code>公钥</code>、<code>有效期</code>、<code>签名</code>
+      </div>
+    </div>
+    <div class="concept-card" style="--cc:#f59e0b" data-reveal data-delay="0">
+      <h3>CA 证书颁发机构</h3>
+      <div class="metaphor">公安局 —— 你信它，它签的证你就信</div>
+      <div class="explain">
+        CA 是被广泛信任的第三方，用自己的 <b>私钥</b> 给服务器证书签名。<br>
+        浏览器 / 操作系统预装了 <b>根证书</b>（CA 的公钥），形成信任链：<br>
+        <b>根证书 → 中间 CA → 服务器证书</b><br>
+        HTTPS 用 CA：浏览器自动验证。WebRTC 用 <b>自签名</b>：没 CA，靠 SDP 指纹。
+      </div>
+    </div>
+    <div class="concept-card" style="--cc:#f43f5e" data-reveal data-delay="1">
+      <h3>自签名证书</h3>
+      <div class="metaphor">自己给自己开证明 —— 没有第三方背书</div>
+      <div class="explain">
+        自己生成密钥对 → 自己签发证书 → 没有 CA 参与。<br>
+        任何人都能造一个自签名证书，所以 <b>单独看证书无法判断真伪</b>。<br>
+        WebRTC 的做法：通过 <b>TLS 信令通道</b> 传递证书的 SHA-256 指纹，握手后比对。<br>
+        ⚠️ 板端 <code>SSL_VERIFY_OPTIONAL</code> 跳过了指纹比对 → 中间人风险
+      </div>
+    </div>
+    <div class="concept-card" style="--cc:#6c63ff" data-reveal data-delay="2">
+      <h3>证书指纹</h3>
+      <div class="metaphor">身份证的防伪码 —— 一个指纹对应一张证书</div>
+      <div class="explain">
+        对整个证书内容做 <b>SHA-256 哈希</b>，得到一串十六进制摘要。<br>
+        任何一位改动 → 指纹完全不同（雪崩效应）。<br>
+        SDP 中的指纹格式：<code>sha-256 79:5A:3B:...</code><br>
+        两条路径比较：① TLS 信令传的指纹 ② DTLS 握手收到的证书算出的指纹
+      </div>
+    </div>
+  </div>
+
+  <!-- PKI trust flow -->
+  <div class="pki-flow" data-reveal>
+    <div style="text-align:center;font-size:15px;font-weight:700;color:#e0e0ff;margin-bottom:6px">两种信任模型对比</div>
+    <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+      <!-- HTTPS / CA model -->
+      <div style="flex:1;min-width:280px;max-width:400px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.15);border-radius:12px;padding:16px 14px">
+        <div style="text-align:center;font-size:14px;font-weight:700;color:#38bdf8;margin-bottom:12px">HTTPS 信任链（CA 体系）</div>
+        <div class="pki-steps">
+          <div class="pki-step" style="--sc:#38bdf8"><div class="pki-box"><b>根 CA</b>浏览器预装<br>公钥</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#38bdf8"><div class="pki-box"><b>中间 CA</b>根 CA 签名<br>背书</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#38bdf8"><div class="pki-box"><b>服务器证书</b>中间 CA 签名<br>包含公钥</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#38bdf8"><div class="pki-box"><b>TLS 连接</b>自动验证<br>无需人工</div></div>
+        </div>
+        <div class="pki-note">信任来源：<em>操作系统/浏览器预装根证书</em></div>
+      </div>
+      <!-- WebRTC / SDP fingerprint model -->
+      <div style="flex:1;min-width:280px;max-width:400px;background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.15);border-radius:12px;padding:16px 14px">
+        <div style="text-align:center;font-size:14px;font-weight:700;color:#a78bfa;margin-bottom:12px">WebRTC 信任链（SDP 指纹体系）</div>
+        <div class="pki-steps">
+          <div class="pki-step" style="--sc:#a78bfa"><div class="pki-box"><b>JWT 认证</b>API Secret<br>签发</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#a78bfa"><div class="pki-box"><b>TLS 信令</b>安全传递<br>SDP 指纹</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#a78bfa"><div class="pki-box"><b>DTLS 握手</b>自签名证书<br>含公钥</div></div>
+          <div class="pki-arr">→</div>
+          <div class="pki-step" style="--sc:#a78bfa"><div class="pki-box"><b>指纹比对</b>SDP 指纹 vs<br>证书哈希</div></div>
+        </div>
+        <div class="pki-note">信任来源：<span>TLS 保护信令 → 指纹不可篡改</span> &nbsp;⚠️ <span>VERIFY_OPTIONAL 跳过比对</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S3: 六层安全模型 -->
+<!-- ============================================================ -->
+<div class="sec" id="s3">
+  <div class="sec-title" data-reveal>六层安全模型</div>
+  <div class="sec-sub" data-reveal>每一层都依赖上一层的安全性，链条中最弱的环节决定整体安全</div>
+  <div class="layer-grid">
+    <a class="layer-card" style="--lc:#6c63ff" href="livekit_jwt_ice_learn.html" data-reveal data-delay="0">
+      <div class="layer-num">L1 身份认证</div>
+      <div class="layer-name">JWT Token</div>
+      <div class="layer-pos">身份准入证 —— 你是谁？</div>
+      <div class="layer-keys">
+        <span class="layer-key">HMAC-SHA256</span>
+        <span class="layer-key">API Key/Secret</span>
+        <span class="layer-key">Access Token</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+    <a class="layer-card" style="--lc:#38bdf8" href="livekit_wss_learn.html" data-reveal data-delay="1">
+      <div class="layer-num">L2 信令加密</div>
+      <div class="layer-name">WSS / TLS 1.2</div>
+      <div class="layer-pos">信令加密通道 —— 安全传输控制消息</div>
+      <div class="layer-keys">
+        <span class="layer-key">TLS 1.2</span>
+        <span class="layer-key">ALPN</span>
+        <span class="layer-key">X.509 证书</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+    <a class="layer-card" style="--lc:#f59e0b" href="livekit_jwt_ice_learn.html" data-reveal data-delay="2">
+      <div class="layer-num">L3 连通性验证</div>
+      <div class="layer-name">ICE 认证</div>
+      <div class="layer-pos">连通性验证 —— 这个连接可信吗？</div>
+      <div class="layer-keys">
+        <span class="layer-key">ice-pwd</span>
+        <span class="layer-key">STUN MESSAGE-INTEGRITY</span>
+        <span class="layer-key">TURN long-term</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+    <a class="layer-card" style="--lc:#a78bfa" href="livekit_dtlsp_learn.html" data-reveal data-delay="0">
+      <div class="layer-num">L4 密钥协商</div>
+      <div class="layer-name">DTLS 握手</div>
+      <div class="layer-pos">密钥协商 —— 在 UDP 上建立安全连接</div>
+      <div class="layer-keys">
+        <span class="layer-key">ECDHE P-256</span>
+        <span class="layer-key">ECDSA 自签名</span>
+        <span class="layer-key">前向保密</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+    <a class="layer-card" style="--lc:#34d399" href="livekit_ecdsa_learn.html" data-reveal data-delay="1">
+      <div class="layer-num">L5 指纹绑定</div>
+      <div class="layer-name">SDP 指纹</div>
+      <div class="layer-pos">证书指纹绑定 —— 防止中间人替换</div>
+      <div class="layer-keys">
+        <span class="layer-key">SHA-256 指纹</span>
+        <span class="layer-key">TLS 传递 → DTLS 比对</span>
+        <span class="layer-key">VERIFY_OPTIONAL 风险</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+    <a class="layer-card" style="--lc:#f43f5e" href="livekit_aes_learn.html" data-reveal data-delay="2">
+      <div class="layer-num">L6 媒体加密</div>
+      <div class="layer-name">SRTP 加密</div>
+      <div class="layer-pos">媒体流加密 —— 音视频数据的最后防线</div>
+      <div class="layer-keys">
+        <span class="layer-key">AES-CTR 128</span>
+        <span class="layer-key">HMAC-SHA1</span>
+        <span class="layer-key">DTLS 导出密钥</span>
+      </div>
+      <span class="layer-arrow">→</span>
+    </a>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: 密码学基础 -->
+<!-- ============================================================ -->
+<div class="sec" id="s4">
+  <div class="sec-title" data-reveal>六大密码学基石</div>
+  <div class="sec-sub" data-reveal>六层安全模型依赖这些底层原语 —— 理解它们才能理解安全设计</div>
+  <div class="crypto-grid">
+    <a class="crypto-card" style="--cc:#6c63ff" href="livekit_hmac_learn.html" data-reveal data-delay="0">
+      <div class="crypto-icon">🔐</div>
+      <div class="crypto-name">HMAC</div>
+      <div class="crypto-metaphor">防伪封印 —— 任何篡改都会被察觉</div>
+      <div class="crypto-layers">用在 <span>L1 JWT 签名</span>、<span>L3 STUN 完整性</span>、<span>L6 SRTP 认证</span></div>
+    </a>
+    <a class="crypto-card" style="--cc:#f43f5e" href="livekit_aes_learn.html" data-reveal data-delay="1">
+      <div class="crypto-icon">📦</div>
+      <div class="crypto-name">AES 对称加密</div>
+      <div class="crypto-metaphor">铁盒子 —— 只有持钥匙的人能打开</div>
+      <div class="crypto-layers">用在 <span>L6 SRTP 媒体加密</span>（AES-CTR）、<span>L2 TLS 批量加密</span>（AES-GCM）</div>
+    </a>
+    <a class="crypto-card" style="--cc:#e879f9" href="livekit_asym_encrypt_learn.html" data-reveal data-delay="2">
+      <div class="crypto-icon">🗝️</div>
+      <div class="crypto-name">非对称加密</div>
+      <div class="crypto-metaphor">两把钥匙 —— 公钥公开上锁，私钥私密开锁</div>
+      <div class="crypto-layers">用在 <span>L4 DTLS 证书传递公钥</span>、<span>L5 SDP 指纹绑定公钥身份</span></div>
+    </a>
+    <a class="crypto-card" style="--cc:#34d399" href="livekit_ecdhe_learn.html" data-reveal data-delay="3">
+      <div class="crypto-icon">🤝</div>
+      <div class="crypto-name">ECDHE 密钥交换</div>
+      <div class="crypto-metaphor">暗号协商 —— 公开讨论却只有彼此能算出密钥</div>
+      <div class="crypto-layers">用在 <span>L4 DTLS 握手</span>、<span>L2 TLS 握手</span> —— 提供前向保密</div>
+    </a>
+    <a class="crypto-card" style="--cc:#a78bfa" href="livekit_ecdsa_learn.html" data-reveal data-delay="4">
+      <div class="crypto-icon">🪪</div>
+      <div class="crypto-name">ECDSA + 证书</div>
+      <div class="crypto-metaphor">身份证 —— 证明"我就是我"</div>
+      <div class="crypto-layers">用在 <span>L4 DTLS 证书签名</span>、<span>L5 SDP 指纹绑定</span> —— 通过 SHA-256 指纹防中间人</div>
+    </a>
+    <a class="crypto-card" style="--cc:#06b6d4" href="livekit_sha256_learn.html" data-reveal data-delay="5">
+      <div class="crypto-icon">🔍</div>
+      <div class="crypto-name">SHA-256 哈希</div>
+      <div class="crypto-metaphor">数字指纹 —— 任意输入压缩为固定摘要，不可逆、雪崩效应</div>
+      <div class="crypto-layers">用在 <span>L5 SDP 指纹计算</span>、<span>ECDSA 签名前哈希</span>、<span>HMAC 底层引擎</span></div>
+    </a>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5: 信任链与风险 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5">
+  <div class="sec-title" data-reveal>信任链：断裂一层，全盘皆输</div>
+  <div class="sec-sub" data-reveal>点击任意层使其断裂，观察下方层级如何级联崩塌</div>
+  <div class="chain-col" id="chainCol">
+    <div class="chain-block" style="--cc:#6c63ff" data-layer="1" data-reveal data-delay="0">L1 JWT 认证</div>
+    <div class="chain-conn"></div>
+    <div class="chain-block" style="--cc:#38bdf8" data-layer="2" data-reveal data-delay="1">L2 WSS / TLS</div>
+    <div class="chain-conn"></div>
+    <div class="chain-block" style="--cc:#f59e0b" data-layer="3" data-reveal data-delay="2">L3 ICE 认证</div>
+    <div class="chain-conn"></div>
+    <div class="chain-block" style="--cc:#a78bfa" data-layer="4" data-reveal data-delay="3">L4 DTLS 握手</div>
+    <div class="chain-conn"></div>
+    <div class="chain-block" style="--cc:#34d399" data-layer="5" data-reveal data-delay="4">L5 SDP 指纹</div>
+    <div class="chain-conn"></div>
+    <div class="chain-block" style="--cc:#f43f5e" data-layer="6" data-reveal data-delay="5">L6 SRTP 加密</div>
+  </div>
+  <div class="chain-risk" id="chainRisk"></div>
+  <a class="chain-deep" href="livekit_trustchain_learn.html" style="margin-top:20px">深入探索信任链 →</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- S6: 学习路线图 -->
+<!-- ============================================================ -->
+<div class="sec" id="s6">
+  <div class="sec-title" data-reveal>推荐学习路线</div>
+  <div class="sec-sub" data-reveal>密码学基础先行 → 安全协议逐层攻破 → 信任链串连全局 → 测验巩固</div>
+  <div style="margin-top:8px;font-size:13px;color:#6c63ff;text-align:center;opacity:.7" data-reveal>↑ 先掌握六大密码学基石，再按路线深入</div>
+  <div class="road-map">
+    <div class="road-line"></div>
+    <a class="road-node" style="--rc:#6c63ff" href="livekit_hmac_learn.html" data-reveal data-delay="0">
+      <div class="road-dot">1</div>
+      <div class="road-card">
+        <div class="road-card-title">HMAC 消息认证</div>
+        <div class="road-card-desc">理解"防伪封印"——哈希为什么不够？HMAC 如何防止篡改？</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#f43f5e" href="livekit_aes_learn.html" data-reveal data-delay="1">
+      <div class="road-dot">2</div>
+      <div class="road-card">
+        <div class="road-card-title">AES 对称加密</div>
+        <div class="road-card-desc">CTR 流式 vs GCM 认证加密——篡改密文时谁会拒绝？</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#34d399" href="livekit_ecdhe_learn.html" data-reveal data-delay="2">
+      <div class="road-dot">3</div>
+      <div class="road-card">
+        <div class="road-card-title">ECDHE 密钥交换</div>
+        <div class="road-card-desc">公开协商出私密密钥——前向保密如何保护历史流量？</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#a78bfa" href="livekit_dtlsp_learn.html" data-reveal data-delay="3">
+      <div class="road-dot">4</div>
+      <div class="road-card">
+        <div class="road-card-title">DTLS 握手</div>
+        <div class="road-card-desc">UDP 上的安全握手——ECDHE 密钥协商如何在无连接协议上完成？</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#a78bfa" href="livekit_ecdsa_learn.html" data-reveal data-delay="4">
+      <div class="road-dot">5</div>
+      <div class="road-card">
+        <div class="road-card-title">ECDSA + 证书</div>
+        <div class="road-card-desc">自签名证书凭什么可信？签名不可伪造、指纹防篡改、VERIFY_OPTIONAL 致命漏洞</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#a78bfa" href="livekit_trustchain_learn.html" data-reveal data-delay="5">
+      <div class="road-dot">6</div>
+      <div class="road-card">
+        <div class="road-card-title">信任链断裂实验</div>
+        <div class="road-card-desc">一层断裂，全盘皆输——六层依赖关系与级联攻击路径</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#6c63ff" href="livekit_jwt_ice_learn.html" data-reveal data-delay="6">
+      <div class="road-dot">7</div>
+      <div class="road-card">
+        <div class="road-card-title">JWT + ICE 认证</div>
+        <div class="road-card-desc">身份准入证与连通性验证——都是 HMAC，角色却截然不同</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#38bdf8" href="livekit_wss_learn.html" data-reveal data-delay="7">
+      <div class="road-dot">8</div>
+      <div class="road-card">
+        <div class="road-card-title">WSS 信令通道</div>
+        <div class="road-card-desc">DNS→TCP→TLS→WebSocket——ALPN 陷阱与 VERIFY_OPTIONAL 致命漏洞</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#e0e0ff" href="livekit_protocols_learn.html" data-reveal data-delay="8">
+      <div class="road-dot">9</div>
+      <div class="road-card">
+        <div class="road-card-title">协议栈全景</div>
+        <div class="road-card-desc">从信令到媒体，7 层协议协同——一个视频帧的完整旅程</div>
+      </div>
+    </a>
+    <a class="road-node" style="--rc:#6c63ff" href="livekit_quiz_learn.html" data-reveal data-delay="9">
+      <div class="road-dot">10</div>
+      <div class="road-card">
+        <div class="road-card-title">概念速查 + 记忆测验</div>
+        <div class="road-card-desc">对照速查卡、闪卡翻转、情景测验——检验你的掌握程度</div>
+      </div>
+    </a>
+  </div>
+  <div class="road-final" data-reveal>
+    <a href="livekit_security_deep_dive.html">📖 完整安全深入文档</a>
+  </div>
+</div>
+
+</div>
+
+<script>
+// =========================================================
+// Hero Canvas — 六层锁链横向动画
+// =========================================================
+(function(){
+  var cv=document.getElementById('heroCanvas');
+  if(!cv)return;
+  var ctx=cv.getContext('2d');
+  var W,H,dpr;
+  var layers=[
+    {name:'JWT',color:'#6c63ff',desc:'L1 身份认证'},
+    {name:'WSS',color:'#38bdf8',desc:'L2 信令加密'},
+    {name:'ICE',color:'#f59e0b',desc:'L3 连通性验证'},
+    {name:'DTLS',color:'#a78bfa',desc:'L4 密钥协商'},
+    {name:'SDP',color:'#34d399',desc:'L5 指纹绑定'},
+    {name:'SRTP',color:'#f43f5e',desc:'L6 媒体加密'}
+  ];
+  var hoverIdx=-1;
+  var mouseX=-1,mouseY=-1;
+  var particles=[];
+  var t=0;
+
+  function resize(){
+    dpr=window.devicePixelRatio||1;
+    var rect=cv.getBoundingClientRect();
+    W=rect.width;H=rect.height;
+    cv.width=W*dpr;cv.height=H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+
+  function getBlockPos(i){
+    var pad=40;
+    var gap=(W-pad*2-80)/(layers.length-1);
+    return {x:pad+40+i*gap,y:H/2};
+  }
+
+  function drawRoundRect(x,y,w,h,r){
+    ctx.beginPath();
+    if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);}
+    else{ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);}
+    ctx.closePath();
+  }
+
+  function draw(){
+    t+=0.016;
+    ctx.clearRect(0,0,W,H);
+
+    // Draw connecting lines
+    for(var i=0;i<layers.length-1;i++){
+      var a=getBlockPos(i),b=getBlockPos(i+1);
+      var grad=ctx.createLinearGradient(a.x,a.y,b.x,b.y);
+      grad.addColorStop(0,layers[i].color+'80');
+      grad.addColorStop(1,layers[i+1].color+'80');
+      ctx.strokeStyle=grad;
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(a.x+40,a.y);
+      ctx.lineTo(b.x-40,b.y);
+      ctx.stroke();
+
+      // Flowing dot
+      var progress=((t*0.3+i*0.15)%1);
+      var dx=a.x+40+(b.x-40-(a.x+40))*progress;
+      var dy=a.y+(b.y-a.y)*Math.sin(progress*Math.PI)*4;
+      ctx.fillStyle=layers[i].color;
+      ctx.globalAlpha=0.8;
+      ctx.beginPath();
+      ctx.arc(dx,dy,3,0,Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha=1;
+    }
+
+    // Draw blocks
+    for(var i=0;i<layers.length;i++){
+      var pos=getBlockPos(i);
+      var w=80,h=50;
+      var isHover=(hoverIdx===i);
+      var scale=isHover?1.12:1;
+      var glow=isHover?12:0;
+      var col=layers[i].color;
+
+      ctx.save();
+      ctx.translate(pos.x,pos.y);
+      ctx.scale(scale,scale);
+
+      // Glow
+      if(glow){
+        ctx.shadowColor=col;
+        ctx.shadowBlur=glow;
+      }
+
+      // Block
+      drawRoundRect(-w/2,-h/2,w,h,10);
+      ctx.fillStyle=isHover?col+'30':'rgba(255,255,255,.05)';
+      ctx.fill();
+      ctx.strokeStyle=isHover?col:col+'60';
+      ctx.lineWidth=isHover?2:1;
+      ctx.stroke();
+      ctx.shadowBlur=0;
+
+      // Text
+      ctx.fillStyle=isHover?'#fff':col;
+      ctx.font='bold 16px -apple-system,BlinkMacSystemFont,sans-serif';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText(layers[i].name,0,-4);
+
+      // Sub label
+      ctx.fillStyle=isHover?'#ddd':'#7777aa';
+      ctx.font='10px -apple-system,BlinkMacSystemFont,sans-serif';
+      ctx.fillText('L'+(i+1),0,14);
+
+      ctx.restore();
+    }
+
+    // Tooltip
+    if(hoverIdx>=0){
+      var hp=getBlockPos(hoverIdx);
+      ctx.fillStyle='rgba(0,0,0,.75)';
+      drawRoundRect(hp.x-60,hp.y-60,120,24,6);
+      ctx.fill();
+      ctx.fillStyle='#e0e0ff';
+      ctx.font='12px -apple-system,BlinkMacSystemFont,"Noto Sans SC",sans-serif';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText(layers[hoverIdx].desc,hp.x,hp.y-48);
+    }
+
+    // Background particles
+    for(var i=0;i<particles.length;i++){
+      var p=particles[i];
+      p.y-=p.sp;
+      p.x+=Math.sin(p.y*0.01)*0.3;
+      if(p.y<-10)p.y=H+10;
+      ctx.globalAlpha=p.a;
+      ctx.fillStyle=p.c;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,1.2,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    requestAnimationFrame(draw);
+  }
+
+  function initParticles(){
+    particles=[];
+    for(var i=0;i<30;i++){
+      var li=Math.floor(Math.random()*layers.length);
+      particles.push({
+        x:Math.random()*W,y:Math.random()*H,
+        sp:0.2+Math.random()*0.5,
+        a:0.15+Math.random()*0.25,
+        c:layers[li].color
+      });
+    }
+  }
+
+  cv.addEventListener('mousemove',function(e){
+    var rect=cv.getBoundingClientRect();
+    mouseX=e.clientX-rect.left;
+    mouseY=e.clientY-rect.top;
+    hoverIdx=-1;
+    for(var i=0;i<layers.length;i++){
+      var pos=getBlockPos(i);
+      if(Math.abs(mouseX-pos.x)<44&&Math.abs(mouseY-pos.y)<30){
+        hoverIdx=i;break;
+      }
+    }
+    cv.style.cursor=hoverIdx>=0?'pointer':'default';
+  });
+  cv.addEventListener('mouseleave',function(){hoverIdx=-1;mouseX=mouseY=-1;});
+  cv.addEventListener('click',function(){
+    if(hoverIdx>=0){
+      var urls=[
+        'livekit_jwt_ice_learn.html',
+        'livekit_wss_learn.html',
+        'livekit_jwt_ice_learn.html',
+        'livekit_dtlsp_learn.html',
+        'livekit_ecdsa_learn.html',
+        'livekit_aes_learn.html'
+      ];
+      window.location.href=urls[hoverIdx];
+    }
+  });
+
+  resize();
+  initParticles();
+  draw();
+  window.addEventListener('resize',function(){resize();initParticles();});
+})();
+
+// =========================================================
+// Chain Break Interactive
+// =========================================================
+(function(){
+  var riskTexts={
+    1:'JWT 造假 → 任何人都能加入房间，冒充合法客户端',
+    2:'TLS 断裂 → 信令明文传输，SDP 指纹可被篡改 → DTLS 中间人 → SRTP 密钥泄露',
+    3:'ICE 伪造 → 攻击者可冒充合法端点注入恶意媒体流',
+    4:'DTLS 中断 → 无法协商密钥 → SRTP 无密钥可用 → 媒体全部裸奔',
+    5:'指纹不匹配 → 无法检测证书替换攻击 → DTLS 中间人畅通无阻',
+    6:'SRTP 无加密 → 音视频数据完全暴露，可被任何网络嗅探者截获'
+  };
+  var blocks=document.querySelectorAll('.chain-block');
+  var riskEl=document.getElementById('chainRisk');
+  var brokenLayer=0;
+
+  blocks.forEach(function(b){
+    b.addEventListener('click',function(){
+      var layer=parseInt(b.getAttribute('data-layer'));
+      // Reset all
+      blocks.forEach(function(bl){bl.classList.remove('broken');});
+      if(brokenLayer===layer){brokenLayer=0;riskEl.classList.remove('vis');return;}
+      brokenLayer=layer;
+      // Break this and all below
+      blocks.forEach(function(bl){
+        var l=parseInt(bl.getAttribute('data-layer'));
+        if(l>=layer)bl.classList.add('broken');
+      });
+      riskEl.textContent='⛔ '+riskTexts[layer];
+      riskEl.classList.add('vis');
+    });
+  });
+})();
+
+// =========================================================
+// Scroll Reveal Observer
+// =========================================================
+(function(){
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*350;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+  document.querySelectorAll('.layer-card,.crypto-card,.concept-card,.pki-flow,.chain-block,.chain-risk,.road-node,.road-final').forEach(function(el){obs.observe(el)});
+
+  // Generate particles for each section
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<12;i++){
+      var p=document.createElement('div');
+      p.className='particle';
+      p.style.left=Math.random()*100+'%';
+      p.style.top=Math.random()*100+'%';
+      p.style.animationDuration=(4+Math.random()*6)+'s';
+      p.style.animationDelay=(-Math.random()*8)+'s';
+      sec.appendChild(p);
+    }
+  });
+})();
+</script>
+</body>
+</html>

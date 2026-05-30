@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSS 信令通道 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(56,189,248,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Connection Flow ===== */
+.flow{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.flow.vis{opacity:1;transform:translateY(0)}
+.flow-steps{display:flex;flex-direction:column;gap:0;margin-top:20px;position:relative}
+.flow-line{position:absolute;left:28px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,rgba(56,189,248,.4),rgba(108,99,255,.4),rgba(52,211,153,.4))}
+.flow-step{display:flex;align-items:flex-start;padding:0 16px 24px 60px;position:relative;opacity:0;transform:translateY(16px);transition:all .6s}
+.flow-step.vis{opacity:1;transform:translateY(0)}
+.flow-dot{position:absolute;left:22px;top:6px;width:14px;height:14px;border-radius:50%;border:2px solid;background:#080616;z-index:1}
+.flow-step.dns .flow-dot{border-color:#38bdf8}.flow-step.tcp .flow-dot{border-color:#6c63ff}
+.flow-step.tls .flow-dot{border-color:#a78bfa}.flow-step.ws .flow-dot{border-color:#34d399}
+.flow-step.app .flow-dot{border-color:#f59e0b}
+.flow-step .fs-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px}
+.flow-step.dns .fs-tag{color:#38bdf8}.flow-step.tcp .fs-tag{color:#6c63ff}
+.flow-step.tls .fs-tag{color:#a78bfa}.flow-step.ws .fs-tag{color:#34d399}
+.flow-step.app .fs-tag{color:#f59e0b}
+.flow-step .fs-title{font-size:13px;font-weight:700;color:#d0d0f0;margin-bottom:4px}
+.flow-step .fs-body{font-size:12px;color:#8888bb;line-height:1.75}
+.flow-step .fs-body em{color:#38bdf8;font-style:normal;font-weight:600}
+.flow-step .fs-body code{background:rgba(56,189,248,.08);color:#7dd3fc;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+
+/* ===== ALPN Bug ===== */
+.alpn{width:100%;max-width:920px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.alpn.vis{opacity:1;transform:translateY(0)}
+.alpn-cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.alpn-col{border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.04);min-height:200px}
+.alpn-col.bug{background:rgba(244,63,94,.02);border-color:rgba(244,63,94,.1)}
+.alpn-col.fix{background:rgba(52,211,153,.02);border-color:rgba(52,211,153,.1)}
+.alpn-col .ac-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.alpn-col.bug .ac-tag{color:#f43f5e}
+.alpn-col.fix .ac-tag{color:#34d399}
+.alpn-col .ac-title{font-size:14px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.alpn-col .ac-body{font-size:12px;color:#8888bb;line-height:1.75}
+.alpn-col .ac-body em{color:#38bdf8;font-style:normal;font-weight:600}
+.alpn-col .ac-body code{background:rgba(56,189,248,.08);color:#7dd3fc;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+.alpn-code{margin-top:14px;background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto}
+.alpn-code .cmt{color:#6c7086}.alpn-code .str{color:#a6e3a1}.alpn-code .kw{color:#cba6f7}
+
+/* ===== Message Types ===== */
+.msg{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.msg.vis{opacity:1;transform:translateY(0)}
+.msg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:20px}
+.msg-card{border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .4s;background:rgba(0,0,0,.06)}
+.msg-card:hover{border-color:rgba(56,189,248,.2);transform:translateY(-2px)}
+.msg-card .mc-dir{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.msg-card.out .mc-dir{color:#6c63ff}
+.msg-card.in .mc-dir{color:#34d399}
+.msg-card .mc-name{font-size:13px;font-weight:700;color:#d0d0f0;margin-bottom:4px}
+.msg-card .mc-body{font-size:11px;color:#8888bb;line-height:1.7}
+.msg-card .mc-body em{color:#38bdf8;font-style:normal;font-weight:600}
+.msg-card .mc-body code{background:rgba(56,189,248,.08);color:#7dd3fc;padding:1px 4px;border-radius:3px;font-size:9.5px;font-family:"JetBrains Mono",monospace}
+
+/* ===== VERIFY_OPTIONAL Risk ===== */
+.risk{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.risk.vis{opacity:1;transform:translateY(0)}
+.risk-steps{margin-top:20px;display:flex;flex-direction:column;gap:12px}
+.risk-step{display:flex;align-items:flex-start;gap:14px;padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,.04);opacity:0;transform:translateX(-16px);transition:all .6s}
+.risk-step.vis{opacity:1;transform:translateX(0)}
+.risk-step .rs-num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.risk-step.rs1 .rs-num{background:rgba(244,63,94,.12);color:#f43f5e}
+.risk-step.rs2 .rs-num{background:rgba(245,158,11,.12);color:#f59e0b}
+.risk-step.rs3 .rs-num{background:rgba(167,139,250,.12);color:#a78bfa}
+.risk-step.rs4 .rs-num{background:rgba(52,211,153,.12);color:#34d399}
+.risk-step.rs5 .rs-num{background:rgba(244,63,94,.12);color:#f43f5e}
+.risk-step .rs-body{font-size:12px;color:#a0a0c8;line-height:1.75}
+.risk-step .rs-body em{color:#f43f5e;font-style:normal;font-weight:600}
+.risk-step .rs-body code{background:rgba(244,63,94,.08);color:#fca5a5;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+.risk-fix{margin-top:14px;padding:14px 18px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);border-radius:10px;font-size:12.5px;line-height:1.7;color:#a0c8b0}
+.risk-fix em{color:#34d399;font-style:normal;font-weight:600}
+.risk-fix code{background:rgba(52,211,153,.08);color:#6ee7b7;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+
+/* ===== Project Cards ===== */
+.proj{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.proj.vis{opacity:1;transform:translateY(0)}
+.proj-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;margin-top:14px;opacity:0;transform:translateX(-16px);transition:all .6s}
+.proj-card.vis{opacity:1;transform:translateX(0)}
+.proj-card .pt-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.proj-card .pt-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.proj-card .pt-desc{font-size:12.5px;color:#8888bb;line-height:1.75}
+.proj-card .pt-desc em{color:#38bdf8;font-style:normal;font-weight:600}
+.proj-card .pt-desc code{background:rgba(56,189,248,.08);color:#7dd3fc;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+.proj-code{background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto;margin-top:10px}
+.proj-code .kw{color:#cba6f7}.proj-code .str{color:#a6e3a1}.proj-code .cmt{color:#6c7086}.proj-code .fn{color:#89b4fa}
+
+/* ===== Trust Chain ===== */
+.trust{width:100%;max-width:920px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.trust.vis{opacity:1;transform:translateY(0)}
+.trust-cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.trust-col{border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.04);min-height:200px}
+.trust-col.broken{background:rgba(244,63,94,.02);border-color:rgba(244,63,94,.1)}
+.trust-col.fixed{background:rgba(52,211,153,.02);border-color:rgba(52,211,153,.1)}
+.trust-col .tc-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.trust-col.broken .tc-tag{color:#f43f5e}
+.trust-col.fixed .tc-tag{color:#34d399}
+.trust-col .tc-title{font-size:14px;font-weight:700;color:#d0d0f0;margin-bottom:10px}
+.trust-chain{display:flex;flex-direction:column;gap:0;margin-top:8px}
+.trust-node{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12px;line-height:1.6;transition:all .3s}
+.trust-node.ok{color:#a0c8b0;background:rgba(52,211,153,.06)}
+.trust-node.fail{color:#fca5a5;background:rgba(244,63,94,.06);text-decoration:line-through}
+.trust-node .tn-icon{font-size:14px;flex-shrink:0}
+.trust-node .tn-body{flex:1}
+.trust-node .tn-body code{background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;font-size:10px;font-family:"JetBrains Mono",monospace;color:#ccc}
+.trust-conn{width:2px;height:8px;margin-left:19px;background:rgba(255,255,255,.1)}
+.trust-conn.broken-conn{background:rgba(244,63,94,.3)}
+.trust-note{margin-top:14px;font-size:11.5px;color:#9999bb;line-height:1.7;padding:10px 14px;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}
+.trust-note em{color:#38bdf8;font-style:normal;font-weight:600}
+.trust-note.warn{border-color:rgba(244,63,94,.15);color:#f4a0b0}
+.trust-note.warn em{color:#f43f5e}
+
+/* ===== mTLS / Cert Roles ===== */
+.mtls{width:100%;max-width:920px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.mtls.vis{opacity:1;transform:translateY(0)}
+.mtls-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.mtls-card{border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .4s}
+.mtls-card:hover{border-color:rgba(56,189,248,.2);transform:translateY(-2px)}
+.mtls-card .mc-icon{font-size:24px;margin-bottom:8px}
+.mtls-card .mc-title{font-size:15px;font-weight:700;color:#e0e0ff;margin-bottom:4px}
+.mtls-card .mc-role{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;color:var(--mc)}
+.mtls-card .mc-body{font-size:12px;color:#8888bb;line-height:1.8}
+.mtls-card .mc-body em{color:#38bdf8;font-style:normal;font-weight:600}
+.mtls-card .mc-body code{background:rgba(56,189,248,.08);color:#7dd3fc;padding:1px 5px;border-radius:3px;font-size:10px;font-family:"JetBrains Mono",monospace}
+
+.mtls-diagram{margin-top:20px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;opacity:0;transform:translateY(16px);transition:all .7s}
+.mtls-diagram.vis{opacity:1;transform:translateY(0)}
+.md-box{text-align:center;min-width:100px}
+.md-box .md-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;color:var--mdc,#999)}
+.md-box .md-name{font-size:13px;font-weight:700;margin-bottom:2px}
+.md-box .md-detail{font-size:10.5px;color:#8888bb;line-height:1.5}
+.md-box .md-detail code{background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;font-size:9.5px;font-family:"JetBrains Mono",monospace;color:#bbb}
+.md-arr{color:rgba(255,255,255,.18);font-size:18px;padding:0 4px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.md-arr .md-arr-label{font-size:8px;color:#666;font-weight:600;white-space:nowrap}
+
+.mtls-attack{margin-top:16px;display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch;opacity:0;transform:translateY(16px);transition:all .7s .2s}
+.mtls-attack.vis{opacity:1;transform:translateY(0)}
+.ma-card{border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,.04)}
+.ma-card.scenario-no{background:rgba(244,63,94,.03);border-color:rgba(244,63,94,.12)}
+.ma-card.scenario-yes{background:rgba(52,211,153,.03);border-color:rgba(52,211,153,.12)}
+.ma-card .ma-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.ma-card.scenario-no .ma-tag{color:#f43f5e}
+.ma-card.scenario-yes .ma-tag{color:#34d399}
+.ma-card .ma-title{font-size:13px;font-weight:700;color:#d0d0f0;margin-bottom:6px}
+.ma-card .ma-body{font-size:11.5px;color:#8888bb;line-height:1.7}
+.ma-card .ma-body em{font-style:normal;font-weight:600}
+.ma-card.scenario-no .ma-body em{color:#fca5a5}
+.ma-card.scenario-yes .ma-body em{color:#6ee7b7}
+.ma-vs{display:flex;align-items:center;font-size:16px;font-weight:800;color:rgba(255,255,255,.12)}
+
+.mtls-code{margin-top:14px;background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11px;line-height:1.75;color:#8888bb;overflow-x:auto}
+.mtls-code .cmt{color:#6c7086}.mtls-code .str{color:#a6e3a1}.mtls-code .kw{color:#cba6f7}.mtls-code .fn{color:#89b4fa}
+
+@media(max-width:700px){.alpn-cmp{grid-template-columns:1fr}.msg-grid{grid-template-columns:1fr}.trust-cmp{grid-template-columns:1fr}.mtls-grid{grid-template-columns:1fr}.mtls-diagram{flex-wrap:wrap;gap:8px}.md-arr{display:none}.mtls-attack{grid-template-columns:1fr}.ma-vs{justify-content:center}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Connection Flow ========== -->
+<div class="sec" id="s1">
+  <h1 class="sec-title" data-reveal>WSS 信令通道</h1>
+  <p class="sec-sub" data-reveal>在两台设备建立媒体连接之前，必须先通过信令通道交换身份、连接参数和密钥材料。<br>这个通道就是 WSS — WebSocket over TLS，它是整条信任链的地基。</p>
+  <div class="flow" data-reveal>
+    <div class="flow-steps" id="flowSteps">
+      <div class="flow-line"></div>
+      <div class="flow-step dns" data-delay="0">
+        <div class="flow-dot"></div>
+        <div class="fs-tag">DNS 解析</div>
+        <div class="fs-title">pawrtc-qbbhiyec.livekit.cloud → CDN IP</div>
+        <div class="fs-body">浏览器/板端通过 DNS 获取 LiveKit Cloud CDN（如 Cloudflare）的 IP 地址。DNS 本身可被 DNS 劫持，但后续 TLS 会验证服务器身份。</div>
+      </div>
+      <div class="flow-step tcp" data-delay="1">
+        <div class="flow-dot"></div>
+        <div class="fs-tag">TCP 连接</div>
+        <div class="fs-title">三次握手建立可靠通道</div>
+        <div class="fs-body">经典 TCP 三次握手：SYN → SYN-ACK → ACK。为后续的 TLS 握手提供可靠传输基础。DTLS 不需要这步（基于 UDP）。</div>
+      </div>
+      <div class="flow-step tls" data-delay="2">
+        <div class="flow-dot"></div>
+        <div class="fs-tag">TLS 1.2 握手</div>
+        <div class="fs-title">ECDHE + AES-128-GCM 建立加密通道</div>
+        <div class="fs-body">密码套件：<code>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256</code><br>• <em>ECDHE</em> → 前向保密 (PFS)<br>• <em>RSA</em> → 服务器证书签名算法（LiveKit Cloud 用的是 CA 签发证书，不是自签名）<br>• <em>AES-128-GCM</em> → 加密 + 认证一体化<br>• <em>ALPN = http/1.1</em> → 强制不走 H2</div>
+      </div>
+      <div class="flow-step ws" data-delay="3">
+        <div class="flow-dot"></div>
+        <div class="fs-tag">WebSocket 升级</div>
+        <div class="fs-title">HTTP/1.1 101 Switching Protocols</div>
+        <div class="fs-body">在已加密的 TLS 通道内，发送 HTTP 升级请求：<br><code>GET /rtc?access_token=eyJ...&amp;protocol=17</code><br><code>Upgrade: websocket</code><br><code>Sec-WebSocket-Protocol: livekit-protocol</code><br><br>服务器返回 <em>101 Switching Protocols</em>，此后连接变为双向 WebSocket 帧。</div>
+      </div>
+      <div class="flow-step app" data-delay="4">
+        <div class="flow-dot"></div>
+        <div class="fs-tag">应用层信令</div>
+        <div class="fs-title">Join/Offer/Answer/Trickle/Leave</div>
+        <div class="fs-body">板端发送 <em>JoinRequest</em> (含 JWT)，服务器回复 <em>JoinResponse</em> (含 TURN 凭证)。随后交换 SDP offer/answer 和 ICE 候选。所有消息都在 TLS 加密通道内传输。</div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 2. ALPN/H2 Bug ========== -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" data-reveal>ALPN 陷阱：为何必须强制 HTTP/1.1</h2>
+  <p class="sec-sub" data-reveal>板端连接 LiveKit Cloud 时遇到 HTTP 200 而非 101——根因是 CDN 协商了 H2，而 WebSocket 只能走 HTTP/1.1。</p>
+  <div class="alpn" data-reveal>
+    <div class="alpn-cmp">
+      <div class="alpn-col bug" data-reveal>
+        <div class="ac-tag">Bug 现象</div>
+        <div class="ac-title">CDN 协商 H2 → WS 升级失败</div>
+        <div class="ac-body">
+          1. 板端 TLS 握手时未指定 ALPN<br>
+          2. Cloudflare CDN 默认协商 <em>h2</em><br>
+          3. 板端发送 WS 升级请求<br>
+          4. H2 不支持 WS 升级（RFC 8441 未普及）<br>
+          5. CDN 返回 <code>HTTP 200</code>（当普通请求处理）<br>
+          6. 板端期待 <code>101</code>，连接无效<br><br>
+          <em>致命陷阱</em>：LWS 不报错，只是静默收到 HTTP 200 然后终止。日志显示 <code>ESTABLISHED_CLIENT_HTTP: status=200</code> 而非 <code>CLIENT_ESTABLISHED</code>。
+        </div>
+      </div>
+      <div class="alpn-col fix" data-reveal>
+        <div class="ac-tag">修复方案</div>
+        <div class="ac-title">显式声明 ALPN = http/1.1</div>
+        <div class="ac-body">
+          在 LWS 上下文和连接信息中同时设置：<br><br>
+          <code>ctxInfo.alpn = "http/1.1";</code><br>
+          <code>ccInfo.alpn = "http/1.1";</code><br><br>
+          这强制 TLS 握手时 ALPN 只协商 <em>http/1.1</em>，CDN 不再选择 H2。<br><br>
+          <em>为什么两处都要设？</em> LWS 文档说 ctxInfo 是全局默认，ccInfo 是连接级覆盖。实测只有 ccInfo 设置才能生效——ctxInfo 的 alpn 在某些 LWS 版本被忽略。
+        </div>
+      </div>
+    </div>
+    <div class="alpn-code"><span class="cmt">// LiveKitSignaling.cpp — ALPN 修复（三重 bug）</span>
+
+<span class="cmt">// Bug 1: LWS 交叉编译模式下 LWS_WITH_ALPN 宏可能未定义</span>
+<span class="cmt">//   解决：CMakeLists.txt 强制 -DLWS_WITH_ALPN=1</span>
+
+<span class="cmt">// Bug 2: ctxInfo.alpn 在某些 LWS 版本不生效</span>
+<span class="cmt">//   解决：ccInfo.alpn 也要显式设置</span>
+
+<span class="cmt">// Bug 3: ctxInfo.client_ssl_ca_filepath 指向不存在的路径</span>
+<span class="cmt">//   → LWS 静默跳过证书验证 → 等同于 VERIFY_OPTIONAL</span>
+
+<span class="cmt">// 最终正确配置：</span>
+ctxInfo.options = <span class="str">LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT</span>;
+ctxInfo.client_ssl_ca_filepath = <span class="str">"/etc/ssl/certs/ca-certificates.crt"</span>;
+ctxInfo.alpn = <span class="str">"http/1.1"</span>;
+
+ccInfo.protocol = <span class="str">"livekit-protocol"</span>;
+ccInfo.alpn = <span class="str">"http/1.1"</span>;
+ccInfo.origin = <span class="str">"https://"</span> + hostname;  <span class="cmt">// Cloud CDN 要求</span></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 3. Message Types ========== -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" data-reveal>信令消息类型</h2>
+  <p class="sec-sub" data-reveal>每条消息都用 Protobuf (nanopb) 序列化，通过 WebSocket 二进制帧传输。点击卡片查看详情。</p>
+  <div class="msg" data-reveal>
+    <div class="msg-grid" id="msgGrid"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 4. VERIFY_OPTIONAL 级联风险 ========== -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" data-reveal>VERIFY_OPTIONAL：信令通道的致命漏洞</h2>
+  <p class="sec-sub" data-reveal>跳过 TLS 证书验证 = 允许中间人 → 篡改信令 → 全链路崩溃。</p>
+  <div class="risk" data-reveal>
+    <div class="risk-steps" id="riskSteps">
+      <div class="risk-step rs1" data-delay="0">
+        <div class="rs-num">1</div>
+        <div class="rs-body">板端 TLS 设为 <code>VERIFY_OPTIONAL</code>（因为 CA 证书不完整）。<br><em>后果：板端不验证 Cloud 的证书是否合法。</em></div>
+      </div>
+      <div class="risk-step rs2" data-delay="1">
+        <div class="rs-num">2</div>
+        <div class="rs-body">中间人在网络层拦截 TLS 握手，伪造服务器证书。板端不拒绝 → <em>TLS 连接与攻击者建立</em>，而非 Cloud。</div>
+      </div>
+      <div class="risk-step rs3" data-delay="2">
+        <div class="rs-num">3</div>
+        <div class="rs-body">攻击者解密并检查所有信令消息——包括 <code>a=fingerprint:sha-256</code>（DTLS 证书指纹）和 <code>a=ice-pwd</code>（ICE 认证密码）。<br><em>攻击者用自己的证书指纹替换 SDP 中的指纹</em>，再转发给真正的 Cloud。</div>
+      </div>
+      <div class="risk-step rs4" data-delay="3">
+        <div class="rs-num">4</div>
+        <div class="rs-body">Cloud 返回 SDP answer，攻击者同样篡改指纹后转发给板端。双方都以为在和对方建立 DTLS，<em>实际都与攻击者握手</em>。</div>
+      </div>
+      <div class="risk-step rs5" data-delay="4">
+        <div class="rs-num">5</div>
+        <div class="rs-body">攻击者持有双方 DTLS 协商的密钥 → <em>解密所有 SRTP 媒体数据</em>。设备摄像头画面、麦克风音频全部泄露。<br><strong>起因：仅仅是跳过了 TLS 证书验证。</strong></div>
+      </div>
+    </div>
+    <div class="risk-fix">
+      <em>修复路径：</em><br>
+      1. 推送完整 <code>ca-certificates.crt</code> 到板端 <code>/etc/ssl/certs/</code><br>
+      2. 修改 <code>Tls_mbedtls.c</code>：无条件使用 <code>MBEDTLS_SSL_VERIFY_REQUIRED</code><br>
+      3. 同时调用 <code>mbedtls_ssl_set_hostname()</code> 验证证书 CN/SAN<br>
+      4. 确保 <code>client_ssl_ca_filepath</code> 路径存在且包含 Cloud 的 CA 链
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 5. IPC 信任链 ========== -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" data-reveal>IPC 设备信任链：断裂与修复</h2>
+  <p class="sec-sub" data-reveal>浏览器端信任链完整，但板端从起点就断裂了——CA 门槛没过，后续分层皆不可信。</p>
+  <div class="trust" data-reveal>
+    <div class="trust-cmp">
+      <!-- 浏览器端：完整信任链 -->
+      <div class="trust-col fixed">
+        <div class="tc-tag">浏览器端 — 信任链完整</div>
+        <div class="tc-title">CA 根证书 → → → SRTP 安全</div>
+        <div class="trust-chain">
+          <div class="trust-node ok"><span class="tn-icon">✓</span><span class="tn-body">CA 根证书（OS/浏览器预装）</span></div>
+          <div class="trust-conn"></div>
+          <div class="trust-node ok"><span class="tn-icon">✓</span><span class="tn-body">验证 WSS 服务器证书 → TLS 加密通道</span></div>
+          <div class="trust-conn"></div>
+          <div class="trust-node ok"><span class="tn-icon">✓</span><span class="tn-body">SDP 指纹安全传递（信令通道保护）</span></div>
+          <div class="trust-conn"></div>
+          <div class="trust-node ok"><span class="tn-icon">✓</span><span class="tn-body">DTLS 握手 + 指纹比对</span></div>
+          <div class="trust-conn"></div>
+          <div class="trust-node ok"><span class="tn-icon">✓</span><span class="tn-body">SRTP 媒体加密 ✓</span></div>
+        </div>
+      </div>
+      <!-- 板端：信任链断裂 -->
+      <div class="trust-col broken">
+        <div class="tc-tag">板端 — 信任链断裂</div>
+        <div class="tc-title">VERIFY_OPTIONAL → 全链失效</div>
+        <div class="trust-chain">
+          <div class="trust-node fail"><span class="tn-icon">✗</span><span class="tn-body">无 CA 根证书库 / <code>VERIFY_OPTIONAL</code> 跳过验证</span></div>
+          <div class="trust-conn broken-conn"></div>
+          <div class="trust-node fail"><span class="tn-icon">✗</span><span class="tn-body">WSS 服务器身份未确认 → 中间人可伪造</span></div>
+          <div class="trust-conn broken-conn"></div>
+          <div class="trust-node fail"><span class="tn-icon">✗</span><span class="tn-body">SDP 指纹在伪造通道中可被篡改</span></div>
+          <div class="trust-conn broken-conn"></div>
+          <div class="trust-node fail"><span class="tn-icon">✗</span><span class="tn-body">DTLS 指纹比对无意义（比对值本身就是假的）</span></div>
+          <div class="trust-conn broken-conn"></div>
+          <div class="trust-node fail"><span class="tn-icon">✗</span><span class="tn-body">SRTP 密钥泄露 → 媒体裸奔</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="trust-note">
+      <em>关键洞察</em>：自签名证书不是"凭空可信"的——它的信任<em>间接锚定在 CA 体系上</em>。SDP 指纹经由 TLS 保护的信令通道传递，而 TLS 通道的安全性依赖 CA 验证。一旦 CA 验证被跳过，整条信任链从根基处倒塌。
+    </div>
+    <div class="trust-note warn">
+      <em>当前状态</em>：<code>client_ssl_ca_filepath</code> 指向不存在的路径 → LWS 静默跳过证书加载 → 等同于 <code>VERIFY_OPTIONAL</code>。<em>修复</em>：推送完整 <code>ca-certificates.crt</code> 到 <code>/etc/ssl/certs/</code>，并修改 <code>Tls_mbedtls.c</code> 为 <code>MBEDTLS_SSL_VERIFY_REQUIRED</code>。
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 6. 双向认证与证书角色 ========== -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" data-reveal>双向认证（mTLS）与证书角色</h2>
+  <p class="sec-sub" data-reveal">单向 TLS 只验证服务器身份；mTLS 让服务器也能验证设备——JWT 可被盗走，私钥偷不走。</p>
+  <div class="mtls" data-reveal>
+    <!-- 两张证书的角色 -->
+    <div class="mtls-grid">
+      <div class="mtls-card" style="--mc:#38bdf8;border-color:rgba(56,189,248,.1)">
+        <div class="mc-icon">🔍</div>
+        <div class="mc-role" style="color:#38bdf8">我信任谁 — 验证工具</div>
+        <div class="mc-title">ca-bundle.crt</div>
+        <div class="mc-body">
+          内容：多个 CA 的<em>公钥</em>（公开信息，任何人都能下载）<br>
+          用途：验证对方发来的证书是否由这些 CA 签发<br>
+          类比：你手持一张"哪些公安局可信"的名单<br><br>
+          ⚠️ 把这份名单交给对方，对方只能说"嗯，这些 CA 我也认识"，但<em>完全无法证明你的身份</em>
+        </div>
+      </div>
+      <div class="mtls-card" style="--mc:#34d399;border-color:rgba(52,211,153,.1)">
+        <div class="mc-icon">🪪</div>
+        <div class="mc-role" style="color:#34d399">我是谁 — 身份凭证</div>
+        <div class="mc-title">device.crt + device.key</div>
+        <div class="mc-body">
+          内容：设备公钥 + 设备身份信息 + 私有 CA 签名<br>
+          用途：向服务器证明"我真的持有对应的私钥"<br>
+          类比：公安局签发、写着你名字的身份证<br><br>
+          TLS 握手时用 <code>device.key</code> 做签名 → 服务器用 <code>device.crt</code> 中的公钥验证 → 签名通过 = 身份确认
+        </div>
+      </div>
+    </div>
+
+    <!-- mTLS 握手流程图 -->
+    <div class="mtls-diagram" data-reveal>
+      <div class="md-box" style="--mdc:#f59e0b">
+        <div class="md-label" style="color:#f59e0b">私有 CA</div>
+        <div class="md-name" style="color:#e0e0ff">Linkric 私有 CA</div>
+        <div class="md-detail">签发设备证书<br>信任存储在 SFU</div>
+      </div>
+      <div class="md-arr">
+        <span class="md-arr-label">签发</span>
+        →
+      </div>
+      <div class="md-box" style="--mdc:#34d399">
+        <div class="md-label" style="color:#34d399">设备证书</div>
+        <div class="md-name" style="color:#e0e0ff">device.crt</div>
+        <div class="md-detail">SN/MAC 作为 CN<br>+ 私钥签名证明持有</div>
+      </div>
+      <div class="md-arr">
+        <span class="md-arr-label">出示</span>
+        →
+      </div>
+      <div class="md-box" style="--mdc:#a78bfa">
+        <div class="md-label" style="color:#a78bfa">TLS 握手</div>
+        <div class="md-name" style="color:#e0e0ff">mTLS 验证</div>
+        <div class="md-detail">服务器验证设备证书<br>设备验证服务器证书</div>
+      </div>
+      <div class="md-arr">
+        <span class="md-arr-label">验证</span>
+        ←
+      </div>
+      <div class="md-box" style="--mdc:#38bdf8">
+        <div class="md-label" style="color:#38bdf8">公共 CA</div>
+        <div class="md-name" style="color:#e0e0ff">Let's Encrypt</div>
+        <div class="md-detail">签发 *.livekit.cloud<br>设备 ca-bundle 信任</div>
+      </div>
+    </div>
+
+    <!-- 有无 mTLS 对比 -->
+    <div class="mtls-attack" data-reveal>
+      <div class="ma-card scenario-no">
+        <div class="ma-tag">无 mTLS — JWT 泄露即全线崩溃</div>
+        <div class="ma-title">单向 TLS + JWT 认证</div>
+        <div class="ma-body">
+          1. 攻击者从设备提取 JWT（内存 dump / 日志泄露）<br>
+          2. 攻击者用自己的电脑连接 <code>wss://</code><br>
+          3. TLS 握手成功（服务器不检查客户端证书）<br>
+          4. 攻击者用偷来的 JWT 加入房间<br>
+          5. <em>可以推伪造视频流 / 窃听其他房间</em><br><br>
+          <em>JWT 是数据，谁拿到谁就能用</em> —— 就像门禁卡丢了别人就能刷卡
+        </div>
+      </div>
+      <div class="ma-vs">VS</div>
+      <div class="ma-card scenario-yes">
+        <div class="ma-tag">有 mTLS — JWT 泄露仍无法冒充</div>
+        <div class="ma-title">mTLS + JWT 双重认证</div>
+        <div class="ma-body">
+          1. 攻击者从设备提取 JWT<br>
+          2. 攻击者用自己的电脑连接 <code>wss://</code><br>
+          3. <em>TLS 握手直接拒绝</em> —— 没有合法设备私钥，签名失败<br>
+          4. 连接都无法建立，JWT 无用武之地<br><br>
+          <em>私钥无法被"盗走"</em> —— 就像虹膜/指纹，偷不走、复制不了<br>
+          攻击门槛从"网络嗅探"提升到"物理入侵拆芯片"
+        </div>
+      </div>
+    </div>
+
+    <!-- 设备端证书存储 -->
+    <div class="mtls-code"><span class="cmt">// IPC 设备证书存储布局</span>
+
+<span class="str">/etc/ssl/certs/</span>
+  ├── <span class="kw">ca-bundle.crt</span>          <span class="cmt"># 公共 CA 根证书（验证 LiveKit 服务器）</span>
+  ├── <span class="kw">linkric-private-ca.crt</span>  <span class="cmt"># 私有 CA 根证书（P2P 场景验证其他设备）</span>
+  └── <span class="fn">device.crt</span>             <span class="cmt"># 本设备证书（私有 CA 签发，含 SN/MAC）</span>
+
+<span class="str">/etc/ssl/private/</span>
+  └── <span class="kw">device.key</span>             <span class="cmt"># 本设备私钥（永远不离开设备，不通过网络传输）</span>
+
+<span class="cmt">// LWS 代码配置</span>
+ctxInfo.options = <span class="str">LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT</span>;
+ctxInfo.client_ssl_ca_filepath = <span class="str">"/etc/ssl/certs/ca-bundle.crt"</span>;  <span class="cmt">// 验证服务器</span>
+
+<span class="cmt">// mTLS 额外配置</span>
+<span class="fn">SSL_CTX_use_certificate_file</span>(ctx, <span class="str">"/etc/ssl/certs/device.crt"</span>, SSL_FILETYPE_PEM);
+<span class="fn">SSL_CTX_use_PrivateKey_file</span>(ctx, <span class="str">"/etc/ssl/private/device.key"</span>, SSL_FILETYPE_PEM);
+
+<span class="cmt">// 嵌入式设备三大现实挑战</span>
+<span class="cmt">// 1. 无时钟 → TLS 证书有效期验证失败</span>
+<span class="cmt">//   修复：启动时先 NTP 同步，同步前拒绝 WSS</span>
+<span class="cmt">// 2. 无 CA 根证书库 → Buildroot 最小系统不带 ca-certificates</span>
+<span class="cmt">//   修复：编译时打包 ISRG Root X1 + 私有 CA</span>
+<span class="cmt">// 3. 设备证书部署 → 出厂时如何预置不同的设备证书</span>
+<span class="cmt">//   修复：工厂流水线签发 + 写入固件分区；或首次启动注册协议</span></div>
+
+    <div class="trust-note" style="margin-top:16px">
+      <em>mTLS vs JWT 不是替代关系</em>：<br>
+      mTLS 解决 <em>"这个连接来自合法设备吗"</em>（传输层，连接建立时验证）<br>
+      JWT 解决 <em>"这个设备有权加入这个房间吗"</em>（应用层，连接建立后验证）<br>
+      两者互补：mTLS 防伪造设备，JWT 防未授权访问。<em>当前项目只有 JWT，缺少传输层的设备身份验证</em>。
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 7. Project Cards ========== -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" data-reveal>项目中的应用</h2>
+  <p class="sec-sub" data-reveal>LWS 交叉编译、nanopb 协议、三重 TLS bug 修复——信令层是项目最复杂的部分之一。</p>
+  <div class="proj" data-reveal>
+    <div class="proj-card" data-reveal>
+      <div class="pt-tag" style="color:#38bdf8">LWS 交叉编译</div>
+      <div class="pt-title">libwebsockets for MIPS</div>
+      <div class="pt-desc">
+        LWS 是板端唯一的 WebSocket 客户端库。交叉编译需要：<br>
+        • <code>cmake -DLWS_WITH_SSL=1 -DLWS_WITH_ALPN=1 -DLWS_WITHOUT_SERVER=1</code><br>
+        • 链接 mbedTLS（而非 OpenSSL，减少二进制体积）<br>
+        • <em>关键</em>：<code>LWS_WITH_ALPN=1</code> 默认可能未开启→导致 alpn 字段被忽略→H2 bug<br><br>
+        二进制大小：~200KB (strip 后)，远小于 WebSocket++ + Boost.Asio 的方案
+      </div>
+    </div>
+    <div class="proj-card" data-reveal>
+      <div class="pt-tag" style="color:#a78bfa">nanopb 协议</div>
+      <div class="pt-title">Protobuf 信令消息</div>
+      <div class="pt-desc">
+        LiveKit 使用 Protobuf 定义信令消息，板端用 <em>nanopb</em>（轻量 Protobuf C 库）编解码：<br>
+        • <code>livekit_signaling.proto</code> → <code>livekit_signaling.pb.c/h</code><br>
+        • 消息帧格式：<code>[1B msgType][varint msgSize][protobuf payload]</code><br>
+        • msgType 映射：<code>1=Join, 2=Answer, 3=Offer, 4=Trickle, 5=Leave...</code><br><br>
+        代码路径：<code>LiveKitSignaling.cpp → handleSignalResponse()</code>
+      </div>
+      <div class="proj-code"><span class="cmt">// handleSignalResponse — 解码消息类型</span>
+<span class="kw">auto</span> msgType = <span class="kw">static_cast</span>&lt;<span class="fn">SignalRequest</span>&gt;(buf[0]);
+<span class="kw">if</span> (msgType == <span class="fn">SignalRequest</span>::JOIN) {
+    <span class="fn">JoinResponse</span> jr;
+    pb_decode(&amp;stream, JoinResponse_fields, &amp;jr);
+    <span class="cmt">// jr.ice_servers — TURN 凭证在此下发</span>
+    <span class="cmt">// jr.subscriber_primary — 决定谁是 Publisher/Subscriber</span>
+}</div>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <span style="color:#38bdf8;margin:0 8px;font-weight:bold">WSS</span>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+(function(){
+  var flowObs = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.querySelectorAll('.flow-step').forEach(function(s){
+          var d=parseInt(s.getAttribute('data-delay'))*200;
+          setTimeout(function(){s.classList.add('vis')},d);
+        });
+      }
+    });
+  },{threshold:0.15});
+  document.querySelectorAll('.flow-steps').forEach(function(el){flowObs.observe(el)});
+})();
+
+// =========================================================
+// Message Types Grid
+// =========================================================
+var msgData=[
+  {dir:'out',name:'JoinRequest',body:'携带 JWT token。服务器验证签名和 <em>exp</em> 后，返回 JoinResponse。<br><code>token = JWT(wallet)</code>'},
+  {dir:'in',name:'JoinResponse',body:'服务器返回房间信息、<em>ICE 服务器列表</em>（含 TURN 凭证）、参与者和发布者列表。'},
+  {dir:'out',name:'Offer (SDP)',body:'Publisher 端发送 SDP Offer，包含媒体编解码能力和 <em>DTLS 指纹</em> (<code>a=fingerprint</code>)。'},
+  {dir:'in',name:'Answer (SDP)',body:'SFU 返回 SDP Answer，选定的编解码器+SFU 端的 DTLS 指纹。'},
+  {dir:'out',name:'Trickle ICE',body:'每发现一个 ICE 候选就增量发送，无需等待全部搜集完毕。<code>candidateInit</code> 包含 host/srflx/relay 信息。'},
+  {dir:'in',name:'Trickle ICE',body:'SFU 同样增量发送 ICE 候选。双方同时进行连接性检查。'},
+  {dir:'out',name:'Leave',body:'离开房间。服务器清理 PeerConnection 和媒体资源。'}
+];
+
+function renderMsg(){
+  var h='';
+  msgData.forEach(function(m){
+    h+='<div class="msg-card '+m.dir+'">';
+    h+='<div class="mc-dir">'+(m.dir==='out'?'→ 发送':'← 接收')+'</div>';
+    h+='<div class="mc-name">'+m.name+'</div>';
+    h+='<div class="mc-body">'+m.body+'</div>';
+    h+='</div>';
+  });
+  document.getElementById('msgGrid').innerHTML=h;
+}
+
+// =========================================================
+// Risk Steps Reveal
+// =========================================================
+(function(){
+  var riskObs = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.querySelectorAll('.risk-step').forEach(function(s){
+          var d=parseInt(s.getAttribute('data-delay'))*250;
+          setTimeout(function(){s.classList.add('vis')},d);
+        });
+      }
+    });
+  },{threshold:0.2});
+  document.querySelectorAll('.risk-steps').forEach(function(el){riskObs.observe(el)});
+})();
+
+// =========================================================
+// Init
+// =========================================================
+(function(){
+  renderMsg();
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<8;i++){
+      var p=document.createElement('div');p.className='particle';
+      p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+      p.style.animationDuration=(8+Math.random()*14)+'s';
+      p.style.animationDelay=(Math.random()*10)+'s';
+      p.style.width=p.style.height=(1+Math.random()*2)+'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*350;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+  document.querySelectorAll('.flow,.alpn,.msg,.risk,.trust,.mtls,.proj').forEach(function(el){obs.observe(el)});
+})();
+</script>
+</body>
+</html>

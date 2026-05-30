@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>端侧图像视频问题全景 — 诊断与修复</title>
+<style>
+:root {
+  --bg:#090d12;--sf:#111820;--sf2:#19212c;--bd:#263040;
+  --tx:#d0d8e4;--mt:#607080;--dm:#3a4c60;
+  --bl:#4da6ff;--cy:#30d0b0;--gn:#3fb950;--or:#e09030;
+  --rd:#f05040;--pu:#b080ff;--pk:#f070b0;--yl:#e0c030;
+  --sensor:#30d0b0;--encode:#4da6ff;--transport:#e09030;--display:#b080ff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--tx);font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.6;overflow-x:hidden}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+.hero{padding:48px 40px 32px;border-bottom:1px solid var(--bd)}
+.hero h1{font-size:32px;font-weight:800;background:linear-gradient(135deg,var(--cy),var(--bl),var(--or),var(--pu));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--mt);margin-top:10px;font-size:14px;max-width:680px}
+.hflow{display:flex;align-items:center;gap:4px;margin-top:28px;flex-wrap:wrap}
+.hfn{padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:.2s}
+.hfn:hover{transform:translateY(-1px)}.hfn.act{border-color:currentColor;box-shadow:0 0 14px rgba(255,255,255,.05)}
+.hfn .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px}
+.hfa{color:var(--dm);font-size:18px;margin:0 2px}
+.wrap{display:grid;grid-template-columns:1fr 320px;gap:0}
+.main{padding:0 40px 48px}
+.side{border-left:1px solid var(--bd);padding:20px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sec{margin-bottom:44px;scroll-margin-top:16px}
+.shdr{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.sico{width:34px;height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.stit{font-size:18px;font-weight:700}.ssub{font-size:11px;color:var(--mt);margin-left:auto}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pcard{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:16px;cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+.pcard:hover{border-color:var(--dm);transform:translateY(-1px)}.pcard.act{border-color:var(--bl)}
+.pcard .topbar{position:absolute;top:0;left:0;right:0;height:2.5px;border-radius:2px 2px 0 0}
+.ph{display:flex;align-items:start;gap:10px;margin-bottom:8px}
+.pe{font-size:20px;line-height:1}.pt{font-size:13px;font-weight:600}
+.psv{font-size:9px;padding:2px 7px;border-radius:8px;margin-left:auto;white-space:nowrap;flex-shrink:0}
+.pd{font-size:11px;color:var(--mt);line-height:1.6;margin-bottom:8px}
+.ptags{display:flex;gap:5px;flex-wrap:wrap}
+.ptag{font-size:9px;padding:1px 6px;border-radius:3px;background:var(--sf2);color:var(--dm)}
+.rbar{height:5px;border-radius:2px;background:var(--sf2);margin-top:6px;overflow:hidden}
+.rfill{height:100%;border-radius:2px;transition:width .5s}
+/* Detail panel */
+.dpan{display:none;margin-top:14px;grid-column:1/-1;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+.dpan.show{display:block;animation:sUp .25s ease}
+@keyframes sUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.dinner{display:grid;grid-template-columns:1.1fr 1fr 1fr;min-height:280px}
+.dcol{padding:20px;border-right:1px solid var(--bd)}.dcol:last-child{border-right:none}
+.dcol h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px}
+.dcol p{font-size:11px;color:var(--mt);line-height:1.8;margin-bottom:8px}
+.dcol b{color:var(--tx)}
+.dcol code{background:rgba(77,166,255,.1);padding:1px 5px;border-radius:3px;font-size:10px;color:var(--bl);font-family:'SF Mono',monospace}
+.dcol pre{background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:10px;font-size:10px;color:var(--cy);font-family:'SF Mono',monospace;line-height:1.6;overflow-x:auto;margin:6px 0}
+.wbox{background:rgba(240,80,64,.07);border:1px solid rgba(240,80,64,.18);border-radius:5px;padding:8px 12px;font-size:10px;color:var(--rd);margin:6px 0}
+.tbox{background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.18);border-radius:5px;padding:8px 12px;font-size:10px;color:var(--gn);margin:6px 0}
+/* Demo */
+.dmw{background:#000;border-radius:5px;padding:6px;margin:10px 0}
+.dmw canvas{display:block;width:100%;border-radius:3px}
+.dctrl{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center}
+.dbtn{padding:2px 9px;font-size:10px;border-radius:3px;background:var(--sf2);color:var(--mt);border:1px solid var(--bd);cursor:pointer;font-family:inherit;transition:.15s}
+.dbtn:hover{color:var(--tx);border-color:var(--dm)}.dbtn.act{color:var(--bl);border-color:var(--bl);background:rgba(77,166,255,.06)}
+.slbl{font-size:10px;color:var(--mt);margin-right:2px}
+.sval{font-size:10px;color:var(--bl);min-width:24px}
+input[type=range]{width:80px;accent-color:var(--bl);height:3px;vertical-align:middle}
+/* Chain */
+.chain{margin:36px 0 48px;padding:24px;background:var(--sf);border:1px solid var(--bd);border-radius:12px}
+.chain .ctit{font-size:15px;font-weight:700;text-align:center;margin-bottom:16px}
+.cflow{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:12px 0}
+.cnode{padding:8px 14px;border-radius:6px;font-size:11px;font-weight:600;border:1.5px solid var(--bd);background:var(--sf2);cursor:pointer;transition:.25s}
+.cnode:hover{border-color:var(--dm)}.cnode.hl{border-color:currentColor;box-shadow:0 0 10px rgba(255,255,255,.04)}
+.carr{color:var(--dm);font-size:14px}
+.cres{text-align:center;margin-top:14px;padding:14px;background:var(--bg);border-radius:6px;font-size:11px;color:var(--mt);line-height:1.7;min-height:40px}
+/* Side */
+.ssec{margin-bottom:20px}
+.ssec h4{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--dm);margin-bottom:10px}
+.fb{margin-bottom:6px}
+.fl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px}
+.fln{color:var(--tx)}.flp{color:var(--mt)}
+.fbg{height:4px;border-radius:2px;background:var(--sf2);overflow:hidden}
+.ffg{height:100%;border-radius:2px;transition:width .6s}
+.cl{list-style:none}
+.cl li{font-size:11px;padding:5px 0;border-bottom:1px solid var(--bd);display:flex;align-items:start;gap:6px;color:var(--mt)}
+.cl li::before{content:'';width:12px;height:12px;border:1.5px solid var(--dm);border-radius:2px;flex-shrink:0;margin-top:2px}
+.cl li.ck::before{background:var(--gn);border-color:var(--gn)}
+.yq{font-size:11px;line-height:2}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}.side{display:none}.pgrid{grid-template-columns:1fr}.dinner{grid-template-columns:1fr}.dcol{border-right:none;border-bottom:1px solid var(--bd)}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>端侧图像视频问题全景</h1>
+  <p>从传感器到用户屏幕，逐层诊断每个环节可能出现的画质问题及其连锁反应。基于 JY1C 板端实战经验整理。</p>
+  <div class="hflow">
+    <div class="hfn act" style="color:var(--sensor)" onclick="scr('sensor')"><span class="dot" style="background:var(--sensor)"></span>传感器/ISP</div>
+    <span class="hfa">→</span>
+    <div class="hfn" style="color:var(--encode)" onclick="scr('encode')"><span class="dot" style="background:var(--encode)"></span>编码层</div>
+    <span class="hfa">→</span>
+    <div class="hfn" style="color:var(--transport)" onclick="scr('transport')"><span class="dot" style="background:var(--transport)"></span>传输层</div>
+    <span class="hfa">→</span>
+    <div class="hfn" style="color:var(--display)" onclick="scr('display')"><span class="dot" style="background:var(--display)"></span>解码/显示</div>
+    <span class="hfa">→</span>
+    <div class="hfn" style="color:var(--yl)"><span class="dot" style="background:var(--yl)"></span>用户感知</div>
+  </div>
+</div>
+
+<div class="wrap">
+<div class="main">
+
+<!-- ==================== 传感器/ISP ==================== -->
+<div class="sec" id="s-sensor">
+<div class="shdr"><div class="sico" style="background:rgba(48,208,176,.1);color:var(--sensor)">🔶</div><span class="stit" style="color:var(--sensor)">传感器 / ISP 层</span><span class="ssub">一切画质的基础</span></div>
+<div class="pgrid">
+
+<div class="pcard act" data-p="noise" onclick="opn('sensor','noise')"><div class="topbar" style="background:var(--sensor)"></div>
+<div class="ph"><span class="pe">📺</span><div><div class="pt">噪声 Noise</div></div><span class="psv" style="background:rgba(240,80,64,.12);color:var(--rd)">极高频</span></div>
+<div class="pd">暗区颗粒感、彩色噪点。传感器小像素 → 信噪比差 → 高增益放大噪声。3DNR 不足时尤其突出。</div>
+<div class="ptags"><span class="ptag">高ISO</span><span class="ptag">3DNR不足</span><span class="ptag">暗光</span></div>
+<div class="rbar"><div class="rfill" style="width:95%;background:var(--sensor)"></div></div></div>
+
+<div class="pcard" data-p="color" onclick="opn('sensor','color')"><div class="topbar" style="background:var(--sensor);opacity:.4"></div>
+<div class="ph"><span class="pe">🎨</span><div><div class="pt">偏色 Color Cast</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div>
+<div class="pd">整体色偏、肤色异常。AWB 不收敛或 IR-Cut 切换时机不对导致红外串扰。</div>
+<div class="ptags"><span class="ptag">AWB</span><span class="ptag">IR-Cut</span></div>
+<div class="rbar"><div class="rfill" style="width:70%;background:var(--sensor)"></div></div></div>
+
+<div class="pcard" data-p="rolling" onclick="opn('sensor','rolling')"><div class="topbar" style="background:var(--sensor);opacity:.4"></div>
+<div class="ph"><span class="pe">🍯</span><div><div class="pt">果冻效应 Rolling</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">中频</span></div>
+<div class="pd">运动物体倾斜/弯曲。卷帘快门逐行曝光，上下行时间差导致几何畸变。</div>
+<div class="ptags"><span class="ptag">卷帘快门</span><span class="ptag">高速运动</span></div>
+<div class="rbar"><div class="rfill" style="width:45%;background:var(--sensor)"></div></div></div>
+
+<div class="pcard" data-p="wdr" onclick="opn('sensor','wdr')"><div class="topbar" style="background:var(--sensor);opacity:.4"></div>
+<div class="ph"><span class="pe">🌗</span><div><div class="pt">宽动态不足</div></div><span class="psv" style="background:rgba(240,80,64,.12);color:var(--rd)">极高频</span></div>
+<div class="pd">逆光全黑或窗外过曝。传感器动态范围有限，WDR 合成算法差时亮暗细节同时丢失。</div>
+<div class="ptags"><span class="ptag">逆光</span><span class="ptag">WDR合成</span></div>
+<div class="rbar"><div class="rfill" style="width:90%;background:var(--sensor)"></div></div></div>
+
+<div class="pcard" data-p="fringe" onclick="opn('sensor','fringe')"><div class="topbar" style="background:var(--sensor);opacity:.4"></div>
+<div class="ph"><span class="pe">💎</span><div><div class="pt">紫边/色差</div></div><span class="psv" style="background:rgba(63,185,80,.12);color:var(--gn)">低频</span></div>
+<div class="pd">高对比边缘出现紫色fringe。镜头色散 + ISP 去紫边缺失。</div>
+<div class="ptags"><span class="ptag">色散</span><span class="ptag">高对比边缘</span></div>
+<div class="rbar"><div class="rfill" style="width:30%;background:var(--sensor)"></div></div></div>
+
+<div class="pcard" data-p="ghost" onclick="opn('sensor','ghost')"><div class="topbar" style="background:var(--sensor);opacity:.4"></div>
+<div class="ph"><span class="pe">👻</span><div><div class="pt">鬼影/耀斑</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">中频</span></div>
+<div class="pd">逆光出现额外光斑。镜头镀膜差导致内部反射叠加到图像。</div>
+<div class="ptags"><span class="ptag">逆光</span><span class="ptag">镀膜</span></div>
+<div class="rbar"><div class="rfill" style="width:40%;background:var(--sensor)"></div></div></div>
+</div>
+
+<!-- NOISE DETAIL -->
+<div class="dpan show" id="d-sensor-noise"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p><b>1. 光子散粒噪声</b>：光子到达是泊松过程，信号S的噪声=√S。暗光信号弱 → SNR低。</p>
+<p><b>2. 读出噪声</b>：ADC量化+热噪声，与信号无关的固定底噪。</p>
+<p><b>3. 高增益放大</b>：ISO↑ → 增益↑ → 噪声一同放大。小像素尤其严重。</p>
+<p><b>4. 3DNR不足</b>：运动区域跳过时域滤波，只靠空域 → 噪声粗糙且带彩色。</p>
+<div class="dmw"><canvas id="cv-noise" width="540" height="200"></canvas></div>
+<div class="dctrl">
+<span class="slbl">ISO增益</span><input type="range" min="1" max="100" value="15" id="sl-iso" oninput="rNoise()"><span class="sval" id="sv-iso">15</span>
+<span class="slbl" style="margin-left:8px">3DNR</span><input type="range" min="0" max="10" value="2" id="sl-nr" oninput="rNoise()"><span class="sval" id="sv-nr">2</span>
+</div>
+</div>
+<div class="dcol">
+<h3 style="color:var(--or)">修复方案</h3>
+<p><b>ISP 层：</b></p>
+<p>• 加强3DNR时域降噪权重，运动区域自适应</p>
+<p>• 空域降噪用双边滤波保边缘</p>
+<p>• 暗区单独提亮+降噪</p>
+<p><b>编码层：</b></p>
+<p>• 编码前做 <code>pre-denoise</code></p>
+<p>• 提高MinQP避免噪声被过度编码</p>
+<p><b>硬件层：</b></p>
+<p>• 更换大像素传感器（IMX335 vs IMX307）</p>
+<p>• 补光红外LED改善夜间SNR</p>
+<div class="tbox">IMX307 夜间噪声大是公认问题，3DNR调参是主要手段。</div>
+</div>
+<div class="dcol">
+<h3 style="color:var(--bl)">板端代码</h3>
+<pre>IMPISPTuningNoiseReduction nr;
+nr.enable = 1;
+nr.strength = 8;      // 0-15
+nr.strength_auto = 1;
+
+IMPISPTuningSpatialDenoise sd;
+sd.enable = 1;
+sd.strength = 6;
+
+stEncChnAttr.stRcAttr.enRcMode =
+  IMP_ENC_RC_MODE_VBR;
+stEncChnAttr.stRcAttr.stVbrAttr
+  .u32MinQp = 22;
+
+if (lux_value &lt; 5) {
+  ir_led_set_brightness(80);
+  ir_cut_switch(IRCUT_OPEN);
+}</pre>
+</div>
+</div></div>
+
+<!-- COLOR DETAIL -->
+<div class="dpan" id="d-sensor-color"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p><b>AWB不收敛</b>：灰色世界假设在单色场景下失效，色温估计漂移。</p>
+<p><b>IR-Cut时序</b>：切换时红外进入 → 红色偏重。延迟越大偏色越重。</p>
+<p><b>色温突变</b>：开灯瞬间2700K→5000K，AWB多帧收敛，中间帧偏色。</p>
+<div class="dmw"><canvas id="cv-color" width="540" height="180"></canvas></div>
+<div class="dctrl">
+<button class="dbtn act" onclick="cMode='normal';rColor();actBtn(this)">正常</button>
+<button class="dbtn" onclick="cMode='warm';rColor();actBtn(this)">暖色偏</button>
+<button class="dbtn" onclick="cMode='cool';rColor();actBtn(this)">冷色偏</button>
+<button class="dbtn" onclick="cMode='ir';rColor();actBtn(this)">IR串扰</button>
+</div>
+</div>
+<div class="dcol">
+<h3 style="color:var(--or)">修复方案</h3>
+<p>• 增加色温查找表精度（每200K采样）</p>
+<p>• 肤色优先策略，避免人物偏绿/偏蓝</p>
+<p>• 提前切换IR-Cut：lux阈值8-10</p>
+<p>• 切换期间冻结AWB，等稳定后恢复</p>
+</div>
+<div class="dcol">
+<h3 style="color:var(--bl)">板端代码</h3>
+<pre>IMPISPTuningWB wb;
+wb.mode = IMPISP_WB_AUTO;
+wb.speed = 6;  // 1-15
+wb.temp_range.min = 2500;
+wb.temp_range.max = 8000;
+
+void ir_cut_control(float lux) {
+  if (lux &lt; 8.0 &amp;&amp;
+      ir_state == DAY) {
+    isp_awb_freeze(1);
+    ircut_switch_to_night();
+    sleep(3);
+    isp_awb_freeze(0);
+    ir_state = NIGHT;
+  }
+}</pre>
+</div>
+</div></div>
+
+<!-- ROLLING DETAIL -->
+<div class="dpan" id="d-sensor-rolling"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p>卷帘快门逐行读出，30fps时每行间隔约 <code>30μs</code>，运动物体在不同行位置时间不同 → 几何畸变。</p>
+<div class="dmw"><canvas id="cv-roll" width="540" height="180"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="rollAnim=!rollAnim">开启动画</button><span class="slbl" style="margin-left:8px">转速</span><input type="range" min="1" max="10" value="5" id="sl-rspd" oninput="rRoll()"><span class="sval" id="sv-rspd">5</span></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• 全局快门传感器（成本×3-5）</p><p>• 陀螺仪辅助EIS校正</p><p>• 避免高速振动场景</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>IMPISPTuningEIS eis;
+eis.enable = 1;
+eis.strength = 70;
+eis.gyro_enable = 1;</pre></div>
+</div></div>
+
+<!-- WDR DETAIL -->
+<div class="dpan" id="d-sensor-wdr"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p>普通传感器~60dB，真实场景可达120dB+。动态范围不够 → 暗区全黑/亮区全白。</p>
+<div class="dmw"><canvas id="cv-wdr" width="540" height="180"></canvas></div>
+<div class="dctrl">
+<button class="dbtn act" onclick="wdrMo=0;rWDR();actBtn(this)">无WDR</button>
+<button class="dbtn" onclick="wdrMo=1;rWDR();actBtn(this)">有WDR</button>
+</div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• 单帧WDR（DOL）优于多帧合成，无鬼影</p><p>• IMX335支持2-exposure DOL</p><p>• Tone Mapping曲线调软</p><p>• CLAHE局部对比度增强</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>IMPISPTuningWDR wdr;
+wdr.enable = 1;
+wdr.mode = IMPISP_WDR_2FRAME;
+wdr.tmo.mode = IMPISP_TMO_LOCAL;
+wdr.tmo.strength = 70;
+wdr.tmo.contrast = 50;
+IMPISPTuningExposure exp;
+exp.frm0.exp_ratio = 4;
+exp.frm1.exp_ratio = 1;</pre></div>
+</div></div>
+
+<!-- FRINGE DETAIL -->
+<div class="dpan" id="d-sensor-fringe"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p>轴向色差：不同波长光线折射率不同 → RGB通道在边缘处位移不同 → 高对比边缘出现紫色fringe。</p>
+<div class="dmw"><canvas id="cv-fringe" width="540" height="140"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• ISP CAC模块（Chromatic Aberration Correction）</p><p>• 各通道独立缩放对齐</p><p>• 选型时关注色差指标</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>IMPISPTuningCAC cac;
+cac.enable = 1;
+cac.strength = 50;
+cac.red_offset_x = -1;
+cac.blue_offset_x = 1;</pre></div>
+</div></div>
+
+<!-- GHOST DETAIL -->
+<div class="dpan" id="d-sensor-ghost"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--sensor)">成因分析</h3>
+<p>强光进入镜头 → 镜片间内部反射 → 二次像叠加到传感器 → 鬼影。镀膜差反射率高。</p>
+<div class="dmw"><canvas id="cv-ghost" width="540" height="140"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• 多层镀膜镜头（反射率&lt;0.5%）</p><p>• 安装角度避免逆光</p><p>• ISP减轻效果有限</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>// 无软件根治方案
+IMPISPTuningDefog defog;
+defog.enable = 1;
+defog.strength = 30;</pre></div>
+</div></div>
+</div>
+
+<!-- ==================== 编码层 ==================== -->
+<div class="sec" id="s-encode">
+<div class="shdr"><div class="sico" style="background:rgba(77,166,255,.1);color:var(--encode)">📦</div><span class="stit" style="color:var(--encode)">编码层</span><span class="ssub">压缩带来的画质损失</span></div>
+<div class="pgrid">
+<div class="pcard" data-p="blocking" onclick="opn('encode','blocking')"><div class="topbar" style="background:var(--encode)"></div><div class="ph"><span class="pe">◼</span><div><div class="pt">块效应 Blocking</div></div><span class="psv" style="background:rgba(240,80,64,.12);color:var(--rd)">极高频</span></div><div class="pd">宏块边界可见方块伪影。QP过高导致。板端码率抠紧时最常见。</div><div class="ptags"><span class="ptag">QP过高</span><span class="ptag">码率不足</span></div><div class="rbar"><div class="rfill" style="width:92%;background:var(--encode)"></div></div></div>
+
+<div class="pcard" data-p="ringing" onclick="opn('encode','ringing')"><div class="topbar" style="background:var(--encode);opacity:.5"></div><div class="ph"><span class="pe">〰</span><div><div class="pt">振铃 Ringing</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">锐利边缘旁出现鬼影/光环。DCT高频截断→Gibbs现象。⚠ Deblocking无效。</div><div class="ptags"><span class="ptag">Gibbs</span><span class="ptag">非块效应</span></div><div class="rbar"><div class="rfill" style="width:65%;background:var(--encode)"></div></div></div>
+
+<div class="pcard" data-p="chroma" onclick="opn('encode','chroma')"><div class="topbar" style="background:var(--encode);opacity:.5"></div><div class="ph"><span class="pe">🔴</span><div><div class="pt">色度拖尾</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">红/蓝边缘溢出。4:2:0色度分辨率仅为亮度1/4。</div><div class="ptags"><span class="ptag">4:2:0</span><span class="ptag">亚采样</span></div><div class="rbar"><div class="rfill" style="width:72%;background:var(--encode)"></div></div></div>
+
+<div class="pcard" data-p="mosquito" onclick="opn('encode','mosquito')"><div class="topbar" style="background:var(--encode);opacity:.5"></div><div class="ph"><span class="pe">🦟</span><div><div class="pt">蚊子噪声</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">细节区域闪烁微粒。量化残差帧间传播→时域闪烁。</div><div class="ptags"><span class="ptag">帧间传播</span></div><div class="rbar"><div class="rfill" style="width:60%;background:var(--encode)"></div></div></div>
+
+<div class="pcard" data-p="flicker" onclick="opn('encode','flicker')"><div class="topbar" style="background:var(--encode);opacity:.5"></div><div class="ph"><span class="pe">💡</span><div><div class="pt">帧间闪烁</div></div><span class="psv" style="background:rgba(63,185,80,.12);color:var(--gn)">中频</span></div><div class="pd">静止区域微闪烁。RC振荡+参考漂移。</div><div class="ptags"><span class="ptag">RC振荡</span></div><div class="rbar"><div class="rfill" style="width:40%;background:var(--encode)"></div></div></div>
+
+<div class="pcard" data-p="ipop" onclick="opn('encode','ipop')"><div class="topbar" style="background:var(--encode);opacity:.5"></div><div class="ph"><span class="pe">💥</span><div><div class="pt">I帧弹出</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">周期性骤清再模糊。IDR间隔太长 → P帧漂移→I帧质量突变。</div><div class="ptags"><span class="ptag">IDR间隔</span></div><div class="rbar"><div class="rfill" style="width:55%;background:var(--encode)"></div></div></div>
+</div>
+
+<!-- BLOCKING DETAIL -->
+<div class="dpan" id="d-encode-blocking"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>H.264以16×16宏块独立变换量化。相邻宏块量化步长不同 → 边界像素跳变。QP每+6步长翻倍。</p>
+<div class="dmw"><canvas id="cv-block" width="540" height="200"></canvas></div>
+<div class="dctrl">
+<span class="slbl">QP</span><input type="range" min="10" max="51" value="38" id="sl-bqp" oninput="rBlock()"><span class="sval" id="sv-bqp">38</span>
+<button class="dbtn act" onclick="dblk=1;rBlock();actBtn(this)">Deblocking ON</button>
+<button class="dbtn" onclick="dblk=0;rBlock();actBtn(this)">Deblocking OFF</button>
+</div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>1. 提高码率</b>（直接有效）</p><p><b>2. 限制MaxQP</b>（保底）</p><p><b>3. VBR模式</b>（灵活分配）</p><p><b>4. Deblocking参数</b><br><code>alpha_c0=-2</code></p><div class="tbox">MaxQP=36是板端常用安全线。</div></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>stEncChnAttr.stRcAttr.enRcMode =
+  IMP_ENC_RC_MODE_VBR;
+stEncChnAttr.stRcAttr.stVbrAttr
+  .u32MaxBitRate = 2500;
+stEncChnAttr.stRcAttr.stVbrAttr
+  .u32MaxQp = 36;
+param->deblocking = 1;
+param->i_deblocking_alpha_c0=-2;</pre></div>
+</div></div>
+
+<!-- RINGING DETAIL -->
+<div class="dpan" id="d-encode-ringing"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>锐利边缘=高频信号。4×4 DCT量化截断高频 → Gibbs现象：边缘旁过冲和振铃。</p>
+<div class="wbox">⚠ 振铃不是块效应！Deblocking只作用于宏块边界，对振铃完全无效。</div>
+<p>区分：<br>• 块效应：沿16×16网格线<br>• 振铃：沿真实图像边缘</p>
+<div class="dmw"><canvas id="cv-ring" width="540" height="160"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>1. 提高码率</b>（唯一根治）</p><p><b>2. 限制QP</b>：<code>MaxQP=32</code></p><p><b>3. 8×8变换</b>：<code>8x8dct=1</code></p><p><b>4. 预处理模糊</b>（牺牲锐度）</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->analyse.b_transform_8x8=1;
+param->rc.i_qp_max = 32;
+param->rc.f_rf_constant = 20;</pre></div>
+</div></div>
+
+<!-- CHROMA DETAIL -->
+<div class="dpan" id="d-encode-chroma"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>4:2:0色度分辨率=亮度1/4。鲜艳色块边缘，色度通道不够精细 → 颜色"溢出"。</p>
+<div class="dmw"><canvas id="cv-chroma" width="540" height="160"></canvas></div>
+<div class="dctrl">
+<button class="dbtn act" onclick="chMo='420';rChroma();actBtn(this)">4:2:0</button>
+<button class="dbtn" onclick="chMo='422';rChroma();actBtn(this)">4:2:2</button>
+<button class="dbtn" onclick="chMo='444';rChroma();actBtn(this)">4:4:4</button>
+</div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>1. 切换4:2:2</b>（码率+50%）</p><p><b>2. chroma_qp_offset=-2</b></p><p><b>3. ISP降饱和度</b></p><p>⚠ 板端通常只支持4:2:0</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->rc.i_chroma_qp_offset=-2;
+IMPISPTuningSaturation sat;
+sat.enable = 1;
+sat.value = -10;</pre></div>
+</div></div>
+
+<!-- MOSQUITO DETAIL -->
+<div class="dpan" id="d-encode-mosquito"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>量化残差帧间传播：P帧参考误差累积，高频残差每帧随机变化 → 时域闪烁。</p>
+<div class="dmw"><canvas id="cv-mosq" width="540" height="160"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="mosqAnim=!mosqAnim">开启动画</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>1. 降低QP</p><p>2. 提高MinQP=22避免耗码率在噪声上</p><p>3. 编码前轻降噪</p><p>4. 缩短IDR间隔</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>.u32MinQp = 22;
+.u32MaxQp = 36;
+.u32IdrInterval = 15;</pre></div>
+</div></div>
+
+<!-- FLICKER DETAIL -->
+<div class="dpan" id="d-encode-flicker"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>RC振荡：复杂帧码率超额→后续QP暴涨→画面变暗→码率恢复→QP降→画面变亮→循环闪烁。</p>
+<div class="dmw"><canvas id="cv-flick" width="540" height="160"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="flickAnim=!flickAnim">开启动画</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>1. 增大VBV缓冲</p><p>2. 收窄QP范围≤15</p><p>3. CRF恒质量模式</p><p>4. 缩短IDR间隔</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->rc.i_vbv_max_bitrate=2000;
+param->rc.i_vbv_buffer_size=4000;
+param->rc.i_rc_method=X264_RC_CRF;
+param->rc.f_rf_constant=23;</pre></div>
+</div></div>
+
+<!-- I-POP DETAIL -->
+<div class="dpan" id="d-encode-ipop"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--encode)">成因分析</h3>
+<p>IDR间隔30帧(1s)：I帧消耗超额码率→RC压缩后续P帧QP→P帧质量逐步下降→下一个I帧质量突变→视觉"弹出"。</p>
+<div class="dmw"><canvas id="cv-ipop" width="540" height="160"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="ipopAnim=!ipopAnim">开启动画</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>1. 缩短IDR间隔30→15</p><p>2. qp_offset_i=-2</p><p>3. 场景切换自动IDR</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->keyint_max = 15;
+param->i_scenecut_threshold=40;
+param->rc.i_qp_offset_i=-2;</pre></div>
+</div></div>
+</div>
+
+<!-- ==================== 传输层 ==================== -->
+<div class="sec" id="s-transport">
+<div class="shdr"><div class="sico" style="background:rgba(224,144,48,.1);color:var(--transport)">📡</div><span class="stit" style="color:var(--transport)">传输层</span><span class="ssub">弱网环境的痛点</span></div>
+<div class="pgrid">
+<div class="pcard" data-p="stutter" onclick="opn('transport','stutter')"><div class="topbar" style="background:var(--transport)"></div><div class="ph"><span class="pe">⏸</span><div><div class="pt">画面卡顿</div></div><span class="psv" style="background:rgba(240,80,64,.12);color:var(--rd)">极高频</span></div><div class="pd">带宽不足或jitter buffer策略不当导致解码器饿死。</div><div class="ptags"><span class="ptag">带宽</span><span class="ptag">jitter</span></div><div class="rbar"><div class="rfill" style="width:88%;background:var(--transport)"></div></div></div>
+
+<div class="pcard" data-p="corruption" onclick="opn('transport','corruption')"><div class="topbar" style="background:var(--transport);opacity:.5"></div><div class="ph"><span class="pe">📵</span><div><div class="pt">花屏</div></div><span class="psv" style="background:rgba(240,80,64,.12);color:var(--rd)">极高频</span></div><div class="pd">丢包导致NAL损坏，解码器用错误数据重建→花屏传播至下个IDR。</div><div class="ptags"><span class="ptag">丢包</span><span class="ptag">FU-A</span></div><div class="rbar"><div class="rfill" style="width:90%;background:var(--transport)"></div></div></div>
+
+<div class="pcard" data-p="latency" onclick="opn('transport','latency')"><div class="topbar" style="background:var(--transport);opacity:.5"></div><div class="ph"><span class="pe">⏳</span><div><div class="pt">高延迟</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">编码+协议+网络+jitter+解码逐层累加，端到端超300ms。</div><div class="ptags"><span class="ptag">缓冲累积</span></div><div class="rbar"><div class="rfill" style="width:75%;background:var(--transport)"></div></div></div>
+
+<div class="pcard" data-p="graywait" onclick="opn('transport','graywait')"><div class="topbar" style="background:var(--transport);opacity:.5"></div><div class="ph"><span class="pe">🔲</span><div><div class="pt">关键帧丢失</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">IDR丢失→P帧无法解码→长时间灰屏，直到收到下一个IDR。</div><div class="ptags"><span class="ptag">IDR丢失</span><span class="ptag">PLI</span></div><div class="rbar"><div class="rfill" style="width:70%;background:var(--transport)"></div></div></div>
+</div>
+
+<!-- CORRUPTION DETAIL -->
+<div class="dpan" id="d-transport-corruption"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--transport)">成因分析</h3>
+<p>FU-A分片丢失→整个NAL废弃→该区域宏块用错误参考帧重建→花屏传播至下个IDR。</p>
+<div class="dmw"><canvas id="cv-corrupt" width="540" height="180"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="rCorrupt()">重新模拟丢包</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>1. FEC前向纠错</b><br>ULPFEC/FlexFEC冗余包</p><p><b>2. NACK重传</b><br>延迟敏感慎用</p><p><b>3. 错误掩盖</b><br>前帧区域填充</p><p><b>4. 多slice减小NAL</b></p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>.u32SliceNum = 8;
+decoder.error_concealment = 1;
+decoder.conceal_method =
+  ERROR_CONCEAL_COPY_PREV;</pre></div>
+</div></div>
+
+<!-- STUTTER DETAIL -->
+<div class="dpan" id="d-transport-stutter"><div class="dinner">
+<div class="dcol"><h3 style="color:var(--transport)">成因</h3><p>编码输出2Mbps，网络只承载1Mbps→积压→卡顿。Jitter Buffer过小→低延迟但卡顿；过大→流畅但延迟高。解码器饿死→等待→追帧。</p></div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>1. 码率自适应<br>2. tune=zerolatency<br>3. 自适应Jitter Buffer<br>4. 主动丢非关键帧</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->i_frame_reference=1;
+param->i_bframe=0;
+param->b_sliced_threads=1;</pre></div>
+</div></div>
+
+<!-- LATENCY DETAIL -->
+<div class="dpan" id="d-transport-latency"><div class="dinner">
+<div class="dcol"><h3 style="color:var(--transport)">延迟累积</h3><p>• 采集 33ms<br>• ISP 5-10ms<br>• 编码缓冲 33-66ms<br>• 网络 50-200ms<br>• Jitter Buffer 20-200ms<br>• 解码 33ms<br>• 渲染 33ms<br><b>合计 175-575ms</b></p>
+<div class="dmw"><canvas id="cv-latency" width="540" height="120"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>编码：</b>zerolatency/无B帧/单slice<br><b>传输：</b>UDP/RTP/SRTP/ICE直连<br><b>解码：</b>最小jitter buffer/追帧</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">目标</h3><pre>// 编码端 ~50ms
+// 传输 ~50ms
+// 解码端 ~50ms
+// 总延迟 &lt;200ms</pre></div>
+</div></div>
+
+<!-- GRAY WAIT DETAIL -->
+<div class="dpan" id="d-transport-graywait"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--transport)">成因</h3><p>IDR帧丢失→所有后续P帧无法解码→灰屏/绿屏→直到下个IDR。IDR间隔30帧→最长等1秒。</p>
+<div class="dmw"><canvas id="cv-gray" width="540" height="140"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="grayAnim=!grayAnim">开启动画</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>1. PLI/FIR请求→发送端立即产IDR<br>2. 缩短IDR间隔<br>3. 每个IDR附带SPS/PPS</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>void on_pli() { force_idr=1; }
+if(force_idr || count%interval==0){
+  enc_param.force_keyframe=1;
+  enc_param.output_sps_pps=1;
+  force_idr=0;
+}
+if(no_decodable>10) send_pli();</pre></div>
+</div></div>
+</div>
+
+<!-- ==================== 解码/显示 ==================== -->
+<div class="sec" id="s-display">
+<div class="shdr"><div class="sico" style="background:rgba(176,128,255,.1);color:var(--display)">🖥</div><span class="stit" style="color:var(--display)">解码 / 显示层</span><span class="ssub">最后一公里</span></div>
+<div class="pgrid">
+<div class="pcard" data-p="tearing" onclick="opn('display','tearing')"><div class="topbar" style="background:var(--display);opacity:.5"></div><div class="ph"><span class="pe">↕</span><div><div class="pt">画面撕裂</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">中频</span></div><div class="pd">VSync未对齐→上下半帧不对齐。</div><div class="ptags"><span class="ptag">VSync</span></div><div class="rbar"><div class="rfill" style="width:35%;background:var(--display)"></div></div></div>
+
+<div class="pcard" data-p="banding" onclick="opn('display','banding')"><div class="topbar" style="background:var(--display);opacity:.5"></div><div class="ph"><span class="pe">🌈</span><div><div class="pt">色带/色阶</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">高频</span></div><div class="pd">8bit仅256级→渐变阶梯可见。需10bit+dithering。</div><div class="ptags"><span class="ptag">8bit</span><span class="ptag">dithering</span></div><div class="rbar"><div class="rfill" style="width:60%;background:var(--display)"></div></div></div>
+
+<div class="pcard" data-p="aspect" onclick="opn('display','aspect')"><div class="topbar" style="background:var(--display);opacity:.5"></div><div class="ph"><span class="pe">↔</span><div><div class="pt">拉伸/黑边</div></div><span class="psv" style="background:rgba(63,185,80,.12);color:var(--gn)">低频</span></div><div class="pd">SAR/DAR不匹配。</div><div class="ptags"><span class="ptag">SAR</span></div><div class="rbar"><div class="rfill" style="width:25%;background:var(--display)"></div></div></div>
+
+<div class="pcard" data-p="deverr" onclick="opn('display','deverr')"><div class="topbar" style="background:var(--display);opacity:.5"></div><div class="ph"><span class="pe">⛔</span><div><div class="pt">解码失败</div></div><span class="psv" style="background:rgba(224,144,48,.12);color:var(--or)">中频</span></div><div class="pd">绿屏/花屏。SPS/PPS未更新、Profile不兼容。</div><div class="ptags"><span class="ptag">SPS/PPS</span></div><div class="rbar"><div class="rfill" style="width:40%;background:var(--display)"></div></div></div>
+</div>
+
+<!-- BANDING DETAIL -->
+<div class="dpan" id="d-display-banding"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--display)">成因分析</h3>
+<p>8bit=256级。低码率编码进一步压缩可用级数→渐变阶梯。</p>
+<div class="dmw"><canvas id="cv-band" width="540" height="140"></canvas></div>
+<div class="dctrl">
+<button class="dbtn act" onclick="bdMo='8bit';rBand();actBtn(this)">8bit 无dither</button>
+<button class="dbtn" onclick="bdMo='8bitd';rBand();actBtn(this)">8bit+Dither</button>
+<button class="dbtn" onclick="bdMo='10bit';rBand();actBtn(this)">10bit</button>
+</div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p><b>1. 10bit编码</b>（1024级）代价：兼容性差</p><p><b>2. Dithering抖动</b>（强烈推荐）<br>量化后加微量噪声→打破阶梯→视觉平滑<br>零码率代价</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>void ordered_dither(
+  uint8_t *y, int w, int h) {
+  static const int b[4][4] = {
+    {0,8,2,10},{12,4,14,6},
+    {3,11,1,9},{15,7,5,13}
+  };
+  for(int i=0;i&lt;h;i++)
+    for(int j=0;j&lt;w;j++){
+      int v=y[i*w+j]
+        +b[i%4][j%4]*16/256-8;
+      y[i*w+j]=CLAMP(v,0,255);
+    }
+}</pre></div>
+</div></div>
+
+<!-- TEARING DETAIL -->
+<div class="dpan" id="d-display-tearing"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--display)">成因</h3>
+<p>显示刷新与解码输出不同步→同一帧中上下部分来自不同帧。</p>
+<div class="dmw"><canvas id="cv-tear" width="540" height="160"></canvas></div>
+<div class="dctrl"><button class="dbtn" onclick="tearAnim=!tearAnim">开启动画</button></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• VSync同步<br>• 双缓冲/三缓冲<br>• DRM/KMS page flip</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>page_flip.flags =
+  DRM_MODE_PAGE_FLIP_EVENT;
+page_flip.fb_id = next_fb_id;
+drmIoctl(fd,
+  DRM_IOCTL_MODE_CRTC_PAGE_FLIP,
+  &amp;page_flip);</pre></div>
+</div></div>
+
+<!-- ASPECT DETAIL -->
+<div class="dpan" id="d-display-aspect"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--display)">成因</h3><p>SAR错误→像素非正方形→画面拉伸或黑边。</p>
+<div class="dmw"><canvas id="cv-aspect" width="540" height="160"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• SPS设<code>aspect_ratio=1:1</code><br>• 接收端正确处理DAR</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->vui.i_sar_width=1;
+param->vui.i_sar_height=1;</pre></div>
+</div></div>
+
+<!-- DEVERR DETAIL -->
+<div class="dpan" id="d-display-deverr"><div class="dinner">
+<div class="dcol">
+<h3 style="color:var(--display)">成因</h3><p>SPS/PPS变更未通知/Profile不兼容/硬件bug</p>
+<div class="dmw"><canvas id="cv-deverr" width="540" height="160"></canvas></div>
+</div>
+<div class="dcol"><h3 style="color:var(--or)">修复</h3><p>• 每IDR附带SPS/PPS<br>• 限制兼容Profile<br>• 失败时重置解码器</p></div>
+<div class="dcol"><h3 style="color:var(--bl)">代码</h3><pre>param->b_repeat_headers=1;
+param->i_profile_idc=66;
+if(decode_ret&lt;0){
+  reset_decoder();
+  request_idr();
+}</pre></div>
+</div></div>
+</div>
+
+<!-- ==================== 连锁反应 ==================== -->
+<div class="chain">
+<div class="ctit">问题连锁反应 — 单点优化为何往往不够</div>
+<div class="cflow">
+<div class="cnode" style="color:var(--sensor)" onclick="hlC(this)" data-d="传感器噪声高 → 编码器需要更多码率编码噪声细节">传感器噪声高</div><span class="carr">→</span>
+<div class="cnode" style="color:var(--sensor)" onclick="hlC(this)" data-d="3DNR开启但不够 → 残留噪声进入编码器">3DNR不足</div><span class="carr">→</span>
+<div class="cnode" style="color:var(--encode)" onclick="hlC(this)" data-d="噪声被当作细节编码 → 码率浪费在噪声上 → 真实细节码率不足">码率浪费</div><span class="carr">→</span>
+<div class="cnode" style="color:var(--encode)" onclick="hlC(this)" data-d="码率预算不够 → RC抬高QP → 块效应+振铃+蚊子噪声">QP飙高</div><span class="carr">→</span>
+<div class="cnode" style="color:var(--encode)" onclick="hlC(this)" data-d="加强Deblocking → 边界平滑了但细节模糊 → 另一种退化">Deblocking模糊</div><span class="carr">→</span>
+<div class="cnode" style="color:var(--transport)" onclick="hlC(this)" data-d="画质恶化 → 用户感知差 / 码率突破上限 → 传输卡顿丢包">最终恶化</div>
+</div>
+<div class="cres" id="cres">点击链路节点，查看每一环的具体影响</div>
+</div>
+
+</div>
+<div class="side">
+<div class="ssec"><h4>板端实战频次排行</h4>
+<div class="fb"><div class="fl"><span class="fln">噪声+宽动态</span><span class="flp">95%</span></div><div class="fbg"><div class="ffg" style="width:95%;background:var(--sensor)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">块效应</span><span class="flp">88%</span></div><div class="fbg"><div class="ffg" style="width:88%;background:var(--encode)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">丢包花屏</span><span class="flp">82%</span></div><div class="fbg"><div class="ffg" style="width:82%;background:var(--transport)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">色度拖尾</span><span class="flp">72%</span></div><div class="fbg"><div class="ffg" style="width:72%;background:var(--encode)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">延迟</span><span class="flp">68%</span></div><div class="fbg"><div class="ffg" style="width:68%;background:var(--transport)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">I帧弹出</span><span class="flp">55%</span></div><div class="fbg"><div class="ffg" style="width:55%;background:var(--encode)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">蚊子噪声</span><span class="flp">48%</span></div><div class="fbg"><div class="ffg" style="width:48%;background:var(--encode)"></div></div></div>
+<div class="fb"><div class="fl"><span class="fln">色带</span><span class="flp">40%</span></div><div class="fbg"><div class="ffg" style="width:40%;background:var(--display)"></div></div></div>
+</div>
+<div class="ssec"><h4>调试清单</h4>
+<ul class="cl">
+<li class="ck">确认传感器型号和默认3DNR配置</li>
+<li class="ck">记录默认码率和QP范围</li>
+<li class="ck">测试暗光场景噪声水平</li>
+<li>验证WDR合成鬼影</li>
+<li>测试WiFi弱网丢包率</li>
+<li>测量端到端延迟分解</li>
+<li>确认IDR间隔和PLI响应</li>
+<li>验证Deblocking参数效果</li>
+<li>测试Dithering效果</li>
+</ul></div>
+<div class="ssec"><h4>关键阈值</h4>
+<div class="yq">
+<div>QP &lt;28 : <span style="color:var(--gn)">优质</span></div>
+<div>QP 28-36 : <span style="color:var(--or)">可接受</span></div>
+<div>QP &gt;36 : <span style="color:var(--rd)">块效应可见</span></div>
+<div>QP &gt;42 : <span style="color:var(--rd)">马赛克</span></div>
+<div style="border-top:1px solid var(--bd);margin:4px 0"></div>
+<div>延迟 &lt;200ms : <span style="color:var(--gn)">实时</span></div>
+<div>延迟 200-500ms : <span style="color:var(--or)">可接受</span></div>
+<div>延迟 &gt;500ms : <span style="color:var(--rd)">明显卡顿</span></div>
+<div style="border-top:1px solid var(--bd);margin:4px 0"></div>
+<div>丢包 &lt;1% : <span style="color:var(--gn)">FEC可恢复</span></div>
+<div>丢包 1-5% : <span style="color:var(--or)">需FEC+NACK</span></div>
+<div>丢包 &gt;5% : <span style="color:var(--rd)">需降码率</span></div>
+</div></div>
+</div>
+</div>
+
+<script>
+/* ============ UTILS ============ */
+function opn(layer,p){const s=document.getElementById('s-'+layer);s.querySelectorAll('.dpan').forEach(p2=>p2.classList.remove('show'));s.querySelectorAll('.pcard').forEach(c=>c.classList.remove('act'));const cd=s.querySelector(`[data-p="${p}"]`);if(cd)cd.classList.add('act');const pn=document.getElementById('d-'+layer+'-'+p);if(pn){pn.classList.add('show');setTimeout(()=>{rAll()},60)}}
+function scr(id){document.getElementById('s-'+id).scrollIntoView({behavior:'smooth'});document.querySelectorAll('.hfn').forEach(n=>n.classList.toggle('act',n.textContent.includes({sensor:'传感器',encode:'编码',transport:'传输',display:'显示'}[id]||'')))}
+function hlC(n){document.querySelectorAll('.cnode').forEach(x=>x.classList.remove('hl'));n.classList.add('hl');document.getElementById('cres').textContent=n.dataset.d}
+function actBtn(b){const p=b.parentElement;p.querySelectorAll('.dbtn').forEach(x=>x.classList.remove('act'));b.classList.add('act')}
+function rAll(){rNoise();rColor();rBlock();rRing();rChroma();rWDR();rRoll();rFringe();rGhost();rCorrupt();rBand();rLatency();rTear();rAspect();rDeverr();rMosq();rFlick();rIpop();rGray()}
+
+/* ============ SCENE PAINTER ============ */
+function drawPetScene(ctx,w,h,opts={}){
+  const{bright=0.4,noiseGain=0,chromaMode='444',colorShift=[0,0,0],wdr=false,qp=10,rollAngle=0,fringe=false,ghostLight=false,corruptBlocks=null,greenScreen=false,tearY=-1,stretchX=1,grayLevel=-1,mosqNoise=false,flickDelta=0,ox=0}=opts;
+  const img=ctx.createImageData(w,h);
+  const d=img.data;
+  for(let y=0;y<h;y++){
+    const rollOff = rollAngle ? Math.round((y-h/2)*Math.tan(rollAngle*Math.PI/180)*0.3) : 0;
+    for(let x=0;x<w;x++){
+      const idx=(y*w+x)*4;
+      const sx=x-rollOff;
+      if(greenScreen&&y>h*0.2){d[idx]=0;d[idx+1]=80+d[idx+1]*0.3;d[idx+2]=0;d[idx+3]=255;continue}
+      // Sky
+      let r,g,b;
+      const horizon=h*0.55;
+      if(y<horizon){
+        const t=y/horizon;
+        r=100+80*t; g=160+60*t; b=220+30*t;
+      } else {
+        // Ground
+        const t=(y-horizon)/(h-horizon);
+        r=60+50*t; g=90+40*t; b=50+30*t;
+      }
+      // Pet silhouette (cat head with ears)
+      const cx=w*0.5, cy=h*0.42, rad=w*0.12;
+      const dx=sx-cx, dy=-(y-cy); // flip y for easier math
+      // Head circle
+      const headDist=Math.sqrt(dx*dx+dy*dy);
+      const leftEarX=cx-rad*0.7, rightEarX=cx+rad*0.7;
+      const earTipY=cy+rad*1.7;
+      const inLeftEar=Math.abs(sx-leftEarX)<rad*0.35 && y<cy+rad*0.8 && y>earTipY-10 && (y-(cy+rad*0.2))/(earTipY-(cy+rad*0.2)) < Math.abs(sx-leftEarX)/(rad*0.35);
+      const inRightEar=Math.abs(sx-rightEarX)<rad*0.35 && y<cy+rad*0.8 && y>earTipY-10 && (y-(cy+rad*0.2))/(earTipY-(cy+rad*0.2)) < Math.abs(sx-rightEarX)/(rad*0.35);
+      const inHead=headDist<rad;
+      if(inHead||inLeftEar||inRightEar){
+        r=240;g=200;b=160; // tan fur
+        // Eyes
+        const leX=cx-rad*0.35, reX=cx+rad*0.35, eyeY=cy+rad*0.15;
+        const leD=Math.sqrt((sx-leX)**2+(y-eyeY)**2);
+        const reD=Math.sqrt((sx-reX)**2+(y-eyeY)**2);
+        if(leD<rad*0.12||reD<rad*0.12){r=40;g=120;b=80} // green eyes
+        if(leD<rad*0.06||reD<rad*0.06){r=10;g=10;b=10} // pupils
+        // Nose
+        const nD=Math.sqrt((sx-cx)**2+(y-(cy-rad*0.15))**2);
+        if(nD<rad*0.06){r=200;g=120;b=120}
+      }
+      // Window on right side (for WDR)
+      const winX=w*0.75,winY=h*0.15,winW=w*0.2,winH=h*0.35;
+      if(sx>winX&&sx<winX+winW&&y>winY&&y<winY+winH){
+        if(wdr){r=180;g=200;b=230}else{r=250;g=250;b=250}
+      }
+      // Brightness
+      const lum=bright*2;
+      r*=lum;g*=lum;b*=lum;
+      // WDR crush/clip
+      if(!wdr){
+        if(y<horizon){const t=(1-bright)*0.8;if(t>0.5){r*=0.3;g*=0.3;b*=0.3}}
+        if(sx>winX&&sx<winX+winW&&y>winY&&y<winY+winH){r=Math.min(r,255);g=Math.min(g,255);b=Math.min(b,255)}
+      }
+      // Noise
+      if(noiseGain>0){
+        const n=(Math.random()-0.5)*noiseGain;
+        const cn=(Math.random()-0.5)*noiseGain*0.5;
+        r+=n+cn;g+=n;b+=n-cn;
+      }
+      // Mosquito noise (around edges)
+      if(mosqNoise&&(inHead||inLeftEar||inRightEar)){
+        const edgeProx=Math.min(headDist-rad,5);
+        if(edgeProx>0&&edgeProx<5){
+          const mn=(Math.random()-0.5)*noiseGain*1.5;
+          r+=mn;g+=mn;b+=mn;
+        }
+      }
+      // Color shift
+      r+=colorShift[0];g+=colorShift[1];b+=colorShift[2];
+      // Flick delta
+      r+=flickDelta;g+=flickDelta;b+=flickDelta;
+      // Gamma clamp
+      r=Math.max(0,Math.min(255,r));g=Math.max(0,Math.min(255,g));b=Math.max(0,Math.min(255,b));
+      // Stretch
+      if(stretchX!==1){
+        const mid=w/2;const osx=mid+(sx-mid)*stretchX;
+        if(osx>=0&&osx<w){const oi=(y*w+Math.round(osx))*4;d[idx]=d[oi]||0;d[idx+1]=d[oi+1]||0;d[idx+2]=d[oi+2]||0}else{d[idx]=0;d[idx+1]=0;d[idx+2]=0}
+      }else{d[idx]=r;d[idx+1]=g;d[idx+2]=b}
+      d[idx+3]=255;
+    }
+  }
+  // Chroma subsampling (apply after painting)
+  if(chromaMode!=='444'){
+    const sx2=chromaMode==='420'?2:2;
+    const sy2=chromaMode==='420'?2:1;
+    for(let cy=0;cy<h;cy+=sy2)for(let cx=0;cx<w;cx+=sx2){
+      let sr=0,sg=0,sb=0,cnt=0;
+      for(let dy=0;dy<sy2&&cy+dy<h;dy++)for(let dx=0;dx<sx2&&cx+dx<w;dx++){
+        const i=((cy+dy)*w+(cx+dx))*4;sr+=d[i];sg+=d[i+1];sb+=d[i+2];cnt++;
+      }
+      sr/=cnt;sg/=cnt;sb/=cnt;
+      for(let dy=0;dy<sy2&&cy+dy<h;dy++)for(let dx=0;dx<sx2&&cx+dx<w;dx++){
+        const i=((cy+dy)*w+(cx+dx))*4;
+        const lu=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        d[i]=Math.max(0,Math.min(255,lu+1.402*(sr-128)));
+        d[i+1]=Math.max(0,Math.min(255,lu-0.344*(sg-128)-0.714*(sb-128)));
+        d[i+2]=Math.max(0,Math.min(255,lu+1.772*(sb-128)));
+      }
+    }
+  }
+  ctx.putImageData(img,ox,0);
+  // Post overlays
+  // QP blocking
+  if(qp>20){
+    const MB=16,qs=Math.pow(2,(qp-10)/5),blend=Math.min(1,(qp-20)/25);
+    const img2=ctx.getImageData(ox,0,w,h),o=img2.data;
+    for(let mby=0;mby<Math.ceil(h/MB);mby++)for(let mbx=0;mbx<Math.ceil(w/MB);mbx++){
+      let sr=0,sg=0,sb=0,cnt=0;const x0=mbx*MB,y0=mby*MB,x1=Math.min(x0+MB,w),y1=Math.min(y0+MB,h);
+      for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const i=(y*w+x)*4;sr+=o[i];sg+=o[i+1];sb+=o[i+2];cnt++}
+      sr=Math.round(sr/cnt/qs)*qs;sg=Math.round(sg/cnt/qs)*qs;sb=Math.round(sb/cnt/qs)*qs;
+      for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const i=(y*w+x)*4;o[i]=Math.round(o[i]*(1-blend)+sr*blend);o[i+1]=Math.round(o[i+1]*(1-blend)+sg*blend);o[i+2]=Math.round(o[i+2]*(1-blend)+sb*blend)}
+    }
+    ctx.putImageData(img2,ox,0);
+    if(qp>28){ctx.strokeStyle=qp>36?'rgba(240,80,64,.35)':'rgba(224,144,48,.25)';ctx.lineWidth=.5;for(let x=0;x<=w;x+=MB){ctx.beginPath();ctx.moveTo(ox+x,0);ctx.lineTo(ox+x,h);ctx.stroke()}for(let y=0;y<=h;y+=MB){ctx.beginPath();ctx.moveTo(ox,y);ctx.lineTo(ox+w,y);ctx.stroke()}}
+  }
+  // Fringe
+  if(fringe){
+    const id=ctx.getImageData(ox,0,w,h),dd=id.data;
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      const i=(y*w+x)*4;
+      const gx=Math.abs(dd[i]-dd[(y*w+x+1)*4])+Math.abs(dd[i]-dd[(y*w+x-1)*4]);
+      const gy=Math.abs(dd[i]-dd[((y+1)*w+x)*4])+Math.abs(dd[i]-dd[((y-1)*w+x)*4]);
+      if(gx+gy>60){dd[i]=Math.min(255,dd[i]+40);dd[i+2]=Math.min(255,dd[i+2]+50)}
+    }
+    ctx.putImageData(id,ox,0);
+  }
+  // Ghost/Flare
+  if(ghostLight){
+    const grd=ctx.createRadialGradient(ox+w*0.2,h*0.5,5,ox+w*0.2,h*0.5,w*0.15);
+    grd.addColorStop(0,'rgba(255,200,100,0.3)');grd.addColorStop(1,'rgba(255,200,100,0)');
+    ctx.fillStyle=grd;ctx.fillRect(ox,0,w,h);
+    const grd2=ctx.createRadialGradient(ox+w*0.68,h*0.38,3,ox+w*0.68,h*0.38,w*0.06);
+    grd2.addColorStop(0,'rgba(200,180,255,0.25)');grd2.addColorStop(1,'rgba(200,180,255,0)');
+    ctx.fillStyle=grd2;ctx.fillRect(ox,0,w,h);
+  }
+  // Corrupt blocks
+  if(corruptBlocks){
+    for(const cb of corruptBlocks){
+      for(let y=cb.y;y<cb.y+cb.h&&y<h;y++)for(let x=cb.x;x<cb.x+cb.w&&x<w;x++){
+        const i=(y*w+x)*4;
+        d[i]=Math.max(0,d[i]+(Math.random()-0.5)*80);
+        d[i+1]=Math.max(0,d[i+1]+(Math.random()-0.5)*60);
+        d[i+2]=Math.max(0,d[i+2]+(Math.random()-0.5)*60);
+      }
+    }
+    ctx.putImageData(img,ox,0);
+    for(const cb of corruptBlocks){ctx.strokeStyle='rgba(240,80,64,.6)';ctx.lineWidth=1;ctx.setLineDash([3,2]);ctx.strokeRect(ox+cb.x,cb.y,cb.w,cb.h);ctx.setLineDash([])}
+  }
+  // Gray overlay
+  if(grayLevel>=0){
+    ctx.fillStyle=`rgba(128,128,128,${grayLevel})`;ctx.fillRect(ox,0,w,h);
+  }
+  // Tear line
+  if(tearY>0){
+    const sl=ctx.getImageData(ox,0,w,tearY);
+    ctx.putImageData(sl,ox+12,0);
+    ctx.strokeStyle='rgba(240,80,64,.6)';ctx.lineWidth=1;ctx.setLineDash([4,3]);
+    ctx.beginPath();ctx.moveTo(ox,tearY);ctx.lineTo(ox+w,tearY);ctx.stroke();ctx.setLineDash([]);
+  }
+  // Labels
+  ctx.font='bold 11px sans-serif';
+}
+
+/* ============ SPECIFIC RENDERERS ============ */
+// Noise
+function rNoise(){
+  const c=document.getElementById('cv-noise');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const half=w/2,iso=+document.getElementById('sl-iso').value,nr=+document.getElementById('sl-nr').value;
+  document.getElementById('sv-iso').textContent=iso;document.getElementById('sv-nr').textContent=nr;
+  // Left: clean
+  drawPetScene(x,half,h,{bright:0.5,noiseGain:0});
+  // Right: noisy
+  const ng=iso*0.4/(1+nr*0.6);
+  const cn=iso*0.3/(1+nr*0.6);
+  drawPetScene(x,half,h,{bright:0.25+0.25*(1-iso/100),noiseGain:ng,colorShift:[cn*0.5,-cn*0.3,-cn*0.2],ox:half});
+  // Divider
+  ctx=x;ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(half,0);ctx.lineTo(half,h);ctx.stroke();ctx.setLineDash([]);
+  ctx.font='bold 10px sans-serif';ctx.fillStyle='#fff';ctx.fillText('原始(低ISO)',8,14);ctx.fillText(`ISO=${iso} 3DNR=${nr}`,half+8,14);
+}
+
+// Color Cast
+let cMode='normal';
+function rColor(){
+  const c=document.getElementById('cv-color');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  let cs=[0,0,0];
+  if(cMode==='warm')cs=[35,-5,-20];
+  if(cMode==='cool')cs=[-20,5,30];
+  if(cMode==='ir')cs=[40,-25,-30];
+  drawPetScene(x,w,h,{bright:0.55,colorShift:cs});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  const labels={normal:'正常白平衡',warm:'暖色偏(低色温)',cool:'冷色偏(高色温)',ir:'IR串扰'};
+  x.fillText(labels[cMode]||'',8,14);
+}
+
+// WDR
+let wdrMo=0;
+function rWDR(){
+  const c=document.getElementById('cv-wdr');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  drawPetScene(x,w,h,{bright:0.7,wdr:!!wdrMo});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText(wdrMo?'WDR开启 — 暗区可见，亮区不过曝':'无WDR — 暗区全黑，窗外过曝',8,14);
+  // Mark window
+  x.strokeStyle='rgba(255,255,255,.4)';x.lineWidth=1;x.strokeRect(w*0.75,h*0.15,w*0.2,h*0.35);
+}
+
+// Rolling shutter
+let rollAnim=false,rollT=0;
+function rRoll(){
+  const c=document.getElementById('cv-roll');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const spd=+document.getElementById('sl-rspd').value;document.getElementById('sv-rspd').textContent=spd;
+  const angle=spd*3*Math.sin(rollT*0.05);
+  drawPetScene(x,w,h,{bright:0.6,rollAngle:angle});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText(`卷帘快门畸变 ${angle.toFixed(1)}°`,8,14);
+  // Draw a reference vertical line
+  x.strokeStyle='rgba(255,255,255,.2)';x.setLineDash([3,3]);x.beginPath();x.moveTo(w/2,0);x.lineTo(w/2,h);x.stroke();x.setLineDash([]);
+}
+
+// Fringe
+function rFringe(){
+  const c=document.getElementById('cv-fringe');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  drawPetScene(x,w,h,{bright:0.7,fringe:true});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText('高对比边缘 — 紫色fringe可见',8,14);
+}
+
+// Ghost
+function rGhost(){
+  const c=document.getElementById('cv-ghost');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  drawPetScene(x,w,h,{bright:0.5,ghostLight:true});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText('逆光场景 — 镜头内部反射产生鬼影/耀斑',8,14);
+}
+
+// Blocking
+let dblk=1;
+function rBlock(){
+  const c=document.getElementById('cv-block');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const qp=+document.getElementById('sl-bqp').value;document.getElementById('sv-bqp').textContent=qp;
+  const half=w/2;
+  // Left: with deblock
+  if(dblk){drawPetScene(x,half,h,{bright:0.55,qp:Math.max(10,qp-8)})}
+  else{drawPetScene(x,half,h,{bright:0.55,qp})}
+  // Right: raw blocking
+  drawPetScene(x,half,h,{bright:0.55,qp,ox:half});
+  // Apply deblock on right half manually
+  if(dblk){
+    // simple blur on right half boundary pixels
+    const id=x.getImageData(half,0,half,h),d=id.data;
+    for(let y=15;y<h;y+=16)for(let x2=0;x2<half;x2++){
+      for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;
+      const i1=(yy*half+x2)*4;
+      if(x2>0){const i2=(yy*half+x2-1)*4;for(let c2=0;c2<3;c2++)d[i1+c2]=(d[i1+c2]+d[i2+c2])>>1}
+    }}
+    for(let x2=15;x2<half;x2+=16)for(let y=0;y<h;y++){
+      for(let dx=-1;dx<=1;dx++){const xx=x2+dx;if(xx<0||xx>=half)continue;
+      const i1=(y*half+xx)*4;
+      if(y>0){const i2=((y-1)*half+xx)*4;for(let c2=0;c2<3;c2++)d[i1+c2]=(d[i1+c2]+d[i2+c2])>>1}
+    }}
+    x.putImageData(id,half,0);
+  }
+  // Divider
+  x.strokeStyle='#fff';x.lineWidth=1;x.setLineDash([4,3]);x.beginPath();x.moveTo(half,0);x.lineTo(half,h);x.stroke();x.setLineDash([]);
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText(dblk?`Deblocking ON (QP=${Math.max(10,qp-8)})`:`原始 (QP=${qp})`,8,14);
+  x.fillText(`原始 QP=${qp}`,half+8,14);
+}
+
+// Ringing
+function rRing(){
+  const c=document.getElementById('cv-ring');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const half=w/2;
+  // Left: clean sharp edge
+  x.fillStyle='#c0c8d0';x.fillRect(0,0,half,h);
+  x.fillStyle='#202830';x.fillRect(half*0.5,0,half*0.5,h);
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';x.fillText('原始边缘',8,14);
+  // Right: with ringing (Gibbs)
+  x.fillStyle='#c0c8d0';x.fillRect(half,0,half,h);
+  // Rings
+  const ex=half+half*0.5;
+  for(let i=0;i<6;i++){
+    const a=0.25-i*0.04;if(a<=0)break;
+    x.fillStyle=`rgba(32,40,48,${a})`;x.fillRect(ex-(i+1)*3,0,3,h);
+    x.fillStyle=`rgba(192,200,208,${a})`;x.fillRect(ex+(i)*3,0,3,h);
+  }
+  x.fillStyle='#202830';x.fillRect(ex-half*0.22,0,half*0.22,h);
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';x.fillText('量化截断 → Gibbs振铃',half+8,14);
+  x.fillStyle='#f05040';x.fillText('← 过冲',ex-30,28);x.fillText('过冲 →',ex+6,28);
+  // Divider
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([3,2]);x.beginPath();x.moveTo(half,0);x.lineTo(half,h);x.stroke();x.setLineDash([]);
+}
+
+// Chroma
+let chMo='420';
+function rChroma(){
+  const c=document.getElementById('cv-chroma');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  drawPetScene(x,w,h,{bright:0.6,chromaMode:chMo,noiseGain:0});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  const labels={420:'4:2:0 — 红色明显拖尾',422:'4:2:2 — 拖尾减半',444:'4:4:4 — 无拖尾'};
+  x.fillText(labels[chMo],8,14);
+  // Show sampling grid for yCbCr
+  if(chMo!=='444'){
+    const sx=chMo==='420'?2:2,sy=chMo==='420'?2:1;
+    x.strokeStyle='rgba(255,255,255,.1)';x.lineWidth=.5;
+    const step=sx*8;
+    for(let yy=0;yy<h;yy+=sy*8){x.beginPath();x.moveTo(0,yy);x.lineTo(w,yy);x.stroke()}
+    for(let xx=0;xx<w;xx+=step){x.beginPath();x.moveTo(xx,0);x.lineTo(xx,h);x.stroke()}
+  }
+}
+
+// Mosquito
+let mosqAnim=false,mosqT=0;
+function rMosq(){
+  const c=document.getElementById('cv-mosq');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const mn=mosqAnim?(Math.random()-0.5)*50:0;
+  drawPetScene(x,w,h,{bright:0.5,noiseGain:15,mosqNoise:true,qp:34});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';x.fillText('细节边缘闪烁微粒 (蚊子噪声)',8,14);
+}
+
+// Flicker
+let flickAnim=false,flickT=0;
+function rFlick(){
+  const c=document.getElementById('cv-flick');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const fd=flickAnim?Math.sin(flickT*0.15)*18:0;
+  drawPetScene(x,w,h,{bright:0.5,flickDelta:fd,qp:30});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';x.fillText(`RC振荡 → 帧间亮度跳变 ${fd.toFixed(1)}`,8,14);
+}
+
+// I-pop
+let ipopAnim=false,ipopT=0;
+function rIpop(){
+  const c=document.getElementById('cv-ipop');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const cycle=30;const phase=ipopT%cycle;const qpf=phase<5?22:22+Math.min(20,phase*1.5);
+  drawPetScene(x,w,h,{bright:0.5,qp:qpf});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';x.fillText(`IDR周期: QP=${qpf.toFixed(0)} ${phase<5?'← I帧弹出':'P帧漂移中'}`,8,14);
+}
+
+// Corruption
+let corruptBlocks=null;
+function rCorrupt(){
+  const c=document.getElementById('cv-corrupt');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  corruptBlocks=[
+    {x:w*0.3,y:h*0.2,w:64,h:32},
+    {x:w*0.6,y:h*0.5,w:48,h:48},
+    {x:w*0.15,y:h*0.6,w:80,h:16},
+  ];
+  drawPetScene(x,w,h,{bright:0.5,corruptBlocks});
+  x.font='bold 10px sans-serif';x.fillStyle='#f05040';
+  x.fillText('NAL损坏 → 宏块花屏 → 传播至下个IDR',8,14);
+}
+
+// Banding
+let bdMo='8bit';
+function rBand(){
+  const c=document.getElementById('cv-band');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  // Paint sky gradient
+  const img=x.createImageData(w,h),d=img.data;
+  for(let y=0;y<h;y++){
+    for(let xx=0;xx<w;xx++){
+      const i=(y*w+xx)*4;
+      let v=180-120*(y/h); // sky gradient
+      let r=v*0.6,g=v*0.8,b=v*1.1;
+      if(bdMo==='8bit'){
+        r=Math.round(r/4)*4;g=Math.round(g/4)*4;b=Math.round(b/4)*4;
+      }else if(bdMo==='8bitd'){
+        r+=((Math.random()-.5)*5);g+=((Math.random()-.5)*5);b+=((Math.random()-.5)*5);
+      }else{
+        r=Math.round(r*4)/4;g=Math.round(g*4)/4;b=Math.round(b*4)/4;
+      }
+      d[i]=Math.max(0,Math.min(255,r));d[i+1]=Math.max(0,Math.min(255,g));d[i+2]=Math.max(0,Math.min(255,b));d[i+3]=255;
+    }
+  }
+  x.putImageData(img,0,0);
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  const lb={'8bit':'8bit — 天空色带明显','8bitd':'8bit + Dither — 平滑过渡','10bit':'10bit — 几乎无色带'};
+  x.fillText(lb[bdMo],8,14);
+}
+
+// Latency
+function rLatency(){
+  const c=document.getElementById('cv-latency');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const stages=[{name:'采集',ms:33,color:'#30d0b0'},{name:'ISP',ms:8,color:'#30d0b0'},{name:'编码',ms:50,color:'#4da6ff'},{name:'网络',ms:100,color:'#e09030'},{name:'Jitter',ms:80,color:'#e09030'},{name:'解码',ms:33,color:'#b080ff'},{name:'渲染',ms:33,color:'#b080ff'}];
+  let ox=0;
+  x.font='bold 9px sans-serif';
+  for(const s of stages){
+    const bw=Math.max(20,(s.ms/350)*w);
+    // bar
+    x.fillStyle=s.color;x.globalAlpha=0.7;x.fillRect(ox,30,bw-2,50);x.globalAlpha=1;
+    // label
+    x.fillStyle='#fff';x.fillText(s.name,ox+3,48);
+    x.fillStyle='#607080';x.fillText(s.ms+'ms',ox+3,h-8);
+    ox+=bw;
+  }
+  // total
+  x.fillStyle='#fff';x.font='bold 10px sans-serif';
+  x.fillText(`总计 ≈ ${stages.reduce((a,s)=>a+s.ms,0)}ms`,4,h-22);
+}
+
+// Gray screen animation
+let grayAnim=false,grayT=0;
+function rGray(){
+  const c=document.getElementById('cv-gray');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const gl=grayAnim?Math.min(0.9,grayT*0.02):0;
+  drawPetScene(x,w,h,{bright:0.5,grayLevel:gl});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText(gl>0.5?'IDR丢失 → 灰屏':gl>0.1?'P帧逐步失效...':'正常播放',8,14);
+}
+
+// Tearing
+let tearAnim=false,tearT=0;
+function rTear(){
+  const c=document.getElementById('cv-tear');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const ty=tearAnim?(h*0.3+Math.sin(tearT*0.06)*h*0.3):-1;
+  drawPetScene(x,w,h,{bright:0.5,tearY:ty});
+  x.font='bold 10px sans-serif';x.fillStyle='#fff';
+  x.fillText(ty>0?'VSync未对齐 → 画面撕裂':'正常显示',8,14);
+}
+
+// Aspect ratio
+function rAspect(){
+  const c=document.getElementById('cv-aspect');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  const half=w/2;
+  // Left: correct
+  drawPetScene(x,half,h,{bright:0.5});
+  // Draw circle overlay to show correctness
+  x.strokeStyle='rgba(63,185,80,.5)';x.lineWidth=2;x.beginPath();x.arc(half/2,h*0.4,h*0.15,0,Math.PI*2);x.stroke();
+  // Right: stretched
+  drawPetScene(x,half,h,{bright:0.5,stretchX:1.33,ox:half});
+  x.strokeStyle='rgba(240,80,64,.5)';x.lineWidth=2;x.beginPath();x.ellipse(half+half/2,h*0.4,h*0.2,h*0.15,0,0,Math.PI*2);x.stroke();
+  x.font='bold 10px sans-serif';x.fillStyle='#3fb950';x.fillText('正确比例 — 圆形',8,14);
+  x.fillStyle='#f05040';x.fillText('SAR错误 → 拉伸变形',half+8,14);
+}
+
+// Decode error
+function rDeverr(){
+  const c=document.getElementById('cv-deverr');if(!c)return;const x=c.getContext('2d'),w=c.width,h=c.height;
+  drawPetScene(x,w,h,{bright:0.5,greenScreen:true,qp:36});
+  x.font='bold 10px sans-serif';x.fillStyle='#f05040';
+  x.fillText('SPS/PPS缺失 → 绿屏/花屏',8,14);
+}
+
+/* ============ ANIMATION LOOP ============ */
+function tick(){
+  if(rollAnim){rollT++;rRoll()}
+  if(mosqAnim){mosqT++;rMosq()}
+  if(flickAnim){flickT++;rFlick()}
+  if(ipopAnim){ipopT++;rIpop()}
+  if(grayAnim){grayT++;rGray()}
+  if(tearAnim){tearT++;rTear()}
+  requestAnimationFrame(tick)
+}
+
+/* ============ INIT ============ */
+document.addEventListener('DOMContentLoaded',()=>{rAll();tick()});
+</script>
+</body>
+</html>

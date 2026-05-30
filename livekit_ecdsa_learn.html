@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECDSA 签名与证书 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(167,139,250,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(167,139,250,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* Hero Canvas */
+.hero-anim{width:100%;max-width:920px;margin-top:32px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-anim.vis{opacity:1;transform:translateY(0)}
+.hero-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:420px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.hero-canvas canvas{width:100%;height:100%}
+.hero-labels{display:flex;justify-content:space-between;margin-top:10px;padding:0 40px}
+.hero-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-align:center}
+.hero-label.signer{color:#a78bfa}
+.hero-label.verifier{color:#34d399}
+.hero-label.attacker{color:#f43f5e}
+.hero-controls{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:14px}
+.hero-ctrl-btn{padding:7px 18px;border-radius:8px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.2);color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;transition:all .3s;user-select:none}
+.hero-ctrl-btn:hover{background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.4)}
+.hero-ctrl-btn:disabled{opacity:.3;cursor:default;pointer-events:none}
+.hero-step-dots{display:flex;gap:6px}
+.hero-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:all .3s}
+.hero-dot:hover{background:rgba(167,139,250,.2)}
+.hero-dot.active{background:#a78bfa;border-color:#a78bfa;box-shadow:0 0 8px rgba(167,139,250,.5)}
+.hero-dot.done{background:rgba(52,211,153,.3);border-color:rgba(52,211,153,.4)}
+.hero-step-desc{margin-top:12px;text-align:center;font-size:14px;font-weight:700;color:#d0d0f0;min-height:24px;transition:all .4s}
+.hero-step-sub{margin-top:4px;font-size:12px;font-weight:400;color:#8888bb;line-height:1.7;text-align:center}
+
+/* Why section */
+.why{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.why.vis{opacity:1;transform:translateY(0)}
+.why-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:28px 24px;margin-top:24px;opacity:0;transform:translateY(20px);transition:all .6s}
+.why-card.vis{opacity:1;transform:translateY(0)}
+.wc-num{font-size:36px;font-weight:800;color:rgba(167,139,250,.15);line-height:1;margin-bottom:8px}
+.wc-title{font-size:18px;font-weight:700;color:#e0e0ff;margin-bottom:16px}
+.wc-scene{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.scene-box{border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,.04)}
+.scene-box.bad{background:rgba(244,63,94,.03);border-color:rgba(244,63,94,.1)}
+.scene-box.good{background:rgba(52,211,153,.03);border-color:rgba(52,211,153,.1)}
+.scene-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.scene-box.bad .scene-tag{color:#f43f5e}
+.scene-box.good .scene-tag{color:#34d399}
+.scene-body{font-size:12.5px;color:#9999bb;line-height:1.8}
+.wc-key{padding:14px 18px;background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.1);border-radius:10px;font-size:12.5px;color:#aaaacc;line-height:1.8}
+.wc-key em{color:#a78bfa;font-style:normal;font-weight:600}
+/* Why chain */
+.why-chain{margin-top:32px;text-align:center;opacity:0;transform:translateY(20px);transition:all .6s}
+.why-chain.vis{opacity:1;transform:translateY(0)}
+.chain-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:18px}
+.chain-flow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.chain-node{padding:14px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.06);min-width:120px}
+.chain-node.sign{background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.15)}
+.chain-node.cert{background:rgba(56,189,248,.06);border-color:rgba(56,189,248,.15)}
+.chain-node.fp{background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.15)}
+.chain-node.safe{background:rgba(52,211,153,.06);border-color:rgba(52,211,153,.15)}
+.cn-icon{font-size:22px;margin-bottom:4px}
+.cn-label{font-size:13px;font-weight:700;color:#e0e0ff;margin-bottom:2px}
+.chain-node.sign .cn-label{color:#a78bfa}
+.chain-node.cert .cn-label{color:#38bdf8}
+.chain-node.fp .cn-label{color:#f59e0b}
+.chain-node.safe .cn-label{color:#34d399}
+.cn-desc{font-size:10.5px;color:#7777aa;line-height:1.5}
+.chain-arr{color:rgba(255,255,255,.15);font-size:18px;font-weight:700}
+.chain-note{margin-top:16px;font-size:12px;color:#8888aa;line-height:1.9}
+.chain-note strong{color:#ccccee}
+
+/* Two Operations */
+.ops{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ops.vis{opacity:1;transform:translateY(0)}
+.ops-cards{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+.ops-card{border-radius:14px;padding:24px;border:1px solid rgba(255,255,255,.04)}
+.ops-card.sign{background:rgba(167,139,250,.03);border-color:rgba(167,139,250,.1)}
+.ops-card.enc{background:rgba(52,211,153,.03);border-color:rgba(52,211,153,.1)}
+.ops-card .oc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.ops-card.sign .oc-tag{color:#a78bfa}
+.ops-card.enc .oc-tag{color:#34d399}
+.ops-card .oc-title{font-size:16px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.ops-card .oc-body{font-size:12.5px;color:#8888bb;line-height:1.75}
+.ops-card .oc-body em{color:#a78bfa;font-style:normal;font-weight:600}
+.ops-card .oc-body code{background:rgba(167,139,250,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.ops-card .oc-flow{margin-top:14px;padding:12px 16px;background:rgba(0,0,0,.15);border-radius:8px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11px;line-height:1.8;color:#9999bb}
+.ops-card.sign .oc-flow .kw{color:#cba6f7}
+.ops-card.sign .oc-flow .fn{color:#a78bfa}
+.ops-card.enc .oc-flow .kw{color:#a6e3a1}
+.ops-card.enc .oc-flow .fn{color:#34d399}
+.ops-card .oc-flow .cmt{color:#6c7086}
+
+/* ECDSA Steps */
+.ecdsa{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ecdsa.vis{opacity:1;transform:translateY(0)}
+.ecdsa-tabs{display:flex;gap:4px;margin-bottom:16px;justify-content:center}
+.ecdsa-tab{padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all .25s;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#8888bb}
+.ecdsa-tab:hover{background:rgba(167,139,250,.1);color:#c0c0e8}
+.ecdsa-tab.active{background:rgba(167,139,250,.15);border-color:rgba(167,139,250,.3);color:#fff}
+.ecdsa-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:340px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.ecdsa-canvas canvas{width:100%;height:100%}
+.ecdsa-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin:16px 0}
+.ecdsa-nav-btn{padding:8px 20px;border-radius:8px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.2);color:#a78bfa;font-size:13px;font-weight:600;cursor:pointer;transition:all .3s;user-select:none;white-space:nowrap}
+.ecdsa-nav-btn:hover{background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.4)}
+.ecdsa-nav-btn:disabled{opacity:.25;cursor:default;pointer-events:none}
+.ecdsa-step-bar{display:flex;gap:4px;align-items:center}
+.ecdsa-sn{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;transition:all .3s;min-width:52px}
+.ecdsa-sn:hover .ecdsa-sn-dot{background:rgba(167,139,250,.2);border-color:rgba(167,139,250,.4)}
+.ecdsa-sn-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;transition:all .4s;background:rgba(255,255,255,.04);color:#555;border:2px solid rgba(255,255,255,.08)}
+.ecdsa-sn.active .ecdsa-sn-dot{background:#a78bfa;color:#fff;border-color:#a78bfa;box-shadow:0 0 16px rgba(167,139,250,.5);transform:scale(1.15)}
+.ecdsa-sn.done .ecdsa-sn-dot{background:rgba(52,211,153,.15);color:#34d399;border-color:rgba(52,211,153,.3)}
+.ecdsa-sn-label{font-size:9px;font-weight:600;color:#555;letter-spacing:.5px;text-transform:uppercase;transition:color .3s;white-space:nowrap;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis}
+.ecdsa-sn.active .ecdsa-sn-label{color:#a78bfa}
+.ecdsa-sn.done .ecdsa-sn-label{color:#34d399}
+.ecdsa-step-sep{width:16px;height:2px;background:rgba(255,255,255,.06);border-radius:1px;flex-shrink:0;margin-bottom:14px;transition:background .4s}
+.ecdsa-step-sep.done{background:rgba(52,211,153,.25)}
+.ecdsa-detail{margin-top:14px;padding:18px 24px;background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:70px;transition:opacity .3s,transform .3s}
+.ecdsa-detail.fade{opacity:0;transform:translateY(6px)}
+.ecdsa-detail strong{color:#e0e0ff}
+.ecdsa-detail em{color:#a78bfa;font-style:normal;font-weight:600}
+.ecdsa-detail code{background:rgba(167,139,250,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+
+/* Certificate Inspector */
+.cert{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cert.vis{opacity:1;transform:translateY(0)}
+.cert-box{margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.cert-panel{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.05);border-radius:14px;overflow:hidden}
+.cert-header{padding:16px 20px;background:rgba(167,139,250,.06);border-bottom:1px solid rgba(255,255,255,.05);font-size:13px;font-weight:700;color:#a78bfa;display:flex;align-items:center;gap:8px}
+.cert-header .badge{font-size:9px;padding:2px 8px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.cert-header .badge.self{background:rgba(244,63,94,.12);color:#f43f5e;border:1px solid rgba(244,63,94,.2)}
+.cert-header .badge.ca{background:rgba(56,189,248,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.2)}
+.cert-body{padding:16px 20px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:2;color:#8888bb}
+.cert-body .cf{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.02)}
+.cert-body .cf:last-child{border-bottom:none}
+.cert-body .ck{color:#6666aa;min-width:120px;flex-shrink:0}
+.cert-body .cv{color:#c0c0e0;word-break:break-all}
+.cert-body .cv.highlight{color:#a78bfa;font-weight:600}
+.cert-body .cv.warn{color:#f43f5e;font-weight:600}
+
+/* Trust Model */
+.trust{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.trust.vis{opacity:1;transform:translateY(0)}
+.trust-cards{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+.trust-card{border-radius:14px;padding:24px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .4s}
+.trust-card:hover{border-color:var(--tc);background:rgba(255,255,255,.03)}
+.trust-card .tc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;color:var(--tc)}
+.trust-card .tc-title{font-size:16px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.trust-card .tc-body{font-size:12.5px;color:#8888bb;line-height:1.75}
+.trust-card .tc-body em{color:var(--tc);font-style:normal;font-weight:600}
+.trust-card .tc-body code{background:rgba(167,139,250,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.trust-chain{margin-top:16px;padding:14px 18px;background:rgba(0,0,0,.12);border-radius:10px;font-size:12px;line-height:2;color:#9999bb}
+.trust-chain .step{display:flex;align-items:center;gap:6px}
+.trust-chain .arr{color:rgba(255,255,255,.2);font-size:14px}
+.trust-chain .node{padding:3px 10px;border-radius:5px;font-weight:600}
+.trust-chain .node.root{background:rgba(56,189,248,.08);color:#38bdf8;border:1px solid rgba(56,189,248,.15)}
+.trust-chain .node.mid{background:rgba(245,158,11,.08);color:#f59e0b;border:1px solid rgba(245,158,11,.15)}
+.trust-chain .node.leaf{background:rgba(52,211,153,.08);color:#34d399;border:1px solid rgba(52,211,153,.15)}
+.trust-chain .node.self{background:rgba(244,63,94,.08);color:#f43f5e;border:1px solid rgba(244,63,94,.15)}
+.trust-verdict{margin-top:14px;padding:12px 18px;border-radius:10px;font-size:12.5px;line-height:1.7}
+.trust-verdict.ok{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);color:#6ee7b7}
+.trust-verdict.risk{background:rgba(244,63,94,.04);border:1px solid rgba(244,63,94,.1);color:#fca5a5}
+.trust-verdict em{font-style:normal;font-weight:700}
+
+/* Fingerprint */
+.fp{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.fp.vis{opacity:1;transform:translateY(0)}
+.fp-demo{margin-top:24px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.04);border-radius:14px;padding:24px;overflow:hidden}
+.fp-row{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.fp-row:last-child{margin-bottom:0}
+.fp-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#6666aa;min-width:100px}
+.fp-input{flex:1;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#d0d0f0;outline:none;transition:border-color .3s}
+.fp-input:focus{border-color:rgba(167,139,250,.4)}
+.fp-output{flex:1;font-family:"JetBrains Mono",monospace;font-size:12px;color:#a78bfa;line-height:1.8;word-break:break-all;padding:10px 14px;background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.1);border-radius:8px}
+.fp-match{color:#34d399;font-weight:700;font-size:12px;padding:6px 14px;border-radius:6px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.15)}
+.fp-mismatch{color:#f43f5e;font-weight:700;font-size:12px;padding:6px 14px;border-radius:6px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.15)}
+.fp-note{margin-top:16px;font-size:12px;color:#7777aa;line-height:1.8;text-align:center}
+.fp-note code{background:rgba(167,139,250,.06);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px}
+
+/* Project Application */
+.proj{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.proj.vis{opacity:1;transform:translateY(0)}
+.proj-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;margin-top:14px;opacity:0;transform:translateX(-16px);transition:all .6s}
+.proj-card.vis{opacity:1;transform:translateX(0)}
+.proj-card .pt-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.proj-card .pt-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.proj-card .pt-desc{font-size:12.5px;color:#8888bb;line-height:1.75}
+.proj-card .pt-desc em{color:#a78bfa;font-style:normal;font-weight:600}
+.proj-card .pt-desc code{background:rgba(167,139,250,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.proj-code{background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto;margin-top:10px}
+.proj-code .kw{color:#cba6f7}.proj-code .str{color:#a6e3a1}.proj-code .cmt{color:#6c7086}.proj-code .fn{color:#89b4fa}
+
+/* Compare */
+.cmp{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cmp.vis{opacity:1;transform:translateY(0)}
+.cmp-tbl{width:100%;border-collapse:collapse;margin-top:20px;font-size:12.5px}
+.cmp-tbl th{text-align:left;background:rgba(167,139,250,.06);color:#b0b0e0;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.cmp-tbl td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.03);color:#a0a0c8;line-height:1.6;vertical-align:top}
+.cmp-tbl tr:nth-child(even) td{background:rgba(255,255,255,.01)}
+.cmp-tbl code{background:rgba(167,139,250,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px}
+.cmp-verdict{margin-top:16px;padding:14px 18px;background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.1);border-radius:10px;font-size:12.5px;line-height:1.7;color:#b0c0d0}
+.cmp-verdict em{color:#a78bfa;font-style:normal;font-weight:600}
+
+/* Cooperation: ECDHE vs ECDSA */
+.coop{width:100%;max-width:940px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.coop.vis{opacity:1;transform:translateY(0)}
+.coop-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:26px}
+.coop-card{border-radius:14px;padding:24px;border:1px solid rgba(255,255,255,.04)}
+.coop-card.ek{background:rgba(108,99,255,.03);border-color:rgba(108,99,255,.12)}
+.coop-card.sa{background:rgba(167,139,250,.03);border-color:rgba(167,139,250,.12)}
+.cc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.coop-card.ek .cc-tag{color:#6c63ff}
+.coop-card.sa .cc-tag{color:#a78bfa}
+.cc-title{font-size:17px;font-weight:700;color:#e0e0ff;margin-bottom:6px}
+.cc-subtitle{font-size:12px;color:#7777aa;margin-bottom:14px}
+.cc-body{font-size:12.5px;color:#8888bb;line-height:1.75}
+.cc-body em{font-style:normal;font-weight:600}
+.coop-card.ek .cc-body em{color:#6c63ff}
+.coop-card.sa .cc-body em{color:#a78bfa}
+.cc-body code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.coop-canvas-wrap{margin-top:26px;background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:380px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.coop-canvas-wrap canvas{width:100%;height:100%}
+.coop-flow-labels{display:flex;justify-content:space-between;margin-top:8px;padding:0 20px}
+.coop-flow-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-align:center}
+.coop-flow-label.l-client{color:#6c63ff}
+.coop-flow-label.l-sfu{color:#34d399}
+.coop-flow-label.l-safe{color:#f59e0b}
+.coop-step-info{margin-top:12px;display:flex;align-items:center;justify-content:center;gap:16px}
+.coop-step-num{font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:1px}
+.coop-step-text{font-size:13px;font-weight:700;color:#d0d0f0;min-height:20px;transition:all .3s}
+.coop-summary{margin-top:28px;padding:18px 22px;background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);border-radius:12px;font-size:13px;line-height:1.85;color:#b0b0d0}
+.coop-summary em{color:#f59e0b;font-style:normal;font-weight:600}
+.coop-summary .no-ek{color:#f43f5e;font-weight:700}
+.coop-summary .no-sa{color:#f43f5e;font-weight:700}
+
+@media(max-width:700px){
+.coop-grid{grid-template-columns:1fr}
+.ops-cards,.trust-cards{grid-template-columns:1fr}
+.wc-scene{grid-template-columns:1fr}
+.cert-box{grid-template-columns:1fr}
+.hero-canvas{height:280px}
+.ecdsa-canvas{height:240px}
+.ecdsa-sn-label{display:none}
+.ecdsa-step-sep{width:8px}
+.ecdsa-nav-btn{padding:8px 14px;font-size:12px}
+.chain-flow{gap:4px}
+.chain-node{min-width:90px;padding:10px 8px}
+}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Hero ========== -->
+<div class="sec" id="s1">
+  <h1 class="sec-title" data-reveal>ECDSA 签名与证书</h1>
+  <p class="sec-sub" data-reveal>数字世界的身份证——证明"我就是我"，且不可伪造。<br>在 WebRTC 中，自签名证书通过 SDP 指纹绑定信任链路。</p>
+  <div class="hero-anim" data-reveal>
+    <div class="hero-canvas"><canvas id="heroC"></canvas></div>
+    <div class="hero-labels">
+      <div class="hero-label signer">签名者 (私钥持有)</div>
+      <div class="hero-label attacker">攻击者 (无私钥)</div>
+      <div class="hero-label verifier">验证者 (公钥持有)</div>
+    </div>
+    <div class="hero-controls">
+      <button class="hero-ctrl-btn" id="heroPrev" onclick="heroPrev()">◀ 上一步</button>
+      <div class="hero-step-dots" id="heroDots"></div>
+      <button class="hero-ctrl-btn" id="heroNext" onclick="heroNext()">下一步 ▶</button>
+    </div>
+    <div class="hero-step-desc" id="heroDesc"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 2. 非对称密钥的两种用途 ========== -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" data-reveal>一把钥匙，两种用途</h2>
+  <p class="sec-sub" data-reveal>同一对公私钥，操作方向相反，安全目标截然不同：<br><strong style="color:#a78bfa">私钥签名 → 身份证明</strong>，<strong style="color:#34d399">公钥加密 → 机密通信</strong>。</p>
+  <div class="ops" data-reveal>
+    <div class="ops-cards">
+      <div class="ops-card sign">
+        <div class="oc-tag">方向一 · 私钥出场</div>
+        <div class="oc-title">签名 & 验证 (ECDSA)</div>
+        <div class="oc-body">
+          <em>签名</em>：用私钥对消息哈希做数学运算，生成签名 (r,s)。<br>
+          <em>验证</em>：用公钥 + 消息验证签名是否源自对应私钥。<br><br>
+          <strong style="color:#e0e0ff">核心原理：</strong><br>
+          知道私钥 d → 能算出签名 (r,s)。<br>
+          不知道 d → 给定任意消息，<strong style="color:#f43f5e">计算上不可能</strong>找到能通过验证的 (r,s)。<br>
+          这就是 <em>不可伪造性</em> —— 签名 = 身份证明。<br><br>
+          安全属性：不可伪造 · 不可抵赖 · 可公开验证
+        </div>
+        <div class="oc-flow"><span class="cmt">// 签名 — 只有私钥持有者能做</span>
+<span class="fn">sign</span>(<span class="kw">privateKey d</span>, message)
+  h = SHA-256(message)
+  k = random()              <span class="cmt">// 临时随机数</span>
+  r = x(G·k) mod n          <span class="cmt">// 隐藏 k</span>
+  s = k⁻¹·(h + r·d) mod n  <span class="cmt">// 混入 d</span>
+  → <span class="kw">signature (r, s)</span>
+
+<span class="cmt">// 验证 — 任何一个有公钥的人都能做</span>
+<span class="fn">verify</span>(<span class="kw">publicKey Q=G·d</span>, message, (r,s))
+  → <span class="kw">true / false</span></div>
+      </div>
+      <div class="ops-card enc">
+        <div class="oc-tag">方向二 · 公钥出场</div>
+        <div class="oc-title">加密 & 解密 (ECDHE)</div>
+        <div class="oc-body">
+          <em>加密</em>：用公钥将明文编码，只有对应私钥能还原。<br>
+          <em>解密</em>：用私钥从密文恢复明文。<br><br>
+          <strong style="color:#e0e0ff">核心原理：</strong><br>
+          知道公钥 Q → 能加密消息给 Q 的持有者。<br>
+          不知道私钥 d → 给定密文，<strong style="color:#f43f5e">计算上不可能</strong>还原明文。<br>
+          这就是 <em>机密性</em> —— 只有收件人能读。<br><br>
+          安全属性：机密性 · 但无法证明发送者身份
+        </div>
+        <div class="oc-flow"><span class="cmt">// 实际中 ECDHE 不直接加密消息</span>
+<span class="cmt">// 而是协商共享密钥：</span>
+<span class="fn">keyExchange</span>()
+  Board:  a = random(); A = G·a  → send A
+  Server: b = random(); B = G·b  → send B
+  Board:  S = B·a = G·a·b
+  Server: S = A·b = G·b·a
+  <span class="cmt">// 双方得到相同的 S → 导出加密密钥</span>
+  <span class="cmt">// 窃听者只有 A, B → 算不出 S</span></div>
+      </div>
+    </div>
+    <div style="margin-top:18px;max-width:780px;width:100%;margin-left:auto;margin-right:auto">
+      <div style="background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.1);border-radius:12px;padding:18px 22px">
+        <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:10px">为什么同一个密钥对能双向使用？</div>
+        <div style="font-size:12.5px;color:#9999bb;line-height:1.85">
+          数学上，签名和加密都基于同一个 <em style="color:#a78bfa;font-style:normal;font-weight:600">单向函数</em>：<br>
+          • 正向：<code>d × G = Q</code>（标量乘法，毫秒级）<br>
+          • 逆向：<code>Q → d</code>（椭圆曲线离散对数，宇宙级时间）<br><br>
+          <strong style="color:#e0e0ff">签名</strong>利用了"逆向极难"→ 只有知道 d 的人才能构造满足方程的 (r,s)，验证者只需 Q 就能验证等式。<br>
+          <strong style="color:#e0e0ff">密钥交换</strong>利用了"逆向极难"→ 双方各出一份 G·a 和 G·b，各自乘自己的私钥得到 G·a·b，旁观者看到 G·a 和 G·b 却算不出 d。<br><br>
+          <span style="color:#6666aa">一句话：</span><strong style="color:#a78bfa">ECDSA</strong> 问"谁能证明自己是 d 的持有者？"，<strong style="color:#34d399">ECDHE</strong> 问"谁能和我共享秘密？"。底层数学相同，安全目标不同。
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 2.5 为什么需要证书、签名与指纹 ========== -->
+<div class="sec" id="s2b">
+  <h2 class="sec-title" data-reveal>为什么需要证书、签名与指纹？</h2>
+  <p class="sec-sub" data-reveal>三个概念层层递进——解决了"谁是谁"、"谁签的"、"证书有没有被换掉"三个问题。</p>
+  <div class="why" data-reveal>
+    <!-- Problem 1: Why Signatures -->
+    <div class="why-card" data-reveal data-delay="0">
+      <div class="wc-num">01</div>
+      <div class="wc-title">问题一：你怎么知道消息是谁发的？</div>
+      <div class="wc-scene">
+        <div class="scene-box bad">
+          <div class="scene-tag">没有签名的世界</div>
+          <div class="scene-body">板端发送 "我是设备 A，请加入房间" → 但攻击者也能发同样的话。<br><br>接收方<strong style="color:#f43f5e">无法区分</strong>这条消息到底来自合法设备还是攻击者。<br><br>这就好比任何人都可以自称"张三"——没有身份证的社会。</div>
+        </div>
+        <div class="scene-box good">
+          <div class="scene-tag">有了签名</div>
+          <div class="scene-body">板端用私钥对 "我是设备 A" 签名 → 发送消息 + 签名。<br><br>验证者用板端的公钥验证 → 签名有效 = 确实持有对应私钥的人发的。<br><br><strong style="color:#34d399">不可伪造性</strong>保证：没有私钥的攻击者无法冒充。</div>
+        </div>
+      </div>
+      <div class="wc-key">
+        <strong style="color:#a78bfa">签名解决：</strong>"这条消息确实声称者发的" —— <em>身份证明</em>。<br>
+        <span style="color:#6666aa">但还有问题：我从哪拿到板端的公钥？我拿到的是真的还是假的？</span>
+      </div>
+    </div>
+
+    <!-- Problem 2: Why Certificates -->
+    <div class="why-card" data-reveal data-delay="1">
+      <div class="wc-num">02</div>
+      <div class="wc-title">问题二：你怎么知道公钥是谁的？</div>
+      <div class="wc-scene">
+        <div class="scene-box bad">
+          <div class="scene-tag">裸公钥的问题</div>
+          <div class="scene-body">板端告诉你 "这是我的公钥 Q" → 但攻击者可以截获，替换成自己的公钥 Q'。<br><br>验证者拿到 Q' → 用 Q' 验签名 → 攻击者用自己私钥签的消息<strong style="color:#f43f5e">反而能通过验证</strong>！<br><br>这就是<strong style="color:#f43f5e">中间人替换公钥攻击</strong>。</div>
+        </div>
+        <div class="scene-box good">
+          <div class="scene-tag">证书绑定身份</div>
+          <div class="scene-body">证书 = <strong style="color:#38bdf8">公钥 + 身份信息 + 签发者签名</strong> 三合一。<br><br>CA 体系：浏览器信任 CA → CA 签证 → 证书包含 "公钥 Q 属于 *.livekit.cloud"。<br>WebRTC 体系：自签名证书 + SDP 指纹绑定 → 证书包含 "公钥 Q，指纹通过 TLS 信令传递"。<br><br>证书的核心价值：<strong style="color:#34d399">把公钥和身份绑在一起</strong>，而不是孤零零的一个公钥。</div>
+        </div>
+      </div>
+      <div class="wc-key">
+        <strong style="color:#a78bfa">证书解决：</strong>"这个公钥确实属于这个身份" —— <em>身份与公钥绑定</em>。<br>
+        <span style="color:#6666aa">最后的问题：证书本身也可能被替换，怎么检测？</span>
+      </div>
+    </div>
+
+    <!-- Problem 3: Why Fingerprints -->
+    <div class="why-card" data-reveal data-delay="2">
+      <div class="wc-num">03</div>
+      <div class="wc-title">问题三：你怎么知道证书没被替换？</div>
+      <div class="wc-scene">
+        <div class="scene-box bad">
+          <div class="scene-tag">自签名证书的困境</div>
+          <div class="scene-body">攻击者生成自己的自签名证书 → 在 DTLS 握手中替换对端证书。<br><br>自签名证书没有 CA 验证 → 接收方<strong style="color:#f43f5e">无法分辨真假</strong>。<br><br>任何人都能造一张自签名的"身份证"——光看证书，全都是"合法"的。</div>
+        </div>
+        <div class="scene-box good">
+          <div class="scene-tag">SHA-256 指纹绑定</div>
+          <div class="scene-body">对端通过 <strong style="color:#38bdf8">WSS/TLS</strong> 信令通道预先传来证书的 SHA-256 指纹。<br><br>DTLS 握手后，本地从收到的证书也算一个指纹。<br>两个指纹一致 → 证书和信令传的一致 → <strong style="color:#34d399">可信</strong>。<br>指纹不一致 → 证书被替换 → <strong style="color:#f43f5e">攻击</strong>！<br><br>前提：TLS 信令通道本身必须是安全的（WSS 用 CA 签发证书，浏览器自动验证）。</div>
+        </div>
+      </div>
+      <div class="wc-key">
+        <strong style="color:#a78bfa">指纹解决：</strong>"这个证书就是信令传的那个" —— <em>完整性绑定</em>。<br>
+        <span style="color:#f43f5e;font-weight:600">⚠️ VERIFY_OPTIONAL 跳过了指纹比对 → 整条信任链从这一步断裂！</span>
+      </div>
+    </div>
+
+    <!-- Summary chain -->
+    <div class="why-chain" data-reveal>
+      <div class="chain-title">三个概念如何层层递进</div>
+      <div class="chain-flow">
+        <div class="chain-node sign">
+          <div class="cn-icon">✍️</div>
+          <div class="cn-label">数字签名</div>
+          <div class="cn-desc">证明"消息是谁发的"</div>
+        </div>
+        <div class="chain-arr">→</div>
+        <div class="chain-node cert">
+          <div class="cn-icon">📋</div>
+          <div class="cn-label">X.509 证书</div>
+          <div class="cn-desc">绑定"公钥属于谁"</div>
+        </div>
+        <div class="chain-arr">→</div>
+        <div class="chain-node fp">
+          <div class="cn-icon">🔍</div>
+          <div class="cn-label">SHA-256 指纹</div>
+          <div class="cn-desc">验证"证书没被换"</div>
+        </div>
+        <div class="chain-arr">→</div>
+        <div class="chain-node safe">
+          <div class="cn-icon">🛡️</div>
+          <div class="cn-label">安全连接</div>
+          <div class="cn-desc">SRTP 密钥可信</div>
+        </div>
+      </div>
+      <div class="chain-note">
+        签名 → 解决 <strong>身份</strong> | 证书 → 解决 <strong>绑定</strong> | 指纹 → 解决 <strong>完整性</strong><br>
+        三者缺一不可。跳过指纹比对（VERIFY_OPTIONAL）= 关掉了第三道门。
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+<div class="sec" id="s3">
+  <h2 class="sec-title" data-reveal>ECDSA 签名与验证</h2>
+  <p class="sec-sub" data-reveal>签名用私钥，验证用公钥 —— 签名者无法抵赖，验证者无需信任任何第三方。</p>
+  <div class="ecdsa" data-reveal>
+    <div class="ecdsa-tabs">
+      <div class="ecdsa-tab active" onclick="switchEcdsaMode('sign')">签名流程</div>
+      <div class="ecdsa-tab" onclick="switchEcdsaMode('verify')">验证流程</div>
+    </div>
+    <div class="ecdsa-nav">
+      <button class="ecdsa-nav-btn" id="ecdsaPrev" onclick="ecdsaPrev()">◀ 上一步</button>
+      <div class="ecdsa-step-bar" id="ecdsaStepBar"></div>
+      <button class="ecdsa-nav-btn" id="ecdsaNext" onclick="ecdsaNext()">下一步 ▶</button>
+    </div>
+    <div class="ecdsa-canvas"><canvas id="ecdsaC"></canvas></div>
+    <div class="ecdsa-detail" id="ecdsaDetail"></div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 4. X.509 证书解剖 ========== -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" data-reveal>X.509 证书 — 数字身份证</h2>
+  <p class="sec-sub" data-reveal>证书把公钥和身份信息绑定在一起，由签发者签名背书。<br>交互式对比：CA 签发证书 vs WebRTC 自签名证书。</p>
+  <div class="cert" data-reveal>
+    <div class="cert-box">
+      <div class="cert-panel">
+        <div class="cert-header">CA 签发证书 <span class="badge ca">CA 签名</span></div>
+        <div class="cert-body">
+          <div class="cf"><span class="ck">版本</span><span class="cv">X.509 v3</span></div>
+          <div class="cf"><span class="ck">序列号</span><span class="cv">0x03A4F2...</span></div>
+          <div class="cf"><span class="ck">签发者</span><span class="cv highlight">Let's Encrypt Authority X3</span></div>
+          <div class="cf"><span class="ck">有效期</span><span class="cv">2025-01-01 → 2026-01-01</span></div>
+          <div class="cf"><span class="ck">使用者</span><span class="cv highlight">*.livekit.cloud</span></div>
+          <div class="cf"><span class="ck">公钥算法</span><span class="cv">ECDSA P-256</span></div>
+          <div class="cf"><span class="ck">公钥</span><span class="cv">04:9B:3A:F7:... (64 bytes)</span></div>
+          <div class="cf"><span class="ck">签名算法</span><span class="cv">SHA256withECDSA</span></div>
+          <div class="cf"><span class="ck">签名</span><span class="cv highlight">30460221 00AC3B... (CA 私钥签名)</span></div>
+          <div class="cf"><span class="ck">扩展</span><span class="cv">SAN: *.livekit.cloud, livekit.cloud</span></div>
+        </div>
+      </div>
+      <div class="cert-panel">
+        <div class="cert-header">WebRTC 自签名证书 <span class="badge self">自签名</span></div>
+        <div class="cert-body">
+          <div class="cf"><span class="ck">版本</span><span class="cv">X.509 v3</span></div>
+          <div class="cf"><span class="ck">序列号</span><span class="cv">0x01</span></div>
+          <div class="cf"><span class="ck">签发者</span><span class="cv warn">CN=self-signed (自己)</span></div>
+          <div class="cf"><span class="ck">有效期</span><span class="cv">当前连接 → 短期有效</span></div>
+          <div class="cf"><span class="ck">使用者</span><span class="cv warn">CN=self-signed (自己)</span></div>
+          <div class="cf"><span class="ck">公钥算法</span><span class="cv">ECDSA P-256</span></div>
+          <div class="cf"><span class="ck">公钥</span><span class="cv">04:7F:E2:1C:... (64 bytes)</span></div>
+          <div class="cf"><span class="ck">签名算法</span><span class="cv">SHA256withECDSA</span></div>
+          <div class="cf"><span class="ck">签名</span><span class="cv highlight">30440220 8DA3F1... (自己私钥签名)</span></div>
+          <div class="cf"><span class="ck">扩展</span><span class="cv">无 (或 basicConstraints:CA:false)</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:18px;text-align:center;font-size:12px;color:#7777aa;line-height:1.8">
+      <strong style="color:#38bdf8">CA 证书</strong>：浏览器自动验证签发者链条 → 信任<br>
+      <strong style="color:#f43f5e">自签名证书</strong>：任何人都能造 → 单独看无法判断真伪 → 需要 <strong style="color:#34d399">SDP 指纹比对</strong>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 5. 两种信任模型 ========== -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" data-reveal>两种信任模型</h2>
+  <p class="sec-sub" data-reveal>CA 体系靠根证书预装，WebRTC 靠 TLS 信令传递指纹。<br>一旦指纹比对被跳过（VERIFY_OPTIONAL），信任链即断裂。</p>
+  <div class="trust" data-reveal>
+    <div class="trust-cards">
+      <div class="trust-card" style="--tc:#38bdf8">
+        <div class="tc-tag">模型一</div>
+        <div class="tc-title">HTTPS：CA 信任链</div>
+        <div class="tc-body">
+          浏览器/OS 预装了 <em>根 CA 证书</em>，形成自动验证链。<br>
+          用户无需手动比对 —— 验证过程全自动。
+        </div>
+        <div class="trust-chain">
+          <div class="step">
+            <span class="node root">根 CA</span>
+            <span class="arr">→</span>
+            <span class="node mid">中间 CA</span>
+            <span class="arr">→</span>
+            <span class="node leaf">服务器证书</span>
+            <span class="arr">→</span>
+            <span style="color:#34d399;font-weight:700">✓ 自动信任</span>
+          </div>
+        </div>
+        <div class="trust-verdict ok">
+          <em>安全性：</em>依赖 CA 安全性。CA 被攻破 → 整条链失效（DigiNotar 事件）。
+        </div>
+      </div>
+      <div class="trust-card" style="--tc:#a78bfa">
+        <div class="tc-tag">模型二</div>
+        <div class="tc-title">WebRTC：SDP 指纹绑定</div>
+        <div class="tc-body">
+          无 CA 参与。自签名证书的 <em>SHA-256 指纹</em> 通过 <code>WSS/TLS</code> 信令安全传递。<br>
+          对端的指纹 = 证书的哈希 → 一致则可信。
+        </div>
+        <div class="trust-chain">
+          <div class="step">
+            <span class="node self">自签名证书</span>
+            <span class="arr">→</span>
+            <span style="color:#888;font-size:11px">SHA-256</span>
+            <span class="arr">→</span>
+            <span class="node self">指纹</span>
+            <span class="arr">→</span>
+            <span style="color:#a78bfa;font-weight:700">TLS 信令传递</span>
+            <span class="arr">→</span>
+            <span style="color:#34d399;font-weight:700">✓ 比对</span>
+          </div>
+        </div>
+        <div class="trust-verdict risk">
+          <em>风险点：</em><code>SSL_VERIFY_OPTIONAL</code> 跳过指纹比对 → 信任链断裂 → 中间人攻击畅通无阻。
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 6. 证书指纹交互演示 ========== -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" data-reveal>证书指纹 — 防篡改的哈希绑定</h2>
+  <p class="sec-sub" data-reveal>对证书做 SHA-256 哈希，得到唯一指纹。修改证书任意一字节 → 指纹完全改变。</p>
+  <div class="fp" data-reveal>
+    <div class="fp-demo">
+      <div class="fp-row">
+        <span class="fp-label">证书内容</span>
+        <input class="fp-input" id="fpInput" value="Subject=*.livekit.cloud, PublicKey=04:9B:3A:..., Valid=2025-2026" oninput="fpCalc()">
+      </div>
+      <div class="fp-row">
+        <span class="fp-label">SHA-256 指纹</span>
+        <div class="fp-output" id="fpOutput"></div>
+      </div>
+      <div class="fp-row">
+        <span class="fp-label">对端比对</span>
+        <div id="fpCompareWrap" style="display:flex;align-items:center;gap:10px">
+          <input class="fp-input" id="fpExpected" value="" oninput="fpCompare()" style="flex:1" placeholder="输入对端传来的指纹进行比对">
+          <span id="fpResult"></span>
+        </div>
+      </div>
+    </div>
+    <div class="fp-note">
+      SDP 中的指纹格式：<code>a=fingerprint:sha-256 79:5A:3B:1F:...</code><br>
+      修改证书中任意一个字符，指纹将雪崩式变化 —— 这就是哈希的防篡改能力。<br>
+      WebRTC 连接时两条路径比较：① WSS 信令传过来的指纹 ② DTLS 握手后从证书算出的指纹
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 7. 项目应用 ========== -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" data-reveal>项目中的应用</h2>
+  <p class="sec-sub" data-reveal>板端每次连接实时生成 ECDSA 自签名证书，通过 DTLS 握手传递，SDP 指纹通过 WSS 信令保护。</p>
+  <div class="proj" data-reveal>
+    <div class="proj-card" data-reveal>
+      <div class="pt-tag" style="color:#a78bfa">证书生成</div>
+      <div class="pt-title">LkTransport.c — 证书生成与配置</div>
+      <div class="pt-desc">
+        板端在每次建立 DTLS 会话时，动态生成 P-256 ECDSA 密钥对和自签名 X.509 证书。<br><br>
+        • <em>mbedtls_pk_setup</em>：初始化 ECDSA 密钥对 <code>MBEDTLS_ECP_DP_SECP256R1</code><br>
+        • <em>mbedtls_x509_crt_sign</em>：用自身私钥签发证书（自签名）<br>
+        • <em>mbedtls_ssl_conf_own_cert</em>：将证书配置到 DTLS session<br>
+        • 证书有效期设为 <code>86400s</code>（1天），每次重启重新生成<br><br>
+        <em>关键：</em>自签名证书的真实性不依赖证书本身，而依赖后续的 SDP 指纹比对。
+      </div>
+      <div class="proj-code"><span class="cmt">// LkTransport.c — createDtlsSession() 证书生成</span>
+<span class="kw">mbedtls_pk_context</span> pk;
+<span class="fn">mbedtls_pk_init</span>(&pk);
+<span class="fn">mbedtls_pk_setup</span>(&pk, <span class="fn">mbedtls_pk_info_from_type</span>(
+    <span class="kw">MBEDTLS_PK_ECKEY</span>));
+<span class="fn">mbedtls_ecp_gen_key</span>(<span class="kw">MBEDTLS_ECP_DP_SECP256R1</span>,
+    <span class="fn">mbedtls_pk_ec</span>(pk), ...);
+
+<span class="cmt">// 自签名证书</span>
+<span class="fn">mbedtls_x509write_crt_set_subject_key</span>(&crt, &pk);
+<span class="fn">mbedtls_x509write_crt_set_issuer_key</span>(&crt, &pk);
+<span class="fn">mbedtls_x509write_crt_set_validity</span>(&crt,
+    <span class="str">"20250101000000"</span>, <span class="str">"20260101000000"</span>);
+<span class="fn">mbedtls_x509write_crt_sign</span>(&crt, &pk, <span class="kw">md_sha256</span>);</div>
+    </div>
+    <div class="proj-card" data-reveal>
+      <div class="pt-tag" style="color:#f43f5e">VERIFY_OPTIONAL 风险</div>
+      <div class="pt-title">指纹比对被跳过 — 中间人攻击窗口</div>
+      <div class="pt-desc">
+        板端 DTLS 配置中使用了 <code>mbedtls_ssl_conf_authmode(MBEDTLS_SSL_VERIFY_OPTIONAL)</code>。<br><br>
+        • <em>VERIFY_OPTIONAL</em>：握手继续，即使证书验证失败<br>
+        • <em>VERIFY_REQUIRED</em>：证书验证失败则握手中止<br><br>
+        WebRTC 规范要求：DTLS 握手后，应用层必须比对指纹。<br>
+        但当前板端代码<em>没有实现指纹比对逻辑</em>，导致：<br>
+        • 攻击者可以用自己的证书替换对端证书<br>
+        • DTLS 握手仍然成功完成<br>
+        • ECDHE 协商出的密钥与攻击者共享 → SRTP 密钥泄露<br>
+        • 音视频媒体流完全暴露
+      </div>
+      <div class="proj-code"><span class="cmt">// LkTransport.c — 当前配置（有风险）</span>
+<span class="fn">mbedtls_ssl_conf_authmode</span>(&ssl,
+    <span class="kw">MBEDTLS_SSL_VERIFY_OPTIONAL</span>); <span class="cmt">// ⚠️ 跳过验证</span>
+
+<span class="cmt">// 修复方案：实现指纹比对</span>
+<span class="cmt">// 1. DTLS 握手完成后，获取对端证书</span>
+<span class="kw">const</span> <span class="fn">mbedtls_x509_crt</span> *peer =
+    <span class="fn">mbedtls_ssl_get_peer_cert</span>(&ssl);
+<span class="cmt">// 2. 计算 SHA-256 指纹</span>
+<span class="fn">mbedtls_sha256</span>(peer->raw.p, peer->raw.len, hash, <span class="str">0</span>);
+<span class="cmt">// 3. 与 SDP 中的 a=fingerprint 比对</span>
+<span class="kw">if</span> (<span class="fn">memcmp</span>(hash, sdp_fingerprint, <span class="str">32</span>) != <span class="str">0</span>) {
+    <span class="cmt">// 指纹不匹配 → 中止连接！</span>
+    <span class="fn">mbedtls_ssl_close_notify</span>(&ssl);
+}</div>
+    </div>
+    <div class="proj-card" data-reveal>
+      <div class="pt-tag" style="color:#34d399">完整信任链路</div>
+      <div class="pt-title">JWT → WSS → SDP 指纹 → DTLS 证书 → SRTP</div>
+      <div class="pt-desc">
+        板端安全的完整信任传递路径：<br><br>
+        ① <em>L1 JWT</em>：HMAC-SHA256 签名 → 服务器验证身份<br>
+        ② <em>L2 WSS</em>：TLS 1.2 加密 → SDP 指纹安全传输<br>
+        ③ <em>L4 DTLS</em>：自签名 ECDSA 证书 + ECDHE 密钥交换<br>
+        ④ <em>L5 SDP 指纹</em>：SHA-256 绑定证书 → 防中间人<br>
+        ⑤ <em>L6 SRTP</em>：DTLS 导出密钥 → AES-CTR 加密媒体<br><br>
+        只要 L5 指纹比对正确执行，整条链路安全。<br>
+        <em>唯一断点</em>：VERIFY_OPTIONAL 跳过了 L5 → 链路从 L5 开始断裂。
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== 8. ECDSA vs RSA 对比 ========== -->
+<div class="sec" id="s8">
+  <h2 class="sec-title" data-reveal>ECDSA vs RSA 签名对比</h2>
+  <p class="sec-sub" data-reveal>都是数字签名方案，但基于不同数学难题。ECDSA 用更短的密钥和签名达到同等安全强度。</p>
+  <div class="cmp" data-reveal>
+    <div id="cmpTbl"></div>
+    <div class="cmp-verdict">
+      <strong>总结：</strong>现代 WebRTC 强制使用 ECDSA。更短的密钥（64B vs 256B）、更小的签名（64B vs 256B）、更快的运算 —— 对 MIPS 嵌入式设备尤其重要。板端 P-256 的 ECDSA 签名约 20ms，RSA-2048 签名约 150ms。<em>项目不应考虑回退到 RSA 证书。</em>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 9. ECDHE vs ECDSA: 各司其职 ========== -->
+<div class="sec" id="s9">
+  <h2 class="sec-title" data-reveal>ECDHE vs ECDSA：各司其职</h2>
+  <p class="sec-sub" data-reveal>两者都基于椭圆曲线密码学，但在 DTLS 握手中职责完全不同：<br>ECDHE 管保密（密钥协商），ECDSA 管信任（身份签名）。缺一不可。</p>
+  <div class="coop" data-reveal>
+    <div class="coop-grid">
+      <div class="coop-card ek">
+        <div class="cc-tag">密钥协商</div>
+        <div class="cc-title">ECDHE</div>
+        <div class="cc-subtitle">Elliptic Curve Diffie-Hellman Ephemeral</div>
+        <div class="cc-body">
+          <em>解决问题：</em>通信双方在不安全信道上协商出相同的对称密钥<br><br>
+          <em>核心机制：</em>双方各自生成<em>临时密钥对</em>，交换公钥后各自算出相同的 shared secret<br><br>
+          <em>为什么用 Ephemeral：</em>每次连接生成新密钥对，<em>前向保密 (PFS)</em> — 即使长期私钥泄露，过去的会话也无法解密<br><br>
+          <em>在项目中的位置：</em>DTLS 握手的密钥交换阶段，协商出的 shared secret 用于推导 <code>SRTP</code> 加密密钥
+        </div>
+      </div>
+      <div class="coop-card sa">
+        <div class="cc-tag">身份签名</div>
+        <div class="cc-title">ECDSA</div>
+        <div class="cc-subtitle">Elliptic Curve Digital Signature Algorithm</div>
+        <div class="cc-body">
+          <em>解决问题：</em>验证对方确实是它声称的身份，防中间人攻击<br><br>
+          <em>核心机制：</em>Server 用<em>长期私钥</em>对握手消息签名，Client 用公钥验签<br><br>
+          <em>为什么不用 ECDHE 做认证：</em>ECDHE 没有签名能力 — 它只产生共享密钥，无法证明"我是谁"<br><br>
+          <em>在项目中的位置：</em>DTLS 自签名证书用 <code>ECDSA</code> 签发，SDP <code>a=fingerprint</code> 绑定证书公钥
+        </div>
+      </div>
+    </div>
+
+    <div class="coop-canvas-wrap">
+      <canvas id="coopC"></canvas>
+    </div>
+    <div class="coop-flow-labels">
+      <div class="coop-flow-label l-client">板端 Client</div>
+      <div class="coop-flow-label l-safe">DTLS 握手</div>
+      <div class="coop-flow-label l-sfu">SFU Server</div>
+    </div>
+    <div class="coop-step-info">
+      <div class="coop-step-num" id="coopStepNum">STEP 1</div>
+      <div class="coop-step-text" id="coopStepText">JWT 认证接入信令</div>
+    </div>
+
+    <div class="coop-summary">
+      <em>一句话总结：</em>ECDSA 管信任，ECDHE 管保密，两者缺一不可。<br><br>
+      • 没有 ECDSA 认证 → ECDHE 公钥交换被中间人替换 → 协商的密钥与攻击者共享 → <span class="no-sa">无认证的密钥协商 = 与攻击者保密</span><br>
+      • 没有 ECDHE 密钥交换 → 只有身份认证，无法协商对称密钥 → <span class="no-ek">没有加密通道传输媒体</span><br>
+      • 两者配合 → DTLS 握手既验证身份又协商密钥 → SRTP 用协商出的密钥加密音视频 → <em>端到端安全</em>
+    </div>
+  </div>
+</div>
+
+</div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px;font-weight:bold">ECDSA</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+// Hero Animation — Manual Step Control: ECDSA Sign → Verify → Attack
+// =========================================================
+var heroCanvas, heroCtx, heroW, heroH;
+var heroStep = 0;
+var heroAnimFrame = 0;
+var heroAnimating = false;
+
+var heroPhases = [
+  {title:'签名者用私钥签名', sub:'对消息做哈希 → 用私钥生成签名 (r,s)\n只有持有私钥的人才能产生有效签名'},
+  {title:'消息和签名通过公开信道发送', sub:'签名不怕被看到——它只能证明"确实是我签的"，无法反推私钥'},
+  {title:'验证者用公钥验证 → 通过 ✓', sub:'任何人拿到公钥都可以验证签名的真伪\n无需信任任何第三方，数学保证了验证结果可信'},
+  {title:'攻击者没有私钥，试图伪造签名', sub:'攻击者能看到公钥、消息、签名，但不知道私钥 d\n尝试构造一对 (r\', s\') 使其通过验证'},
+  {title:'伪造签名验证失败 ✗', sub:'没有私钥 → 无法构造满足方程的 (r,s) → ECDSA 不可伪造性\n这就是"数字签名"作为身份证明的根基'}
+];
+
+function heroInit() {
+  heroCanvas = document.getElementById('heroC');
+  var container = heroCanvas.parentElement;
+  heroW = container.clientWidth; heroH = container.clientHeight;
+  heroCanvas.width = heroW * 2; heroCanvas.height = heroH * 2;
+  heroCanvas.style.width = heroW + 'px'; heroCanvas.style.height = heroH + 'px';
+  heroCtx = heroCanvas.getContext('2d');
+  heroCtx.scale(2, 2);
+  // Build step dots
+  var dots = '';
+  for (var i = 0; i < heroPhases.length; i++) {
+    dots += '<div class="hero-dot' + (i === 0 ? ' active' : '') + '" onclick="heroSetStep(' + i + ')"></div>';
+  }
+  document.getElementById('heroDots').innerHTML = dots;
+  heroAnimFrame = 999; // ensure full draw on init
+  heroDrawFrame();
+}
+
+function heroSetStep(s) {
+  heroStep = s;
+  heroAnimFrame = 0;
+  if (!heroAnimating) heroAnimateStep();
+  heroUpdateUI();
+}
+
+function heroNext() {
+  if (heroStep < heroPhases.length - 1) heroSetStep(heroStep + 1);
+}
+
+function heroPrev() {
+  if (heroStep > 0) heroSetStep(heroStep - 1);
+}
+
+function heroUpdateUI() {
+  document.getElementById('heroPrev').disabled = (heroStep === 0);
+  document.getElementById('heroNext').disabled = (heroStep === heroPhases.length - 1);
+  var dots = document.querySelectorAll('.hero-dot');
+  dots.forEach(function(d, i) {
+    d.classList.remove('active', 'done');
+    if (i === heroStep) d.classList.add('active');
+    else if (i < heroStep) d.classList.add('done');
+  });
+  document.getElementById('heroDesc').innerHTML =
+    heroPhases[heroStep].title +
+    '<div class="hero-step-sub">' + heroPhases[heroStep].sub.replace(/\n/g, '<br>') + '</div>';
+}
+
+function heroAnimateStep() {
+  heroAnimating = true;
+  heroAnimFrame++;
+  heroDrawFrame();
+  if (heroAnimFrame < 60) {
+    requestAnimationFrame(heroAnimateStep);
+  } else {
+    heroAnimating = false;
+  }
+}
+
+function heroDrawFrame() {
+  var ctx = heroCtx, w = heroW, h = heroH;
+  var f = Math.min(1, heroAnimFrame / 40);
+  ctx.clearRect(0, 0, w, h);
+
+  var sx = w * 0.15, sy = h * 0.38;
+  var rx = w * 0.5, ry = h * 0.82;
+  var vx = w * 0.85, vy = h * 0.38;
+  var cx = w * 0.5, cy = h * 0.08;
+
+  ctx.textAlign = 'center';
+
+  // Signer (always visible)
+  ctx.fillStyle = '#a78bfa44'; ctx.font = '11px -apple-system,sans-serif';
+  ctx.fillText('签名者', sx, sy - 46);
+  ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(167,139,250,.25)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(167,139,250,.5)'; ctx.font = '10px "JetBrains Mono",monospace';
+  ctx.fillText('私钥', sx, sy + 4);
+
+  // Verifier (always visible)
+  ctx.fillStyle = '#34d39944'; ctx.font = '11px -apple-system,sans-serif';
+  ctx.fillText('验证者', vx, vy - 46);
+  ctx.beginPath(); ctx.arc(vx, vy, 34, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(52,211,153,.25)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(52,211,153,.5)'; ctx.font = '10px "JetBrains Mono",monospace';
+  ctx.fillText('公钥', vx, vy + 4);
+
+  // Attacker (visible from step 3)
+  if (heroStep >= 3) {
+    var aa = heroStep === 3 ? f : 1;
+    ctx.globalAlpha = aa;
+    ctx.fillStyle = '#f43f5e44'; ctx.font = '11px -apple-system,sans-serif';
+    ctx.fillText('攻击者', rx, ry - 46);
+    ctx.beginPath(); ctx.arc(rx, ry, 34, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(244,63,94,.25)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = 'rgba(244,63,94,.5)'; ctx.font = '10px "JetBrains Mono",monospace';
+    ctx.fillText('无私钥', rx, ry + 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // Phase-specific drawings
+  if (heroStep === 0) {
+    // Signing: show hash + sign arrow
+    ctx.globalAlpha = f;
+    ctx.strokeStyle = 'rgba(167,139,250,.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(sx, sy + 40); ctx.lineTo(sx, sy + 82); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 10px "JetBrains Mono",monospace';
+    ctx.fillText('SHA-256(msg)', sx, sy + 96);
+    ctx.fillText('→ 签名(r,s)', sx, sy + 114);
+    ctx.globalAlpha = 1;
+  }
+  else if (heroStep === 1) {
+    // Transmit msg+sig →
+    var prog = f;
+    var ax = sx + 50, bx = vx - 50;
+    var ay = sy - 20;
+    ctx.strokeStyle = 'rgba(167,139,250,.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + (bx - ax) * prog, ay); ctx.stroke();
+    if (prog > 0.3) {
+      ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px "JetBrains Mono",monospace';
+      ctx.fillText('msg + sig(r,s)', (ax + bx) / 2, ay - 12);
+    }
+    // Also show the signer's signing step (dimmed)
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = 'rgba(167,139,250,.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(sx, sy + 40); ctx.lineTo(sx, sy + 82); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 10px "JetBrains Mono",monospace';
+    ctx.fillText('SHA-256(msg) → 签名(r,s)', sx, sy + 96);
+    ctx.globalAlpha = 1;
+  }
+  else if (heroStep === 2) {
+    // Verify OK glow
+    ctx.globalAlpha = f;
+    var grd = ctx.createRadialGradient(vx, vy, 10, vx, vy, 80);
+    grd.addColorStop(0, 'rgba(52,211,153,.15)');
+    grd.addColorStop(1, 'rgba(52,211,153,0)');
+    ctx.fillStyle = grd; ctx.fillRect(vx - 80, vy - 80, 160, 160);
+    ctx.fillStyle = '#34d399'; ctx.font = 'bold 14px -apple-system,sans-serif';
+    ctx.fillText('验证通过 ✓', vx, vy + 56);
+    ctx.font = '11px -apple-system,sans-serif';
+    ctx.fillText('公钥 verify(pubKey, msg, sig) = true', vx, vy + 76);
+    ctx.globalAlpha = 1;
+  }
+  else if (heroStep === 3) {
+    // Attacker forges
+    var prog2 = f;
+    ctx.strokeStyle = 'rgba(244,63,94,.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(rx + 40, ry - 20);
+    ctx.lineTo(rx + 40 + (vx - 50 - rx - 40) * prog2, ry - 20); ctx.stroke();
+    if (prog2 > 0.4) {
+      ctx.fillStyle = '#f43f5e'; ctx.font = 'bold 11px "JetBrains Mono",monospace';
+      ctx.fillText('假的 msg + 伪造 sig', (rx + vx) / 2, ry - 34);
+    }
+  }
+  else if (heroStep === 4) {
+    // Verify FAIL glow
+    ctx.globalAlpha = f;
+    var grd2 = ctx.createRadialGradient(vx, vy, 10, vx, vy, 80);
+    grd2.addColorStop(0, 'rgba(244,63,94,.15)');
+    grd2.addColorStop(1, 'rgba(244,63,94,0)');
+    ctx.fillStyle = grd2; ctx.fillRect(vx - 80, vy - 80, 160, 160);
+    ctx.fillStyle = '#f43f5e'; ctx.font = 'bold 14px -apple-system,sans-serif';
+    ctx.fillText('验证失败 ✗', vx, vy + 56);
+    ctx.font = '11px -apple-system,sans-serif';
+    ctx.fillText('没有私钥 → 无法生成有效签名 → 不可伪造', vx, vy + 76);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// =========================================================
+// ECDSA Steps — Sign & Verify
+// =========================================================
+var signSteps = [
+  {title:'Step 1: 计算消息哈希', label:'哈希',
+   detail:'对原始消息 <code>msg</code> 做哈希：<br><code>h = SHA-256(msg)</code><br><br>哈希将任意长度的消息压缩为固定 256-bit 摘要。<br>消息的任何改动 → 哈希完全不同（雪崩效应）。<br><br><em>为什么先哈希？</em>ECDSA 只能签名有限长度的数据。SHA-256 将任意消息映射到 256-bit，恰好匹配 P-256 曲线的阶。',
+   boxes:[{label:'原始消息',color:'#a78bfa',hex:'msg'},{label:'SHA-256',color:'#38bdf8',hex:'→'},{label:'消息哈希',color:'#f59e0b',hex:'h'}]},
+  {title:'Step 2: 生成临时随机数 k', label:'随机数',
+   detail:'选择一个随机数 <code>k</code>（1 < k < n，n 是 P-256 的阶 ≈ 2^256）。<br><br><em>k 必须满足：</em><br>• 每次签名都不同（否则私钥泄露！）<br>• 完全随机且不可预测<br>• 任何人都无法猜到或重现 k<br><br>⚠️ <strong style="color:#f43f5e">PS3 被黑事件</strong>：Sony 使用了固定的 k，攻击者从两个签名中解方程算出了私钥。<br>板端使用 CTR-DRBG 生成 k，熵源来自 <code>/dev/urandom</code>。',
+   boxes:[{label:'CTR-DRBG',color:'#38bdf8',hex:'/dev/urandom'},{label:'随机数',color:'#f59e0b',hex:'k'},{label:'约束',color:'#f43f5e',hex:'1<k<n'}]},
+  {title:'Step 3: 计算椭圆曲线点', label:'曲线点',
+   detail:'计算椭圆曲线上的点：<br><code>R = G · k</code><br><br>其中 G 是 P-256 曲线的基点，k 是上一步的随机数。<br>R 是椭圆曲线上的一个点 (x_R, y_R)。<br><br><em>这是椭圆曲线标量乘法</em>：把 G 加自身 k 次。即使 k 很大（256-bit），Double-and-Add 算法只需 ~256 次倍点 + ~128 次加点。',
+   boxes:[{label:'基点 G',color:'#a78bfa',hex:'P-256'},{label:'随机数 k',color:'#f59e0b',hex:'k'},{label:'点 R',color:'#34d399',hex:'(x_R, y_R)'}]},
+  {title:'Step 4: 提取签名的 r 分量', label:'r 分量',
+   detail:'从 R 点提取 x 坐标，对曲线阶 n 取模：<br><code>r = x_R mod n</code><br><br>• 如果 r = 0（极端罕见，概率 < 2^-128），需要重新选择 k<br>• r 是签名的前半部分，与消息无关<br>• 相同 k → 相同 r（这就是为什么 k 必须每次不同）',
+   boxes:[{label:'R 点',color:'#34d399',hex:'(x_R, y_R)'},{label:'x坐标',color:'#38bdf8',hex:'x_R'},{label:'取模',color:'#a78bfa',hex:'mod n'},{label:'r 分量',color:'#f59e0b',hex:'r'}]},
+  {title:'Step 5: 计算签名的 s 分量', label:'s 分量',
+   detail:'结合私钥 d、消息哈希 h 和随机数 k 的逆元：<br><code>s = k⁻¹ · (h + r·d) mod n</code><br><br>• <em>k⁻¹</em> 是 k 在模 n 下的乘法逆元（不是倒数）<br>• <em>d</em> 是签名者的 ECDSA 私钥<br>• 如果 s = 0，重新选择 k<br><br>最终签名 = <code>(r, s)</code>，各 32 字节，共 64 字节。<br><em>r 隐藏了 k</em>（ECDLP），<em>s 混合了 d 和 h</em>（无法反推 d）。',
+   boxes:[{label:'h + r·d',color:'#a78bfa',hex:'私钥参与'},{label:'k⁻¹',color:'#f59e0b',hex:'逆元'},{label:'相乘 mod n',color:'#38bdf8',hex:'→'},{label:'s 分量',color:'#f59e0b',hex:'s'}]}
+];
+
+var verifySteps = [
+  {title:'Step 1: 接收消息和签名', label:'接收',
+   detail:'验证者收到：<br>• 原始消息 <code>msg′</code><br>• 签名 <code>(r, s)</code><br>• 签名者的公钥 <code>Q = G·d</code><br><br><em>这三样东西都是公开的。</em>验证需要的也只有这些——不需要任何秘密信息。<br>任何拿到公钥的人都可以验证。',
+   boxes:[{label:'消息',color:'#a78bfa',hex:'msg\''},{label:'签名',color:'#f59e0b',hex:'(r, s)'},{label:'公钥',color:'#34d399',hex:'Q = G·d'}]},
+  {title:'Step 2: 验证 r, s 范围', label:'范围检查',
+   detail:'首先检查基本合法性：<br>• <code>1 ≤ r ≤ n-1</code>（否则直接拒绝）<br>• <code>1 ≤ s ≤ n-1</code>（否则直接拒绝）<br><br>这一步防止恶意的 r=0 或 s=0 导致后续计算异常。<br>P-256 的 n ≈ 1.16 × 10^77。',
+   boxes:[{label:'检查 r',color:'#f59e0b',hex:'1 ≤ r < n'},{label:'AND',color:'#888',hex:'&'},{label:'检查 s',color:'#f59e0b',hex:'1 ≤ s < n'}]},
+  {title:'Step 3: 计算消息哈希', label:'哈希',
+   detail:'对收到的消息做相同的哈希：<br><code>h′ = SHA-256(msg′)</code><br><br>如果消息被篡改，<code>h′ ≠ h</code>，后续计算必然无法恢复出正确的 R 点。<br>哈希的雪崩效应保证：哪怕改一个比特，h′ 也面目全非。',
+   boxes:[{label:'收到的消息',color:'#a78bfa',hex:'msg\''},{label:'SHA-256',color:'#38bdf8',hex:'→'},{label:'哈希',color:'#f59e0b',hex:'h\''}]},
+  {title:'Step 4: 计算 s 的逆元', label:'逆元',
+   detail:'求签名 s 分量的模逆元：<br><code>w = s⁻¹ mod n</code><br><br>这是模 n 下的乘法逆元。<br>通过扩展欧几里得算法计算，时间复杂度 O(log n)。<br><br><em>为什么需要逆元？</em>椭圆曲线上只有标量乘法（没有除法），所以用逆元把除法变成乘法。',
+   boxes:[{label:'s',color:'#f59e0b',hex:'s'},{label:'模逆元',color:'#38bdf8',hex:'s⁻¹ mod n'},{label:'结果',color:'#34d399',hex:'w'}]},
+  {title:'Step 5: 恢复 R 点并比对', label:'验证',
+   detail:'计算两个椭圆曲线点：<br><code>u₁ = h′ · w mod n</code><br><code>u₂ = r · w mod n</code><br><code>R′ = G·u₁ + Q·u₂</code><br><br>如果签名有效且消息未篡改，数学保证 <code>R′ = R</code>。<br>比对：<code>x(R′) mod n == r</code> → 验证通过 ✓<br><br><em>核心逻辑：</em>不知道私钥 d → 无法构造满足等式的 (r, s) → 签名不可伪造。',
+   boxes:[{label:'G·u₁ + Q·u₂',color:'#38bdf8',hex:'R\''},{label:'x(R\')',color:'#a78bfa',hex:'→'},{label:'mod n',color:'#f59e0b',hex:'→'},{label:'== r ? ✓✗',color:'#34d399',hex:'验证'}]}
+];
+
+var ecdsaMode = 'sign';
+var ecdsaStep = 0;
+var ecdsaAnimId = 0;
+var ecdsaAnimProgress = 0;
+var ecdsaAnimRunning = false;
+
+function switchEcdsaMode(mode) {
+  ecdsaMode = mode;
+  ecdsaStep = 0;
+  document.querySelectorAll('.ecdsa-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelector('.ecdsa-tab[onclick="switchEcdsaMode(\'' + mode + '\')"]').classList.add('active');
+  buildStepBar();
+  ecdsaAnimateTo(0);
+}
+
+function buildStepBar() {
+  var steps = ecdsaMode === 'sign' ? signSteps : verifySteps;
+  var h = '';
+  for (var i = 0; i < steps.length; i++) {
+    if (i > 0) h += '<div class="ecdsa-step-sep' + (i <= ecdsaStep ? ' done' : '') + '"></div>';
+    var cls = 'ecdsa-sn' + (i === ecdsaStep ? ' active' : '') + (i < ecdsaStep ? ' done' : '');
+    h += '<div class="' + cls + '" onclick="ecdsaAnimateTo(' + i + ')">';
+    h += '<div class="ecdsa-sn-dot">' + (i + 1) + '</div>';
+    h += '<div class="ecdsa-sn-label">' + steps[i].label + '</div>';
+    h += '</div>';
+  }
+  document.getElementById('ecdsaStepBar').innerHTML = h;
+  document.getElementById('ecdsaPrev').disabled = (ecdsaStep === 0);
+  document.getElementById('ecdsaNext').disabled = (ecdsaStep === steps.length - 1);
+}
+
+function ecdsaPrev() {
+  if (ecdsaStep > 0) ecdsaAnimateTo(ecdsaStep - 1);
+}
+
+function ecdsaNext() {
+  var steps = ecdsaMode === 'sign' ? signSteps : verifySteps;
+  if (ecdsaStep < steps.length - 1) ecdsaAnimateTo(ecdsaStep + 1);
+}
+
+function ecdsaAnimateTo(step) {
+  ecdsaStep = step;
+  ecdsaAnimProgress = 0;
+  buildStepBar();
+  // Fade transition for detail text
+  var detail = document.getElementById('ecdsaDetail');
+  detail.classList.add('fade');
+  setTimeout(function() {
+    var steps = ecdsaMode === 'sign' ? signSteps : verifySteps;
+    detail.innerHTML = '<strong>' + steps[step].title + '</strong><br><br>' + steps[step].detail;
+    detail.classList.remove('fade');
+  }, 180);
+  if (!ecdsaAnimRunning) ecdsaRunAnim();
+}
+
+function ecdsaRunAnim() {
+  ecdsaAnimRunning = true;
+  ecdsaAnimProgress += 0.04;
+  if (ecdsaAnimProgress > 1) ecdsaAnimProgress = 1;
+  renderEcdsaCanvasAnimated(ecdsaStep, ecdsaAnimProgress);
+  if (ecdsaAnimProgress < 1) {
+    requestAnimationFrame(ecdsaRunAnim);
+  } else {
+    ecdsaAnimRunning = false;
+  }
+}
+
+function renderEcdsaCanvasAnimated(step, progress) {
+  var canvas = document.getElementById('ecdsaC');
+  var container = canvas.parentElement;
+  var w = container.clientWidth, h = container.clientHeight;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  var steps = ecdsaMode === 'sign' ? signSteps : verifySteps;
+  var sd = steps[step];
+  var items = sd.boxes;
+  var boxW = Math.min(120, (w - 60) / items.length - 12);
+  var boxH = 56;
+  var gap = 14;
+  var totalW = items.length * boxW + (items.length - 1) * gap;
+  var startX = (w - totalW) / 2;
+  var cy = h / 2;
+
+  items.forEach(function(b, i) {
+    if (typeof b === 'string') {
+      var ax = startX + i * (boxW + gap) - gap / 2;
+      var ay = cy;
+      ctx.globalAlpha = Math.min(1, progress * 3);
+      ctx.fillStyle = 'rgba(167,139,250,.5)'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(b, ax + boxW / 2, ay + 4);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    var x = startX + i * (boxW + gap);
+    var y = cy - boxH / 2;
+    // Stagger entrance: each box fades in based on index
+    var itemProgress = Math.max(0, Math.min(1, (progress - i * 0.08) / 0.6));
+    if (itemProgress <= 0) return;
+    ctx.globalAlpha = itemProgress;
+    var scale = 0.85 + 0.15 * itemProgress;
+    ctx.save();
+    ctx.translate(x + boxW / 2, y + boxH / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-(x + boxW / 2), -(y + boxH / 2));
+
+    // Glow for active
+    if (itemProgress > 0.5) {
+      ctx.shadowColor = b.color || '#a78bfa';
+      ctx.shadowBlur = 12 * itemProgress;
+    }
+    // Box
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, boxW, boxH, 10); ctx.fill(); ctx.stroke(); }
+    else { ctx.fillRect(x, y, boxW, boxH); ctx.strokeRect(x, y, boxW, boxH); }
+    ctx.shadowBlur = 0;
+    // Fill & stroke
+    ctx.fillStyle = (b.color || '#a78bfa') + '18'; ctx.strokeStyle = (b.color || '#a78bfa') + '50'; ctx.lineWidth = 1.5;
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, boxW, boxH, 10); ctx.fill(); ctx.stroke(); }
+    else { ctx.fillRect(x, y, boxW, boxH); ctx.strokeRect(x, y, boxW, boxH); }
+    // Label above
+    ctx.fillStyle = b.color || '#a78bfa'; ctx.font = '600 10px -apple-system,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(b.label, x + boxW / 2, y - 10);
+    // Hex inside
+    if (b.hex) {
+      ctx.fillStyle = '#8888aa'; ctx.font = '10px "JetBrains Mono",monospace';
+      var txt = b.hex; if (txt.length > 16) txt = txt.substring(0, 14) + '...';
+      ctx.fillText(txt, x + boxW / 2, y + boxH / 2 + 4);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  });
+
+  // Draw connecting arrows between boxes
+  for (var i = 0; i < items.length - 1; i++) {
+    if (typeof items[i] === 'string' || typeof items[i+1] === 'string') continue;
+    var arrowProgress = Math.max(0, Math.min(1, (progress - (i + 1) * 0.08) / 0.5));
+    if (arrowProgress <= 0) continue;
+    var x1 = startX + i * (boxW + gap) + boxW;
+    var x2 = startX + (i + 1) * (boxW + gap);
+    var ay = cy;
+    ctx.globalAlpha = arrowProgress * 0.4;
+    ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x1 + 4, ay); ctx.lineTo(x2 - 4, ay); ctx.stroke();
+    // Arrow head
+    ctx.beginPath(); ctx.moveTo(x2 - 8, ay - 3); ctx.lineTo(x2 - 4, ay); ctx.lineTo(x2 - 8, ay + 3); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// =========================================================
+// Fingerprint Demo — simplified SHA-256 visualization
+// =========================================================
+function fpCalc() {
+  var input = document.getElementById('fpInput').value;
+  var hash = sha256Simple(input);
+  document.getElementById('fpOutput').textContent = formatFingerprint(hash);
+  document.getElementById('fpExpected').value = '';
+  document.getElementById('fpResult').innerHTML = '';
+}
+
+function fpCompare() {
+  var computed = document.getElementById('fpOutput').textContent.replace(/\s/g, '');
+  var expected = document.getElementById('fpExpected').value.replace(/[:\s]/g, '');
+  var el = document.getElementById('fpResult');
+  if (!expected) { el.innerHTML = ''; return; }
+  if (computed.toLowerCase() === expected.toLowerCase()) {
+    el.innerHTML = '<span class="fp-match">指纹匹配 ✓</span>';
+  } else {
+    el.innerHTML = '<span class="fp-mismatch">指纹不匹配 ✗ — 证书可能被替换！</span>';
+  }
+}
+
+function formatFingerprint(hex) {
+  return hex.replace(/(.{2})/g, '$1:').replace(/:$/, '').toUpperCase();
+}
+
+// Simple SHA-256 (simplified visualization hash, not cryptographically real)
+function sha256Simple(str) {
+  var h = 0x6a09e667;
+  for (var i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  var hex = '';
+  var seeds = [h, h ^ 0xbb67ae85, h ^ 0x3c6ef372, h ^ 0xa54ff53a,
+               h ^ 0x510e527f, h ^ 0x9b05688c, h ^ 0x1f83d9ab, h ^ 0x5be0cd19];
+  for (var s = 0; s < seeds.length; s++) {
+    var v = seeds[s] >>> 0;
+    for (var j = 0; j < 4; j++) {
+      hex += ((v >> (j * 8)) & 0xff).toString(16).padStart(2, '0');
+    }
+  }
+  return hex;
+}
+
+// =========================================================
+// Compare Table
+// =========================================================
+function renderCmp() {
+  var rows = [
+    ['数学基础','大整数分解 (IFP)','椭圆曲线离散对数 (ECDLP)'],
+    ['安全强度 128-bit','3072-bit 密钥','P-256 曲线 (256-bit)'],
+    ['公钥大小','256+ bytes','64 bytes (未压缩)'],
+    ['签名大小','256 bytes','64 bytes'],
+    ['签名速度 (MIPS)','~150ms','~20ms'],
+    ['验证速度 (MIPS)','~5ms','~40ms'],
+    ['密钥生成','慢 (大素数检测)','快 (曲线点运算)'],
+    ['WebRTC 支持','遗留兼容','强制推荐'],
+    ['本项目使用','否','✓ P-256'],
+    ['TLS 1.3 趋势','逐步淘汰','主流搭配 ECDHE'],
+    ['替代方案','—','Ed25519 (更快的签名)']
+  ];
+  var h = '<table class="cmp-tbl"><tr><th>属性</th><th style="color:#f43f5e">RSA-2048+</th><th style="color:#a78bfa">ECDSA P-256</th></tr>';
+  rows.forEach(function(r) { h += '<tr><td><strong>' + r[0] + '</strong></td><td>' + r[1] + '</td><td>' + r[2] + '</td></tr>'; });
+  h += '</table>';
+  document.getElementById('cmpTbl').innerHTML = h;
+}
+
+// =========================================================
+// Cooperation Canvas Animation — ECDHE + ECDSA in DTLS
+// =========================================================
+var coopCanvas, coopCtx, coopW, coopH;
+var coopStep = 0;
+var coopFrame = 0;
+var coopAnimating = false;
+
+var coopSteps = [
+  {num:'STEP 1', text:'JWT (ECDSA签名) 认证接入信令'},
+  {num:'STEP 2', text:'DTLS ClientHello → 发送 ECDHE 临时公钥 A'},
+  {num:'STEP 3', text:'DTLS ServerHello ← 发送 ECDHE 公钥 B + ECDSA 签名证书'},
+  {num:'STEP 4', text:'ECDSA 验证证书签名 → 确认服务器身份'},
+  {num:'STEP 5', text:'ECDHE 双方计算 shared secret S = G·a·b'},
+  {num:'STEP 6', text:'导出 SRTP 密钥 → AES-CTR 加密音视频'}
+];
+
+function coopInit() {
+  coopCanvas = document.getElementById('coopC');
+  if (!coopCanvas) return;
+  var container = coopCanvas.parentElement;
+  coopW = container.clientWidth; coopH = container.clientHeight;
+  var dpr = window.devicePixelRatio || 1;
+  coopCanvas.width = coopW * dpr; coopCanvas.height = coopH * dpr;
+  coopCanvas.style.width = coopW + 'px'; coopCanvas.style.height = coopH + 'px';
+  coopCtx = coopCanvas.getContext('2d');
+  coopCtx.scale(dpr, dpr);
+  coopDrawFrame();
+}
+
+function coopAdvance() {
+  coopStep = (coopStep + 1) % coopSteps.length;
+  coopFrame = 0;
+  document.getElementById('coopStepNum').textContent = coopSteps[coopStep].num;
+  document.getElementById('coopStepText').textContent = coopSteps[coopStep].text;
+  if (!coopAnimating) coopRunAnim();
+}
+
+function coopRunAnim() {
+  coopAnimating = true;
+  coopFrame++;
+  coopDrawFrame();
+  if (coopFrame < 60) {
+    requestAnimationFrame(coopRunAnim);
+  } else {
+    coopAnimating = false;
+    setTimeout(coopAdvance, 2200);
+  }
+}
+
+function coopDrawFrame() {
+  if (!coopCtx) return;
+  var ctx = coopCtx, w = coopW, h = coopH;
+  var f = Math.min(1, coopFrame / 40);
+  ctx.clearRect(0, 0, w, h);
+
+  var cx = w * 0.15, cy = h * 0.5;
+  var sx = w * 0.85, sy = h * 0.5;
+  var mx = w * 0.5;
+
+  // Draw Client
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#6c63ff66'; ctx.font = '600 11px -apple-system,sans-serif';
+  ctx.fillText('板端 Client', cx, cy - 54);
+  ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(108,99,255,.25)'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Draw Server
+  ctx.fillStyle = '#34d39966'; ctx.font = '600 11px -apple-system,sans-serif';
+  ctx.fillText('SFU Server', sx, sy - 54);
+  ctx.beginPath(); ctx.arc(sx, sy, 36, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(52,211,153,.25)'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Progress bar at bottom
+  var progY = h - 24;
+  ctx.fillStyle = 'rgba(255,255,255,.03)';
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(mx - 160, progY - 4, 320, 8, 4); ctx.fill(); }
+  else { ctx.fillRect(mx - 160, progY - 4, 320, 8); }
+  var progW = ((coopStep + f) / coopSteps.length) * 320;
+  var progGrad = ctx.createLinearGradient(mx - 160, 0, mx - 160 + progW, 0);
+  progGrad.addColorStop(0, '#6c63ff88'); progGrad.addColorStop(1, '#34d39988');
+  ctx.fillStyle = progGrad;
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(mx - 160, progY - 4, progW, 8, 4); ctx.fill(); }
+  else { ctx.fillRect(mx - 160, progY - 4, progW, 8); }
+
+  // Step-specific drawings
+  var x1 = cx + 44, x2 = sx - 44;
+
+  if (coopStep === 0) {
+    // JWT auth — WSS connection
+    ctx.globalAlpha = f;
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px "JetBrains Mono",monospace';
+    ctx.fillText('JWT (ECDSA签)', mx, sy - 80);
+    ctx.strokeStyle = 'rgba(167,139,250,.5)'; ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(cx, cy - 80); ctx.lineTo(sx, sy - 80); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#8888aa'; ctx.font = '10px -apple-system,sans-serif';
+    ctx.fillText('WebSocket 信令通道', mx, sy - 68);
+    ctx.globalAlpha = 1;
+    // Icon inside circles
+    ctx.fillStyle = '#6c63ff88'; ctx.font = '10px "JetBrains Mono",monospace';
+    ctx.fillText('JWT', cx, cy + 4);
+    ctx.fillStyle = '#34d39988';
+    ctx.fillText('验证', sx, sy + 4);
+  }
+  else if (coopStep === 1) {
+    // ClientHello + ECDHE pub key A
+    var prog = f;
+    ctx.strokeStyle = 'rgba(108,99,255,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1, cy - 20);
+    ctx.lineTo(x1 + (x2 - x1) * prog, cy - 20); ctx.stroke();
+    if (prog > 0.3) {
+      ctx.fillStyle = '#6c63ff'; ctx.font = 'bold 10px "JetBrains Mono",monospace';
+      ctx.fillText('A = G·a', x1 + (x2 - x1) * 0.5, cy - 32);
+      ctx.fillStyle = '#8888bb'; ctx.font = '10px -apple-system,sans-serif';
+      ctx.fillText('ECDHE 临时公钥', x1 + (x2 - x1) * 0.5, cy - 6);
+    }
+    // Labels on circles
+    ctx.fillStyle = '#6c63ff88'; ctx.font = '10px "JetBrains Mono",monospace';
+    ctx.fillText('a (私钥)', cx, cy + 4);
+    ctx.fillStyle = '#34d39988';
+    ctx.fillText('等待 B', sx, sy + 4);
+  }
+  else if (coopStep === 2) {
+    // ServerHello + ECDHE pub key B + ECDSA cert
+    var prog = f;
+    ctx.strokeStyle = 'rgba(52,211,153,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x2, sy);
+    ctx.lineTo(x2 - (x2 - x1) * prog, sy); ctx.stroke();
+    if (prog > 0.3) {
+      ctx.fillStyle = '#34d399'; ctx.font = 'bold 10px "JetBrains Mono",monospace';
+      ctx.fillText('B = G·b + ECDSA证书', x1 + (x2 - x1) * 0.5, sy - 12);
+      ctx.fillStyle = '#8888bb'; ctx.font = '10px -apple-system,sans-serif';
+      ctx.fillText('ECDHE公钥 + 证书签名', x1 + (x2 - x1) * 0.5, sy + 8);
+    }
+    ctx.fillStyle = '#6c63ff88'; ctx.font = '10px "JetBrains Mono",monospace';
+    ctx.fillText('收到 B', cx, cy + 4);
+    ctx.fillStyle = '#34d39988';
+    ctx.fillText('b (私钥)', sx, sy + 4);
+  }
+  else if (coopStep === 3) {
+    // ECDSA verify certificate
+    ctx.globalAlpha = f;
+    // Shield icon
+    var grd = ctx.createRadialGradient(sx, sy, 8, sx, sy, 70);
+    grd.addColorStop(0, 'rgba(167,139,250,.12)'); grd.addColorStop(1, 'rgba(167,139,250,0)');
+    ctx.fillStyle = grd; ctx.fillRect(sx - 70, sy - 70, 140, 140);
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 13px -apple-system,sans-serif';
+    ctx.fillText('验证通过 ✓', mx, cy + 50);
+    ctx.font = '10px -apple-system,sans-serif'; ctx.fillStyle = '#9999bb';
+    ctx.fillText('ECDSA 签名验证 → 确认证书归属', mx, cy + 68);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#6c63ff88'; ctx.font = '10px "JetBrains Mono",monospace';
+    ctx.fillText('验证签名', cx, cy + 4);
+    ctx.fillStyle = '#a78bfa88';
+    ctx.fillText('ECDSA', sx, sy + 4);
+  }
+  else if (coopStep === 4) {
+    // ECDHE compute shared secret
+    ctx.globalAlpha = f;
+    // Both sides glow
+    var grd1 = ctx.createRadialGradient(cx + 70, cy, 10, cx + 70, cy, 60);
+    grd1.addColorStop(0, 'rgba(108,99,255,.1)'); grd1.addColorStop(1, 'rgba(108,99,255,0)');
+    ctx.fillStyle = grd1; ctx.fillRect(cx + 10, cy - 60, 120, 120);
+    var grd2 = ctx.createRadialGradient(sx - 70, sy, 10, sx - 70, sy, 60);
+    grd2.addColorStop(0, 'rgba(52,211,153,.1)'); grd2.addColorStop(1, 'rgba(52,211,153,0)');
+    ctx.fillStyle = grd2; ctx.fillRect(sx - 130, sy - 60, 120, 120);
+
+    ctx.fillStyle = '#6c63ff'; ctx.font = 'bold 11px "JetBrains Mono",monospace';
+    ctx.fillText('S = B·a', cx + 70, cy - 20);
+    ctx.fillStyle = '#34d399';
+    ctx.fillText('S = A·b', sx - 70, sy - 20);
+    ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 13px -apple-system,sans-serif';
+    ctx.fillText('S = G·a·b = G·b·a ✓', mx, cy + 48);
+    ctx.fillStyle = '#9999bb'; ctx.font = '10px -apple-system,sans-serif';
+    ctx.fillText('双方得到相同的共享密钥', mx, cy + 66);
+    ctx.globalAlpha = 1;
+  }
+  else if (coopStep === 5) {
+    // SRTP key derivation
+    ctx.globalAlpha = f;
+    var grd3 = ctx.createRadialGradient(mx, cy, 10, mx, cy, 100);
+    grd3.addColorStop(0, 'rgba(245,158,11,.08)'); grd3.addColorStop(1, 'rgba(245,158,11,0)');
+    ctx.fillStyle = grd3; ctx.fillRect(mx - 100, cy - 100, 200, 200);
+    ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 12px "JetBrains Mono",monospace';
+    ctx.fillText('S → PRF → SRTP keys', mx, cy - 16);
+    ctx.font = '10px -apple-system,sans-serif'; ctx.fillStyle = '#9999bb';
+    ctx.fillText('client_key + server_key + salts', mx, cy + 4);
+    ctx.fillStyle = '#34d399'; ctx.font = 'bold 13px -apple-system,sans-serif';
+    ctx.fillText('SRTP AES-CTR 加密音视频 ✓', mx, cy + 40);
+    ctx.fillStyle = '#8888aa'; ctx.font = '10px -apple-system,sans-serif';
+    ctx.fillText('端到端安全通道建立完成', mx, cy + 58);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// =========================================================
+// Init
+// =========================================================
+(function() {
+  // Hero manual control
+  setTimeout(function() { heroInit(); heroUpdateUI(); }, 300);
+
+  // ECDSA steps
+  buildStepBar();
+  ecdsaAnimateTo(0);
+
+  // Fingerprint
+  fpCalc();
+
+  // Compare
+  renderCmp();
+
+  // Cooperation animation
+  setTimeout(function() { coopInit(); coopAdvance(); }, 500);
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec) {
+    for (var i = 0; i < 8; i++) {
+      var p = document.createElement('div'); p.className = 'particle';
+      p.style.left = Math.random() * 100 + '%'; p.style.bottom = '-10px';
+      p.style.animationDuration = (8 + Math.random() * 14) + 's';
+      p.style.animationDelay = (Math.random() * 10) + 's';
+      p.style.width = p.style.height = (1 + Math.random() * 2) + 'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c) {
+          var d = parseInt(c.getAttribute('data-delay')) * 350;
+          setTimeout(function() { c.classList.add('vis'); }, d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c) {
+          setTimeout(function() { c.classList.add('vis'); }, 100);
+        });
+      }
+    });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('[data-reveal]').forEach(function(el) { obs.observe(el); });
+  document.querySelectorAll('.hero-anim,.ops,.why,.why-card,.why-chain,.ecdsa,.cert,.trust,.fp,.proj,.cmp,.coop').forEach(function(el) { obs.observe(el); });
+
+  window.addEventListener('resize', function() {
+    heroInit();
+    heroDrawFrame();
+    ecdsaAnimProgress = 1;
+    renderEcdsaCanvasAnimated(ecdsaStep, 1);
+    coopInit();
+    coopDrawFrame();
+  });
+})();
+</script>
+</body>
+</html>

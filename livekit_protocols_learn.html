@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>协议栈全景 — LiveKit 交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero Protocol Stack ===== */
+.hero-wrap{width:100%;max-width:960px;margin-top:32px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-wrap.vis{opacity:1;transform:translateY(0)}
+.hero-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:460px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.hero-canvas canvas{width:100%;height:100%}
+.hero-tooltip{position:absolute;background:rgba(16,12,40,.92);border:1px solid rgba(108,99,255,.3);border-radius:8px;padding:8px 14px;font-size:11px;color:#c8c8e8;pointer-events:none;opacity:0;transition:opacity .2s;z-index:10;max-width:200px;line-height:1.6}
+.hero-tooltip.show{opacity:1}
+.hero-tooltip .ht-name{color:#6c63ff;font-weight:700;font-size:12px;margin-bottom:2px}
+
+/* ===== Signaling Timeline ===== */
+.sig{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.sig.vis{opacity:1;transform:translateY(0)}
+.sig-tl{display:flex;flex-direction:column;gap:2px;margin-top:24px;position:relative}
+.sig-msg{display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:10px;cursor:pointer;transition:all .3s;opacity:0;transform:translateX(-20px)}
+.sig-msg.vis{opacity:1;transform:translateX(0)}
+.sig-msg:hover{background:rgba(108,99,255,.06)}
+.sig-msg.active{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15)}
+.sig-arrow{font-size:14px;font-weight:700;min-width:50px;text-align:center}
+.sig-arrow.c2s{color:#6c63ff}
+.sig-arrow.s2c{color:#34d399}
+.sig-name{font-size:13px;font-weight:700;color:#d0d0f0;min-width:140px}
+.sig-desc{font-size:11.5px;color:#8888bb;line-height:1.5}
+.sig-detail{margin-top:16px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:80px;transition:all .3s}
+.sig-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.sig-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+
+/* ===== SDP Parser ===== */
+.sdp{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.sdp.vis{opacity:1;transform:translateY(0)}
+.sdp-box{background:#0a081a;border-radius:14px;margin-top:20px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:12px;line-height:1.9;overflow:hidden;border:1px solid rgba(255,255,255,.04)}
+.sdp-line{display:flex;padding:4px 16px;cursor:pointer;transition:all .2s;border-left:3px solid transparent}
+.sdp-line:hover{background:rgba(108,99,255,.04);border-left-color:rgba(108,99,255,.3)}
+.sdp-line.active{background:rgba(108,99,255,.06);border-left-color:#6c63ff}
+.sdp-ln{color:#555;min-width:28px;user-select:none}
+.sdp-code{color:#8888bb;white-space:pre}
+.sdp-code .k{color:#cba6f7}.sdp-code .v{color:#a6e3a1}.sdp-code .a{color:#89b4fa}
+.sdp-explain{padding:16px 20px;border-top:1px solid rgba(255,255,255,.04);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;font-size:12.5px;line-height:1.8;color:#a0a0c8;min-height:80px;display:none}
+.sdp-explain.show{display:block}
+.sdp-explain em{color:#6c63ff;font-style:normal;font-weight:600}
+.sdp-explain code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+
+/* ===== ICE State Machine ===== */
+.ice{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.ice.vis{opacity:1;transform:translateY(0)}
+.ice-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px;justify-content:center}
+.ice-state{padding:12px 18px;border-radius:10px;cursor:pointer;transition:all .3s;text-align:center;min-width:130px;border:1px solid rgba(255,255,255,.04);opacity:0;transform:scale(.9)}
+.ice-state.vis{opacity:1;transform:scale(1)}
+.ice-state:hover{border-color:rgba(108,99,255,.25);background:rgba(108,99,255,.04)}
+.ice-state.active{border-color:#6c63ff;background:rgba(108,99,255,.08);box-shadow:0 0 12px rgba(108,99,255,.15)}
+.ice-state .is-name{font-size:11px;font-weight:700;letter-spacing:1px}
+.ice-state.s-new .is-name{color:#888}
+.ice-state.s-check .is-name{color:#f59e0b}
+.ice-state.s-conn .is-name{color:#38bdf8}
+.ice-state.s-nom .is-name{color:#a78bfa}
+.ice-state.s-ready .is-name{color:#34d399}
+.ice-state.s-disconn .is-name{color:#f43f5e}
+.ice-state.s-fail .is-name{color:#ef4444}
+.ice-state .is-icon{font-size:18px;margin-bottom:4px}
+.ice-detail{margin-top:16px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:80px;transition:all .3s}
+.ice-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.ice-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono",monospace}
+/* STUN packet diagram */
+.stun-diagram{margin-top:20px;display:none}
+.stun-diagram.show{display:block}
+.stun-row{display:flex;gap:2px;margin-bottom:2px}
+.stun-field{padding:6px 8px;border-radius:4px;font-size:10px;font-family:"JetBrains Mono",monospace;text-align:center;min-width:50px;line-height:1.4}
+.stun-field.hdr{background:rgba(108,99,255,.12);color:#a78bfa}
+.stun-field.attr{background:rgba(52,211,153,.1);color:#6ee7b7}
+.stun-field.body{background:rgba(56,189,248,.1);color:#7dd3fc}
+
+/* ===== DTLS Steps ===== */
+.dtls{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.dtls.vis{opacity:1;transform:translateY(0)}
+.dtls-steps{display:flex;gap:6px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+.dtls-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.04);color:#555;border:1px solid rgba(255,255,255,.06)}
+.dtls-dot:hover{background:rgba(108,99,255,.1);color:#aaa}
+.dtls-dot.active{background:#6c63ff;color:#fff;border-color:#6c63ff;box-shadow:0 0 12px rgba(108,99,255,.4)}
+.dtls-dot.done{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.25)}
+.dtls-canvas{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:300px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.dtls-canvas canvas{width:100%;height:100%}
+.dtls-detail{margin-top:14px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:70px}
+.dtls-detail strong{color:#e0e0ff}
+.dtls-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.dtls-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono",monospace}
+.dtls-nav{display:flex;gap:10px;justify-content:center;margin-top:12px}
+.dtls-btn{padding:8px 20px;border-radius:8px;background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.2);color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;transition:all .3s}
+.dtls-btn:hover{background:rgba(108,99,255,.2);border-color:rgba(108,99,255,.4)}
+.dtls-btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* ===== RTP/SRTP ===== */
+.rtp{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.rtp.vis{opacity:1;transform:translateY(0)}
+.rtp-canvas-wrap{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:240px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:20px}
+.rtp-canvas-wrap canvas{width:100%;height:100%}
+.rtp-steps{display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.rtp-dot{padding:5px 12px;border-radius:16px;font-size:11px;font-weight:600;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.04);color:#666;border:1px solid rgba(255,255,255,.06)}
+.rtp-dot:hover{background:rgba(108,99,255,.1);color:#aaa}
+.rtp-dot.active{background:rgba(108,99,255,.15);color:#a78bfa;border-color:rgba(108,99,255,.3)}
+.rtp-dot.done{background:rgba(52,211,153,.1);color:#34d399;border-color:rgba(52,211,153,.2)}
+.rtp-detail{margin-top:14px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:70px}
+.rtp-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.rtp-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono",monospace}
+
+/* ===== DataChannel ===== */
+.dc{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.dc.vis{opacity:1;transform:translateY(0)}
+.dc-flow{display:flex;flex-direction:column;gap:4px;margin-top:24px;align-items:center}
+.dc-step{padding:12px 24px;border-radius:10px;font-size:12.5px;color:#b0b0d0;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);opacity:0;transform:translateY(10px);transition:all .5s;text-align:center;max-width:600px;line-height:1.7}
+.dc-step.vis{opacity:1;transform:translateY(0)}
+.dc-step em{color:#6c63ff;font-style:normal;font-weight:600}
+.dc-step code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono",monospace}
+.dc-arrow{color:rgba(108,99,255,.3);font-size:16px;opacity:0;transition:opacity .5s}
+.dc-arrow.vis{opacity:1}
+.dc-status{margin-top:20px;padding:14px 18px;border-radius:10px;font-size:12.5px;line-height:1.7}
+.dc-status.pending{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);color:#fbbf24}
+.dc-status.active-status{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);color:#6ee7b7}
+
+/* ===== Journey ===== */
+.journey{width:100%;max-width:1100px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.journey.vis{opacity:1;transform:translateY(0)}
+.journey-tl{display:flex;gap:0;margin-top:24px;overflow-x:auto;padding-bottom:12px;-webkit-overflow-scrolling:touch}
+.journey-step{flex:0 0 110px;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative;opacity:0;transform:translateY(16px);transition:all .6s}
+.journey-step.vis{opacity:1;transform:translateY(0)}
+.journey-step .js-icon{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:8px;border:2px solid}
+.journey-step .js-proto{font-size:10px;font-weight:700;letter-spacing:1px;color:#a78bfa;margin-bottom:2px}
+.journey-step .js-name{font-size:11px;color:#8888bb;line-height:1.4}
+.journey-connector{flex:0 0 30px;display:flex;align-items:center;justify-content:center;color:rgba(108,99,255,.3);font-size:14px;opacity:0;transition:opacity .6s}
+.journey-connector.vis{opacity:1}
+/* Protocol comparison table */
+.proto-tbl{width:100%;border-collapse:collapse;margin-top:28px;font-size:12px}
+.proto-tbl th{text-align:left;background:rgba(108,99,255,.06);color:#b0b0e0;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase}
+.proto-tbl td{padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.03);color:#a0a0c8;line-height:1.5;vertical-align:top}
+.proto-tbl tr:nth-child(even) td{background:rgba(255,255,255,.01)}
+.proto-tbl code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10px}
+
+/* ===== Protocol Knowledge Cards ===== */
+.proto-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:28px;width:100%;max-width:960px}
+.proto-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;opacity:0;transform:translateY(20px);transition:all .6s}
+.proto-card.vis{opacity:1;transform:translateY(0)}
+.proto-card-full{grid-column:1/-1}
+.proto-card .pc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.proto-card .pc-tag.t-ice{color:#f59e0b}.proto-card .pc-tag.t-dtls{color:#f43f5e}
+.proto-card .pc-tag.t-srtp{color:#34d399}.proto-card .pc-tag.t-sctp{color:#6c63ff}
+.proto-card .pc-tag.t-sig{color:#38bdf8}.proto-card .pc-tag.t-sdp{color:#a78bfa}
+.proto-card .pc-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:10px}
+.proto-card .pc-body{font-size:12px;color:#8888bb;line-height:1.85}
+.proto-card .pc-body em{color:#6c63ff;font-style:normal;font-weight:600}
+.proto-card .pc-body code{background:rgba(108,99,255,.08);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.proto-card .pc-body strong{color:#d0d0f0}
+.proto-card .pc-body ul{margin:6px 0 0 16px;padding:0}
+.proto-card .pc-body li{margin-bottom:3px}
+.proto-card .pc-code{background:#0a081a;border-radius:8px;padding:12px 16px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11px;line-height:1.8;color:#8888bb;overflow-x:auto;margin-top:10px}
+.proto-card .pc-code .cm{color:#6c7086}.proto-card .pc-code .kw{color:#cba6f7}
+.proto-card .pc-code .fn{color:#89b4fa}.proto-card .pc-code .str{color:#a6e3a1}
+
+/* ===== Deep links ===== */
+.deep-link{margin-top:20px;text-align:center}
+.deep-link a{color:#6c63ff;font-size:12px;font-weight:600;text-decoration:none;border:1px solid rgba(108,99,255,.2);padding:6px 16px;border-radius:6px;transition:all .3s}
+.deep-link a:hover{background:rgba(108,99,255,.1);border-color:rgba(108,99,255,.4)}
+
+/* ===== Sequence Diagram ===== */
+.seq{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.seq.vis{opacity:1;transform:translateY(0)}
+.seq-canvas-wrap{background:rgba(0,0,0,.12);border-radius:16px;width:100%;height:520px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:16px}
+.seq-canvas-wrap canvas{width:100%;height:100%}
+.seq-dots{display:flex;gap:3px;justify-content:center;margin-top:14px;flex-wrap:wrap;align-items:center}
+.seq-pl{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:2px 8px;border-radius:10px;margin:0 4px;user-select:none}
+.seq-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.04);color:#555;border:1px solid rgba(255,255,255,.06)}
+.seq-dot:hover{background:rgba(108,99,255,.1);color:#aaa}
+.seq-dot.done{background:rgba(52,211,153,.08);color:#34d399;border-color:rgba(52,211,153,.25)}
+.seq-dot.p-wss{border-color:rgba(56,189,248,.18)}.seq-dot.p-sdp{border-color:rgba(167,139,250,.18)}.seq-dot.p-ice{border-color:rgba(245,158,11,.18)}.seq-dot.p-dtls{border-color:rgba(244,63,94,.18)}.seq-dot.p-srtp{border-color:rgba(52,211,153,.18)}
+.seq-dot.active{color:#fff}.seq-dot.p-wss.active{background:#38bdf8;border-color:#38bdf8;box-shadow:0 0 10px rgba(56,189,248,.4)}.seq-dot.p-sdp.active{background:#a78bfa;border-color:#a78bfa;box-shadow:0 0 10px rgba(167,139,250,.4)}.seq-dot.p-ice.active{background:#f59e0b;border-color:#f59e0b;box-shadow:0 0 10px rgba(245,158,11,.4)}.seq-dot.p-dtls.active{background:#f43f5e;border-color:#f43f5e;box-shadow:0 0 10px rgba(244,63,94,.4)}.seq-dot.p-srtp.active{background:#34d399;border-color:#34d399;box-shadow:0 0 10px rgba(52,211,153,.4)}
+.seq-detail{margin-top:14px;padding:18px 24px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.08);border-radius:14px;font-size:13px;line-height:1.85;color:#b0b0d0;min-height:70px}
+.seq-detail em{color:#6c63ff;font-style:normal;font-weight:600}
+.seq-detail code{background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:"JetBrains Mono",monospace}
+.seq-nav{display:flex;gap:10px;justify-content:center;margin-top:12px}
+.seq-sep{width:1px;height:60%;background:rgba(255,255,255,.06);margin:0 6px;align-self:center}
+@media(max-width:700px){.proto-cards{grid-template-columns:1fr}.hero-canvas{height:320px}.dtls-canvas{height:240px}.rtp-canvas-wrap{height:180px}.ice-grid{gap:8px}.ice-state{min-width:100px;padding:8px 12px}.journey-step{flex:0 0 90px}.seq-canvas-wrap{height:400px}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== S1: Hero — Protocol Stack ========== -->
+<div class="sec" id="s1">
+  <h1 class="sec-title" data-reveal>LiveKit 协议栈全景</h1>
+  <p class="sec-sub" data-reveal>从 WebSocket 信令到 SRTP 媒体，7 层协议协同完成实时音视频传输。<br>悬浮查看每层协议，点击跳转到详解。</p>
+  <div class="hero-wrap" data-reveal>
+    <div class="hero-canvas">
+      <canvas id="heroC"></canvas>
+      <div class="hero-tooltip" id="heroTip"></div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595;</div>
+</div>
+
+<!-- ========== S2: Signaling — WSS + Protobuf ========== -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" data-reveal>信令层 — WebSocket + Protobuf</h2>
+  <p class="sec-sub" data-reveal>所有控制信令通过 <strong style="color:#38bdf8">WSS</strong> (WebSocket over TLS 1.2) 传输，消息体为 <strong style="color:#6c63ff">Protobuf</strong> 序列化。<br>Join → Answer → Trickle → TrackPublished，一条连接完成全部协商。</p>
+  <div class="sig" data-reveal id="sigWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card proto-card-full" data-delay="0">
+      <div class="pc-tag t-sig">WSS 连接建立</div>
+      <div class="pc-title">从 DNS 到 WSS 的四层握手</div>
+      <div class="pc-body">
+        <strong>1. DNS 解析</strong> → 获得 LiveKit Cloud 服务器 IP<br>
+        <strong>2. TCP 三次握手</strong> → 建立可靠传输通道<br>
+        <strong>3. TLS 1.2 握手</strong> → 协商加密参数（<em>AES-128-GCM</em>），验证服务器证书<br>
+        <strong>4. WebSocket 升级</strong> → HTTP <code>GET /rtc?protocol=v3</code> + <code>Upgrade: websocket</code>头，服务器回复 <code>101 Switching Protocols</code><br><br>
+        <em>ALPN 陷阱</em>：LWS 默认添加 <code>h2</code> ALPN，部分 CDN/代理优先协商 HTTP/2 导致 WebSocket 升级被拒。项目修复：仅在 WSS 连接时发送 <code>http/1.1</code> ALPN。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-sig">Protobuf 编码</div>
+      <div class="pc-title">为什么不用 JSON？</div>
+      <div class="pc-body">
+        项目使用 <code>nanopb</code> 编译 LiveKit proto 定义：<br>
+        <ul>
+          <li><strong>体积</strong>：Protobuf 二进制编码比 JSON 省 30-50%，对嵌入式板端带宽敏感</li>
+          <li><strong>解析</strong>：nanopb 零堆分配，适合 JY1C 板 128MB RAM</li>
+          <li><strong>兼容</strong>：字段号而非字段名，前后向兼容</li>
+        </ul>
+        关键文件：<code>protos/nanopb/livekit_rtc.pb.h</code>
+      </div>
+    </div>
+    <div class="proto-card" data-delay="2">
+      <div class="pc-tag t-sig">信令与 ICE 并行</div>
+      <div class="pc-title">Trickle ICE 加速连通</div>
+      <div class="pc-body">
+        传统 ICE：收集齐所有候选后一起发送 → 延迟高<br>
+        <em>Trickle ICE</em>：候选一旦发现立刻通过 <code>trickle</code> 消息发送 → 并行检测<br><br>
+        项目中板端只产生 <code>host</code> 候选（局域网），无需等完整集合；SFU 提供 <code>srflx</code> 和 <code>relay</code> 候选也通过 trickle 逐条下发。
+      </div>
+    </div>
+  </div>
+  <div class="deep-link"><a href="livekit_wss_learn.html">深入学习 WSS 安全机制 →</a></div>
+</div>
+
+<!-- ========== S3: SDP Negotiation ========== -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" data-reveal>协商层 — SDP 会话描述</h2>
+  <p class="sec-sub" data-reveal>SDP (RFC 4566) 承载了媒体能力、ICE 凭证、DTLS 指纹等所有协商参数。<br>点击每行查看详细解释。</p>
+  <div class="sdp" data-reveal id="sdpWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card" data-delay="0">
+      <div class="pc-tag t-sdp">Offer/Answer 流程</div>
+      <div class="pc-title">谁发 Offer？</div>
+      <div class="pc-body">
+        LiveKit 中 <em>SFU 先发 Offer</em>（<code>SignalResponse.offer</code>），板端回复 Answer（<code>SignalRequest.answer</code>），与 Web 浏览器角色相反。<br><br>
+        Offer 中包含 SFU 的 ICE 凭证和 DTLS 指纹；Answer 中板端填入自己的凭证。双方各自将自己的候选通过 <code>trickle</code> 补充。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-sdp">BUNDLE 策略</div>
+      <div class="pc-title">多路复用一个端口</div>
+      <div class="pc-body">
+        <code>a=group:BUNDLE 0 1</code> 将音频和视频绑定到同一传输通道：<br>
+        <ul>
+          <li>只需一组 ICE + DTLS 协商</li>
+          <li>RTP 分流靠 SSRC 和 PT 区分</li>
+          <li>减少 NAT 映射数量（嵌入式关键）</li>
+        </ul>
+        项目代码：<code>LkSdp.c</code> 中 <code>addBundleGroup()</code> 添加 BUNDLE 声明
+      </div>
+    </div>
+  </div>
+  <div class="deep-link"><a href="livekit_ecdsa_learn.html">深入学习 SDP 指纹与证书 →</a></div>
+</div>
+
+<!-- ========== S4: ICE / STUN / TURN ========== -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" data-reveal>连通层 — ICE / STUN / TURN</h2>
+  <p class="sec-sub" data-reveal>ICE (RFC 8445) 编排 STUN 和 TURN 探测，找到两端可达的候选路径。<br>点击查看每个状态的触发条件和角色。</p>
+  <div class="ice" data-reveal id="iceWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card" data-delay="0">
+      <div class="pc-tag t-ice">ICE 候选类型</div>
+      <div class="pc-title">四种候选优先级递减</div>
+      <div class="pc-body">
+        <ul>
+          <li><strong>host</strong> — 本地网卡地址，优先级最高，无需 NAT 穿透</li>
+          <li><strong>srflx</strong> (Server Reflexive) — STUN 映射的公网地址</li>
+          <li><strong>prflx</strong> (Peer Reflexive) — 对端 STUN 请求中发现的地址</li>
+          <li><strong>relay</strong> — TURN 中继地址，保底选择，延迟最大</li>
+        </ul>
+        <em>项目场景</em>：板端在局域网内只有 host 候选；SFU 通常在同一机房，host 直连即可连通。跨网时依赖 SFU 的 relay 候选。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-ice">Controlling vs Controlled</div>
+      <div class="pc-title">谁决定用哪条路？</div>
+      <div class="pc-body">
+        <em>Controlling</em> 侧负责提名最终候选对，通常是 SFU（因为 SFU 知道最优路径）。<br>
+        <em>Controlled</em> 侧被动接受提名，板端通常扮演此角色。<br><br>
+        提名机制：Controlling 在 STUN 请求中加 <code>ICE-CONTROLLED</code> 属性，收到成功响应后该候选对被提名。Controlling 随后发送带 <code>ICE-CONTROLLING</code> 属性的请求确认。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="2">
+      <div class="pc-tag t-ice">STUN Binding 流程</div>
+      <div class="pc-title">NAT 类型探测的基石</div>
+      <div class="pc-body">
+        <strong>1.</strong> 客户端发送 Binding Request（含 USERNAME=<em>ufrag</em>，MESSAGE-INTEGRITY 用 <em>ice-pwd</em> 计算）<br>
+        <strong>2.</strong> STUN 服务器回复 Binding Response（含 XOR-MAPPED-ADDRESS = 客户端公网 IP:Port）<br>
+        <strong>3.</strong> 比较本地地址与映射地址：相同 → 非对称 NAT（直接连通）；不同 → 对称 NAT（需 TURN）<br><br>
+        Magic Cookie <code>0x2112A442</code> 固定在 5-8 字节，用于区分 STUN 报文与其他 UDP 流量。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="3">
+      <div class="pc-tag t-ice">TURN 中继生命周期</div>
+      <div class="pc-title">四步建立中继通道</div>
+      <div class="pc-body">
+        <strong>1. Allocate</strong> — 请求分配中继地址，返回 <code>401 Unauthorized</code>（需先认证）后再发带 <code>REALM</code>/<code>NONCE</code> 的请求<br>
+        <strong>2. CreatePermission</strong> — 允许特定对端 IP 通过中继发送数据<br>
+        <strong>3. ChannelBind</strong> — 建立 2B 通道号与对端地址映射，后续数据封装为 ChannelData（头仅 4B）而非 Send Indication（头 ~36B）<br>
+        <strong>4. Refresh</strong> — 定期续约 Allocation，默认 LIFETIME 600s<br><br>
+        项目中 TURN 服务器由 LiveKit Cloud 自动配置，通过 <code>JoinResponse.ice_servers</code> 下发 URL 和凭证。
+      </div>
+    </div>
+    <div class="proto-card proto-card-full" data-delay="4">
+      <div class="pc-tag t-ice">项目代码</div>
+      <div class="pc-title">ICE 关键参数配置</div>
+      <div class="pc-code"><span class="cm">// IceAgent.c — ICE 状态机驱动</span>
+<span class="fn">iceAgentStateMachineStep</span>(pIceAgent);
+
+<span class="cm">// IceAgent.h — 关键长度常量</span>
+<span class="kw">#define</span> ICE_UFRAG_LEN  4   <span class="cm">// ufrag 最短 4 字符</span>
+<span class="kw">#define</span> ICE_PWD_LEN   22   <span class="cm">// password 最短 22 字符</span>
+<span class="cm">// ⚠ 曾有 bug: ICE_PWD_LEN 被截断导致 STUN HMAC 校验失败</span>
+
+<span class="cm">// Stun.h — STUN 属性类型常量</span>
+<span class="kw">#define</span> STUN_ATTR_TYPE_MESSAGE_INTEGRITY  0x0008
+<span class="kw">#define</span> STUN_ATTR_TYPE_XOR_MAPPED_ADDR    0x0020
+<span class="kw">#define</span> STUN_ATTR_TYPE_FINGERPRINT        0x8028</div>
+    </div>
+  </div>
+  <div class="deep-link"><a href="livekit_jwt_ice_learn.html">深入学习 JWT + ICE 安全 →</a></div>
+</div>
+
+<!-- ========== S5: DTLS 1.2 Handshake ========== -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" data-reveal>安全层 — DTLS 1.2 握手</h2>
+  <p class="sec-sub" data-reveal>ICE 连通后立即启动 DTLS 握手，协商 <code style="background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px">ECDHE-ECDSA-AES128-GCM-SHA256</code>，<br>并通过 <code style="background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px">use_srtp</code> 扩展导出 SRTP 密钥。手动步进 10 步握手。</p>
+  <div class="dtls" data-reveal id="dtlsWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card" data-delay="0">
+      <div class="pc-tag t-dtls">密码套件拆解</div>
+      <div class="pc-title">每一项都有协议意义</div>
+      <div class="pc-body">
+        <code>ECDHE-ECDSA-AES128-GCM-SHA256</code><br>
+        <ul>
+          <li><strong>ECDHE</strong> — 密钥交换，每次握手生成临时密钥对 → 前向保密</li>
+          <li><strong>ECDSA</strong> — 签名算法，P-256 曲线验证服务器身份</li>
+          <li><strong>AES128-GCM</strong> — 认证加密一体化 (AEAD)，无需额外 HMAC</li>
+          <li><strong>SHA256</strong> — PRF 和 Finished 消息的哈希</li>
+        </ul>
+        <em>为什么不用 AES-256？</em> WebRTC 标准仅定义了 AES-128 的 SRTP Profile。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-dtls">use_srtp 扩展</div>
+      <div class="pc-title">DTLS 如何顺便导出 SRTP 密钥</div>
+      <div class="pc-body">
+        ClientHello 携带 <em>use_srtp</em> 扩展，列出支持的 Profile：<br>
+        <code>SRTP_AES128_CM_HMAC_SHA1_80</code> ← 项目使用<br><br>
+        ServerHello 确认选中的 Profile。握手完成后通过以下调用导出密钥材料：<br>
+        <code>mbedtls_ssl_conf_dtls_srtp_protection_profiles()</code><br>
+        → key_material 拆分为 SRTP enc_key + auth_key + salt
+      </div>
+    </div>
+    <div class="proto-card" data-delay="2">
+      <div class="pc-tag t-dtls">SRTP 密钥导出公式</div>
+      <div class="pc-title">从 master_secret 到加密钥</div>
+      <div class="pc-body">
+        <strong>Step 1:</strong> <code>master = PRF(pre_master, "master secret", CR+SR)</code><br>
+        <strong>Step 2:</strong> <code>key_block = PRF(master, "EXTRACTOR-dtls_srtp", CR+SR)</code><br>
+        <strong>Step 3:</strong> 拆分 key_block → 每方向：<br>
+        &nbsp;&nbsp;16B enc_key + 14B salt<br>
+        &nbsp;&nbsp;HMAC-SHA1 auth_key 从后续字节导出<br><br>
+        <em>CR</em> = client_random, <em>SR</em> = server_random
+      </div>
+    </div>
+    <div class="proto-card" data-delay="3">
+      <div class="pc-tag t-dtls">DTLS vs TLS</div>
+      <div class="pc-title">为什么 WebRTC 不用 TLS？</div>
+      <div class="pc-body">
+        <ul>
+          <li><strong>传输层</strong>：DTLS 基于 UDP，TLS 基于 TCP → 实时媒体不能容忍重传延迟</li>
+          <li><strong>消息边界</strong>：DTLS 保留 UDP 数据报边界，每条记录独立解密</li>
+          <li><strong>防重放</strong>：DTLS 加 <code>epoch</code>+<code>sequence_number</code> 头（6B），接收方用滑动窗口检测</li>
+          <li><strong>超时重传</strong>：DTLS 自带简易重传定时器，不依赖 TCP 拥塞控制</li>
+        </ul>
+        握手消息比 TLS 多出 <code>message_seq</code> 和 <code>fragment</code> 头。
+      </div>
+    </div>
+    <div class="proto-card proto-card-full" data-delay="4">
+      <div class="pc-tag t-dtls">项目代码</div>
+      <div class="pc-title">DTLS 初始化关键调用链</div>
+      <div class="pc-code"><span class="cm">// Dtls_mbedtls.c — 握手配置三部曲</span>
+<span class="fn">mbedtls_ssl_config_defaults</span>(&amp;ssl_config,
+  MBEDTLS_SSL_IS_CLIENT,         <span class="cm">// 板端做 DTLS client</span>
+  MBEDTLS_SSL_TRANSPORT_DATAGRAM,<span class="cm">// UDP 模式</span>
+  MBEDTLS_SSL_PRESET_DEFAULT);
+
+<span class="fn">mbedtls_ssl_conf_authmode</span>(&amp;ssl_config,
+  MBEDTLS_SSL_VERIFY_OPTIONAL);  <span class="cm">// ⚠ 不验证服务器证书！</span>
+
+<span class="fn">mbedtls_ssl_conf_dtls_srtp_protection_profiles</span>(
+  &amp;ssl_config, srtp_profiles);  <span class="cm">// SRTP_AES128_CM_HMAC_SHA1_80</span></div>
+    </div>
+  </div>
+  <div class="deep-link"><a href="livekit_dtlsp_learn.html">深入学习 DTLS 安全分析 →</a></div>
+</div>
+
+<!-- ========== S6: RTP / SRTP / RTCP ========== -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" data-reveal>媒体层 — RTP / SRTP / RTCP</h2>
+  <p class="sec-sub" data-reveal>DTLS 完成后，所有媒体走 SRTP 加密通道。<br>逐步查看 RTP 包结构与 SRTP 加密过程。</p>
+  <div class="rtp" data-reveal id="rtpWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card" data-delay="0">
+      <div class="pc-tag t-srtp">RTP 头逐位解读</div>
+      <div class="pc-title">12 字节决定媒体路由</div>
+      <div class="pc-body">
+        <strong>V(2b)</strong>=2 固定；<strong>P(1b)</strong> 填充标志；<strong>X(1b)</strong> 扩展标志<br>
+        <strong>CC(4b)</strong> CSRC计数；<strong>M(1b)</strong> H.264帧末包置1<br>
+        <strong>PT(7b)</strong> 负载类型，本项目 H.264=<em>102</em>（动态分配96-127）<br>
+        <strong>SeqNum(16b)</strong> 逐包递增，丢包检测+排序<br>
+        <strong>Timestamp(32b)</strong> 90kHz，同帧同值<br>
+        <strong>SSRC(32b)</strong> 随机生成标识媒体流
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-srtp">SRTP IV 构造</div>
+      <div class="pc-title">每个包的初始向量如何生成</div>
+      <div class="pc-body">
+        <code>IV[16] = 0x00</code>, 中间填 <code>SSRC(4B)</code>, 后半填 <code>ROC(2B)||SeqNum(2B)</code><br><br>
+        <em>ROC</em> (Roll-Over Counter)：SeqNum 从 65535→0 回绕时+1，保证 48bit 唯一性<br><br>
+        AES-CTR：不断递增 BlockCounter 产生 keystream，与 Plaintext 异或 → Ciphertext。Header + Extension 保持明文。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="2">
+      <div class="pc-tag t-srtp">H.264 FU-A 分片</div>
+      <div class="pc-title">大帧跨越多个 RTP 包</div>
+      <div class="pc-body">
+        MTU ≈ 1200B，超过此大小的 NAL 单元必须分片：<br>
+        <strong>FU Indicator(1B)</strong>：F=0, NRI=原 NAL 的 NRI, Type=<code>28</code> (FU-A)<br>
+        <strong>FU Header(1B)</strong>：S(1b) 首片, E(1b) 末片, R(1b)=0, Type(5b)=原 NAL 类型<br><br>
+        <em>完整帧还原</em>：去掉每个包的 Indicator+Header，拼接即为原始 NAL<br>
+        末片的 RTP 包 M bit 置1，通知接收方帧结束。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="3">
+      <div class="pc-tag t-srtp">RTCP 反馈闭环</div>
+      <div class="pc-title">四类反馈驱动自适应</div>
+      <div class="pc-body">
+        <ul>
+          <li><strong>SR</strong> (Sender Report) — 发送方报告：已发包数/字节数/时间戳</li>
+          <li><strong>RR</strong> (Receiver Report) — 接收方报告：丢包率/抖动/往返延迟</li>
+          <li><strong>REMB</strong> — 接收方估计可用带宽，告知发送方降码率</li>
+          <li><strong>Transport-CC</strong> — 逐包到达反馈，SFU 精确估计带宽</li>
+        </ul>
+        项目板端仅发送 SR，接收 RR/REMB；SFU 负责带宽估计决策。
+      </div>
+    </div>
+    <div class="proto-card proto-card-full" data-delay="4">
+      <div class="pc-tag t-srtp">项目代码</div>
+      <div class="pc-title">RTP/SRTP 关键实现</div>
+      <div class="pc-code"><span class="cm">// RtpPacket.h — 头部结构</span>
+<span class="kw">typedef struct</span> {
+  <span class="kw">UINT8</span>  header;          <span class="cm">// V(2) P(1) X(1) CC(4)</span>
+  <span class="kw">UINT8</span>  payloadHeader;   <span class="cm">// M(1) PT(7)</span>
+  <span class="kw">UINT16</span> sequenceNumber;
+  <span class="kw">UINT32</span> timestamp;
+  <span class="kw">UINT32</span> ssrc;
+} RtpPacketHeader;
+
+<span class="cm">// RtpH264Payloader.c — FU-A 分片逻辑</span>
+<span class="fn">createFragmentationUnit</span>(pPayload, ...);
+
+<span class="cm">// SrtpSession.c — SRTP 密钥安装</span>
+<span class="fn">srtp_create</span>(&amp;session, &amp;policy);
+<span class="cm">// policy.srtp.crypto = aes_icm (AES-128-CTR)</span>
+<span class="cm">// policy.srtp.auth  = hmac_sha1 (80-bit tag)</span></div>
+    </div>
+  </div>
+  <div class="deep-link"><a href="livekit_aes_learn.html">深入学习 AES 加密原理 →</a></div>
+</div>
+
+<!-- ========== S7: DataChannel / SCTP ========== -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" data-reveal>数据层 — DataChannel / SCTP</h2>
+  <p class="sec-sub" data-reveal>SCTP over DTLS 提供可靠/不可靠数据传输通道。<br>板端 SDP 支持 <code style="background:rgba(108,99,255,.1);color:#a78bfa;padding:1px 5px;border-radius:3px;font-size:11px">m=application</code>，但暂未启用数据通道。</p>
+  <div class="dc" data-reveal id="dcWrap"></div>
+  <div class="proto-cards" data-reveal>
+    <div class="proto-card" data-delay="0">
+      <div class="pc-tag t-sctp">SCTP 核心特性</div>
+      <div class="pc-title">比 TCP 更适合实时数据</div>
+      <div class="pc-body">
+        <ul>
+          <li><strong>多宿主</strong> — 单个关联可有多个 IP 路径，自动故障切换</li>
+          <li><strong>多流</strong> — 一个关联内多个独立流，避免队头阻塞</li>
+          <li><strong>四次握手</strong> — INIT → INIT-ACK → COOKIE-ECHO → COOKIE-ACK（防 SYN flood）</li>
+          <li><strong>部分可靠</strong> — PR-SCTP 支持限时/限次重传，适合实时控制</li>
+        </ul>
+        SCTP over DTLS = 加密通道 + 消息边界保留。
+      </div>
+    </div>
+    <div class="proto-card" data-delay="1">
+      <div class="pc-tag t-sctp">DataChannel API 映射</div>
+      <div class="pc-title">Web 层如何映射到 SCTP</div>
+      <div class="pc-body">
+        <code>new DataChannel(label, {ordered, maxRetransmits})</code><br>
+        <ul>
+          <li><strong>label</strong> → SCTP 流标识 (SID)</li>
+          <li><strong>ordered=true</strong> → SCTP 有序交付</li>
+          <li><strong>maxRetransmits=N</strong> → PR-SCTP 限次重传</li>
+          <li><strong>maxPacketLifeTime=ms</strong> → PR-SCTP 限时重传</li>
+        </ul>
+        DataChannel 开启消息 <code>DATA_CHANNEL_OPEN</code> 在 SCTP 流 0 上发送，协商参数。
+      </div>
+    </div>
+    <div class="proto-card proto-card-full" data-delay="2">
+      <div class="pc-tag t-sctp">项目状态</div>
+      <div class="pc-title">为什么板端暂未启用</div>
+      <div class="pc-body">
+        <em>SDP 层</em>：<code>LkSdp.c</code> 已添加 <code>m=application 9 UDP/DTLS/SCTP webrtc-datachannel</code> + <code>a=sctp-port:5000</code>，协议协商就绪。<br><br>
+        <em>传输层</em>：<code>LkTransport.c</code> 中未注册 <code>onDataChannel</code> 回调，SCTP 关联未初始化。<br><br>
+        <em>潜在用途</em>：固件 OTA 触发、实时抓拍指令、设备状态查询/推送 — 这些低带宽数据当前走 MQTT，未来可能迁移到 DataChannel 以减少连接数。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== S8: End-to-End Journey ========== -->
+<div class="sec" id="s8">
+  <h2 class="sec-title" data-reveal>协议串联 — 从信令到媒体的完整时序</h2>
+  <p class="sec-sub" data-reveal>17 步时序图展示板端→SFU→浏览器的协议交互全过程，手动步进查看每步细节。<br>下方流程图展示 H.264 帧从采集到出图的每个阶段。</p>
+  <div class="seq" data-reveal id="seqWrap"></div>
+  <div class="journey" data-reveal id="journeyWrap"></div>
+</div>
+
+<!-- ========== Navigation ========== -->
+<div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+  <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a> ·
+  <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+  <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px">非对称</a>
+  <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+  <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+  <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+  <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+  <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+  <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+  <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">协议</a>
+  <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// =========================================================
+// Utility: Scroll Reveal
+// =========================================================
+var obs=new IntersectionObserver(function(entries){
+  entries.forEach(function(e){
+    if(e.isIntersecting){
+      e.target.classList.add('vis');
+      e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+        setTimeout(function(){c.classList.add('vis')},100);
+      });
+      e.target.querySelectorAll('[data-delay]').forEach(function(c){
+        var d=parseInt(c.getAttribute('data-delay'))*300;
+        setTimeout(function(){c.classList.add('vis')},d);
+      });
+    }
+  });
+},{threshold:0.1});
+document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+document.querySelectorAll('.sig,.sdp,.ice,.dtls,.rtp,.dc,.seq,.journey,.proto-card').forEach(function(el){obs.observe(el)});
+
+// Particles
+document.querySelectorAll('.sec').forEach(function(sec){
+  for(var i=0;i<6;i++){
+    var p=document.createElement('div');p.className='particle';
+    p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+    p.style.animationDuration=(8+Math.random()*14)+'s';
+    p.style.animationDelay=(Math.random()*10)+'s';
+    p.style.width=p.style.height=(1+Math.random()*2)+'px';
+    sec.appendChild(p);
+  }
+});
+
+// =========================================================
+// S1: Hero — Protocol Stack Canvas
+// =========================================================
+(function(){
+var c=document.getElementById('heroC');
+var ctx=c.getContext('2d');
+var W,H,dpr;
+var layers=[
+  {name:'HTTP/DNS',   desc:'域名解析与健康检查',       color:'#888'},
+  {name:'WSS',        desc:'WebSocket 信令通道 (TLS 1.2)', color:'#38bdf8'},
+  {name:'SDP',        desc:'会话描述 — 协商媒体与安全参数', color:'#a78bfa'},
+  {name:'ICE/STUN/TURN',desc:'NAT 穿透与连通性检测',      color:'#f59e0b'},
+  {name:'DTLS 1.2',   desc:'握手协商 SRTP 密钥',          color:'#f43f5e'},
+  {name:'RTP/SRTP/RTCP',desc:'加密媒体传输与反馈控制',    color:'#34d399'},
+  {name:'DataChannel',desc:'SCTP over DTLS 数据通道',     color:'#6c63ff'}
+];
+var hovered=-1;
+var revealProgress=0;
+var revealing=true;
+var secEl=document.getElementById('s1');
+var secObs=new IntersectionObserver(function(entries){
+  if(entries[0].isIntersecting){revealing=true;revealProgress=0}
+},{threshold:0.3});
+secObs.observe(secEl);
+
+function resize(){
+  var rect=c.parentElement.getBoundingClientRect();
+  dpr=window.devicePixelRatio||1;
+  W=rect.width;H=rect.height;
+  c.width=W*dpr;c.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();
+window.addEventListener('resize',resize);
+
+// Click to scroll
+c.addEventListener('click',function(e){
+  if(hovered>=0){
+    var targets=['s1','s2','s3','s4','s5','s6','s7'];
+    if(hovered<targets.length){
+      document.getElementById(targets[hovered]).scrollIntoView({behavior:'smooth'});
+    }
+  }
+});
+
+// Hover
+c.addEventListener('mousemove',function(e){
+  var rect=c.getBoundingClientRect();
+  var mx=e.clientX-rect.left;
+  var my=e.clientY-rect.top;
+  var ly0=H*0.08;
+  var ly1=H*0.92;
+  var lh=(ly1-ly0)/layers.length;
+  var boardX=W*0.18;
+  var serverX=W*0.82;
+  var bandW=serverX-boardX;
+
+  hovered=-1;
+  for(var i=0;i<layers.length;i++){
+    var cy=ly0+lh*(i+0.5);
+    if(Math.abs(my-cy)<lh*0.5 && mx>boardX-10 && mx<serverX+10){
+      hovered=i;break;
+    }
+  }
+  var tip=document.getElementById('heroTip');
+  if(hovered>=0){
+    tip.innerHTML='<div class="ht-name">'+layers[hovered].name+'</div>'+layers[hovered].desc;
+    tip.classList.add('show');
+    var tx=mx+12;var ty=my-40;
+    if(tx+200>W)tx=mx-210;
+    if(ty<0)ty=my+20;
+    tip.style.left=tx+'px';tip.style.top=ty+'px';
+  }else{
+    tip.classList.remove('show');
+  }
+});
+c.addEventListener('mouseleave',function(){
+  hovered=-1;
+  document.getElementById('heroTip').classList.remove('show');
+});
+
+function draw(){
+  if(revealing)revealProgress=Math.min(revealProgress+0.01,1);
+  ctx.clearRect(0,0,W,H);
+
+  var ly0=H*0.08;
+  var ly1=H*0.92;
+  var lh=(ly1-ly0)/layers.length;
+  var boardX=W*0.18;
+  var serverX=W*0.82;
+  var bandW=serverX-boardX;
+
+  // Board & Server labels
+  ctx.font='bold 13px -apple-system,BlinkMacSystemFont,sans-serif';
+  ctx.textAlign='center';
+  ctx.fillStyle='#6c63ff';
+  ctx.fillText('板端 (Client)',boardX,H*0.04);
+  ctx.fillStyle='#34d399';
+  ctx.fillText('SFU (Server)',serverX,H*0.04);
+
+  // Layers
+  for(var i=0;i<layers.length;i++){
+    var prog=Math.min(1,Math.max(0,revealProgress*layers.length-i));
+    if(prog<=0)continue;
+    var cy=ly0+lh*(i+0.5);
+    var alpha=prog*(hovered===i?1:0.6);
+    var lw=bandW*0.9*prog;
+
+    // Glow
+    if(hovered===i){
+      ctx.save();ctx.globalAlpha=0.15;
+      ctx.fillStyle=layers[i].color;
+      ctx.fillRect(boardX+(bandW-lw)/2,cy-lh*0.38,lw,lh*0.76);
+      ctx.restore();
+    }
+
+    // Band
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.strokeStyle=layers[i].color;
+    ctx.lineWidth=hovered===i?3:2;
+    ctx.setLineDash(hovered===i?[]:[8,4]);
+    ctx.beginPath();
+    var x0=boardX+(bandW-lw)/2;
+    var x1=x0+lw;
+    ctx.moveTo(x0,cy);ctx.lineTo(x1,cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.font=(hovered===i?'bold ':'')+''+ (hovered===i?'12':'11')+'px "JetBrains Mono",monospace';
+    ctx.textAlign='left';
+    ctx.fillStyle=layers[i].color;
+    ctx.fillText(layers[i].name,x0+8,cy-6);
+
+    // Arrow dots
+    var ax=x0+lw*0.5;
+    ctx.beginPath();
+    ctx.arc(ax,cy,3,0,Math.PI*2);
+    ctx.fillStyle=layers[i].color;
+    ctx.fill();
+
+    ctx.restore();
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+})();
+
+// =========================================================
+// S2: Signaling Timeline
+// =========================================================
+(function(){
+var msgs=[
+  {dir:'c2s',name:'join',desc:'客户端发送 Join 请求，携带 token、房间名、参与者信息'},
+  {dir:'s2c',name:'join',desc:'服务器返回 JoinResponse：房间信息、其他参与者列表、ICE 服务器配置、已发布的轨道'},
+  {dir:'s2c',name:'offer',desc:'服务器发送 SDP Offer（包含媒体行、ICE 凭证、DTLS 指纹）'},
+  {dir:'c2s',name:'answer',desc:'客户端回复 SDP Answer，确认媒体能力和安全参数'},
+  {dir:'c2s',name:'trickle',desc:'客户端逐条发送 ICE 候选（Trickle ICE），加速连通性检测'},
+  {dir:'s2c',name:'trickle',desc:'服务器逐条发送 ICE 候选'},
+  {dir:'s2c',name:'track_published',desc:'远端参与者发布新轨道时通知'},
+  {dir:'s2c',name:'connection_quality',desc:'定期推送连接质量评分（excellent/good/poor）'},
+  {dir:'c2s',name:'mute',desc:'客户端切换轨道静音状态'},
+  {dir:'c2s',name:'leave',desc:'客户端主动离开房间'}
+];
+var h='<div class="sig-tl">';
+msgs.forEach(function(m,i){
+  h+='<div class="sig-msg" data-delay="'+i+'" onclick="showSigDetail('+i+')">';
+  h+='<div class="sig-arrow '+(m.dir==='c2s'?'c2s':'s2c')+'">'+(m.dir==='c2s'?'→ 板端':'← 服务器')+'</div>';
+  h+='<div class="sig-name">'+m.name+'</div>';
+  h+='<div class="sig-desc">'+m.desc+'</div>';
+  h+='</div>';
+});
+h+='</div>';
+h+='<div class="sig-detail" id="sigDetail">点击消息查看 Protobuf 详细结构</div>';
+document.getElementById('sigWrap').innerHTML=h;
+
+var sigProtoDetails=[
+  'SignalRequest.message_id = 1<br>SignalRequest.join = {<br>&nbsp;&nbsp;<code>token</code>: string (JWT),<br>&nbsp;&nbsp;<code>room</code>: Room (name, sid, metadata),<br>&nbsp;&nbsp;<code>participant</code>: Participant (identity, name, metadata)<br>}',
+  'SignalResponse.join = {<br>&nbsp;&nbsp;<code>room</code>: Room,<br>&nbsp;&nbsp;<code>participant</code>: Participant,<br>&nbsp;&nbsp;<code>other_participants</code>: repeated,<br>&nbsp;&nbsp;<code>ice_servers</code>: repeated IceServer,<br>&nbsp;&nbsp;<code>tracks</code>: repeated TrackInfo<br>}',
+  'Server Offer: SignalResponse.offer<br>包含完整 SDP：<code>m=video</code>, <code>a=ice-ufrag</code>, <code>a=fingerprint</code> 等',
+  'Client Answer: SignalRequest.answer<br>客户端确认的 SDP，与 Offer 的媒体行一一对应',
+  'Client Trickle: SignalRequest.trickle<br><code>candidate</code>: IceCandidate (target=SUBSCRIBER/PUBLISHER),<br><code>candidate_init</code>: JSON 格式 ICE 候选字符串',
+  'Server Trickle: SignalResponse.trickle<br>服务器侧 ICE 候选，包含 relay 类型候选（TURN）',
+  'SignalResponse.track_published = {<br>&nbsp;&nbsp;<code>track</code>: TrackInfo (sid, name, source, type),<br>&nbsp;&nbsp;<code>rtc_config</code>: 更新的 ICE 配置<br>}',
+  'SignalResponse.connection_quality = {<br>&nbsp;&nbsp;repeated Update: {<br>&nbsp;&nbsp;&nbsp;&nbsp;<code>participantSid</code>,<br>&nbsp;&nbsp;&nbsp;&nbsp;<code>quality</code>: EXCELLENT/GOOD/POOR,<br>&nbsp;&nbsp;&nbsp;&nbsp;<code>score</code>: float<br>&nbsp;&nbsp;}<br>}',
+  'SignalRequest.mute = {<br>&nbsp;&nbsp;<code>sid</code>: string,<br>&nbsp;&nbsp;<code>muted</code>: bool,<br>&nbsp;&nbsp;<code>participatSid</code>: string<br>}',
+  'SignalRequest.leave = {<br>&nbsp;&nbsp;<code>can_reconnect</code>: bool,<br>&nbsp;&nbsp;<code>reason</code>: DisconnectReason enum<br>}'
+];
+window.showSigDetail=function(idx){
+  document.querySelectorAll('.sig-msg').forEach(function(el,i){
+    el.classList.toggle('active',i===idx);
+  });
+  document.getElementById('sigDetail').innerHTML=sigProtoDetails[idx];
+};
+})();
+
+// =========================================================
+// S3: SDP Parser
+// =========================================================
+(function(){
+var sdpLines=[
+  {code:'v=0',explain:'SDP 协议版本，固定为 0'},
+  {code:'o=- 481439998 2 IN IP4 0.0.0.0',explain:'Origin: 用户名/会话 ID/版本/网络类型/地址类型/地址。WebRTC 通常填 <em>0.0.0.0</em>，实际地址由 ICE 候选提供'},
+  {code:'s=-',explain:'会话名称，WebRTC 通常为 <code>-</code>'},
+  {code:'t=0 0',explain:'会话时间，<code>0 0</code> 表示永久会话'},
+  {code:'a=group:BUNDLE 0 1',explain:'<em>BUNDLE</em> 多路复用：音频(0)和视频(1)共用同一传输通道，节省端口和 NAT 资源'},
+  {code:'a=extmap-allow-mixed',explain:'允许混合 one-byte 和 two-byte RTP 头扩展'},
+  {code:'a=msid-semantic:WMS *',explain:'媒体流 ID 语义：<code>WMS</code> = WebRTC Media Stream，<code>*</code> 表示所有轨道'},
+  {code:'m=video 9 UDP/TLS/RTP/SAVPF 96 97 102',explain:'<em>媒体行</em>：视频类型 / 端口 9 (placeholder) / 协议栈 UDP→TLS→RTP→SAVPF / 负载类型编号 96/97/102'},
+  {code:'a=ice-ufrag:xFkE',explain:'<em>ICE 用户名片段</em>：STUN Binding Request 中需携带此值，用于匹配连接'},
+  {code:'a=ice-pwd:8p3bF5hR2nSf6wKj9mLq',explain:'<em>ICE 密码</em>：STUN MESSAGE-INTEGRITY 的 HMAC-SHA1 密钥材料'},
+  {code:'a=fingerprint:sha-256 4A:3B:...:C7',explain:'<em>DTLS 证书指纹</em>：将自签 X.509 证书绑到 SDP，防止中间人攻击。本项目使用 <code>VERIFY_OPTIONAL</code>，实际未验证此指纹！'},
+  {code:'a=setup:actpass',explain:'<em>DTLS 角色</em>：<code>actpass</code> 表示可做客户端也可做服务端。Offer 方通常设 actpass，Answer 方选 active 或 passive'},
+  {code:'a=rtcp-mux',explain:'<em>RTCP 复用</em>：RTCP 与 RTP 共用同一端口，减少 NAT 开销'},
+  {code:'a=extmap:1 urn:ietf:params:rtp-hdrext:abs-send-time',explain:'RTP 头扩展 1：<em>绝对发送时间</em>，用于接收侧计算端到端延迟'},
+  {code:'a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/transport-wide-cc-01',explain:'RTP 头扩展 3：<em>Transport-CC</em>，拥塞控制反馈序列号，SFU 用于带宽估计'},
+  {code:'a=sendrecv',explain:'本轨道方向：<code>sendrecv</code> = 同时发送和接收'},
+  {code:'a=rtcp-fb:96 nack',explain:'对 PT 96 支持 <em>NACK</em> 重传请求'},
+  {code:'a=rtcp-fb:96 nack pli',explain:'对 PT 96 支持 <em>PLI</em> (Picture Loss Indication)，请求关键帧'},
+  {code:'a=rtcp-fb:96 transport-cc',explain:'对 PT 96 支持 <em>Transport-CC</em> 反馈'},
+  {code:'a=rtpmap:96 VP8/90000',explain:'负载类型 96 = <em>VP8</em> 编码，时钟频率 90kHz'},
+  {code:'a=rtpmap:102 H264/90000',explain:'负载类型 102 = <em>H.264</em> 编码 — 本项目板端使用此编码'},
+  {code:'a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f',explain:'H.264 参数：<em>Constrained Baseline</em> (42e01f)，允许非对称 Level，packetization-mode=1 使用 <em>STAP-A/FU-A</em>'},
+  {code:'a=ssrc:123456 cname:abc',explain:'SSRC 标识和 CNAME，RTP 包头中携带用于识别媒体源'},
+  {code:'m=application 9 UDP/DTLS/SCTP webrtc-datachannel',explain:'<em>数据通道</em>媒体行：SCTP over DTLS，WebRTC DataChannel 传输方式'}
+];
+var h='<div class="sdp-box">';
+sdpLines.forEach(function(l,i){
+  h+='<div class="sdp-line" onclick="toggleSdpLine('+i+')">';
+  h+='<span class="sdp-ln">'+(i+1)+'</span>';
+  h+='<span class="sdp-code">'+highlightSdp(l.code)+'</span>';
+  h+='</div>';
+  h+='<div class="sdp-explain" id="sdpE'+i+'">'+l.explain+'</div>';
+});
+h+='</div>';
+document.getElementById('sdpWrap').innerHTML=h;
+
+function highlightSdp(s){
+  return s.replace(/^([a-z])=/,'<span class="k">$1</span>=').replace(/:(\S+)/g,':<span class="v">$1</span>').replace(/\s(\S+)$/,' <span class="a">$1</span>');
+}
+window.toggleSdpLine=function(idx){
+  var el=document.getElementById('sdpE'+idx);
+  var wasShown=el.classList.contains('show');
+  document.querySelectorAll('.sdp-explain').forEach(function(e){e.classList.remove('show')});
+  document.querySelectorAll('.sdp-line').forEach(function(e){e.classList.remove('active')});
+  if(!wasShown){
+    el.classList.add('show');
+    el.parentElement.querySelectorAll('.sdp-line')[idx].classList.add('active');
+  }
+};
+})();
+
+// =========================================================
+// S4: ICE State Machine + STUN Diagram
+// =========================================================
+(function(){
+var states=[
+  {cls:'s-new',icon:'●',name:'NEW',desc:'ICE Agent 创建完成，尚未收集候选。此时需要设置 ICE 服务器 (STUN/TURN) 和本地候选。'},
+  {cls:'s-check',icon:'◎',name:'CHECK_CONNECTION',desc:'正在检测候选对连通性。发送 STUN Binding Request，等待 Binding Response。每次收到响应，候选对状态更新为 SUCCEEDED 或 FAILED。'},
+  {cls:'s-conn',icon:'◈',name:'CONNECTED',desc:'至少有一对候选成功连通！但仍在检查是否有更优路径。此时可以开始 DTLS 握手（并行进行）。'},
+  {cls:'s-nom',icon:'◆',name:'NOMINATING',desc:'Controlling 侧选择最优候选对并提名 (NOMINATE)。发送带 ICE-CONTROLLED 属性的 STUN 请求确认。'},
+  {cls:'s-ready',icon:'★',name:'READY',desc:'ICE 协商完成，选定传输路径。所有后续 RTP/SRTP 数据通过此路径传输。'},
+  {cls:'s-disconn',icon:'○',name:'DISCONNECTED',desc:'已选候选对失去连通性（STUN Binding 超时）。可能恢复，等待重新检测。'},
+  {cls:'s-fail',icon:'✕',name:'FAILED',desc:'所有候选对检测失败，无法建立连接。常见原因：SYMMETRIC NAT + 无 TURN、防火墙拦截。'}
+];
+var h='<div class="ice-grid">';
+states.forEach(function(s,i){
+  h+='<div class="ice-state '+s.cls+'" data-delay="'+i+'" onclick="showIceDetail('+i+')">';
+  h+='<div class="is-icon">'+s.icon+'</div>';
+  h+='<div class="is-name">'+s.name+'</div>';
+  h+='</div>';
+});
+h+='</div>';
+h+='<div class="ice-detail" id="iceDetail">点击状态查看详细说明</div>';
+// STUN packet structure
+h+='<div style="text-align:center;margin-top:24px">';
+h+='<button class="dtls-btn" onclick="toggleStunDiagram()" style="font-size:11px">查看 STUN 报文结构</button>';
+h+='</div>';
+h+='<div class="stun-diagram" id="stunDiagram">';
+h+='<p style="font-size:12px;color:#8888bb;margin-bottom:10px;text-align:center">STUN Binding Request / Response 报文结构</p>';
+// Header
+h+='<p style="font-size:10px;color:#6c63ff;margin-bottom:4px;font-weight:700;letter-spacing:1px">HEADER (20 bytes)</p>';
+h+='<div class="stun-row">';
+h+='<div class="stun-field hdr" style="flex:1">Type<br><small>0x0001 Req / 0x0101 Resp</small></div>';
+h+='<div class="stun-field hdr" style="flex:1">Length<br><small> attrs bytes</small></div>';
+h+='<div class="stun-field hdr" style="flex:2">Magic Cookie<br><small>0x2112A442</small></div>';
+h+='<div class="stun-field hdr" style="flex:2">Transaction ID<br><small>12 bytes random</small></div>';
+h+='</div>';
+// Attributes
+h+='<p style="font-size:10px;color:#34d399;margin:8px 0 4px;font-weight:700;letter-spacing:1px">ATTRIBUTES</p>';
+h+='<div class="stun-row">';
+h+='<div class="stun-field attr" style="flex:1">XOR-MAPPED-ADDRESS<br><small>0x0020</small></div>';
+h+='<div class="stun-field body" style="flex:2">IP:Port (XOR with Cookie+TID)<br><small>仅 Response 包含</small></div>';
+h+='</div>';
+h+='<div class="stun-row">';
+h+='<div class="stun-field attr" style="flex:1">MESSAGE-INTEGRITY<br><small>0x0008</small></div>';
+h+='<div class="stun-field body" style="flex:2">HMAC-SHA1(ice-pwd, whole msg)<br><small>20 bytes</small></div>';
+h+='</div>';
+h+='<div class="stun-row">';
+h+='<div class="stun-field attr" style="flex:1">FINGERPRINT<br><small>0x8028</small></div>';
+h+='<div class="stun-field body" style="flex:2">CRC32(msg) XOR 0x5354554e<br><small>4 bytes</small></div>';
+h+='</div>';
+h+='</div>';
+document.getElementById('iceWrap').innerHTML=h;
+
+var iceDetails=states.map(function(s){return s.desc;});
+window.showIceDetail=function(idx){
+  document.querySelectorAll('.ice-state').forEach(function(el,i){
+    el.classList.toggle('active',i===idx);
+  });
+  document.getElementById('iceDetail').innerHTML=iceDetails[idx];
+};
+window.toggleStunDiagram=function(){
+  document.getElementById('stunDiagram').classList.toggle('show');
+};
+})();
+
+// =========================================================
+// S5: DTLS 1.2 Handshake Steps
+// =========================================================
+(function(){
+var steps=[
+  {label:'ClientHello',dir:'→',desc:'客户端发送支持的密码套件列表、<code>use_srtp</code> 扩展（携带 SRTP Protection Profile）、随机数 <em>client_random</em>'},
+  {label:'ServerHello',dir:'←',desc:'服务器选定密码套件 <code>TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256</code>、SRTP Profile <code>AES128_CM_HMAC_SHA1_80</code>、随机数 <em>server_random</em>'},
+  {label:'Certificate',dir:'←',desc:'服务器发送自签 X.509 证书（ECDSA P-256 公钥）。注意：本项目 <code>VERIFY_OPTIONAL</code>，客户端实际跳过证书验证'},
+  {label:'ServerKeyExchange',dir:'←',desc:'服务器发送 ECDHE 参数：曲线 P-256、临时公钥 <em>server_ecdhe_pub</em>、ECDSA 签名（对 client_random ∥ server_random ∥ ecdhe_params）'},
+  {label:'CertificateRequest',dir:'←',desc:'(可选) 服务器请求客户端证书。WebRTC 通常跳过此步'},
+  {label:'ServerHelloDone',dir:'←',desc:'服务器 Hello 阶段结束，等待客户端响应'},
+  {label:'ClientKeyExchange',dir:'→',desc:'客户端发送临时 ECDHE 公钥 <em>client_ecdhe_pub</em>。双方各自计算预主密钥：<code>pre_master = ECDH(local_priv, peer_pub)</code>'},
+  {label:'ChangeCipherSpec',dir:'→',desc:'客户端通知后续消息使用协商的密钥加密。密钥导出：<code>master = PRF(pre_master, "master secret", client_random+server_random)</code>'},
+  {label:'Finished (Client)',dir:'→',desc:'客户端发送 Finished 消息，包含所有握手消息的 HMAC 验证。服务器确认握手完整性'},
+  {label:'ChangeCipherSpec + Finished',dir:'←',desc:'服务器切换密钥并发送 Finished。握手完成！SRTP 密钥导出：<code>key_block = PRF(master, "EXTRACTOR-dtls_srtp", client_random+server_random)</code> → SRTP enc_key + auth_key + salt'}
+];
+var dtlsStep=-1;
+var h='<div class="dtls-steps" id="dtlsDots">';
+steps.forEach(function(_,i){
+  h+='<div class="dtls-dot'+(i===0?' active':'')+'" onclick="setDtlsStep('+i+')">'+(i+1)+'</div>';
+});
+h+='</div>';
+h+='<div class="dtls-canvas"><canvas id="dtlsC"></canvas></div>';
+h+='<div class="dtls-detail" id="dtlsDetail">'+steps[0].desc+'</div>';
+h+='<div class="dtls-nav">';
+h+='<button class="dtls-btn" id="dtlsPrev" onclick="dtlsPrev()" disabled>← 上一步</button>';
+h+='<button class="dtls-btn" id="dtlsNext" onclick="dtlsNext()">下一步 →</button>';
+h+='</div>';
+document.getElementById('dtlsWrap').innerHTML=h;
+
+function renderDtls(){
+  var dotEls=document.querySelectorAll('#dtlsDots .dtls-dot');
+  dotEls.forEach(function(el,i){
+    el.className='dtls-dot'+(i===dtlsStep?' active':(i<dtlsStep?' done':''));
+  });
+  document.getElementById('dtlsDetail').innerHTML=steps[dtlsStep].desc;
+  document.getElementById('dtlsPrev').disabled=dtlsStep<=0;
+  document.getElementById('dtlsNext').disabled=dtlsStep>=steps.length-1;
+  drawDtlsCanvas();
+}
+function drawDtlsCanvas(){
+  var c=document.getElementById('dtlsC');
+  var ctx=c.getContext('2d');
+  var rect=c.parentElement.getBoundingClientRect();
+  var dpr=window.devicePixelRatio||1;
+  c.width=rect.width*dpr;c.height=rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  var W=rect.width,H=rect.height;
+  ctx.clearRect(0,0,W,H);
+
+  var cx=W*0.2,sx=W*0.8;
+  ctx.font='bold 12px -apple-system,sans-serif';
+  ctx.textAlign='center';
+  ctx.fillStyle='#6c63ff';ctx.fillText('板端',cx,24);
+  ctx.fillStyle='#34d399';ctx.fillText('SFU',sx,24);
+
+  // Vertical lines
+  ctx.strokeStyle='rgba(108,99,255,.15)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx,36);ctx.lineTo(cx,H-10);ctx.stroke();
+  ctx.strokeStyle='rgba(52,211,153,.15)';
+  ctx.beginPath();ctx.moveTo(sx,36);ctx.lineTo(sx,H-10);ctx.stroke();
+
+  // Draw arrows for completed steps
+  var total=steps.length;
+  var spacing=(H-60)/(total+1);
+  for(var i=0;i<=dtlsStep;i++){
+    var y=48+spacing*(i+1);
+    var isLeft=steps[i].dir==='←';
+    var fromX=isLeft?sx:cx;
+    var toX=isLeft?cx:sx;
+    var col=i===dtlsStep?'rgba(108,99,255,.8)':'rgba(108,99,255,.3)';
+
+    ctx.strokeStyle=col;ctx.lineWidth=i===dtlsStep?2:1;
+    ctx.beginPath();ctx.moveTo(fromX,y);ctx.lineTo(toX,y);ctx.stroke();
+
+    // Arrow head
+    var ax=isLeft?toX+8:toX-8;
+    ctx.beginPath();
+    ctx.moveTo(toX,y);ctx.lineTo(ax,y-4);ctx.lineTo(ax,y+4);ctx.closePath();
+    ctx.fillStyle=col;ctx.fill();
+
+    // Label
+    ctx.font=(i===dtlsStep?'bold ':'')+'11px "JetBrains Mono",monospace';
+    ctx.textAlign='center';
+    ctx.fillStyle=i===dtlsStep?'#e0e0ff':'#777';
+    ctx.fillText(steps[i].label,(cx+sx)/2,y-6);
+  }
+}
+
+window.setDtlsStep=function(i){dtlsStep=i;renderDtls()};
+window.dtlsPrev=function(){if(dtlsStep>0){dtlsStep--;renderDtls()}};
+window.dtlsNext=function(){if(dtlsStep<steps.length-1){dtlsStep++;renderDtls()}};
+setTimeout(function(){dtlsStep=0;renderDtls()},100);
+window.addEventListener('resize',function(){if(dtlsStep>=0)drawDtlsCanvas()});
+})();
+
+// =========================================================
+// S6: RTP / SRTP / RTCP
+// =========================================================
+(function(){
+var rtpSteps=[
+  {name:'RTP Header',desc:'12 字节固定头：<em>V=2</em> (版本), <em>P</em> (填充), <em>X</em> (扩展), <em>CC</em> (CSRC计数), <em>M</em> (标记位 — H.264帧末尾置1), <em>PT</em> (负载类型102), <em>SeqNum</em> (序列号), <em>Timestamp</em> (90kHz时钟), <em>SSRC</em> (同步源标识)'},
+  {name:'RTP Extensions',desc:'本项目使用两个扩展：<code>abs-send-time</code> (1字节头, 绝对发送时间 24bit fixed-point) 和 <code>transport-wide-cc</code> (2字节头, 全局序列号用于拥塞控制)'},
+  {name:'H.264 Payload',desc:'小帧(≤1200B)直接放单个 NAL 单元；大帧分片为 <em>FU-A</em> (Fragmentation Unit)：每个 RTP 包携带 FU Indicator (1B) + FU Header (1B: S/E/R/Type)，S=首片 E=末片'},
+  {name:'SRTP Encrypt',desc:'密钥来自 DTLS 导出的 SRTP key+salt：<code>Keystream = AES-128-CTR(Key, IV∥Counter)</code>，<code>Ciphertext = Plaintext ⊕ Keystream</code> 仅加密 Payload 部分，Header 不加密'},
+  {name:'SRTP Auth',desc:'在加密后的 RTP 包尾部追加 <em>10 字节</em> 认证标签：<code>HMAC-SHA1(auth_key, Header∥EncPayload∥ROC)</code>。ROC (Roll-Over Counter) 用于 SeqNum 回绕时的完整性保护'},
+  {name:'RTCP Feedback',desc:'SR (Sender Report) 报告发送统计；RR (Receiver Report) 报告丢包率/抖动；<em>REMB</em> 告知发送方可用带宽；<em>Transport-CC</em> 提供逐包到达反馈供 SFU 拥塞控制'}
+];
+var rtpStep=0;
+var h='<div class="rtp-canvas-wrap"><canvas id="rtpC"></canvas></div>';
+h+='<div class="rtp-steps" id="rtpDots">';
+rtpSteps.forEach(function(s,i){
+  h+='<div class="rtp-dot'+(i===0?' active':'')+'" onclick="setRtpStep('+i+')">'+s.name+'</div>';
+});
+h+='</div>';
+h+='<div class="rtp-detail" id="rtpDetail">'+rtpSteps[0].desc+'</div>';
+document.getElementById('rtpWrap').innerHTML=h;
+
+function drawRtpCanvas(step){
+  var c=document.getElementById('rtpC');
+  var ctx=c.getContext('2d');
+  var rect=c.parentElement.getBoundingClientRect();
+  var dpr=window.devicePixelRatio||1;
+  c.width=rect.width*dpr;c.height=rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  var W=rect.width,H=rect.height;
+  ctx.clearRect(0,0,W,H);
+
+  var mx=W*0.5;
+  var blocks=[
+    {label:'V/P/X/CC',w:30,h:28,color:'rgba(108,99,255,.15)',border:'rgba(108,99,255,.3)'},
+    {label:'M/PT',w:30,h:28,color:'rgba(108,99,255,.15)',border:'rgba(108,99,255,.3)'},
+    {label:'SeqNum',w:55,h:28,color:'rgba(56,189,248,.12)',border:'rgba(56,189,248,.25)'},
+    {label:'Timestamp',w:80,h:28,color:'rgba(245,158,11,.12)',border:'rgba(245,158,11,.25)'},
+    {label:'SSRC',w:65,h:28,color:'rgba(52,211,153,.12)',border:'rgba(52,211,153,.25)'},
+    {label:'Ext',w:50,h:28,color:'rgba(168,85,247,.12)',border:'rgba(168,85,247,.25)'},
+    {label:'H.264',w:100,h:28,color:'rgba(244,63,94,.12)',border:'rgba(244,63,94,.25)'},
+    {label:'Auth',w:45,h:28,color:'rgba(34,197,94,.12)',border:'rgba(34,197,94,.25)'}
+  ];
+  // Arrange horizontally
+  var totalW=blocks.reduce(function(s,b){return s+b.w+4},0);
+  var startX=mx-totalW/2;
+  var cy=H*0.35;
+  var x=startX;
+  blocks.forEach(function(b,i){
+    var active=i<=step;
+    var alpha=active?1:0.25;
+    ctx.globalAlpha=alpha;
+    ctx.fillStyle=b.color;
+    ctx.strokeStyle=b.border;
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.roundRect(x,cy-b.h/2,b.w,b.h,4);
+    ctx.fill();ctx.stroke();
+    ctx.font='bold 9px "JetBrains Mono",monospace';
+    ctx.textAlign='center';
+    ctx.fillStyle=i===step?'#e0e0ff':'#888';
+    ctx.fillText(b.label,x+b.w/2,cy+3);
+    ctx.globalAlpha=1;
+    x+=b.w+4;
+  });
+
+  // Draw labels below
+  ctx.font='11px -apple-system,sans-serif';
+  ctx.textAlign='center';
+  ctx.fillStyle='#8888bb';
+  var labelY=cy+b.h/2+20;
+  if(step===0) ctx.fillText('RTP 固定头 (12B)',mx,labelY);
+  else if(step===1) ctx.fillText('RTP 头扩展',mx,labelY);
+  else if(step===2) ctx.fillText('H.264 NAL / FU-A 分片',mx,labelY);
+  else if(step===3){ctx.fillStyle='#f43f5e';ctx.fillText('AES-128-CTR 加密 Payload',mx,labelY);}
+  else if(step===4){ctx.fillStyle='#34d399';ctx.fillText('HMAC-SHA1-80 认证标签 (10B)',mx,labelY);}
+  else if(step===5){ctx.fillStyle='#38bdf8';ctx.fillText('RTCP 反馈控制',mx,labelY);}
+}
+
+window.setRtpStep=function(i){
+  rtpStep=i;
+  document.querySelectorAll('#rtpDots .rtp-dot').forEach(function(el,j){
+    el.className='rtp-dot'+(j===i?' active':(j<i?' done':''));
+  });
+  document.getElementById('rtpDetail').innerHTML=rtpSteps[i].desc;
+  drawRtpCanvas(i);
+};
+setTimeout(function(){drawRtpCanvas(0)},200);
+window.addEventListener('resize',function(){drawRtpCanvas(rtpStep)});
+})();
+
+// =========================================================
+// S7: DataChannel / SCTP
+// =========================================================
+(function(){
+var steps=[
+  {text:'DTLS 握手完成后，通过 DTLS 通道建立 <em>SCTP 关联</em>'},
+  {text:'SCTP 关联就绪后，通过 <code>DATA_CHANNEL_OPEN</code> 消息协商 DataChannel 参数（label, ordered, maxRetransmits）'},
+  {text:'DataChannel 建立完成，可通过 <code>send()</code> 发送文本或二进制数据'},
+  {text:'SCTP 提供两种模式：<em>可靠传输</em> (类似 TCP) 和 <em>部分可靠</em> (限时/限次重传)'}
+];
+var h='<div class="dc-flow">';
+steps.forEach(function(s,i){
+  if(i>0) h+='<div class="dc-arrow" data-delay="'+i+'">↓</div>';
+  h+='<div class="dc-step" data-delay="'+i+'">'+s.text+'</div>';
+});
+h+='</div>';
+h+='<div class="dc-status pending" id="dcStatus">⚠ 项目当前状态：SDP 中 <code>m=application</code> 行已包含，但板端代码暂未启用 DataChannel 功能</div>';
+document.getElementById('dcWrap').innerHTML=h;
+})();
+
+// =========================================================
+// S8: Sequence Diagram — Full Protocol Chain
+// =========================================================
+(function(){
+var phases=[
+  {key:'wss',label:'WSS 信令',color:'#38bdf8'},
+  {key:'sdp',label:'SDP 协商',color:'#a78bfa'},
+  {key:'ice',label:'ICE 连通',color:'#f59e0b'},
+  {key:'dtls',label:'DTLS 握手',color:'#f43f5e'},
+  {key:'srtp',label:'SRTP 媒体',color:'#34d399'}
+];
+var steps=[
+  {f:0,t:1,label:'DNS+TCP+TLS',proto:'WSS',color:'#38bdf8',phase:'wss',
+   desc:'板端发起 DNS 解析获取 SFU IP → TCP 三次握手建立可靠通道 → TLS 1.2 握手协商 <em>AES-128-GCM</em>。项目修复：ALPN 仅发 <code>http/1.1</code>，避免 CDN 优先协商 H2 导致 WS 升级被拒。'},
+  {f:0,t:1,label:'WS Upgrade',proto:'WSS',color:'#38bdf8',phase:'wss',
+   desc:'<code>GET /rtc?protocol=v3</code> + <code>Upgrade: websocket</code> 头，SFU 返回 <code>101 Switching Protocols</code>，WebSocket 通道建立。'},
+  {f:0,t:1,label:'join',proto:'Protobuf',color:'#38bdf8',phase:'wss',
+   desc:'板端发送 <code>SignalRequest.join</code>，携带 JWT token（含 <code>room:join</code> 权限）、房间名、identity。<em>nanopb</em> 序列化，相比 JSON 节省 30-50% 带宽。'},
+  {f:1,t:0,label:'join response',proto:'Protobuf',color:'#38bdf8',phase:'wss',
+   desc:'SFU 返回 <code>SignalResponse.join</code>：房间信息、参与者列表、<code>ice_servers</code>（STUN/TURN URL + 凭证）、已发布轨道。'},
+
+  {f:1,t:0,label:'SDP Offer',proto:'SDP',color:'#a78bfa',phase:'sdp',
+   desc:'SFU 先发 Offer（与浏览器角色相反），含 <code>m=video</code>、<code>a=ice-ufrag/pwd</code>、<code>a=fingerprint</code> DTLS 证书指纹、<code>a=group:BUNDLE 0 1</code> 多路复用。'},
+  {f:0,t:1,label:'SDP Answer',proto:'SDP',color:'#a78bfa',phase:'sdp',
+   desc:'板端回复 Answer，匹配媒体行并填入本地 ICE 凭证和 DTLS 指纹。BUNDLE 确保音视频共用传输通道。<code>LkSdp.c addBundleGroup()</code> 实现。'},
+
+  {f:0,t:1,label:'trickle (host)',proto:'ICE',color:'#f59e0b',phase:'ice',
+   desc:'板端收集 host 候选（本地网卡地址），通过 <code>SignalRequest.trickle</code> 立即发送。Trickle ICE 无需等完整集合，加速连通。'},
+  {f:1,t:0,label:'trickle (srflx/relay)',proto:'ICE',color:'#f59e0b',phase:'ice',
+   desc:'SFU 通过 STUN/TURN 获取 <em>srflx</em>（公网映射地址）和 <em>relay</em>（TURN 中继地址）候选，逐条 trickle 下发。'},
+  {f:0,t:1,label:'STUN Binding',proto:'STUN',color:'#f59e0b',phase:'ice',
+   desc:'板端发 STUN Binding Request（<code>USERNAME</code>+<code>MESSAGE-INTEGRITY</code> 用 <em>ice-pwd</em> 计算 HMAC），SFU 回复 Response。<em>连通性检测成功</em>，候选对变为 SUCCEEDED。'},
+
+  {f:0,t:1,label:'ClientHello',proto:'DTLS',color:'#f43f5e',phase:'dtls',
+   desc:'ICE 连通后启动 DTLS。ClientHello 携带密码套件列表 + <em>use_srtp</em> 扩展（<code>SRTP_AES128_CM_HMAC_SHA1_80</code>）+ <em>client_random</em>。'},
+  {f:1,t:0,label:'ServerHello+Cert+KeyEx',proto:'DTLS',color:'#f43f5e',phase:'dtls',
+   desc:'SFU 选 <code>ECDHE-ECDSA-AES128-GCM-SHA256</code>，发自签 X.509（ECDSA P-256）+ ECDHE 临时公钥 <em>server_ecdhe_pub</em>，附 ECDSA 签名。'},
+  {f:0,t:1,label:'ClientKeyEx+CCS+Fin',proto:'DTLS',color:'#f43f5e',phase:'dtls',
+   desc:'板端发 ECDHE 临时公钥 <em>client_ecdhe_pub</em>，双方计算 <code>pre_master = ECDH(priv, peer_pub)</code>，发 ChangeCipherSpec + Finished（HMAC 验证握手完整性）。'},
+  {f:1,t:0,label:'CCS + Finished',proto:'DTLS',color:'#f43f5e',phase:'dtls',
+   desc:'SFU 切换密钥发 Finished。握手完成！SRTP 密钥导出：<code>key_block = PRF(master, "EXTRACTOR-dtls_srtp", CR+SR)</code> → 每方向 16B key + 14B salt。'},
+
+  {f:0,t:1,label:'SRTP (H.264帧)',proto:'SRTP',color:'#34d399',phase:'srtp',
+   desc:'IMP 采集 H.264 帧 → RTP 封装（12B 头 + Ext + FU-A 分片）→ <em>AES-128-CTR</em> 加密 Payload + <em>HMAC-SHA1-80</em> 追加 10B 认证标签。Header 明文路由。'},
+  {f:1,t:2,label:'SRTP (转发)',proto:'SRTP',color:'#34d399',phase:'srtp',
+   desc:'SFU 解密→重加密转发给浏览器。仅切换 SSRC/SeqNum，不做编解码（Selective Forwarding），延迟 < 1ms。'},
+  {f:2,t:1,label:'RTCP RR',proto:'RTCP',color:'#34d399',phase:'srtp',
+   desc:'浏览器发 Receiver Report（丢包率/抖动/RTT）。SFU 聚合多订阅者反馈，做带宽估计决策。'},
+  {f:1,t:0,label:'RTCP REMB/CC',proto:'RTCP',color:'#34d399',phase:'srtp',
+   desc:'SFU 通过 REMB/Transport-CC 告知可用带宽。板端 <code>BitrateLimiter</code> 调整 IMP 编码码率，形成 <em>自适应码率闭环</em>。'}
+];
+var seqStep=0;
+var pts=['板端','SFU','浏览器'];
+var ptCol=['#6c63ff','#34d399','#38bdf8'];
+
+var h='<div class="seq-canvas-wrap"><canvas id="seqC"></canvas></div>';
+h+='<div class="seq-dots" id="seqDots">';
+var cp='';
+steps.forEach(function(s,i){
+  if(s.phase!==cp){
+    var ph=phases.find(function(p){return p.key===s.phase;});
+    if(ph) h+='<span class="seq-pl" style="color:'+ph.color+';background:'+ph.color+'12">'+ph.label+'</span>';
+    cp=s.phase;
+  }
+  h+='<div class="seq-dot p-'+s.phase+(i===0?' active':'')+'" onclick="setSeqStep('+i+')">'+(i+1)+'</div>';
+});
+h+='</div>';
+h+='<div class="seq-detail" id="seqDetail">'+steps[0].desc+'</div>';
+h+='<div class="seq-nav">';
+h+='<button class="dtls-btn" id="seqPrev" onclick="seqPrev()" disabled>← 上一步</button>';
+h+='<button class="dtls-btn" id="seqNext" onclick="seqNext()">下一步 →</button>';
+h+='</div>';
+document.getElementById('seqWrap').innerHTML=h;
+
+function rrect(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function computeYs(){
+  var y=52,ys=[];
+  for(var i=0;i<steps.length;i++){
+    if(i>0&&steps[i].phase!==steps[i-1].phase) y+=12;
+    ys.push(y);y+=25;
+  }
+  return ys;
+}
+
+// Adjust canvas height to content
+var ysH=computeYs();
+var neededH=ysH[ysH.length-1]+40;
+document.querySelector('.seq-canvas-wrap').style.height=Math.max(neededH,200)+'px';
+
+function renderSeq(){
+  var dotEls=document.querySelectorAll('#seqDots .seq-dot');
+  dotEls.forEach(function(el,i){
+    el.className='seq-dot p-'+steps[i].phase+(i===seqStep?' active':(i<seqStep?' done':''));
+  });
+  document.getElementById('seqDetail').innerHTML=steps[seqStep].desc;
+  document.getElementById('seqPrev').disabled=seqStep<=0;
+  document.getElementById('seqNext').disabled=seqStep>=steps.length-1;
+  drawSeq();
+}
+function drawSeq(){
+  var c=document.getElementById('seqC');
+  var ctx=c.getContext('2d');
+  var rect=c.parentElement.getBoundingClientRect();
+  var dpr=window.devicePixelRatio||1;
+  c.width=rect.width*dpr;c.height=rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  var W=rect.width,H=rect.height;
+  ctx.clearRect(0,0,W,H);
+  var px=[W*0.15,W*0.5,W*0.85];
+
+  ctx.font='bold 12px -apple-system,BlinkMacSystemFont,"Noto Sans SC",sans-serif';
+  ctx.textAlign='center';
+  pts.forEach(function(n,i){ctx.fillStyle=ptCol[i];ctx.fillText(n,px[i],22);});
+
+  var ys=computeYs();
+  var lt=34,lb=Math.min(ys[ys.length-1]+24,H-8);
+  ctx.setLineDash([4,4]);ctx.lineWidth=1;
+  px.forEach(function(x,i){ctx.strokeStyle=ptCol[i]+'25';ctx.beginPath();ctx.moveTo(x,lt);ctx.lineTo(x,lb);ctx.stroke();});
+  ctx.setLineDash([]);
+
+  // Phase separators
+  var lp='';
+  for(var i=0;i<steps.length;i++){
+    if(steps[i].phase!==lp){
+      var ph=phases.find(function(p){return p.key===steps[i].phase;});
+      if(ph&&i>0){
+        var sy=ys[i]-9;
+        ctx.strokeStyle=ph.color+'18';ctx.lineWidth=1;ctx.setLineDash([3,6]);
+        ctx.beginPath();ctx.moveTo(px[0],sy);ctx.lineTo(px[2],sy);ctx.stroke();ctx.setLineDash([]);
+        ctx.font='bold 8px "JetBrains Mono",monospace';ctx.textAlign='left';
+        ctx.fillStyle=ph.color+'50';ctx.fillText(ph.label.toUpperCase(),px[0]+4,sy-3);
+      }
+      lp=steps[i].phase;
+    }
+  }
+
+  // Arrows
+  for(var i=0;i<=seqStep;i++){
+    var s=steps[i],y=ys[i],cur=i===seqStep;
+    var al=cur?1:0.4;
+    var fx=px[s.f],tx=px[s.t],co=s.color,dir=fx<tx?1:-1;
+    ctx.save();ctx.globalAlpha=al;
+    if(cur){ctx.fillStyle=co+'08';ctx.fillRect(Math.min(fx,tx)-6,y-14,Math.abs(tx-fx)+12,30);}
+    ctx.strokeStyle=co;ctx.lineWidth=cur?2:1.2;
+    ctx.beginPath();ctx.moveTo(fx,y);ctx.lineTo(tx,y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(tx,y);ctx.lineTo(tx-dir*7,y-3.5);ctx.lineTo(tx-dir*7,y+3.5);ctx.closePath();
+    ctx.fillStyle=co;ctx.fill();
+
+    // Proto badge
+    ctx.font=(cur?'bold ':'')+'9px "JetBrains Mono",monospace';
+    ctx.textAlign='center';
+    var mx=(fx+tx)/2,by=y-6;
+    var bw=ctx.measureText(s.proto).width+8;
+    ctx.fillStyle=co+(cur?'20':'10');
+    rrect(ctx,mx-bw/2,by-8,bw,14,3);ctx.fill();
+    ctx.fillStyle=co;ctx.fillText(s.proto,mx,by+2);
+
+    // Label
+    ctx.font='8px -apple-system,sans-serif';
+    ctx.fillStyle=cur?'#e0e0ff':'#666';
+    ctx.fillText(s.label,(fx+tx)/2,y+12);
+    ctx.restore();
+  }
+}
+
+window.setSeqStep=function(i){seqStep=i;renderSeq();};
+window.seqPrev=function(){if(seqStep>0){seqStep--;renderSeq();}};
+window.seqNext=function(){if(seqStep<steps.length-1){seqStep++;renderSeq();}};
+
+// Render on first visibility
+var seqObs=new IntersectionObserver(function(entries){
+  if(entries[0].isIntersecting){renderSeq();seqObs.disconnect();}
+},{threshold:0.1});
+seqObs.observe(document.getElementById('seqWrap'));
+window.addEventListener('resize',function(){drawSeq();});
+})();
+
+// =========================================================
+// S8: End-to-End Frame Journey
+// =========================================================
+(function(){
+var phases=[
+  {icon:'📷',proto:'IMP驱动',name:'IMP 采集',color:'#38bdf8'},
+  {icon:'📦',proto:'RTP',name:'RTP 封装',color:'#a78bfa'},
+  {icon:'🔒',proto:'SRTP',name:'SRTP 加密',color:'#f43f5e'},
+  {icon:'🛡️',proto:'DTLS',name:'DTLS 通道',color:'#f59e0b'},
+  {icon:'🌐',proto:'ICE',name:'ICE 传输',color:'#6c63ff'},
+  {icon:'🔀',proto:'SFU',name:'SFU 转发',color:'#34d399'},
+  {icon:'📥',proto:'WSS',name:'浏览器接收',color:'#38bdf8'},
+  {icon:'🔓',proto:'SRTP',name:'SRTP 解密',color:'#f43f5e'},
+  {icon:'📤',proto:'RTP',name:'RTP 解包',color:'#a78bfa'},
+  {icon:'🖥️',proto:'WebRTC',name:'解码渲染',color:'#34d399'}
+];
+var h='<div class="journey-tl">';
+phases.forEach(function(p,i){
+  if(i>0) h+='<div class="journey-connector" data-delay="'+i+'">→</div>';
+  h+='<div class="journey-step" data-delay="'+i+'">';
+  h+='<div class="js-icon" style="background:'+p.color+'15;border-color:'+p.color+'40;color:'+p.color+'">'+p.icon+'</div>';
+  h+='<div class="js-proto" style="color:'+p.color+'">'+p.proto+'</div>';
+  h+='<div class="js-name">'+p.name+'</div>';
+  h+='</div>';
+});
+h+='</div>';
+
+// Protocol comparison table
+h+='<table class="proto-tbl"><tr><th>协议</th><th>RFC</th><th>传输层</th><th>用途</th><th>项目配置</th></tr>';
+var rows=[
+  ['HTTP/DNS','RFC 9110/1035','TCP/UDP','健康检查/域名解析','<code>https://</code> health endpoint'],
+  ['WSS','RFC 6455+TLS','TCP','信令通道','<code>wss://</code> + Protobuf + ALPN h2'],
+  ['SDP','RFC 4566','—','会话描述协商','<code>m=video</code>, <code>a=fingerprint</code>, <code>BUNDLE</code>'],
+  ['ICE','RFC 8445','—','连通性编排','状态机 NEW→READY'],
+  ['STUN','RFC 5389','UDP','NAT 探测','Magic Cookie <code>0x2112A442</code>'],
+  ['TURN','RFC 5766','UDP/TCP','NAT 穿越中继','Allocate→ChannelBind→Send'],
+  ['DTLS 1.2','RFC 6347','UDP','密钥协商+SRTP导出','<code>ECDHE-ECDSA-AES128-GCM</code>'],
+  ['RTP','RFC 3550','UDP','媒体传输','头部12B + Ext + Payload'],
+  ['SRTP','RFC 3711','UDP','媒体加密','<code>AES128-CTR + HMAC-SHA1-80</code>'],
+  ['RTCP','RFC 3550','UDP','反馈控制','SR/RR/REMB/Transport-CC'],
+  ['SCTP','RFC 4960','DTLS/UDP','数据通道','<code>m=application</code> (未启用)']
+];
+rows.forEach(function(r){
+  h+='<tr><td><strong>'+r[0]+'</strong></td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td><td>'+r[4]+'</td></tr>';
+});
+h+='</table>';
+document.getElementById('journeyWrap').innerHTML=h;
+})();
+
+</script>
+</body>
+</html>

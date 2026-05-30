@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>非对称加密 — LiveKit 安全交互式学习</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif}
+.main{margin-left:0;max-width:100%;padding:0}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:720px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(232,121,249,.3)}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(232,121,249,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Hero Canvas ===== */
+.hero-canvas{width:100%;max-width:900px;height:280px;margin-top:36px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.hero-canvas.vis{opacity:1;transform:translateY(0)}
+.hero-canvas canvas{width:100%;height:100%;border-radius:16px}
+
+/* ===== Comparison Cards ===== */
+.cmp{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.cmp.vis{opacity:1;transform:translateY(0)}
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+.cmp-col{border-radius:14px;padding:24px;transition:all .3s}
+.cmp-col.sym{background:rgba(244,63,94,.025);border:1px solid rgba(244,63,94,.1)}
+.cmp-col.sym:hover{border-color:rgba(244,63,94,.25);box-shadow:0 0 30px rgba(244,63,94,.06)}
+.cmp-col.asym{background:rgba(232,121,249,.025);border:1px solid rgba(232,121,249,.1)}
+.cmp-col.asym:hover{border-color:rgba(232,121,249,.25);box-shadow:0 0 30px rgba(232,121,249,.06)}
+.cmp-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.cmp-col.sym .cmp-tag{color:#f43f5e}
+.cmp-col.asym .cmp-tag{color:#e879f9}
+.cmp-title{font-size:16px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.cmp-list{list-style:none;padding:0}
+.cmp-list li{padding:5px 0;font-size:12.5px;color:#a0a0c8;line-height:1.65;border-bottom:1px solid rgba(255,255,255,.03)}
+.cmp-list li:last-child{border-bottom:none}
+.cmp-list li strong{color:#d0d0f0}
+.cmp-insight{margin-top:16px;padding:14px 18px;background:rgba(232,121,249,.04);border:1px solid rgba(232,121,249,.1);border-radius:10px;font-size:12.5px;line-height:1.7;color:#c0a0c8}
+.cmp-insight em{color:#e879f9;font-style:normal;font-weight:600}
+
+/* ===== Flip Cards ===== */
+.flip{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.flip.vis{opacity:1;transform:translateY(0)}
+.flip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:24px}
+.flip-wrap{perspective:800px;height:280px;cursor:pointer}
+.flip-inner{position:relative;width:100%;height:100%;transition:transform .6s;transform-style:preserve-3d}
+.flip-wrap.flipped .flip-inner{transform:rotateY(180deg)}
+.flip-front,.flip-back{position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;padding:22px;display:flex;flex-direction:column;overflow:hidden}
+.flip-front{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);justify-content:center;align-items:center;text-align:center}
+.flip-front .ff-icon{font-size:42px;margin-bottom:12px}
+.flip-front .ff-title{font-size:16px;font-weight:700;color:#d0d0f0;margin-bottom:6px}
+.flip-front .ff-sub{font-size:11px;color:#7777aa;line-height:1.5}
+.flip-front .ff-hint{font-size:9px;color:#555577;margin-top:16px;letter-spacing:1px;text-transform:uppercase}
+.flip-back{background:rgba(232,121,249,.03);border:1px solid rgba(232,121,249,.12);transform:rotateY(180deg);overflow-y:auto}
+.flip-back .fb-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#e879f9;margin-bottom:8px}
+.flip-back .fb-title{font-size:14px;font-weight:700;color:#d0d0f0;margin-bottom:10px}
+.flip-back .fb-flow{font-size:12px;color:#a0a0c8;line-height:1.75}
+.flip-back .fb-flow em{color:#e879f9;font-style:normal;font-weight:600}
+.flip-back .fb-flow strong{color:#d0d0f0}
+.flip-back .fb-flow code{background:rgba(232,121,249,.08);color:#e879f9;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.flip-card-1 .flip-front{border-top:3px solid #e879f9}
+.flip-card-2 .flip-front{border-top:3px solid #a78bfa}
+.flip-card-3 .flip-front{border-top:3px solid #34d399}
+
+/* ===== Performance Chart ===== */
+.perf{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.perf.vis{opacity:1;transform:translateY(0)}
+.perf-tabs{display:flex;gap:6px;margin-bottom:18px;margin-top:20px;justify-content:center}
+.perf-tab{padding:8px 18px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all .25s;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#8888bb}
+.perf-tab:hover{background:rgba(232,121,249,.1);color:#d0b0e8}
+.perf-tab.active{background:rgba(232,121,249,.15);border-color:rgba(232,121,249,.3);color:#fff}
+.perf-canvas{width:100%;height:320px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.perf-canvas canvas{width:100%;height:100%}
+.perf-conclusion{margin-top:16px;padding:16px 22px;background:rgba(244,63,94,.04);border:1px solid rgba(244,63,94,.1);border-radius:12px;font-size:12.5px;line-height:1.8;color:#b0a0a8}
+.perf-conclusion em{color:#e879f9;font-style:normal;font-weight:600}
+.perf-conclusion strong{color:#fca5a5}
+
+/* ===== Architecture Diagram ===== */
+.arch{width:100%;max-width:960px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.arch.vis{opacity:1;transform:translateY(0)}
+.arch-container{margin-top:24px;display:flex;gap:24px;flex-wrap:wrap;justify-content:center}
+.arch-layer{border-radius:14px;padding:20px;min-width:280px;flex:1;max-width:420px;transition:all .3s}
+.arch-layer.asym{background:rgba(232,121,249,.03);border:1px solid rgba(232,121,249,.12)}
+.arch-layer.sym{background:rgba(108,99,255,.03);border:1px solid rgba(108,99,255,.12)}
+.arch-layer:hover{box-shadow:0 0 40px rgba(232,121,249,.08)}
+.arch-layer-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.arch-layer.asym .arch-layer-tag{color:#e879f9}
+.arch-layer.sym .arch-layer-tag{color:#6c63ff}
+.arch-layer-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:14px}
+.arch-row{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);transition:all .3s;cursor:default}
+.arch-row:hover{border-color:rgba(232,121,249,.2);transform:translateX(4px)}
+.arch-row .ar-icon{font-size:18px;flex-shrink:0}
+.arch-row .ar-text{font-size:12px;color:#a0a0c8;line-height:1.5;flex:1}
+.arch-row .ar-text strong{color:#d0d0f0}
+.arch-arrow-col{display:flex;align-items:center;justify-content:center;min-width:40px;flex-shrink:0}
+.arch-arrow{font-size:28px;color:#555577;animation:arrowPulse 2s ease infinite}
+@keyframes arrowPulse{0%,100%{opacity:.4}50%{opacity:.8}}
+.arch-note{margin-top:16px;padding:14px 18px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);border-radius:10px;font-size:12.5px;line-height:1.7;color:#a0c8b0}
+.arch-note em{color:#34d399;font-style:normal;font-weight:600}
+
+/* ===== Code Cards ===== */
+.code{width:100%;max-width:900px;opacity:0;transform:translateY(40px);transition:all .8s .2s}
+.code.vis{opacity:1;transform:translateY(0)}
+.code-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:24px;margin-top:14px;opacity:0;transform:translateX(-16px);transition:all .6s}
+.code-card.vis{opacity:1;transform:translateX(0)}
+.code-card .cc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.code-card .cc-title{font-size:15px;font-weight:700;color:#d0d0f0;margin-bottom:8px}
+.code-card .cc-desc{font-size:12.5px;color:#8888bb;line-height:1.75;margin-bottom:14px}
+.code-card .cc-desc em{color:#e879f9;font-style:normal;font-weight:600}
+.code-card .cc-desc code{background:rgba(232,121,249,.08);color:#e879f9;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace}
+.code-block{background:#0a081a;border-radius:8px;padding:14px;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:11.5px;line-height:1.75;color:#8888bb;overflow-x:auto}
+.code-block .kw{color:#cba6f7}.code-block .str{color:#a6e3a1}.code-block .cmt{color:#6c7086}.code-block .fn{color:#89b4fa}
+.code-risk{margin-top:14px;padding:14px 18px;background:rgba(244,63,94,.04);border:1px solid rgba(244,63,94,.1);border-radius:10px;font-size:12.5px;line-height:1.8;color:#b0a0a8}
+.code-risk strong{color:#fca5a5}
+.code-risk em{color:#e879f9;font-style:normal;font-weight:600}
+
+@media(max-width:700px){.cmp-grid,.flip-grid{grid-template-columns:1fr}.flip-wrap{height:250px}.arch-container{flex-direction:column}.arch-arrow-col{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="main">
+
+<!-- ========== 1. Hero ========== -->
+<div class="sec" id="s1">
+  <div class="sec-title" data-reveal>非对称加密：两把钥匙的世界</div>
+  <div class="sec-sub" data-reveal>一把钥匙公开上锁，另一把私密开锁 —— 非对称加密让素未谋面的双方也能安全通信</div>
+  <div class="hero-canvas" id="heroCanvas" data-reveal><canvas id="heroC"></canvas></div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 2. 对称 vs 非对称 ========== -->
+<div class="sec" id="s2">
+  <div class="sec-title" data-reveal>概念解析：公钥/私钥对</div>
+  <div class="sec-sub" data-reveal>对称加密一把钥匙管两头，非对称加密把钥匙分成两半 —— 各管一头。<br>两者不是替代关系，而是互补搭配。</div>
+  <div class="cmp" data-reveal>
+    <div class="cmp-grid">
+      <div class="cmp-col sym">
+        <div class="cmp-tag">对称加密</div>
+        <div class="cmp-title">AES — 同一把密钥加密解密</div>
+        <ul class="cmp-list">
+          <li><strong>密钥数量：</strong>1 把，加解密共享</li>
+          <li><strong>分发方式：</strong>必须通过安全的渠道传递密钥</li>
+          <li><strong>速度：</strong>极快（微秒级，0.5μs/KB）</li>
+          <li><strong>典型算法：</strong>AES-128, ChaCha20</li>
+          <li><strong>适用场景：</strong>海量数据加密（视频帧、文件）</li>
+          <li><strong>本项目：</strong>SRTP 视频加密、TLS 数据加密</li>
+        </ul>
+      </div>
+      <div class="cmp-col asym">
+        <div class="cmp-tag">非对称加密</div>
+        <div class="cmp-title">RSA/EC — 公钥加密，私钥解密</div>
+        <ul class="cmp-list">
+          <li><strong>密钥数量：</strong>2 把，公钥公开、私钥保密</li>
+          <li><strong>分发方式：</strong>公钥可随意分发，私钥从不离开本地</li>
+          <li><strong>速度：</strong>极慢（毫秒级，500μs/KB）</li>
+          <li><strong>典型算法：</strong>RSA-2048, ECDSA P-256, ECDHE</li>
+          <li><strong>适用场景：</strong>密钥协商、身份签名、证书验证</li>
+          <li><strong>本项目：</strong>DTLS 握手、证书签名、ECDHE 密钥交换</li>
+        </ul>
+      </div>
+    </div>
+    <div class="cmp-insight">
+      <em>非对称加密解决的核心问题：</em>如何在不安全的信道上安全地交换密钥。<br>
+      对称加密本身是安全的，但"怎么把密钥给对方"是个鸡生蛋的问题 —— 非对称加密就是那个蛋。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 3. 非对称三件事 ========== -->
+<div class="sec" id="s3">
+  <div class="sec-title" data-reveal>非对称三件事</div>
+  <div class="sec-sub" data-reveal>点击卡片翻转，查看每种用途的详细流程。</div>
+  <div class="flip" data-reveal>
+    <div class="flip-grid">
+      <div class="flip-wrap flip-card-1" onclick="this.classList.toggle('flipped')">
+        <div class="flip-inner">
+          <div class="flip-front">
+            <div class="ff-icon">🔒</div>
+            <div class="ff-title">加密解密</div>
+            <div class="ff-sub">公钥加密 → 私钥解密<br>保证<strong>保密性</strong></div>
+            <div class="ff-hint">点击翻转</div>
+          </div>
+          <div class="flip-back">
+            <div class="fb-tag">保密性</div>
+            <div class="fb-title">公钥加密 → 私钥解密</div>
+            <div class="fb-flow">
+              <strong>场景：</strong>别人要给你发秘密消息<br><br>
+              <em>步骤：</em><br>
+              1. 你的 <code>公钥</code> 公开发布（任何人都能拿到）<br>
+              2. 发送方用你的公钥加密消息：<code>C = Enc(PubKey, Msg)</code><br>
+              3. 密文在不安全信道传输<br>
+              4. 只有你的 <code>私钥</code> 能解密：<code>Msg = Dec(PrivKey, C)</code><br><br>
+              <em>项目实例：</em>RSA 加密 premaster secret（TLS RSA 密钥交换，已弃用）<br>
+              <em>注意：</em>项目的 ECDHE 不直接加密数据，而是用数学协商共享密钥
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flip-wrap flip-card-2" onclick="this.classList.toggle('flipped')">
+        <div class="flip-inner">
+          <div class="flip-front">
+            <div class="ff-icon">✍️</div>
+            <div class="ff-title">签名验签</div>
+            <div class="ff-sub">私钥签名 → 公钥验证<br>保证<strong>不可抵赖</strong></div>
+            <div class="ff-hint">点击翻转</div>
+          </div>
+          <div class="flip-back">
+            <div class="fb-tag">不可抵赖</div>
+            <div class="fb-title">私钥签名 → 公钥验证</div>
+            <div class="fb-flow">
+              <strong>场景：</strong>你需要证明"这段话确实是我说的"<br><br>
+              <em>步骤：</em><br>
+              1. 你的 <code>私钥</code> 从不离开本地<br>
+              2. 你用私钥对消息做签名：<code>Sig = Sign(PrivKey, Msg)</code><br>
+              3. 任何人用你的 <code>公钥</code> 验证：<code>Verify(PubKey, Msg, Sig)</code><br>
+              4. 验证通过 = 确认是你签的 + 消息未被篡改<br><br>
+              <em>项目实例：</em>ECDSA P-256 签名 DTLS 证书<br>
+              <em>关键：</em>签名不是加密——签名保证来源，加密保证内容
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flip-wrap flip-card-3" onclick="this.classList.toggle('flipped')">
+        <div class="flip-inner">
+          <div class="flip-front">
+            <div class="ff-icon">🤝</div>
+            <div class="ff-title">密钥协商</div>
+            <div class="ff-sub">双方互换公钥 → 协商共享密钥<br>实现<strong>前向保密</strong></div>
+            <div class="ff-hint">点击翻转</div>
+          </div>
+          <div class="flip-back">
+            <div class="fb-tag">前向保密</div>
+            <div class="fb-title">ECDHE — 双方协商共享密钥</div>
+            <div class="fb-flow">
+              <strong>场景：</strong>双方要协商出同一个对称密钥，但不传输密钥本身<br><br>
+              <em>步骤（ECDHE）：</em><br>
+              1. 双方各生成临时 <code>密钥对</code><br>
+              2. 互换公钥（通过 DTLS 握手消息）<br>
+              3. 各自计算：<code>shared = DH(自己的私钥, 对方的公钥)</code><br>
+              4. 得到相同的 <code>premaster_secret</code> → 导出对称密钥<br><br>
+              <em>项目实例：</em>DLS-ECDHE-P256 握手导出 SRTP 密钥<br>
+              <em>前向保密：</em>临时密钥对每次握手重新生成，会话结束后销毁。即使以后私钥泄露，过去的会话也无法解密。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 4. 性能对比 ========== -->
+<div class="sec" id="s4">
+  <div class="sec-title" data-reveal>为什么 WebRTC 不用非对称加密视频？</div>
+  <div class="sec-sub" data-reveal>非对称加密比对称加密慢 1000 倍以上。<br>切换视图，直观感受速率差距。</div>
+  <div class="perf" data-reveal>
+    <div class="perf-tabs">
+      <div class="perf-tab active" onclick="setPerfMode('speed')">加密速率</div>
+      <div class="perf-tab" onclick="setPerfMode('latency')">延迟对比</div>
+    </div>
+    <div class="perf-canvas"><canvas id="perfC"></canvas></div>
+    <div class="perf-conclusion">
+      <strong>结论：</strong>非对称加密太慢，不能用来加密视频数据。<br><br>
+      实际分工：<em>非对称加密只用于握手和签名</em>（毫秒级，一次性的），<em>数据加密全部用对称加密</em>（微秒级，持续性的）。<br><br>
+      以 1080p 30fps 视频为例：带宽约 2Mbps = 250KB/s。<br>
+      • AES-128-CTR：0.5μs/KB → 每秒加密耗时 0.125ms ✅<br>
+      • RSA-2048：500μs/KB → 每秒加密耗时 125ms ❌（丢帧）
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 5. 架构图 ========== -->
+<div class="sec" id="s5">
+  <div class="sec-title" data-reveal>LiveKit 中的分工</div>
+  <div class="sec-sub" data-reveal>非对称层负责握手和身份认证，对称层负责数据加密和完整性。<br>两层通过密钥协商衔接——非对称产出对称密钥。</div>
+  <div class="arch" data-reveal>
+    <div class="arch-container">
+      <div class="arch-layer asym">
+        <div class="arch-layer-tag">非对称层 — 握手/签名</div>
+        <div class="arch-layer-title">毫秒级 · 一次性</div>
+        <div class="arch-row" data-arch="0">
+          <div class="ar-icon">🔄</div>
+          <div class="ar-text"><strong>ECDHE P-256</strong> — 双方互换临时公钥 → 协商出 <code>master_secret</code></div>
+        </div>
+        <div class="arch-row" data-arch="1">
+          <div class="ar-icon">✍️</div>
+          <div class="ar-text"><strong>ECDSA P-256</strong> — 私钥签名 DTLS 证书 → 对端验证握手完整性</div>
+        </div>
+        <div class="arch-row" data-arch="2">
+          <div class="ar-icon">🔗</div>
+          <div class="ar-text"><strong>SDP 指纹</strong> — SHA-256 哈希证书公钥 → 绑定身份到信令</div>
+        </div>
+      </div>
+      <div class="arch-arrow-col">
+        <div class="arch-arrow">⇒</div>
+      </div>
+      <div class="arch-layer sym">
+        <div class="arch-layer-tag">对称层 — 数据加密</div>
+        <div class="arch-layer-title">微秒级 · 持续性</div>
+        <div class="arch-row" data-arch="3">
+          <div class="ar-icon">🎬</div>
+          <div class="ar-text"><strong>AES-128-CTR</strong> — 加密 SRTP 视频帧（每个 RTP 包独立加密）</div>
+        </div>
+        <div class="arch-row" data-arch="4">
+          <div class="ar-icon">🛡️</div>
+          <div class="ar-text"><strong>HMAC-SHA1</strong> — 认证 RTP 包完整性（auth tag 10B）</div>
+        </div>
+        <div class="arch-row" data-arch="5">
+          <div class="ar-icon">📡</div>
+          <div class="ar-text"><strong>AES-128-GCM</strong> — 加密 TLS 信令数据（一体化加密+认证）</div>
+        </div>
+      </div>
+    </div>
+    <div class="arch-note">
+      <em>衔接点：</em>非对称层的 ECDHE 协商出 <code>master_secret</code>，通过 TLS PRF 导出对称层所需的密钥材料（SRTP key/salt、TLS key/IV）。每个方向的密钥独立导出，一个密钥只加密一个方向的数据。
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ========== 6. 代码 ========== -->
+<div class="sec" id="s6">
+  <div class="sec-title" data-reveal>代码中的分工 — mbedTLS API</div>
+  <div class="sec-sub" data-reveal>两条路径清晰分离：握手阶段走非对称，数据阶段走对称。</div>
+  <div class="code" data-reveal id="codeSec">
+    <div class="code-card" data-reveal style="border-left:3px solid #e879f9">
+      <div class="cc-tag" style="color:#e879f9">非对称路径 — 握手阶段（毫秒级）</div>
+      <div class="cc-title">ECDHE 密钥协商 + ECDSA 签名</div>
+      <div class="cc-desc">
+        DTLS 握手期间，板端使用 <em>ECDHE</em> 临时密钥对与对端协商共享密钥，
+        使用 <em>ECDSA</em> 私钥签名自己的证书以证明身份。整个过程只在连接建立时执行一次。
+      </div>
+      <div class="code-block"><span class="cmt">// Dtls_mbedtls.c — 握手期间调用</span>
+
+<span class="cmt">// ECDHE: 生成临时密钥对并发送公钥参数</span>
+<span class="fn">mbedtls_ecdh_make_params</span>(&ecdh, &olen,
+    buf, sizeof(buf), mbedtls_ctr_drbg_random, &ctr_drbg);
+
+<span class="cmt">// ECDHE: 收到对端公钥后计算共享密钥</span>
+<span class="fn">mbedtls_ecdh_compute_shared</span>(&ecdh, &olen,
+    buf, sizeof(buf), mbedtls_ctr_drbg_random, &ctr_drbg);
+
+<span class="cmt">// ECDSA: 用私钥签名 ServerKeyExchange</span>
+<span class="fn">mbedtls_ecdsa_write_signature</span>(&ecdsa,
+    MBEDTLS_MD_SHA256, hash, hash_len,
+    sig, &sig_len, mbedtls_ctr_drbg_random, &ctr_drbg);
+
+<span class="cmt">// ECDSA: 验证对端证书签名</span>
+<span class="fn">mbedtls_ecdsa_read_signature</span>(&ecdsa,
+    hash, hash_len, sig, sig_len);</div>
+    </div>
+    <div class="code-card" data-reveal style="border-left:3px solid #6c63ff">
+      <div class="cc-tag" style="color:#6c63ff">对称路径 — 数据阶段（微秒级）</div>
+      <div class="cc-title">AES 加密 + HMAC 认证</div>
+      <div class="cc-desc">
+        握手完成后，导出的对称密钥进入高速路径。每个 RTP 包用 <em>AES-128-CTR</em> 加密、<em>HMAC-SHA1</em> 认证。
+        TLS 数据则用 <em>AES-128-GCM</em> 一体化加密认证。
+      </div>
+      <div class="code-block"><span class="cmt">// SrtpSession.c — 每个 RTP 包的处理</span>
+
+<span class="cmt">// AES-128-CTR: 加密视频帧 payload</span>
+<span class="fn">mbedtls_aes_crypt_ctr</span>(&aes_ctx,
+    payload_len, nc_off, nonce, stream_block, payload, payload);
+
+<span class="cmt">// HMAC-SHA1: 计算 auth tag (取前10字节)</span>
+<span class="fn">mbedtls_md_hmac</span>(&md_sha1_info,
+    auth_key, auth_key_len, rtp_buf, rtp_len, tag);
+
+<span class="cmt">// Tls_mbedtls.c — TLS 数据加密</span>
+<span class="cmt">// AES-128-GCM: 自动完成加密 + GHASH 认证</span>
+<span class="cmt">// (由 mbedTLS 内部在 write/writev 中调用)</span></div>
+    </div>
+    <div class="code-risk">
+      <strong>板端性能风险：</strong><br>
+      RSA-2048 握手在 MIPS 架构上延迟约 2-5 秒，会导致 DTLS 握手超时。<br>
+      项目选择 <em>ECDSA P-256</em> 替代 RSA：签名约 300ms，验证约 600ms，完全满足 WebRTC 握手时序要求。<br><br>
+      <em>选型依据：</em>mbedTLS 配置中关闭 MBEDTLS_RSA_C 和 MBEDTLS_PKCS1_V15，只保留 ECP + ECDSA + ECDHE，减少代码体积约 40KB，握手延迟降低 10 倍。
+    </div>
+  </div>
+</div>
+
+</div>
+
+  <!-- Navigation -->
+  <div style="text-align:center;padding:40px 20px 60px;opacity:0.7">
+    <a href="livekit_overview_learn.html" style="color:#e0e0ff;margin:0 8px;font-weight:bold">纵览</a>
+    ·
+    <a href="livekit_hmac_learn.html" style="color:#6c63ff;margin:0 8px">HMAC</a>
+    <a href="livekit_aes_learn.html" style="color:#f43f5e;margin:0 8px">AES</a>
+    <a href="livekit_asym_encrypt_learn.html" style="color:#e879f9;margin:0 8px;font-weight:600">非对称</a>
+    <a href="livekit_ecdhe_learn.html" style="color:#34d399;margin:0 8px">ECDHE</a>
+    <a href="livekit_ecdsa_learn.html" style="color:#a78bfa;margin:0 8px">ECDSA</a>
+    <a href="livekit_sha256_learn.html" style="color:#06b6d4;margin:0 8px">SHA-256</a>
+    <a href="livekit_dtlsp_learn.html" style="color:#a78bfa;margin:0 8px">DTLS</a>
+    <a href="livekit_trustchain_learn.html" style="color:#a78bfa;margin:0 8px">信任链</a>
+    <a href="livekit_jwt_ice_learn.html" style="color:#f59e0b;margin:0 8px">JWT+ICE</a>
+    <a href="livekit_wss_learn.html" style="color:#38bdf8;margin:0 8px">WSS</a>
+    <a href="livekit_protocols_learn.html" style="color:#e0e0ff;margin:0 8px">协议</a>
+    <a href="livekit_quiz_learn.html" style="color:#6c63ff;margin:0 8px">测验</a>
+  </div>
+
+<script>
+// =========================================================
+// Canvas roundRect polyfill
+// =========================================================
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){if(typeof r==='number')r=[r,r,r,r];this.moveTo(x+r[0],y);this.lineTo(x+w-r[1],y);this.quadraticCurveTo(x+w,y,x+w,y+r[1]);this.lineTo(x+w,y+h-r[2]);this.quadraticCurveTo(x+w,y+h,x+w-r[2],y+h);this.lineTo(x+r[3],y+h);this.quadraticCurveTo(x,y+h,x,y+h-r[3]);this.lineTo(x,y+r[0]);this.quadraticCurveTo(x,y,x+r[0],y);this.closePath();return this;}}
+
+// =========================================================
+// S1: Hero canvas animation — keys + encrypted data flow
+// =========================================================
+var heroAnim;
+function initHero(){
+  var c=document.getElementById('heroC');
+  var box=document.getElementById('heroCanvas');
+  var w=box.clientWidth, h=box.clientHeight;
+  c.width=w*2; c.height=h*2;
+  c.style.width=w+'px'; c.style.height=h+'px';
+  var ctx=c.getContext('2d');
+  ctx.scale(2,2);
+
+  var t=0;
+  var particles=[];
+  for(var i=0;i<30;i++){
+    particles.push({
+      x: Math.random()*w,
+      y: h*0.3+Math.random()*h*0.4,
+      speed: 0.3+Math.random()*0.8,
+      size: 1+Math.random()*2,
+      side: Math.random()>0.5?1:-1
+    });
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    t+=0.016;
+
+    // Left: Public key (lock)
+    var lx=w*0.2, ly=h/2;
+    ctx.save();
+    ctx.translate(lx,ly);
+    // Lock body
+    ctx.fillStyle='rgba(232,121,249,0.08)';
+    ctx.strokeStyle='rgba(232,121,249,0.4)';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.roundRect(-28,0,56,44,8);
+    ctx.fill(); ctx.stroke();
+    // Lock shackle
+    ctx.strokeStyle='rgba(232,121,249,0.5)';
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.arc(0,0,16,Math.PI,0);
+    ctx.stroke();
+    // Label
+    ctx.fillStyle='#e879f9';
+    ctx.font='bold 11px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('公钥 Public Key',0,68);
+    ctx.fillStyle='#7777aa';
+    ctx.font='10px -apple-system,sans-serif';
+    ctx.fillText('公开分发 → 加密/验签',0,84);
+    ctx.restore();
+
+    // Right: Private key (unlock)
+    var rx=w*0.8, ry=h/2;
+    ctx.save();
+    ctx.translate(rx,ry);
+    // Unlock body
+    ctx.fillStyle='rgba(167,139,250,0.08)';
+    ctx.strokeStyle='rgba(167,139,250,0.4)';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.roundRect(-28,0,56,44,8);
+    ctx.fill(); ctx.stroke();
+    // Unlock shackle (open)
+    ctx.strokeStyle='rgba(167,139,250,0.5)';
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.arc(0,0,16,Math.PI,-0.4);
+    ctx.stroke();
+    // Label
+    ctx.fillStyle='#a78bfa';
+    ctx.font='bold 11px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('私钥 Private Key',0,68);
+    ctx.fillStyle='#7777aa';
+    ctx.font='10px -apple-system,sans-serif';
+    ctx.fillText('严格保密 → 解密/签名',0,84);
+    ctx.restore();
+
+    // Center: encrypted data flow
+    var cx=w/2, cy=h/2;
+
+    // Arrow left→right (encrypted)
+    var pulse1=0.4+0.3*Math.sin(t*2);
+    ctx.strokeStyle='rgba(232,121,249,'+pulse1+')';
+    ctx.lineWidth=2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(lx+40,cy-10);
+    ctx.lineTo(cx-20,cy-10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrowhead
+    ctx.fillStyle='rgba(232,121,249,'+pulse1+')';
+    ctx.beginPath();
+    ctx.moveTo(cx-20,cy-14);
+    ctx.lineTo(cx-12,cy-10);
+    ctx.lineTo(cx-20,cy-6);
+    ctx.fill();
+    // Label
+    ctx.fillStyle='rgba(232,121,249,0.7)';
+    ctx.font='10px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('公钥加密 →',cx-30,cy-18);
+
+    // Arrow right→left (decrypted)
+    var pulse2=0.4+0.3*Math.sin(t*2+Math.PI);
+    ctx.strokeStyle='rgba(167,139,250,'+pulse2+')';
+    ctx.lineWidth=2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(rx-40,cy+10);
+    ctx.lineTo(cx+20,cy+10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrowhead
+    ctx.fillStyle='rgba(167,139,250,'+pulse2+')';
+    ctx.beginPath();
+    ctx.moveTo(cx+20,cy+6);
+    ctx.lineTo(cx+12,cy+10);
+    ctx.lineTo(cx+20,cy+14);
+    ctx.fill();
+    // Label
+    ctx.fillStyle='rgba(167,139,250,0.7)';
+    ctx.font='10px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('← 私钥解密',cx+30,cy+26);
+
+    // Data particles flowing
+    particles.forEach(function(p){
+      ctx.fillStyle='rgba(232,121,249,0.5)';
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+      ctx.fill();
+      p.x+=p.speed*p.side;
+      if(p.side>0 && p.x>w*0.7) { p.x=w*0.3; p.y=h*0.3+Math.random()*h*0.4; }
+      if(p.side<0 && p.x<w*0.3) { p.x=w*0.7; p.y=h*0.3+Math.random()*h*0.4; }
+    });
+
+    heroAnim=requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// =========================================================
+// S4: Performance chart
+// =========================================================
+var perfMode='speed';
+var perfAnim={};
+function setPerfMode(m){
+  perfMode=m;
+  document.querySelectorAll('.perf-tab').forEach(function(t){t.classList.remove('active')});
+  document.querySelector('.perf-tab'+(m==='speed'?':first-child':':last-child')).classList.add('active');
+  drawPerf();
+}
+
+function drawPerf(){
+  var c=document.getElementById('perfC');
+  var box=c.parentElement;
+  var w=box.clientWidth, h=box.clientHeight;
+  c.width=w*2; c.height=h*2;
+  c.style.width=w+'px'; c.style.height=h+'px';
+  var ctx=c.getContext('2d');
+  ctx.scale(2,2);
+  ctx.clearRect(0,0,w,h);
+
+  var pad={top:40,right:30,bottom:50,left:100};
+  var chartW=w-pad.left-pad.right;
+  var chartH=h-pad.top-pad.bottom;
+
+  if(perfMode==='speed'){
+    var items=[
+      {label:'AES-128-CTR',value:0.5,color:'#6c63ff',unit:'μs/KB'},
+      {label:'RSA-2048',value:500,color:'#f43f5e',unit:'μs/KB'},
+      {label:'ECDSA P-256\n(sign)',value:300,color:'#e879f9',unit:'μs/op'},
+      {label:'ECDSA P-256\n(verify)',value:600,color:'#a78bfa',unit:'μs/op'}
+    ];
+    var maxVal=700;
+
+    // Y axis
+    ctx.strokeStyle='rgba(255,255,255,0.06)';
+    ctx.lineWidth=1;
+    for(var i=0;i<=7;i++){
+      var y=pad.top+chartH*(1-i*100/maxVal);
+      ctx.beginPath();
+      ctx.moveTo(pad.left,y);
+      ctx.lineTo(pad.left+chartW,y);
+      ctx.stroke();
+      ctx.fillStyle='#666688';
+      ctx.font='10px -apple-system,sans-serif';
+      ctx.textAlign='right';
+      ctx.fillText(i*100+'',pad.left-8,y+4);
+    }
+
+    // Bars
+    var barW=chartW/items.length*0.6;
+    var gap=chartW/items.length;
+    items.forEach(function(it,idx){
+      var x=pad.left+gap*idx+gap*0.2;
+      var barH=chartH*(it.value/maxVal);
+      var y=pad.top+chartH-barH;
+
+      // Background bar
+      ctx.fillStyle=it.color+'10';
+      ctx.beginPath();
+      ctx.roundRect(x,y,barW,barH,6);
+      ctx.fill();
+
+      // Animated bar
+      var prog=1;
+      ctx.fillStyle=it.color+'60';
+      ctx.beginPath();
+      ctx.roundRect(x,y,barW,barH*prog,6);
+      ctx.fill();
+
+      // Value label
+      ctx.fillStyle=it.color;
+      ctx.font='bold 12px "JetBrains Mono",monospace';
+      ctx.textAlign='center';
+      ctx.fillText(it.value+' '+it.unit,x+barW/2,y-8);
+
+      // Item label
+      ctx.fillStyle='#9999bb';
+      ctx.font='10px -apple-system,sans-serif';
+      var lines=it.label.split('\n');
+      lines.forEach(function(ln,li){
+        ctx.fillText(ln,x+barW/2,pad.top+chartH+16+li*14);
+      });
+    });
+
+    // Speed ratio annotation
+    ctx.fillStyle='rgba(244,63,94,0.8)';
+    ctx.font='bold 12px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('RSA 比 AES 慢 1000×',w/2,pad.top+20);
+
+  } else {
+    // Latency mode — operation latency for board
+    var items=[
+      {label:'AES-128-CTR\n(1KB)',value:0.5,color:'#6c63ff',unit:'μs'},
+      {label:'RSA-2048\n握手',value:3000,color:'#f43f5e',unit:'ms'},
+      {label:'ECDSA P-256\n签名',value:300,color:'#e879f9',unit:'ms'},
+      {label:'ECDSA P-256\n验证',value:600,color:'#a78bfa',unit:'ms'}
+    ];
+    // Use log scale for latency
+    var logMin=Math.log10(0.1);
+    var logMax=Math.log10(5000);
+
+    ctx.strokeStyle='rgba(255,255,255,0.06)';
+    ctx.lineWidth=1;
+    var ticks=[0.1,1,10,100,1000,5000];
+    ticks.forEach(function(tv){
+      var y=pad.top+chartH*(1-(Math.log10(tv)-logMin)/(logMax-logMin));
+      ctx.beginPath();
+      ctx.moveTo(pad.left,y);
+      ctx.lineTo(pad.left+chartW,y);
+      ctx.stroke();
+      ctx.fillStyle='#666688';
+      ctx.font='10px -apple-system,sans-serif';
+      ctx.textAlign='right';
+      ctx.fillText(tv>=1000?(tv/1000)+'s':tv+(tv<1?'μs':tv<1000?'ms':''),pad.left-8,y+4);
+    });
+
+    var barW=chartW/items.length*0.6;
+    var gap=chartW/items.length;
+    items.forEach(function(it,idx){
+      var x=pad.left+gap*idx+gap*0.2;
+      var logVal=Math.log10(it.value);
+      var barH=chartH*((logVal-logMin)/(logMax-logMin));
+      var y=pad.top+chartH-barH;
+
+      ctx.fillStyle=it.color+'10';
+      ctx.beginPath();
+      ctx.roundRect(x,y,barW,barH,6);
+      ctx.fill();
+
+      ctx.fillStyle=it.color+'60';
+      ctx.beginPath();
+      ctx.roundRect(x,y,barW,barH,6);
+      ctx.fill();
+
+      ctx.fillStyle=it.color;
+      ctx.font='bold 12px "JetBrains Mono",monospace';
+      ctx.textAlign='center';
+      var valTxt=it.value>=1000?(it.value/1000)+'s':it.value+(it.value<1?'μs':'ms');
+      ctx.fillText(valTxt,x+barW/2,y-8);
+
+      ctx.fillStyle='#9999bb';
+      ctx.font='10px -apple-system,sans-serif';
+      var lines=it.label.split('\n');
+      lines.forEach(function(ln,li){
+        ctx.fillText(ln,x+barW/2,pad.top+chartH+16+li*14);
+      });
+    });
+
+    // DTLS timeout line
+    var timeoutY=pad.top+chartH*(1-(Math.log10(3000)-logMin)/(logMax-logMin));
+    ctx.setLineDash([4,4]);
+    ctx.strokeStyle='rgba(244,63,94,0.5)';
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.left,timeoutY);
+    ctx.lineTo(pad.left+chartW,timeoutY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(244,63,94,0.8)';
+    ctx.font='bold 10px -apple-system,sans-serif';
+    ctx.textAlign='left';
+    ctx.fillText('DTLS 超时线 (3s)',pad.left+4,timeoutY-6);
+
+    ctx.fillStyle='rgba(52,211,153,0.8)';
+    ctx.font='bold 12px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('对数刻度 — ECDSA 比 RSA 快 10×',w/2,pad.top+20);
+  }
+}
+
+// =========================================================
+// S5: Architecture hover interaction
+// =========================================================
+function initArchHover(){
+  var rows=document.querySelectorAll('.arch-row');
+  rows.forEach(function(row){
+    row.addEventListener('mouseenter',function(){
+      var idx=parseInt(this.getAttribute('data-arch'));
+      // Highlight related row
+      var related=-1;
+      if(idx===0) related=3; // ECDHE -> AES-CTR
+      if(idx===1) related=4; // ECDSA -> HMAC
+      if(idx===2) related=5; // SDP fingerprint -> AES-GCM
+      if(idx===3) related=0;
+      if(idx===4) related=1;
+      if(idx===5) related=2;
+      rows.forEach(function(r,i){
+        if(i!==idx && i!==related){
+          r.style.opacity='0.3';
+        }
+      });
+      if(related>=0) rows[related].style.borderColor='rgba(232,121,249,0.35)';
+    });
+    row.addEventListener('mouseleave',function(){
+      rows.forEach(function(r){
+        r.style.opacity='1';
+        r.style.borderColor='rgba(255,255,255,0.04)';
+      });
+    });
+  });
+}
+
+// =========================================================
+// Init
+// =========================================================
+(function(){
+  initHero();
+
+  // Performance chart
+  drawPerf();
+
+  // Architecture hover
+  initArchHover();
+
+  // Particles
+  document.querySelectorAll('.sec').forEach(function(sec){
+    for(var i=0;i<8;i++){
+      var p=document.createElement('div');p.className='particle';
+      p.style.left=Math.random()*100+'%';p.style.bottom='-10px';
+      p.style.animationDuration=(8+Math.random()*14)+'s';
+      p.style.animationDelay=(Math.random()*10)+'s';
+      p.style.width=p.style.height=(1+Math.random()*2)+'px';
+      sec.appendChild(p);
+    }
+  });
+
+  // Scroll reveal
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('vis');
+        e.target.querySelectorAll('[data-delay]').forEach(function(c){
+          var d=parseInt(c.getAttribute('data-delay'))*350;
+          setTimeout(function(){c.classList.add('vis')},d);
+        });
+        e.target.querySelectorAll('[data-reveal]').forEach(function(c){
+          setTimeout(function(){c.classList.add('vis')},100);
+        });
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('[data-reveal]').forEach(function(el){obs.observe(el)});
+  document.querySelectorAll('.hero-canvas,.cmp,.flip,.perf,.arch,.code').forEach(function(el){obs.observe(el)});
+
+  // Resize handlers
+  window.addEventListener('resize',function(){
+    // Reinit hero canvas
+    if(heroAnim) cancelAnimationFrame(heroAnim);
+    initHero();
+    drawPerf();
+  });
+})();
+</script>
+</body>
+</html>

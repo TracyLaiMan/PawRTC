@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>端侧视频完整通路 — 采集 · ISP · 编码</title>
+<style>
+:root{--bg:#080c12;--sf:#101820;--sf2:#182028;--bd:#243040;--tx:#c8d4e0;--mt:#586e82;--dm:#364858;--bl:#4da6ff;--cy:#2cd0a8;--gn:#3fb950;--or:#e09030;--rd:#f04838;--pu:#a878ff;--pk:#f068a8;--yl:#e0c030;--p1:#f06878;--p2:#e08848;--p3:#c8a838;--p4:#68c848;--e1:#48b8e0;--e2:#3898d0;--e3:#2878c0;--e4:#2060b0;--e5:#1850a0;--e6:#104090;--e7:#083080}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--tx);font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.6;overflow-x:hidden}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+.hero{padding:40px 36px 28px;border-bottom:1px solid var(--bd);position:relative}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 30% 0%,rgba(44,208,168,.05),transparent 70%);pointer-events:none}
+.hero h1{font-size:28px;font-weight:800;background:linear-gradient(135deg,var(--cy),var(--bl),var(--e5));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .sub{color:var(--mt);margin-top:8px;font-size:12px;max-width:660px}
+/* Pipeline bar */
+.pipe{padding:16px 36px;border-bottom:1px solid var(--bd);background:var(--sf);position:sticky;top:0;z-index:10}
+.pipe h2{font-size:11px;color:var(--bl);margin-bottom:10px;font-weight:600;letter-spacing:.5px}
+.pf{display:flex;align-items:center;gap:3px;overflow-x:auto;padding:4px 0 8px}
+.pn{padding:5px 9px;border-radius:5px;font-size:9px;font-weight:700;white-space:nowrap;cursor:pointer;border:1.5px solid var(--bd);background:var(--sf2);transition:.2s;min-width:40px;text-align:center}
+.pn:hover{transform:translateY(-1px);border-color:var(--dm)}.pn.act{border-color:currentColor;box-shadow:0 0 8px rgba(255,255,255,.03)}
+.pn .pnum{font-size:7px;opacity:.45;display:block}
+.pa{color:var(--dm);font-size:12px;flex-shrink:0;margin:0 1px}
+.pl{font-size:9px;color:var(--dm);align-self:flex-end;flex-shrink:0}
+/* Sections grouped */
+.part-hdr{padding:20px 36px 12px;border-bottom:1px solid var(--bd);background:var(--sf2)}
+.part-hdr h2{font-size:20px;font-weight:700}
+.part-hdr p{font-size:11px;color:var(--mt);margin-top:4px}
+/* Layout */
+.wrap{display:grid;grid-template-columns:1fr 280px;gap:0}
+.main{padding:0 36px 48px}
+.side{border-left:1px solid var(--bd);padding:18px;position:sticky;top:70px;height:calc(100vh - 70px);overflow-y:auto}
+/* Stage */
+.stg{margin-bottom:36px;scroll-margin-top:80px}
+.stg-h{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.stg-b{padding:10px 14px;background:var(--sf);border-radius:6px;border-left:3px solid var(--dm);font-size:11px;color:var(--mt);line-height:1.7;margin-bottom:14px}
+.stg-fmt{font-size:9px;padding:3px 8px;border-radius:4px;background:var(--sf2);border:1px solid var(--bd);display:inline-block;margin-bottom:12px;font-family:'SF Mono',monospace;color:var(--bl)}
+/* Algo cards */
+.ag{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.ac{background:var(--sf);border:1px solid var(--bd);border-radius:7px;padding:12px;transition:.2s}
+.ac:hover{border-color:var(--dm)}.ac h4{font-size:11px;font-weight:600;margin-bottom:5px}
+.ac p{font-size:10px;color:var(--mt);line-height:1.7}
+.ac code{background:rgba(77,166,255,.1);padding:0 4px;border-radius:2px;font-size:9px;color:var(--bl);font-family:'SF Mono',monospace}
+.fm{background:var(--bg);border:1px solid var(--bd);border-radius:3px;padding:5px 7px;margin-top:5px;font-size:9px;color:var(--cy);font-family:'SF Mono',monospace;line-height:1.5}
+/* Canvas demos */
+.dw{background:#000;border-radius:5px;padding:5px;margin:10px 0;position:relative}
+.dw canvas{display:block;width:100%;border-radius:3px;image-rendering:auto}
+.dl{position:absolute;top:8px;font-size:9px;font-weight:600;padding:1px 6px;border-radius:2px;pointer-events:none}
+.dl.l{left:8px;color:var(--or)}.dl.r{right:8px;color:var(--gn)}
+.dc{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center}
+.db{padding:1px 8px;font-size:9px;border-radius:2px;background:var(--sf2);color:var(--mt);border:1px solid var(--bd);cursor:pointer;font-family:inherit;transition:.15s}
+.db:hover{color:var(--tx);border-color:var(--dm)}.db.act{color:var(--bl);border-color:var(--bl);background:rgba(77,166,255,.05)}
+.sl{font-size:9px;color:var(--mt)}.sv{font-size:9px;color:var(--bl);min-width:20px}
+input[type=range]{width:70px;accent-color:var(--bl);height:3px;vertical-align:middle}
+.tip{font-size:9px;padding:1px 6px;border-radius:3px;display:inline-block;margin:2px}
+.tip-b{background:rgba(77,166,255,.08);color:var(--bl);border:1px solid rgba(77,166,255,.15)}
+.tip-o{background:rgba(224,144,48,.08);color:var(--or);border:1px solid rgba(224,144,48,.15)}
+.tip-g{background:rgba(63,185,80,.08);color:var(--gn);border:1px solid rgba(63,185,80,.15)}
+.tip-r{background:rgba(240,72,56,.08);color:var(--rd);border:1px solid rgba(240,72,56,.15)}
+/* Code */
+.cb{background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:10px;font-size:9px;color:var(--cy);font-family:'SF Mono',monospace;line-height:1.6;overflow-x:auto;margin:8px 0}
+/* Side */
+.ss{margin-bottom:16px}
+.ss h4{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--dm);margin-bottom:8px}
+.pt{width:100%;font-size:9px;border-collapse:collapse}
+.pt th{text-align:left;color:var(--dm);font-weight:600;padding:3px 5px;border-bottom:1px solid var(--bd)}
+.pt td{padding:3px 5px;border-bottom:1px solid var(--bd);color:var(--mt)}
+.pt td:first-child{color:var(--tx);font-weight:500}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}.side{display:none}.ag{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>端侧视频完整通路</h1>
+  <div class="sub">从光子进入镜头到 H.264/H.265 码流输出——逐级拆解每一步的物理原理、算法细节与数据格式变换。基于 T31/SSD20x 平台实战。</div>
+</div>
+
+<!-- Pipeline Bar -->
+<div class="pipe">
+  <h2>完整数据流</h2>
+  <div class="pf">
+    <span class="pl">光信号 →</span>
+    <div class="pn act" style="color:var(--p1)" data-s="P1" onclick="scr('P1')"><span class="pnum">P1</span>CMOS</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p2)" data-s="P2" onclick="scr('P2')"><span class="pnum">P2</span>I2C/MIPI</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p3)" data-s="P3" onclick="scr('P3')"><span class="pnum">P3</span>Bayer</div><span class="pa">→</span>
+    <span class="pl" style="margin:0 4px">ISP →</span>
+    <div class="pn" style="color:var(--p4)" data-s="S1" onclick="scr('S1')"><span class="pnum">01</span>BLC</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S2" onclick="scr('S2')"><span class="pnum">02</span>LSC</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S3" onclick="scr('S3')"><span class="pnum">03</span>BPC</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S4" onclick="scr('S4')"><span class="pnum">04</span>3A</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S5" onclick="scr('S5')"><span class="pnum">05</span>Demosaic</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S6" onclick="scr('S6')"><span class="pnum">06</span>CCM</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S7" onclick="scr('S7')"><span class="pnum">07</span>Gamma</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S8" onclick="scr('S8')"><span class="pnum">08</span>NR/EE</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S9" onclick="scr('S9')"><span class="pnum">09</span>CSC</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--p4)" data-s="S10" onclick="scr('S10')"><span class="pnum">10</span>WDR</div><span class="pa">→</span>
+    <span class="pl" style="margin:0 4px">编码 →</span>
+    <div class="pn" style="color:var(--e1)" data-s="E1" onclick="scr('E1')"><span class="pnum">E1</span>架构</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e2)" data-s="E2" onclick="scr('E2')"><span class="pnum">E2</span>帧类型</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e3)" data-s="E3" onclick="scr('E3')"><span class="pnum">E3</span>帧内</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e4)" data-s="E4" onclick="scr('E4')"><span class="pnum">E4</span>帧间</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e5)" data-s="E5" onclick="scr('E5')"><span class="pnum">E5</span>T+Q</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e6)" data-s="E6" onclick="scr('E6')"><span class="pnum">E6</span>熵编码</div><span class="pa">→</span>
+    <div class="pn" style="color:var(--e7)" data-s="E7" onclick="scr('E7')"><span class="pnum">E7</span>码控</div>
+    <span class="pl">→ 码流</span>
+  </div>
+</div>
+
+<!-- ===== PART 1: Image Capture ===== -->
+<div class="part-hdr" id="part1"><h2 style="color:var(--p1)">第一篇：图像采集</h2><p>从光子到数字信号——传感器的物理世界</p></div>
+
+<div class="wrap"><div class="main">
+
+<!-- P1: CMOS -->
+<div class="stg" id="P1">
+<div class="stg-h"><span class="tip tip-o" style="font-size:10px;font-weight:700">P1</span><b style="font-size:15px;margin-left:6px">CMOS 传感器光电转换</b></div>
+<div class="stg-b">光子穿过镜头 → 微透镜(增加聚光) → 彩色滤光片(Bayer CFA) → 硅光电二极管 → 光电转换产生电子 → 源极跟随器转电压 → ADC 量化为数字值。整个链条决定了传感器的极限画质。</div>
+<div class="stg-fmt">光子 → 电子(e⁻) → 电压(V) → 数字(DN)</div>
+
+<div class="ag">
+<div class="ac">
+<h4>像素结构</h4>
+<p>每个像素包含：<br>• <b>光电二极管</b>：光子→电子，效率由量子效率QE决定<br>• <b>传输门TG</b>：控制电子到FD节点<br>• <b>浮置扩散FD</b>：电荷→电压转换<br>• <b>源极跟随器SF</b>：电压缓冲<br>• <b>选择门RS</b>：行选通<br>• <b>复位门RST</b>：清空FD电荷</p>
+<div class="fm">// 信号链<br>光子 → QE×光子数=电子数<br>电子 → V_sig = Q_e/C_FD<br>V_sig → ADC → RAW10/12</div>
+</div>
+<div class="ac">
+<h4>关键参数</h4>
+<p><b>量子效率 QE</b>：每个光子产生电子的概率。绿光~70%，红光~50%，蓝光~40%<br><br><b>满阱容量 FWC</b>：像素能存储的最大电子数。大像素=高FWC=高动态范围。IMX307: ~15ke⁻, IMX335: ~20ke⁻<br><br><b>读出噪声</b>：读出电路引入的电子数。低读出噪声=暗光画质好。IMX307: ~2e⁻</p>
+<div class="fm">SNR_max = 20×log10(√FWC)<br>IMX307: 20×log10(√15000)<br>       ≈ 41.8 dB</div>
+</div>
+<div class="ac">
+<h4>全局快门 vs 卷帘快门</h4>
+<p><b>全局快门(Global)</b>：所有像素同时曝光→无果冻效应→但需要每个像素一个采样保持电容→填充因子降低→灵敏度下降30%→成本高3-5倍<br><br><b>卷帘快门(Rolling)</b>：逐行曝光→果冻效应→但像素面积全部用于光电转换→灵敏度高→成本低→监控摄像头几乎都用卷帘</p>
+</div>
+<div class="ac">
+<h4>暗电流与热噪声</h4>
+<p><b>暗电流</b>：无光时硅中热生载流子，温度每升高8°C翻倍。<br><b>影响</b>：长曝光时暗电流积累→像素饱和（热像素）<br><b>对策</b>：暗帧减法（关闭快门拍一帧做减法）或BLC自动扣除</p>
+<div class="fm">暗电流(T) = I₀ × 2^((T-T₀)/8)<br>// T₀=25°C, I₀=10 pA/cm² 典型值</div>
+</div>
+</div>
+<div class="dw"><canvas id="cv-cmos" width="1080" height="360"></canvas></div>
+<div class="dc">
+<span class="sl">曝光</span><input type="range" min="1" max="50" value="20" id="sl-exp" oninput="rCMOS()"><span class="sv" id="sv-exp">20ms</span>
+<span class="sl" style="margin-left:10px">增益</span><input type="range" min="1" max="30" value="5" id="sl-gain" oninput="rCMOS()"><span class="sv" id="sv-gain">5x</span>
+</div>
+</div>
+
+<!-- P2: I2C/MIPI -->
+<div class="stg" id="P2">
+<div class="stg-h"><span class="tip tip-o" style="font-size:10px;font-weight:700">P2</span><b style="font-size:15px;margin-left:6px">传感器控制与数据接口</b></div>
+<div class="stg-b">SoC 通过 I2C/SPI 配置传感器寄存器（曝光/增益/模式），传感器通过 MIPI CSI-2 将 Bayer RAW 数据高速传输到 ISP。两者分离设计：低速控制链 + 高速数据链。</div>
+<div class="stg-fmt">I2C: 寄存器R/W → MIPI CSI-2: RAW10/Bayer 数据流</div>
+
+<div class="ag">
+<div class="ac">
+<h4>I2C 控制接口</h4>
+<p>• <b>SCL/SDA</b>：标准 I2C，速率通常 100K/400K<br>• <b>传感器地址</b>：通常 0x1A 或 0x34<br>• <b>关键寄存器组</b>：<br>&nbsp;&nbsp;曝光时间 (0x0202)<br>&nbsp;&nbsp;模拟增益 AGC (0x0204)<br>&nbsp;&nbsp;数字增益 DG (0x020e)<br>&nbsp;&nbsp;帧率/模式 (0x0301)<br>&nbsp;&nbsp;IR-Cut 触发 (GPIO)<br>• <b>写入延迟</b>：1帧后才生效</p>
+<div class="fm">// IMP I2C 控制<br>IMP_ISP_Tuning_SetAeAttr()<br>IMP_ISP_Tuning_SetWbAttr()</div>
+</div>
+<div class="ac">
+<h4>MIPI CSI-2 数据接口</h4>
+<p><b>D-PHY</b>：差分信号，每 Lane 1.5-2.5Gbps<br>• 2-Lane: ~4Gbps → 1080p30 RAW10 需 ~1.5Gbps<br>• 4-Lane: 8Gbps → 4K30<br><br><b>C-PHY</b>：3线一组，每 Trio ~2.5Gbps<br>• 更省 Lane 数，但实现复杂<br><br><b>数据包</b>：PH(包头) + Payload + PF(包尾)<br>• LP(低功耗) → HS(高速)切换需时间</p>
+<div class="fm">BW = width × height × fps × bpc × lanes<br>1080p30 RAW10 2lane:<br>= 1920×1080×30×10/2<br>= 311 Mbps/lane ✓</div>
+</div>
+<div class="ac">
+<h4>时序与同步</h4>
+<p>• <b>VSYNC/HSYNC/PCLK</b>：并行接口已少用<br>• <b>MIPI LP/HS</b>：帧起始(FS)/帧结束(FE)包标记边界<br>• <b>Embedded Data</b>：部分传感器在影像数据前追加寄存器信息帧<br>• <b>WDR模式</b>：DOL交替输出长/短曝光行</p>
+</div>
+<div class="ac">
+<h4>常见问题</h4>
+<p>• Lane 数配置错误 → 画面花屏/撕裂<br>• 时钟频率不匹配 → 无法锁定<br>• I2C 写入后未等1帧 → 参数不生效<br>• MIPI LP→HS 切换时间过长 → 丢行<br>• 传感器断电顺序错误 → 残影</p>
+<span class="tip tip-r">IMX307 切换 WDR 模式需要先 stop stream 再配置，否则寄存器写入无效。</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-mipi" width="1080" height="320"></canvas></div>
+</div>
+
+<!-- P3: Bayer -->
+<div class="stg" id="P3">
+<div class="stg-h"><span class="tip tip-o" style="font-size:10px;font-weight:700">P3</span><b style="font-size:15px;margin-left:6px">Bayer 格式与 RAW 数据</b></div>
+<div class="stg-b">传感器输出的每个像素只有 R/G/B 中的一个通道，按 Bayer 排列。这是后续所有 ISP 处理的起点数据——理解 Bayer 格式是理解整个 ISP 的基础。</div>
+<div class="stg-fmt">输出: RAW8/10/12 Bayer (RGGB/BGGR/GRBG/GBRG)</div>
+
+<div class="ag">
+<div class="ac">
+<h4>Bayer 排列格式</h4>
+<p>4种标准排列，区别在于 (0,0) 位置的通道：<br>• <b>RGGB</b>：最常见，Sony IMX 系列多用<br>• <b>BGGR</b>：IMX307 使用此格式<br>• <b>GRBG / GBRG</b>：较少见<br><br>规律：每行必是 R/G 或 G/B 交替，G 的数量是 R/B 的 2 倍——因为人眼对绿色最敏感。</p>
+<div class="fm">// BGGR 示例 (IMX307)<br>B G B G B G<br>G R G R G R<br>B G B G B G<br>G R G R G R</div>
+</div>
+<div class="ac">
+<h4>量子效率与白平衡</h4>
+<p>硅的 QE 曲线决定了传感器对光的响应：<br>• 绿光 QE 最高 (~70%)<br>• 红光次之 (~50%)<br>• 蓝光最低 (~40%)<br><br>这意味着：同一个白色物体，R/G/B 通道的原始输出不同 → 必须 AWB 增益校正。蓝色需要最大增益 → 蓝通道噪声最大。</p>
+<div class="fm">R_gain = G_avg / R_avg ≈ 1.4<br>B_gain = G_avg / B_avg ≈ 1.75<br>// 蓝通道增益最大 → 噪声放大最多</div>
+</div>
+<div class="ac">
+<h4>RAW 位深选择</h4>
+<p><b>RAW8</b>：最快，带宽最小，但暗部量化台阶大<br><b>RAW10</b>：主流选择，噪声基底内包16个量化级<br><b>RAW12</b>：HDR场景，保留更多暗部细节<br><br>经验：如果传感器读出噪声>4 DN，RAW10已足够。</p>
+</div>
+<div class="ac">
+<h4>压缩与传输</h4>
+<p>MIPI CSI-2 支持 RAW 压缩：<br>• <b>RAW10 compact</b>：4个10bit像素打包5字节<br>• 节省 20% 带宽 vs 不压缩<br>• 10bit有效位不变<br><br>部分平台支持 DDR 直接写入 RAW10 compact 格式。</p>
+<span class="tip tip-b">T31 的 MIPI RX 支持 1/2/4 lane，RAW10 compact 模式下 2-lane 可支持 1080p60。</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-bayer" width="1080" height="400"></canvas><span class="dl l">Bayer棋盘格(R/G/B分离)</span><span class="dl r">各通道独立视图</span></div>
+</div>
+
+<!-- ===== PART 2: ISP ===== -->
+<div class="part-hdr" id="part2"><h2 style="color:var(--p4)">第二篇：ISP 处理链路</h2><p>从 Bayer RAW 到 YUV——10 级硬件流水线</p></div>
+
+<!-- S1: BLC -->
+<div class="stg" id="S1">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">01</span><b style="font-size:14px;margin-left:6px">黑电平校正 BLC</b></div>
+<div class="stg-b">减去传感器固定偏移，恢复零光基准。不做则全链偏移。</div>
+<div class="stg-fmt">RAW10 Bayer → 黑电平偏移64 → RAW10 Bayer (扣除后)</div>
+<div class="ag">
+<div class="ac"><h4>算法</h4><div class="fm">pixel_out = pixel_in - BLC_offset<br>// OB区实时统计: BLC_offset = mean(OB_pixels)<br>// 10bit 典型值: 64</div></div>
+<div class="ac"><h4>踩坑</h4><p>• 偏大 → 整体偏暗<br>• 偏小 → 暗区发灰<br>• Gr/Gb不一致 → Green Imbalance</p><span class="tip tip-r">IMX307 Day/Night切换需重标BLC</span></div>
+</div>
+</div>
+
+<!-- S2: LSC -->
+<div class="stg" id="S2">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">02</span><b style="font-size:14px;margin-left:6px">镜头阴影校正 LSC</b></div>
+<div class="stg-b">校正渐晕(cos⁴θ衰减)和边缘偏色(色散)，通过增益表逐像素补偿。</div>
+<div class="stg-fmt">RAW10 Bayer → × 通道增益表 → RAW10 Bayer</div>
+<div class="ag">
+<div class="ac"><h4>增益表法</h4><div class="fm">pixel_out = pixel_in × Gain[r][c][ch]<br>// 17×17 或 33×33 网格<br>// 多光温标定: D50/A/TL84</div></div>
+<div class="ac"><h4>踩坑</h4><p>• Table不准 → 四角偏色<br>• 广角镜头增益>3x → 边缘噪声飙3倍<br>• 切光温未切换Table</p></div>
+</div>
+</div>
+
+<!-- S3: BPC -->
+<div class="stg" id="S3">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">03</span><b style="font-size:14px;margin-left:6px">坏点校正 BPC</b></div>
+<div class="stg-b">检测并替换静态/动态坏点，防止Demosaic产生十字伪影。</div>
+<div class="stg-fmt">RAW10 Bayer → 检测+中值替换 → RAW10 Bayer</div>
+<div class="ag">
+<div class="ac"><h4>检测</h4><div class="fm">grad = |P(x,y) - median(same_ch_neighbors)|<br>if grad > Th(ISO): mark bad<br>Th 随增益动态调整</div></div>
+<div class="ac"><h4>关键排序</h4><p>BPC <b>必须在</b> Demosaic 之前，否则坏点扩散为 5×5 十字伪影。</p><span class="tip tip-r">60°C+ 动态坏点爆发</span></div>
+</div>
+</div>
+
+<!-- S4: 3A -->
+<div class="stg" id="S4">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">04</span><b style="font-size:14px;margin-left:6px">3A 统计 AE/AWB/AF</b></div>
+<div class="stg-b">硬件实时统计亮度直方图和分区RGB均值，唯一有闭环反馈的处理级。</div>
+<div class="stg-fmt">RAW10 Bayer → 统计直方图+分区均值 → 反馈控制传感器</div>
+<div class="ag">
+<div class="ac"><h4>AE 控制</h4><div class="fm">error = Y_target - Y_avg<br>new_exp = cur_exp × (1+Kp×error)<br>可用增益 = 曝光 + AGC + DG<br>约束: AWB的DG_ratio &lt; 4x</div></div>
+<div class="ac"><h4>AWB 控制</h4><div class="fm">R_gain = G_R / R_avg<br>B_gain = G_B / B_avg<br>// 灰世界/完美反射/查找表</div></div>
+</div>
+</div>
+
+<!-- S5: Demosaic -->
+<div class="stg" id="S5">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">05</span><b style="font-size:14px;margin-left:6px">去马赛克 Demosaic</b></div>
+<div class="stg-b">传感器每个像素只捕获 R/G/B 中的一种颜色（Bayer CFA），Demosaic 通过邻域插值恢复出每个像素的完整 RGB 三通道值。这是 ISP 中计算量最大、对画质影响最关键的环节。</div>
+<div class="stg-fmt">RAW10 Bayer (1ch/px) → 方向梯度插值 → RGB888 (3ch/px)</div>
+<div class="ag">
+<div class="ac">
+<h4>双线性插值（最简单）</h4>
+<p>以 G 位置恢复 R 为例：</p>
+<div class="fm">R_at_G = (R_left + R_right) / 2  // 水平<br>// 或 (R_up + R_down) / 2  垂直<br>// 或 4邻域均值（对角位置）</div>
+<p>优点：计算量小。缺点：边缘处产生<b>拉链伪影</b>（zipper artifact）和<b>伪色</b>（false color）。</p>
+</div>
+<div class="ac">
+<h4>边缘感知插值（实际使用）</h4>
+<p>沿边缘方向插值，避免跨边缘混合：</p>
+<div class="fm">grad_H = |G_left - G_right|<br>grad_V = |G_up - G_down|<br>if grad_H &lt; grad_V:<br>  R_at_G = (R_left + R_right) / 2  // 水平<br>else:<br>  R_at_G = (R_up + R_down) / 2  // 垂直</div>
+<p>避免了跨边缘插值产生的拉链效应。</p>
+</div>
+<div class="ac">
+<h4>高级算法</h4>
+<p>• <b>Hamilton-Adams</b>：梯度+色差恒定假设<br>• <b>ALSC（Adaptive）</b>：自适应方向选择<br>• <b>频域方法</b>：利用 Bayer 采样特性在频域分离<br>• 板端多用硬件实现的方向梯度法</p>
+<span class="tip tip-r">Demosaic 质量直接决定锐度和伪色水平。低端 ISP 用双线性 → 远处栅栏/树叶大量摩尔纹。</span>
+</div>
+<div class="ac">
+<h4>与上下游的衔接</h4>
+<p>• <b>前置依赖</b>：BPC 必须在 Demosaic 之前完成→否则坏点扩散为 5×5 十字伪影<br>• <b>输出格式</b>：从此级开始数据从 RAW 变为 RGB，后续所有处理都在 RGB 域<br>• <b>硬件实现</b>：通常需要 5×5 邻域窗口，多行 Line Buffer</p>
+</div>
+</div>
+<div class="dw"><canvas id="cv-dm" width="1080" height="360"></canvas><span class="dl l">Bayer RAW (1ch/px)</span><span class="dl r">Demosaic RGB (3ch/px)</span></div>
+</div>
+
+<!-- S6: CCM -->
+<div class="stg" id="S6">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">06</span><b style="font-size:14px;margin-left:6px">颜色校正矩阵 CCM</b></div>
+<div class="stg-b">传感器的 RGB 光谱响应与人类视觉的 XYZ 基色不匹配 → 拍出的颜色不准。CCM 通过 3×3 矩阵将传感 RGB 空间映射到标准 sRGB 空间，是颜色准确的数学核心。</div>
+<div class="stg-fmt">RGB888 → × 3×3矩阵 → RGB888 (sRGB色彩空间)</div>
+<div class="ag">
+<div class="ac">
+<h4>数学原理</h4>
+<div class="fm">[R']   [c00 c01 c02] [R]   [offset_R]<br>[G'] = [c10 c11 c12] [G] + [offset_G]<br>[B']   [c20 c21 c22] [B]   [offset_B]</div>
+<p>9 个系数 + 3 个偏移，共 12 个参数。不同色温下矩阵不同。</p>
+</div>
+<div class="ac">
+<h4>标定方法</h4>
+<p>1. 拍摄 ColorChecker 标准色卡<br>2. 提取 24 个色块的实际 RGB<br>3. 最小二乘拟合: C = RGB_sensor⁻¹ × RGB_target<br>4. 通常需多组（D50/A/TL84）<br>5. AWB 运行时根据色温插值选取 CCM</p>
+</div>
+<div class="ac">
+<h4>饱和度控制</h4>
+<div class="fm">C_sat = α × C_identity + (1-α) × C_calibrated<br>// α=0: 完全校正<br>// α=1: 无校正(恒等矩阵)<br>// α∈[0.1, 0.3]: 自然肤色</div>
+</div>
+<div class="ac">
+<h4>常见问题</h4>
+<p>• CCM 不匹配 → 肤色偏绿/偏红<br>• 高饱和区域溢出 → 需 clamp 或软饱和<br>• 色温切换时矩阵跳变 → 需平滑插值</p>
+<span class="tip tip-g">安防场景优先保证绿色（草地/树木）和肤色准确，可牺牲部分高饱和度还原。</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-ccm" width="1080" height="320"></canvas><span class="dl l">传感器原始色</span><span class="dl r">CCM 校正后(sRGB)</span></div>
+</div>
+
+<!-- S7: Gamma -->
+<div class="stg" id="S7">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">07</span><b style="font-size:14px;margin-left:6px">伽马校正 Gamma</b></div>
+<div class="stg-b">相机传感器线性响应光线，但人眼对暗部变化更敏感（对数响应）。Gamma 校正将线性信号映射为非线性，充分利用有限的位深，让暗部有更多量化层级。</div>
+<div class="stg-fmt">RGB888 (线性) → LUT查表 → RGB888 (非线性)</div>
+<div class="ag">
+<div class="ac">
+<h4>数学原理</h4>
+<div class="fm">V_out = V_in ^ γ<br>// 典型 γ = 0.45 (= 1/2.2)<br>// 编码 Gamma &lt; 1：提亮暗部<br>// 显示 Gamma ≈ 2.2：还原亮度<br>// 端到端: 0.45 × 2.2 ≈ 1.0</div>
+<p>实际 ISP 使用 LUT（查找表），支持自定义曲线。</p>
+</div>
+<div class="ac">
+<h4>为什么要非线性编码？</h4>
+<p>8bit 线性编码：暗部仅 10-20 个层级 → 量化梯度大 → 色带明显。<br><br>8bit Gamma 编码：暗部有 100+ 层级 → 平滑过渡 → 人眼感知质量好。</p>
+<span class="tip tip-b">本质上是一种感知域的压缩——把有限的 bit 预算用在人眼最敏感的暗部。</span>
+</div>
+<div class="ac">
+<h4>自定义 Gamma 曲线（安防）</h4>
+<p>安防场景常调整 Gamma 曲线：<br>• 黑电平拉伸 → 暗部更清楚<br>• 高光压缩 → 窗外不过曝<br>• S 型曲线 → 增加对比度</p>
+<div class="fm">// 典型安防 Gamma<br>暗部: γ &gt; 0.45 (提更多)<br>中间: γ ≈ 0.45<br>亮部: γ &lt; 0.45 (压一点)</div>
+</div>
+<div class="ac">
+<h4>与 WDR 的关系</h4>
+<p>WDR 场景下 Gamma 曲线设计更关键：<br>• 需同时映射 100dB+ 动态范围到 8bit<br>• 全局 Gamma 不够 → 需局部 Tone Mapping<br>• Gamma + CLAHE 组合效果更好</p>
+</div>
+</div>
+<div class="dw"><canvas id="cv-gamma" width="1080" height="400"></canvas></div>
+</div>
+
+<!-- S8: NR/EE -->
+<div class="stg" id="S8">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">08</span><b style="font-size:14px;margin-left:6px">降噪 + 锐化 NR / EE</b></div>
+<div class="stg-b">NR 和 EE 是一对矛盾体：降噪模糊细节，锐化放大噪声。ISP 的核心挑战就是在两者间找到最优平衡。这一级通常是可调参数最多、对主观画质影响最大的环节。</div>
+<div class="stg-fmt">RGB888 → 双边/时域滤波 + Unsharp Mask → RGB888</div>
+<div class="ag">
+<div class="ac">
+<h4>2D 空域降噪</h4>
+<div class="fm">// 双边滤波（保边缘）<br>w_i = exp(-|P_i - P_c|²/(2σ_r²))<br>     × exp(-|x_i - x_c|²/(2σ_s²))<br>// σ_r: 亮度差阈值 → 控制保边程度<br>// σ_s: 空间范围 → 控制平滑范围</div>
+</div>
+<div class="ac">
+<h4>3D 时域降噪</h4>
+<div class="fm">// 运动自适应时域融合<br>if |P_cur - P_prev| &gt; T_motion:<br>  α = 1.0  // 运动区域不融合<br>else:<br>  α = σ_noise / max(|diff|, σ_noise)<br>P_out = α × P_cur + (1-α) × P_prev</div>
+<p>运动区域退化回2D降噪 → 噪声更粗糙</p>
+</div>
+<div class="ac">
+<h4>边缘增强（锐化）</h4>
+<div class="fm">// Unsharp Mask<br>HP = P_original - P_lowpass<br>P_out = P_original + gain × HP<br><br>// 自适应增益<br>gain = f(luma, edge_strength)<br>// 暗区增益低（避免放大噪声）<br>// 边缘区域增益高<br>// 平坦区域增益低（避免蚊子噪声）</div>
+</div>
+<div class="ac">
+<h4>NR + EE 联合调优</h4>
+<p>• 先 NR 后 EE → 锐化会放大残余噪声<br>• 先 EE 后 NR → 降噪模糊边缘<br>• 实际：<b>NR-EE 级联 + 自适应切换</b><br>→ 平坦区重降噪轻锐化<br>→ 边缘区轻降噪重锐化</p>
+<span class="tip tip-r">最常见的画质投诉：远景"油画感"= 过度降噪 + 过度锐化 → 细节消失但边缘明显。</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-nr" width="1080" height="360"></canvas><span class="dl l">含噪声</span><span class="dl r">NR + 轻锐化</span></div>
+<div class="dc">
+<span class="sl">NR强度</span><input type="range" min="0" max="10" value="5" id="sl-nr" oninput="rNR()"><span class="sv" id="sv-nr">5</span>
+<span class="sl" style="margin-left:10px">锐化</span><input type="range" min="0" max="10" value="3" id="sl-ee" oninput="rNR()"><span class="sv" id="sv-ee">3</span>
+</div>
+</div>
+
+<!-- S9: CSC -->
+<div class="stg" id="S9">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">09</span><b style="font-size:14px;margin-left:6px">色彩空间转换 CSC</b></div>
+<div class="stg-b">ISP 内部处理在 RGB 域完成，但视频编码器（H.264/H.265）工作在 YUV 域。CSC 模块完成 RGB → YCbCr 转换，并可选下采样色度（4:4:4 → 4:2:0），为编码器准备数据。</div>
+<div class="stg-fmt">RGB888 → YCbCr (BT.601/709) → 下采样 → YCbCr 4:2:0</div>
+<div class="ag">
+<div class="ac">
+<h4>BT.601 转换公式（SD）</h4>
+<div class="fm">Y  =  0.299R + 0.587G + 0.114B<br>Cb = -0.169R - 0.331G + 0.500B + 128<br>Cr =  0.500R - 0.419G - 0.081B + 128</div>
+<p>BT.709 用于 HD（1080p+），系数略有不同。</p>
+</div>
+<div class="ac">
+<h4>色度下采样</h4>
+<p>4:2:0 模式下，Cb/Cr 在水平和垂直方向各取 1/2：</p>
+<div class="fm">Cb_420[x/2][y/2] = avg(Cb_444[x][y], Cb_444[x+1][y],<br>                         Cb_444[x][y+1], Cb_444[x+1][y+1])</div>
+<p>这是色度拖尾的根源——鲜艳颜色的边缘分辨率降低 4 倍。</p>
+</div>
+</div>
+<div class="dw"><canvas id="cv-csc" width="1080" height="280"></canvas></div>
+</div>
+
+<!-- S10: WDR/TM -->
+<div class="stg" id="S10">
+<div class="stg-h"><span class="tip tip-g" style="font-size:10px;font-weight:700">10</span><b style="font-size:14px;margin-left:6px">宽动态 / 色调映射 WDR / TM</b></div>
+<div class="stg-b">真实场景动态范围 120dB+，传感器仅 60-70dB。WDR 通过多曝光融合扩展动态范围，Tone Mapping 将高动态信号压缩到显示范围。这是安防 IPC 最核心的差异化能力。</div>
+<div class="stg-fmt">多帧 RAW/YCbCr422 HDR → TM压缩 → YCbCr420 SDR</div>
+<div class="ag">
+<div class="ac">
+<h4>多曝光融合</h4>
+<div class="fm">pixel_out = w_short × pixel_short + w_long × pixel_long<br>// 权重 w 随像素亮度自适应：<br>// 暗区 → w_long 占优<br>// 亮区 → w_short 占优<br>// 运动区域 → 降低融合权重防鬼影</div>
+</div>
+<div class="ac">
+<h4>DOL (Digital Overlap)</h4>
+<p>单帧交替读出长短曝光行：<br>• 无时差 → 无鬼影<br>• 垂直分辨率减半<br>• IMX335 支持 2-exp DOL<br>• 比"帧交替融合"更先进</p>
+</div>
+<div class="ac">
+<h4>Tone Mapping</h4>
+<div class="fm">// 全局 TM<br>V_out = V_in ^ (1/γ_global)<br><br>// 局部 TM（更好）<br>Base = Lowpass(V_in)  // 基底<br>Detail = V_in / Base   // 细节<br>Base_out = Base ^ (1/γ_local)<br>V_out = Base_out × Detail</div>
+</div>
+<div class="ac">
+<h4>常见问题</h4>
+<p>• 融合鬼影 → 运动物体产生重影<br>• 色调映射过度 → 画面发灰<br>• 暗区提亮后噪声放大 → 需配合 NR<br>• 色晕（Halo）→ 局部TM过度增强边缘</p>
+<span class="tip tip-g">安防场景 WDR 核心指标：逆光人脸可辨识 + 窗外车牌可读。</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-wdr" width="1080" height="360"></canvas><span class="dl l">单曝光（暗区全黑）</span><span class="dl r">WDR 融合 + TM</span></div>
+</div>
+
+<!-- ===== PART 3: H264/H265 Encoding ===== -->
+<div class="part-hdr" id="part3" style="padding:20px 36px 12px;border-bottom:1px solid var(--bd);background:var(--sf2);margin-top:36px"><h2 style="color:var(--e1)">第三篇：H.264 / H.265 视频编码</h2><p style="font-size:11px;color:var(--mt);margin-top:4px">从 YUV 帧到压缩码流——预测、变换、量化、熵编码的完整闭环</p></div>
+
+<!-- E1: Architecture -->
+<div class="stg" id="E1">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E1</span><b style="font-size:15px;margin-left:6px">编码器架构总览</b></div>
+<div class="stg-b">视频编码的核心思想：<b>预测 + 残差编码</b>。先预测当前块（利用帧内/帧间相关性），只编码预测残差（远小于原始值），再通过变换量化进一步压缩，最后熵编码消除统计冗余。<br><br>关键公式：码率 = 空间相关性（帧内） + 时间相关性（帧间） + 统计冗余（熵编码） + 感知冗余（量化）→ 四重压缩。</div>
+
+<div class="dw"><canvas id="cv-encarch" width="1080" height="560"></canvas></div>
+
+<div class="ag">
+<div class="ac">
+<h4>编码器处理环路</h4>
+<p>1. <b>预测</b>：帧内(空间)/帧间(时间)→得残差<br>2. <b>变换</b>：DCT将残差转到频域<br>3. <b>量化</b>：丢弃高频分量（损失来源）<br>4. <b>熵编码</b>：CAVLC/CABAC无损压缩<br>5. <b>环路滤波</b>：重建帧去块效应<br>6. <b>重建</b>：反量化+反变换+预测→参考帧</p>
+</div>
+<div class="ac">
+<h4>H.264 vs H.265 关键差异</h4>
+<p>• 宏块: 16×16 → CTU: 64×64<br>• 帧内模式: 9种 → 35种<br>• 运动Merge: 无 → Merge/Skip<br>• 变换: 4×4 → 4×4/8×8/16×16/32×32<br>• 环路滤波: Deblocking → Deblocking+SAO<br>• 编码效率: H.265 比 H.264 节省 ~40% 码率<br>• 计算量: H.265 编码慢 3-5 倍</p>
+</div>
+</div>
+</div>
+
+<!-- E2: Frame Types -->
+<div class="stg" id="E2">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E2</span><b style="font-size:15px;margin-left:6px">帧类型与 GOP 结构</b></div>
+<div class="stg-b">I帧(帧内)完全自包含，P帧(前向预测)参考前一帧，B帧(双向)参考前后帧。GOP的I帧间隔决定随机访问粒度和错误恢复速度。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>帧类型详解</h4>
+<p><b>I帧(Intra)</b>：仅帧内预测，码率最大，可随机访问<br><b>IDR帧</b>：特殊I帧，强制清空DPB→其后P帧不引用IDR前帧<br><b>P帧(Predicted)</b>：参考前一帧，码率约为I帧1/3<br><b>B帧(Bi-predicted)</b>：参考前后两帧，码率最小，但引入延迟<br><b>Skip/Direct</b>：P/B帧中直接复制参考块，码率极低</p>
+</div>
+<div class="ac">
+<h4>GOP 结构与权衡</h4>
+<p><b>封闭GOP</b>：IDR→P→P→…→IDR<br>• 优点：IDR后可独立解码<br>• 缺点：IDR处码率突增<br><br><b>开放GOP</b>：I帧(非IDR)→B→P→B→P→…<br>• 优点：码率平滑<br>• 缺点：随机访问需要前一个IDR<br><br><b>安防经验</b>：IDR间隔15-30帧，B帧不用（延迟+算力）</p>
+</div>
+</div>
+<div class="dw"><canvas id="cv-gop" width="1080" height="360"></canvas><span class="dl l">帧类型与参考关系</span></div>
+</div>
+
+<!-- E3: Intra Prediction -->
+<div class="stg" id="E3">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E3</span><b style="font-size:15px;margin-left:6px">帧内预测</b></div>
+<div class="stg-b">利用图像空间相关性：相邻像素值相近。用已编码块的边界像素预测当前块，只编残差。H.264提供9种4×4+4种16×16模式，H.265扩展到35种。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>H.264 帧内模式</h4>
+<p><b>4×4 亮度块</b>：9种方向<br>• 模式0: 垂直<br>• 模式1: 水平<br>• 模式2: DC<br>• 模式3-8: 对角线方向<br><br><b>16×16 亮度块</b>：4种<br>• 垂直/水平/DC/平面<br><br><b>8×8 色度块</b>：4种（同16×16）</p>
+<div class="fm">// 预测值 = 已编码边界像素加权<br>Mode0(V): pred[x][y] = left_top[x]<br>Mode1(H): pred[x][y] = left_col[y]</div>
+</div>
+<div class="ac">
+<h4>H.265 帧内增强</h4>
+<p><b>35种预测模式</b>：<br>• 模式0: Planar（加权平均）<br>• 模式1: DC<br>• 模式2-34: 33种角度方向<br>• 角度间隔约6.7°<br><br><b>RDO 模式选择</b>：<br>代价 = 码率 + λ × 失真<br>遍历所有模式选代价最小的<br>• 帧内预测占了 H.265 编码 60%+ 算力</p>
+<span class="tip tip-o">板端编码器通常简化RDO：只检查5-8种候选模式</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-intra" width="1080" height="400"></canvas></div>
+</div>
+
+<!-- E4: Inter Prediction -->
+<div class="stg" id="E4">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E4</span><b style="font-size:15px;margin-left:6px">帧间预测与运动估计</b></div>
+<div class="stg-b">视频相邻帧高度相似→用前一帧预测当前帧，只编码运动矢量+残差。运动估计是编码器计算量最大的模块（占40%+算力），决定了压缩效率上限。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>运动估计流程</h4>
+<p>1. <b>整像素搜索</b>：在参考帧搜索窗口找最佳匹配<br>• 钻石/六边形搜索（非全搜索）<br>• SAD = Σ|cur - ref|（绝对差之和）<br><br>2. <b>亚像素搜索</b>：1/2像素插值→1/4像素<br>• 6抽头FIR滤波器(1/2像素)<br>• 双线性插值(1/4像素)<br><br>3. <b>运动矢量编码</b>：MVD = MV - MVP(预测MV)</p>
+<div class="fm">bestMV = argmin SAD(cur, ref(x+dx,y+dy))<br>cost = SAD + λ×bits(MVD)</div>
+</div>
+<div class="ac">
+<h4>高级帧间工具</h4>
+<p><b>Skip 模式</b>：直接复制参考块，无残差，码率极低<br>适合：静止背景/慢速运动<br><br><b>H.265 Merge 模式</b>：从候选列表选MV，不编MVD<br>• 候选来源：空域/时域相邻块<br>• 大幅减少运动矢量编码开销<br><br><b>B帧双向预测</b>：前向+后向加权平均<br>• 权重可自适应（WP）<br>• 低延迟场景不用B帧</p>
+<span class="tip tip-r">安防板端不用B帧：2帧延迟+2×运动估计算力</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-me" width="1080" height="400"></canvas></div>
+</div>
+
+<!-- E5: Transform + Quantization -->
+<div class="stg" id="E5">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E5</span><b style="font-size:15px;margin-left:6px">变换与量化</b></div>
+<div class="stg-b">DCT变换将预测残差的能量集中到低频系数，量化丢弃感知不敏感的高频分量。这是视频编码<b>唯一的失真来源</b>，也是码率控制的核心旋钮。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>整数 DCT 变换</h4>
+<p><b>H.264</b>：4×4 整数DCT<br>• 无乘法，只有加法和移位<br>• 核心思想与传统DCT一致但避免浮点<br><br><b>H.265</b>：4×4 / 8×8 / 16×16 / 32×32<br>• 大块DCP更好的能量集中<br>• 4×4 亮度残差可用DST替代DCT</p>
+<div class="fm">// 4×4 整数DCT核心<br>Y = C×X×Cᵀ<br>// C为整数矩阵，X为残差<br>// 变换后低频集中在[0][0]</div>
+</div>
+<div class="ac">
+<h4>量化 — 失真的唯一来源</h4>
+<p><b>量化步长与QP关系</b>：</p>
+<div class="fm">QStep = 0.625 × 2^(QP/6)<br>QP ∈ [0, 51]<br>QP每+6 → QStep翻倍<br>逆量化: coeff_round(QP / QStep)</div>
+<p><b>码率-失真关系</b>：<br>• QP↓ → 码率↑ 画质↑<br>• QP↑ → 码率↓ 画质↓<br>• QP 28以下接近无损<br>• QP 36+ 块效应可见<br>• QP 42+ 严重马赛克</p>
+<span class="tip tip-o">板端建议：MaxQP=36, MinQP=10</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-quant" width="1080" height="400"></canvas></div>
+<div class="dc">
+<span class="sl">QP</span><input type="range" min="0" max="51" value="28" id="sl-qp" oninput="rQuant()"><span class="sv" id="sv-qp">28</span>
+</div>
+</div>
+
+<!-- E6: Entropy Coding -->
+<div class="stg" id="E6">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E6</span><b style="font-size:15px;margin-left:6px">熵编码</b></div>
+<div class="stg-b">无损压缩的最后一步：利用符号的统计特性进一步压缩。H.264支持CAVLC和CABAC，H.265只支持CABAC。CABAC比CAVLC节省5-15%码率，但计算量更大。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>CAVLC (H.264 Baseline)</h4>
+<p><b>上下文自适应变长编码</b>：<br>1. Z形扫描4×4系数块<br>2. 统计非零系数个数/尾随1个数<br>3. 查表选择VLC码表<br>4. 编码每个系数的level和run</p>
+<div class="fm">// 扫描顺序（Zigzag）<br> 0  1  5  6<br> 2  4  7 12<br> 3  8 11 13<br> 9 10 14 15</div>
+</div>
+<div class="ac">
+<h4>CABAC (H.264 Main / H.265)</h4>
+<p><b>上下文自适应二进制算术编码</b>：<br><br>1. <b>二值化</b>：将语法元素转为0/1串<br>&nbsp;&nbsp;• 一元码 / 截断一元 / 指数Golomb<br>2. <b>上下文建模</b>：根据邻块状态选择概率模型<br>&nbsp;&nbsp;• 亮度/色度/残差分类<br>3. <b>算术编码</b>：按概率区间编码bit<br>&nbsp;&nbsp;• 旁路模式：0.5概率均匀编码</p>
+<span class="tip tip-b">CABAC是H.265比H.264省码率的关键模块之一</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-cabac" width="1080" height="360"></canvas></div>
+</div>
+
+<!-- E7: Rate Control + NAL -->
+<div class="stg" id="E7">
+<div class="stg-h"><span class="tip tip-b" style="font-size:10px;font-weight:700">E7</span><b style="font-size:15px;margin-left:6px">码率控制与 NAL 输出</b></div>
+<div class="stg-b">码率控制决定每一帧/宏块的QP值，在目标码率和画质间平衡。输出封装将编码数据打包为NAL单元，按 Annex B 或 AVCC 格式输出。</div>
+
+<div class="ag">
+<div class="ac">
+<h4>码率控制模式</h4>
+<p><b>CBR</b>：固定码率，每帧码率恒定<br>• 适合带宽确定场景<br>• VBV缓冲水位控制关键<br><br><b>VBR</b>：可变码率，画质恒定<br>• 复杂帧多分配，简单帧少分配<br>• 峰值码率可能超标<br><br><b>CRF</b>：恒定质量(x264独有)<br>• QP = CRF + 内容复杂度偏移<br>• 安防常用 CRF 23-28</p>
+<div class="fm">// VBV缓冲约束<br>bits_per_frame ≤ VBV_size / delay<br>VBV_fullness += bits_input<br>VBV_fullness -= bits_frame<br>if VBV_fullness &gt; VBV_max: 溢出<br>if VBV_fullness &lt; 0: 下溢</div>
+</div>
+<div class="ac">
+<h4>NAL 单元封装</h4>
+<p><b>H.264 NAL 结构</b>：<br>• Start Code: 00 00 00 01 或 00 00 01<br>• NAL Header: 1字节<br>&nbsp;&nbsp;forbidden_zero_bit(1) + nal_ref_idc(2) + nal_unit_type(5)<br>• RBSP: 原始字节序列载荷<br><br><b>关键NAL类型</b>：<br>• 7: SPS (序列参数集)<br>• 8: PPS (图像参数集)<br>• 5: IDR帧<br>• 1: 非IDR帧<br>• 6: SEI补充信息<br><br><b>Annex B vs AVCC</b>：<br>• Annex B: Start Code前缀（流式）<br>• AVCC: 长度前缀（容器封装）<br>• SRTP/RTP传输用 Annex B</p>
+<span class="tip tip-r">LiveKit推流必须每个IDR前发送SPS/PPS</span>
+</div>
+</div>
+<div class="dw"><canvas id="cv-nal" width="1080" height="320"></canvas></div>
+<div class="cb">
+<span class="mt">/* IMP 编码器参数配置 */</span>
+IMP_EncChnAttr stEncChnAttr;
+stEncChnAttr.stEncParam.stH264Attr.enBitrateControl = IMP_ENC_RC_MODE_CBR;
+stEncChnAttr.stEncParam.stH264Attr.u32BitRate = <span class="or">2000</span>;       <span class="mt">/* 2Mbps */</span>
+stEncChnAttr.stEncParam.stH264Attr.u32MaxQp = <span class="or">36</span>;          <span class="mt">/* 关键防块效应 */</span>
+stEncChnAttr.stEncParam.stH264Attr.u32MinQp = <span class="or">10</span>;
+stEncChnAttr.stEncParam.stH264Attr.u32IdrInterval = <span class="or">15</span>;      <span class="mt">/* 每15帧一个IDR */</span>
+stEncChnAttr.stEncParam.stH264Attr.bEnableIVO = <span class="or">1</span>;        <span class="mt">/* SPS/PPS随IDR */</span>
+
+<span class="mt">/* x264 等价配置 */</span>
+param->rc.i_rc_method = X264_RC_CRF;
+param->rc.f_rf_constant = <span class="or">23</span>;
+param->rc.i_vbv_max_bitrate = <span class="or">2500</span>;
+param->rc.i_vbv_buffer_size = <span class="or">5000</span>;
+param->i_keyint_max = <span class="or">15</span>;
+param->b_repeat_headers = <span class="or">1</span>;  <span class="mt">/* SPS/PPS per IDR */</span>
+</div>
+</div>
+
+</div>
+
+<!-- ===== Sidebar ===== -->
+<div class="side">
+<div class="ss"><h4>全通路数据格式</h4>
+<table class="pt"><tr><th>阶段</th><th>输入</th><th>输出</th></tr>
+<tr><td>CMOS</td><td>光子</td><td>电子(e⁻)</td></tr>
+<tr><td>ADC</td><td>电压</td><td>RAW10 Bayer</td></tr>
+<tr><td>BLC</td><td>RAW10</td><td>RAW10 (去偏移)</td></tr>
+<tr><td>LSC</td><td>RAW10</td><td>RAW10 (去渐晕)</td></tr>
+<tr><td>Demosaic</td><td>RAW10</td><td>RGB888</td></tr>
+<tr><td>CCM</td><td>RGB888</td><td>RGB888 (sRGB)</td></tr>
+<tr><td>Gamma</td><td>RGB888</td><td>RGB888 (非线性)</td></tr>
+<tr><td>CSC</td><td>RGB888</td><td>YCbCr 4:2:0</td></tr>
+<tr><td>编码器</td><td>YUV420</td><td>H.264 NAL</td></tr>
+</table></div>
+
+<div class="ss"><h4>延迟分解</h4>
+<table class="pt"><tr><th>阶段</th><th>典型延迟</th></tr>
+<tr><td>传感器采集</td><td>33ms (1帧)</td></tr>
+<tr><td>MIPI传输</td><td>&lt;1ms</td></tr>
+<tr><td>ISP处理</td><td>5-15ms</td></tr>
+<tr><td>ISP→编码器DMA</td><td>&lt;1ms</td></tr>
+<tr><td>编码器搜索+熵编码</td><td>20-50ms</td></tr>
+<tr><td>码流输出</td><td>&lt;1ms</td></tr>
+<tr><td style="color:var(--gn)">合计</td><td style="color:var(--gn)">60-100ms</td></tr>
+</table></div>
+
+<div class="ss"><h4>平台对比</h4>
+<table class="pt"><tr><th>特性</th><th>T31</th><th>SSD20x</th></tr>
+<tr><td>编码器</td><td>H.264</td><td>H.264/H.265</td></tr>
+<tr><td>最大分辨率</td><td>1080p30</td><td>1080p30</td></tr>
+<tr><td>3DNR</td><td>硬件1级</td><td>硬件3级</td></tr>
+<tr><td>码率控制</td><td>CBR/VBR</td><td>CBR/VBR/CVR</td></tr>
+<tr><td>编码延迟</td><td>~30ms</td><td>~25ms</td></tr>
+<tr><td>ME搜索范围</td><td>±32</td><td>±64</td></tr></table></div>
+
+<div class="ss"><h4>关键阈值</h4>
+<div style="font-size:10px;line-height:2">
+<div>QP &lt;28 : <span style="color:var(--gn)">近无损</span></div>
+<div>QP 28-36 : <span style="color:var(--or)">可接受</span></div>
+<div>QP &gt;36 : <span style="color:var(--rd)">块效应</span></div>
+<div>QP &gt;42 : <span style="color:var(--rd)">马赛克</span></div>
+<div style="border-top:1px solid var(--bd);margin:4px 0"></div>
+<div>IDR 15帧 : <span style="color:var(--gn)">0.5s恢复</span></div>
+<div>IDR 30帧 : <span style="color:var(--or)">1s恢复</span></div>
+<div style="border-top:1px solid var(--bd);margin:4px 0"></div>
+<div>VBV=2s × bitrate : <span style="color:var(--bl)">推荐缓冲</span></div>
+</div></div>
+</div>
+</div>
+
+<script>
+function scr(id){document.getElementById(id).scrollIntoView({behavior:'smooth'});document.querySelectorAll('.pn').forEach(n=>n.classList.toggle('act',n.dataset.s===id))}
+/* ==== IntersectionObserver for pipeline bar ==== */
+const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+  const id=e.target.id;document.querySelectorAll('.pn').forEach(n=>n.classList.toggle('act',n.dataset.s===id));
+}})},{threshold:0.3,rootMargin:'-80px 0px -60% 0px'});
+['P1','P2','P3','S1','S2','S3','S4','S5','S6','S7','S8','S9','S10','E1','E2','E3','E4','E5','E6','E7'].forEach(id=>{const el=document.getElementById(id);if(el)obs.observe(el)});
+
+/* ==== Canvas Renderers ==== */
+function initCv(id){const c=document.getElementById(id);if(!c)return null;const x=c.getContext('2d');x.scale(2,2);return{c,x,w:c.width/2,h:c.height/2}}
+function rCMOS(){
+  const C=initCv('cv-cmos');if(!C)return;const{c,x,w,h}=C;const half=w/2;
+  const exp=+document.getElementById('sl-exp').value,gain=+document.getElementById('sl-gain').value;
+  document.getElementById('sv-exp').textContent=exp+'ms';document.getElementById('sv-gain').textContent=gain+'x';
+  const brightness=exp/50*gain/10;
+  // Left: signal chain diagram
+  x.fillStyle='#181820';x.fillRect(0,0,half,h);
+  const steps=[
+    {label:'光子',y:20,val:brightness,color:'#ffdd44'},
+    {label:'电子',y:50,val:brightness*0.6,color:'#44dd66'},
+    {label:'电压',y:80,val:brightness*0.4,color:'#44aaff'},
+    {label:'RAW10',y:110,val:Math.min(1,brightness*0.35),color:'#aa66ff'},
+    {label:'输出',y:140,val:Math.min(1,brightness*0.3),color:'#ff6688'}
+  ];
+  for(const s of steps){
+    const bw=s.val*180;
+    x.fillStyle=s.color;x.globalAlpha=0.7;x.fillRect(20,s.y,bw,20);x.globalAlpha=1;
+    x.fillStyle='#fff';x.font='bold 9px sans-serif';x.fillText(s.label+' → '+((s.val*1023)|0)+' DN',24,s.y+14);
+    x.strokeStyle='rgba(255,255,255,.15)';x.strokeRect(20,s.y,180,20);
+  }
+  x.fillStyle='#888';x.font='9px sans-serif';x.fillText('信号链：曝光'+exp+'ms 增益'+gain+'x',20,h-10);
+  // Right: simulated image at this exposure/gain (canvas-pixel dimensions)
+  const pw=c.width/2,ph=c.height;
+  const img=x.createImageData(pw,ph),d=img.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const i=(y*pw+xx)*4;
+    let v=(50+80*Math.sin(xx/pw*4*Math.PI)+60*Math.cos(y/ph*3*Math.PI))*brightness;
+    const n=(Math.random()-.5)*30*(gain/5);
+    v+=n;
+    d[i]=Math.max(0,Math.min(255,v*1.1));d[i+1]=Math.max(0,Math.min(255,v));d[i+2]=Math.max(0,Math.min(255,v*0.85));d[i+3]=255;
+  }
+  x.putImageData(img,pw,0);
+}
+
+function rMIPI(){
+  const C=initCv('cv-mipi');if(!C)return;const{c,x,w,h}=C;
+  // Draw MIPI CSI-2 packet timing
+  x.fillStyle='#181820';x.fillRect(0,0,w,h);
+  const y0=30,laneH=40;
+  let lastOx=80;
+  const packets=[
+    {label:'FS',w:20,col:'#5af'},
+    {label:'Payload (RAW10)',w:200,col:'#2a6'},
+    {label:'PF',w:15,col:'#e82'},
+    {label:'FE',w:18,col:'#f66'},
+    {label:'LP',w:25,col:'#334'},
+  ];
+  // Lane 0 & Lane 1
+  for(let lane=0;lane<2;lane++){
+    const yy=y0+lane*(laneH+10);
+    x.fillStyle='#888';x.font='bold 9px sans-serif';x.fillText('Lane '+lane,4,yy+laneH/2+4);
+    // LP state
+    x.fillStyle='#334';x.fillRect(50,yy,30,laneH);
+    // HS burst
+    let ox=80;
+    for(const p of packets){
+      x.fillStyle=p.col;x.fillRect(ox,yy,p.w,laneH);
+      x.fillStyle='#fff';x.font='8px sans-serif';x.fillText(p.label,ox+2,yy+laneH/2+3);
+      ox+=p.w+2;
+    }
+    lastOx=ox;
+  }
+  // Time axis
+  x.strokeStyle='#555';x.beginPath();x.moveTo(50,y0+2*(laneH+10)+5);x.lineTo(lastOx+50,y0+2*(laneH+10)+5);x.stroke();
+  x.fillStyle='#555';x.font='8px sans-serif';x.fillText('像素时钟 →',50,y0+2*(laneH+10)+18);
+  // Bandwidth
+  x.fillStyle='#4da6ff';x.font='bold 9px sans-serif';
+  x.fillText('2-Lane MIPI CSI-2 @ 1.5Gbps/lane → 1080p30 RAW10 需 ~1.5Gbps ✓',50,h-12);
+}
+
+function rBayer(){
+  const C=initCv('cv-bayer');if(!C)return;const{c,x,w,h}=C;
+  const half=w/2,blk=10;
+  const pat=[['B','G'],['G','R']]; // BGGR
+  const colMap={R:[255,48,48],G:[32,192,32],B:[32,64,255]};
+  // Left: Bayer grid with block coloring and labels (shapes use logical coords)
+  x.fillStyle='#0a0e14';x.fillRect(0,0,half,h);
+  for(let by=0;by<Math.ceil(h/blk);by++)for(let bx=0;bx<Math.ceil(half/blk);bx++){
+    const ch=pat[by%2][bx%2];
+    const rgb=colMap[ch];
+    x.fillStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5)`;
+    x.fillRect(bx*blk+1,by*blk+1,blk-2,blk-2);
+    x.fillStyle='#fff';x.font='bold 7px sans-serif';x.fillText(ch,bx*blk+3,by*blk+9);
+  }
+  // Right: channel separation using ImageData at canvas-pixel resolution
+  const pw=c.width/2,ph=c.height;
+  const pchW=Math.floor(pw/3);
+  const channels=['R','G','B'];
+  for(let ci=0;ci<3;ci++){
+    const ox=pw+ci*pchW;
+    const img=x.createImageData(pchW,ph),d=img.data;
+    for(let y=0;y<ph;y++)for(let xx=0;xx<pchW;xx++){
+      const by2=Math.floor(y/(blk*2)),bx2=Math.floor(xx/(blk*2));
+      const srcCh=pat[by2%2][bx2%2];
+      const i=(y*pchW+xx)*4;
+      if(srcCh===channels[ci]){
+        const rgb=colMap[srcCh];
+        d[i]=rgb[0];d[i+1]=rgb[1];d[i+2]=rgb[2];d[i+3]=160;
+      } else {
+        d[i]=10;d[i+1]=14;d[i+2]=20;d[i+3]=255;
+      }
+    }
+    x.putImageData(img,ox,0);
+    // Label at logical coords (putImageData ignores transform, but text uses it)
+    x.fillStyle='#fff';x.font='bold 9px sans-serif';x.fillText(channels[ci]+'通道',half+ci*(half/3)+4,12);
+  }
+  // Divider
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([4,3]);x.beginPath();x.moveTo(half,0);x.lineTo(half,h);x.stroke();x.setLineDash([]);
+}
+
+function rEncArch(){
+  const C=initCv('cv-encarch');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  // Draw encoder block diagram
+  const blocks=[
+    {label:'输入YUV',x:10,y:90,w:50,h:30,col:'#5af'},
+    {label:'预测\n(帧内/帧间)',x:80,y:80,w:70,h:50,col:'#2cd'},
+    {label:'变换\nDCT',x:170,y:80,w:55,h:50,col:'#e90'},
+    {label:'量化\nQ',x:245,y:80,w:45,h:50,col:'#f44'},
+    {label:'熵编码\nCABAC',x:310,y:80,w:55,h:50,col:'#a6f'},
+    {label:'输出\nNAL',x:385,y:90,w:45,h:30,col:'#3f5'},
+    {label:'反量化\nIQ',x:245,y:155,w:45,h:30,col:'#888'},
+    {label:'反变换\nIDCT',x:170,y:155,w:55,h:30,col:'#888'},
+    {label:'重建',x:110,y:155,w:50,h:30,col:'#888'},
+    {label:'环路滤波',x:110,y:210,w:60,h:25,col:'#f80'},
+    {label:'参考帧DPB',x:200,y:210,w:70,h:25,col:'#08f'},
+  ];
+  for(const b of blocks){
+    x.fillStyle=b.col;x.globalAlpha=0.25;x.fillRect(b.x,b.y,b.w,b.h);x.globalAlpha=1;
+    x.strokeStyle=b.col;x.strokeRect(b.x,b.y,b.w,b.h);
+    x.fillStyle='#fff';x.font='bold 8px sans-serif';
+    const lines=b.label.split('\n');
+    lines.forEach((l,i)=>x.fillText(l,b.x+3,b.y+12+i*10));
+  }
+  // Arrows
+  const arrows=[[60,105,80,105],[150,105,170,105],[225,105,245,105],[290,105,310,105],[365,105,385,105],
+    [245,130,245,155],[245,185,225,185],[170,185,220,185],[135,185,110,185],[135,185,135,210],
+    [170,210,200,210],[270,222,300,222],[300,222,300,105],[300,105,290,110]];
+  x.strokeStyle='rgba(255,255,255,.35)';x.lineWidth=1;
+  for(const a of arrows){x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(a[2],a[3]);x.stroke()}
+  // Labels
+  x.fillStyle='#ff8';x.font='bold 10px sans-serif';x.fillText('编码器完整环路',10,20);
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('预测→变换→量化→熵编码：四重压缩',10,36);
+  x.fillText('反量化→反变换→重建→滤波：参考帧闭环',10,48);
+}
+
+function rGOP(){
+  const C=initCv('cv-gop');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  const frames=[
+    {type:'IDR',idx:0,col:'#f44'},{type:'P',idx:1,col:'#4af'},{type:'P',idx:2,col:'#4af'},
+    {type:'P',idx:3,col:'#4af'},{type:'P',idx:4,col:'#4af'},{type:'P',idx:5,col:'#4af'},
+    {type:'P',idx:6,col:'#4af'},{type:'IDR',idx:7,col:'#f44'},{type:'P',idx:8,col:'#4af'},
+    {type:'P',idx:9,col:'#4af'},{type:'P',idx:10,col:'#4af'},{type:'P',idx:11,col:'#4af'},
+    {type:'P',idx:12,col:'#4af'},{type:'P',idx:13,col:'#4af'},{type:'IDR',idx:14,col:'#f44'}
+  ];
+  const sx=30,sy=90,gap=32;
+  // Draw frames
+  for(let i=0;i<frames.length;i++){
+    const f=frames[i],fx=sx+i*gap,fy=sy;
+    x.fillStyle=f.col;x.globalAlpha=f.type==='IDR'?0.6:0.3;x.fillRect(fx,fy,24,50);x.globalAlpha=1;
+    x.strokeStyle=f.col;x.strokeRect(fx,fy,24,50);
+    x.fillStyle='#fff';x.font='bold 9px sans-serif';x.fillText(f.type,fx+2,fy+14);
+    x.font='8px sans-serif';x.fillText('#'+f.idx,fx+4,fy+28);
+    // Reference arrows
+    if(f.type==='P'&&i>0){
+      const prevIdr=i<7?0:7;
+      if(i-1!==prevIdr||frames[i-1].type==='P'){
+        x.strokeStyle='rgba(77,166,255,.3)';x.setLineDash([2,2]);
+        x.beginPath();x.moveTo(sx+(i-1)*gap+12,fy+50);x.lineTo(fx+12,fy);x.stroke();x.setLineDash([]);
+      }
+    }
+  }
+  // Time axis
+  x.strokeStyle='#555';x.beginPath();x.moveTo(sx,h-20);x.lineTo(sx+frames.length*gap,h-20);x.stroke();
+  x.fillStyle='#555';x.font='8px sans-serif';x.fillText('时间 →',sx,h-8);
+  // Legend
+  x.fillStyle='#f44';x.fillRect(sx,h-50,10,10);x.fillStyle='#fff';x.font='9px sans-serif';x.fillText('IDR (关键帧)',sx+14,h-42);
+  x.fillStyle='#4af';x.fillRect(sx+100,h-50,10,10);x.fillStyle='#fff';x.fillText('P (预测帧)',sx+114,h-42);
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('GOP=15 → 每0.5s一个随机访问点',sx+200,h-42);
+  // Bandwidth bars
+  for(let i=0;i<frames.length;i++){
+    const bh=frames[i].type==='IDR'?60:15+Math.random()*15;
+    x.fillStyle=frames[i].type==='IDR'?'#f44':'#4af';x.globalAlpha=0.4;
+    x.fillRect(sx+i*gap+2,sy+55,20,-bh);x.globalAlpha=1;
+  }
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('↑ 码率（IDR帧远大于P帧）',sx,sy+70);
+}
+
+function rIntra(){
+  const C=initCv('cv-intra');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  const cx=w/2,cy=h/2;
+  // Draw 4x4 block
+  const blk=40,bx=cx-blk*2,by=cy-blk*2;
+  // Block grid
+  x.strokeStyle='#444';x.lineWidth=1;
+  for(let r=0;r<=4;r++){x.beginPath();x.moveTo(bx,by+r*blk);x.lineTo(bx+4*blk,by+r*blk);x.stroke()}
+  for(let c2=0;c2<=4;c2++){x.beginPath();x.moveTo(bx+c2*blk,by);x.lineTo(bx+c2*blk,by+4*blk);x.stroke()}
+  // Reference pixels (top and left)
+  x.fillStyle='#335';x.fillRect(bx-blk,by-blk,5*blk,blk);x.fillRect(bx-blk,by,blk,4*blk);
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('参考像素(已编码)',bx-blk+2,by-blk+10);
+  // H.264 9 modes arrows
+  const modes=[
+    {name:'V(0)',angle:-90},{name:'H(1)',angle:0},{name:'DC(2)',angle:-1},
+    {name:'45°(3)',angle:-45},{name:'135°(4)',angle:-135},
+    {name:'113°(5)',angle:-67.5},{name:'157°(6)',angle:-112.5},
+    {name:'67°(7)',angle:-22.5},{name:'23°(8)',angle:-157.5}
+  ];
+  const ml=30,mx=60;
+  for(let i=0;i<modes.length;i++){
+    const m=modes[i],ox=mx+(i%5)*100,oy=20+Math.floor(i/5)*85;
+    x.strokeStyle=i<4?'#4af':'#88f';x.lineWidth=1.5;
+    if(m.angle===-1){
+      x.fillStyle='#555';x.fillRect(ox-10,oy-10,20,20);
+      x.fillStyle='#fff';x.font='8px sans-serif';x.fillText('DC',ox-6,oy+3);
+    }else{
+      const rad=m.angle*Math.PI/180;
+      x.beginPath();x.moveTo(ox-ml*Math.cos(rad),oy-ml*Math.sin(rad));
+      x.lineTo(ox+ml*Math.cos(rad),oy+ml*Math.sin(rad));x.stroke();
+      // Arrowhead
+      const ax=ox+ml*Math.cos(rad),ay=oy+ml*Math.sin(rad);
+      x.beginPath();x.moveTo(ax,ay);x.lineTo(ax-6*Math.cos(rad-0.4),ay-6*Math.sin(rad-0.4));x.stroke();
+      x.beginPath();x.moveTo(ax,ay);x.lineTo(ax-6*Math.cos(rad+0.4),ay-6*Math.sin(rad+0.4));x.stroke();
+    }
+    x.fillStyle='#ccc';x.font='bold 8px sans-serif';x.fillText(m.name,ox-12,oy+28);
+  }
+}
+
+function rME(){
+  const C=initCv('cv-me');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  // Reference frame area
+  x.fillStyle='#1a1a28';x.fillRect(30,30,200,140);
+  x.strokeStyle='#333';x.strokeRect(30,30,200,140);
+  x.fillStyle='#888';x.font='9px sans-serif';x.fillText('参考帧搜索窗口',34,44);
+  // Current macroblock
+  x.strokeStyle='#f44';x.lineWidth=2;x.strokeRect(100,80,32,32);
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('当前块',104,96);
+  // Search positions
+  const positions=[[60,50],[80,60],[100,70],[120,80],[140,70],[100,50],[80,90],[120,90]];
+  for(const p of positions){
+    x.strokeStyle='rgba(77,166,255,.2)';x.lineWidth=1;x.strokeRect(p[0],p[1],32,32);
+  }
+  // Best match
+  x.strokeStyle='#3f5';x.lineWidth=2;x.strokeRect(120,76,32,32);
+  x.fillStyle='#3f5';x.font='bold 8px sans-serif';x.fillText('最佳匹配',122,90);
+  // Motion vector
+  x.strokeStyle='#ff0';x.lineWidth=1.5;x.setLineDash([4,2]);
+  x.beginPath();x.moveTo(116,96);x.lineTo(136,92);x.stroke();x.setLineDash([]);
+  x.fillStyle='#ff0';x.font='bold 8px sans-serif';x.fillText('MV=(5,-2)',140,92);
+  // Right: motion vector field
+  const ox=280,oy=30,gridW=230,gridH=140,gs=28;
+  x.fillStyle='#1a1a28';x.fillRect(ox,oy,gridW,gridH);
+  x.strokeStyle='#333';x.strokeRect(ox,oy,gridW,gridH);
+  x.fillStyle='#888';x.font='9px sans-serif';x.fillText('运动矢量场',ox+4,oy+12);
+  for(let r=0;r<4;r++)for(let c2=0;c2<7;c2++){
+    const cx2=ox+14+c2*gs,cy2=oy+28+r*gs+10;
+    const dx=(Math.sin(c2*0.8+r*0.5)*6)|0,dy=(Math.cos(r*0.7+c2*0.3)*4)|0;
+    x.strokeStyle=Math.abs(dx)+Math.abs(dy)>6?'#f80':'#4af';x.lineWidth=1;
+    x.beginPath();x.moveTo(cx2,cy2);x.lineTo(cx2+dx,cy2+dy);x.stroke();
+    // Arrowhead
+    if(dx!==0||dy!==0){
+      const len=Math.sqrt(dx*dx+dy*dy);const ux=dx/len,uy=dy/len;
+      x.beginPath();x.moveTo(cx2+dx,cy2+dy);
+      x.lineTo(cx2+dx-3*ux+2*uy,cy2+dy-3*uy-2*ux);x.stroke();
+      x.beginPath();x.moveTo(cx2+dx,cy2+dy);
+      x.lineTo(cx2+dx-3*ux-2*uy,cy2+dy-3*uy+2*ux);x.stroke();
+    }
+  }
+}
+
+function rQuant(){
+  const C=initCv('cv-quant');if(!C)return;const{c,x,w,h}=C;
+  const qp=+document.getElementById('sl-qp').value;document.getElementById('sv-qp').textContent=qp;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  // Three panels: original, DCT coefficients, quantized
+  const pw=w/3-4;
+  // Original block
+  x.fillStyle='#2a6';x.globalAlpha=0.3;x.fillRect(4,20,pw,80);x.globalAlpha=1;
+  x.strokeStyle='#2a6';x.strokeRect(4,20,pw,80);
+  x.fillStyle='#fff';x.font='bold 9px sans-serif';x.fillText('原始残差块',8,32);
+  for(let r=0;r<4;r++)for(let c2=0;c2<4;c2++){
+    const v=80+40*Math.sin(r*1.2+c2*0.8);
+    x.fillStyle=`rgb(${v|0},${v*0.9|0},${v*0.7|0})`;x.fillRect(8+c2*28,36+r*16,26,14);
+  }
+  // DCT coefficients
+  const ox=pw+12;
+  x.fillStyle='#e90';x.globalAlpha=0.3;x.fillRect(ox,20,pw,80);x.globalAlpha=1;
+  x.strokeStyle='#e90';x.strokeRect(ox,20,pw,80);
+  x.fillStyle='#fff';x.fillText('DCT系数(频域)',ox+4,32);
+  // Low freq big, high freq small
+  for(let r=0;r<4;r++)for(let c2=0;c2<4;c2++){
+    const freq=(r+c2);const v=Math.max(5,200/Math.pow(2,freq));
+    x.fillStyle=`rgb(${v|0},${v*0.7|0},${v*0.3|0})`;x.fillRect(ox+4+c2*28,36+r*16,26,14);
+    x.fillStyle='#fff';x.font='7px sans-serif';x.fillText((v|0)+'',ox+8+c2*28,46+r*16);
+  }
+  // Quantized
+  const ox2=pw*2+20;
+  x.fillStyle='#f44';x.globalAlpha=0.3;x.fillRect(ox2,20,pw,80);x.globalAlpha=1;
+  x.strokeStyle='#f44';x.strokeRect(ox2,20,pw,80);
+  x.fillStyle='#fff';x.font='bold 9px sans-serif';x.fillText('量化后 QP='+qp,ox2+4,32);
+  const qstep=0.625*Math.pow(2,qp/6);
+  for(let r=0;r<4;r++)for(let c2=0;c2<4;c2++){
+    const freq=(r+c2);const v=Math.max(5,200/Math.pow(2,freq));
+    const qv=Math.max(0,Math.round(v/qstep)*qstep);
+    const alpha=Math.max(0.1,qv/200);
+    x.fillStyle=`rgba(244,68,56,${alpha})`;x.fillRect(ox2+4+c2*28,36+r*16,26,14);
+    x.fillStyle='#fff';x.font='7px sans-serif';x.fillText((qv|0)+'',ox2+8+c2*28,46+r*16);
+  }
+  // Info bar
+  x.fillStyle='#888';x.font='9px sans-serif';
+  x.fillText(`QP=${qp} → QStep=${qstep.toFixed(1)} → 高频系数归零=${qp>30?'大部分':'少量'}`,4,h-8);
+}
+
+function rCABAC(){
+  const C=initCv('cv-cabac');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  // Step 1: Binarization example
+  x.fillStyle='#a6f';x.font='bold 9px sans-serif';x.fillText('1. 二值化: 语法元素 → 01串',10,16);
+  // Unary binarization example
+  x.fillStyle='#888';x.font='8px sans-serif';x.fillText('值=5 → 111110 (截断一元)',10,30);
+  const bins=[1,1,1,1,1,0];
+  for(let i=0;i<bins.length;i++){
+    x.fillStyle=bins[i]?'#a6f':'#888';x.font='bold 12px monospace';x.fillText(bins[i]+'',10+i*20,46);
+  }
+  // Step 2: Context model
+  x.fillStyle='#4af';x.font='bold 9px sans-serif';x.fillText('2. 上下文建模: 根据邻块状态选概率',130,16);
+  // Probability bars
+  const probs=[[0.7,0.3],[0.4,0.6],[0.9,0.1]];
+  const labels=['Ctx0(亮MB)','Ctx1(暗MB)','Ctx2(边缘)'];
+  for(let i=0;i<3;i++){
+    const ox=140,oy=28+i*18;
+    x.fillStyle=probs[i][0]>0.5?'#4af':'#f44';
+    x.fillRect(ox,oy,probs[i][0]*120,12);
+    x.fillStyle='#333';x.fillRect(ox+probs[i][0]*120,oy,probs[i][1]*120,12);
+    x.fillStyle='#fff';x.font='7px sans-serif';x.fillText(labels[i],ox+130,oy+9);
+  }
+  // Step 3: Arithmetic coding
+  x.fillStyle='#3f5';x.font='bold 9px sans-serif';x.fillText('3. 算术编码: 区间细分',350,16);
+  let lo=0,hi=1;
+  for(let i=0;i<6;i++){
+    const p=0.7;const mid=lo+(hi-lo)*p;
+    const bit=bins[i];
+    x.fillStyle=bit?'#3f5':'#f80';x.globalAlpha=0.4;
+    x.fillRect(355+i*28,28,26,50);x.globalAlpha=1;
+    x.strokeStyle='#888';x.strokeRect(355+i*28,28,26,50);
+    x.fillStyle='#fff';x.font='7px sans-serif';x.fillText('bin='+bit,355+i*28,88);
+    x.fillText(`[${lo.toFixed(3)},${hi.toFixed(3)})`,355+i*28,98);
+    if(bit===1)hi=mid;else lo=mid;
+  }
+  // Final
+  x.fillStyle='#ff0';x.font='bold 10px sans-serif';x.fillText('输出比特流',460,130);
+}
+
+function rNAL(){
+  const C=initCv('cv-nal');if(!C)return;const{c,x,w,h}=C;
+  x.fillStyle='#101420';x.fillRect(0,0,w,h);
+  // Annex B format
+  const nals=[
+    {label:'00 00 00 01',col:'#555',w:60,desc:'Start Code'},
+    {label:'SPS (67)',col:'#4af',w:50,desc:'序列参数集'},
+    {label:'00 00 00 01',col:'#555',w:60,desc:'Start Code'},
+    {label:'PPS (68)',col:'#a6f',w:50,desc:'图像参数集'},
+    {label:'00 00 00 01',col:'#555',w:60,desc:'Start Code'},
+    {label:'IDR (65)',col:'#f44',w:80,desc:'关键帧'},
+    {label:'00 00 00 01',col:'#555',w:60,desc:'Start Code'},
+    {label:'P (41)',col:'#3f5',w:60,desc:'预测帧'},
+    {label:'00 00 00 01',col:'#555',w:60,desc:'Start Code'},
+    {label:'P (41)',col:'#3f5',w:60,desc:'预测帧'},
+  ];
+  let ox=8;
+  for(const n of nals){
+    x.fillStyle=n.col;x.globalAlpha=0.35;x.fillRect(ox,18,n.w,24);x.globalAlpha=1;
+    x.strokeStyle=n.col;x.strokeRect(ox,18,n.w,24);
+    x.fillStyle='#fff';x.font='bold 7px sans-serif';x.fillText(n.label,ox+2,32);
+    x.fillStyle='#888';x.font='6px sans-serif';x.fillText(n.desc,ox+2,46);
+    ox+=n.w+3;
+  }
+  // Format comparison
+  x.fillStyle='#888';x.font='8px sans-serif';
+  x.fillText('Annex B: [StartCode][NAL Header][RBSP] → 流式传输(SRTP/RTP)',8,68);
+  x.fillText('AVCC:    [Length(4B)][NAL Header][RBSP] → MP4/容器封装',8,82);
+  x.fillStyle='#ff0';x.font='bold 8px sans-serif';
+  x.fillText('LiveKit/WebRTC 使用 Annex B 格式推流',8,98);
+}
+
+/* ==== ISP S5: Demosaic ==== */
+function rDM(){
+  const C=initCv('cv-dm');if(!C)return;const{c,x,w,h}=C;const lhalf=w/2;
+  const pw=c.width/2,ph=c.height;
+  // Left: Bayer pattern - ImageData at canvas-pixel resolution
+  const img1=x.createImageData(pw,ph),d1=img1.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const bx=xx%4,by=y%4;
+    const isR=(by===0&&bx===0)||(by===0&&bx===2)||(by===2&&bx===0)||(by===2&&bx===2);
+    const isB=(by===1&&bx===1)||(by===1&&bx===3)||(by===3&&bx===1)||(by===3&&bx===3);
+    const isG=!isR&&!isB;
+    const lum=80+40*Math.sin(xx/pw*4)+30*Math.cos(y/ph*3);
+    const i=(y*pw+xx)*4;
+    if(isR){d1[i]=lum|0;d1[i+1]=0;d1[i+2]=0;}
+    else if(isB){d1[i]=0;d1[i+1]=0;d1[i+2]=lum|0;}
+    else{d1[i]=0;d1[i+1]=lum|0;d1[i+2]=0;}
+    d1[i+3]=255;
+  }
+  x.putImageData(img1,0,0);
+  // Right: full RGB after demosaic
+  const img2=x.createImageData(pw,ph),d2=img2.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const lum=120+40*Math.sin(xx/pw*4)+30*Math.cos(y/ph*3);
+    const edge=Math.abs(Math.sin(xx/pw*20))>0.9;
+    const i=(y*pw+xx)*4;
+    if(edge){d2[i]=(lum+60)|0;d2[i+1]=(lum+30)|0;d2[i+2]=lum|0;}
+    else{d2[i]=(lum*0.8)|0;d2[i+1]=(lum*0.9)|0;d2[i+2]=(lum*0.7)|0;}
+    d2[i+3]=255;
+  }
+  x.putImageData(img2,pw,0);
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([4,3]);x.beginPath();x.moveTo(lhalf,0);x.lineTo(lhalf,h);x.stroke();x.setLineDash([]);
+  x.font='bold 9px sans-serif';x.fillStyle='#fff';x.fillText('1ch/px Bayer RAW',8,14);x.fillText('3ch/px 完整RGB',lhalf+8,14);
+}
+
+/* ==== ISP S6: CCM ==== */
+function rCCM(){
+  const C=initCv('cv-ccm');if(!C)return;const{c,x,w,h}=C;const lhalf=w/2;
+  const pw=c.width/2,ph=c.height;
+  // Left: sensor native (green tint) - ImageData at canvas-pixel resolution
+  const img1=x.createImageData(pw,ph),d1=img1.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const base=140+50*Math.sin(xx/pw*3);
+    const i=(y*pw+xx)*4;
+    d1[i]=(base*0.7)|0;d1[i+1]=(base*1.1)|0;d1[i+2]=(base*0.8)|0;d1[i+3]=255;
+  }
+  x.putImageData(img1,0,0);
+  // Right: after CCM (neutral)
+  const img2=x.createImageData(pw,ph),d2=img2.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const base=140+50*Math.sin(xx/pw*3);
+    const i=(y*pw+xx)*4;
+    d2[i]=base|0;d2[i+1]=(base*0.95)|0;d2[i+2]=(base*0.88)|0;d2[i+3]=255;
+  }
+  x.putImageData(img2,pw,0);
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([4,3]);x.beginPath();x.moveTo(lhalf,0);x.lineTo(lhalf,h);x.stroke();x.setLineDash([]);
+  x.font='bold 9px sans-serif';x.fillStyle='#e09030';x.fillText('传感器色偏(偏绿)',8,14);
+  x.fillStyle='#3fb950';x.fillText('CCM校正(sRGB)',lhalf+8,14);
+}
+
+/* ==== ISP S7: Gamma ==== */
+function rGammaV(){
+  const C=initCv('cv-gamma');if(!C)return;const{c,x,w,h}=C;
+  const pad=40,plotW=w-80,plotH=h-60;
+  x.fillStyle='#101820';x.fillRect(pad,20,plotW,plotH);
+  // Grid
+  x.strokeStyle='rgba(255,255,255,.06)';x.lineWidth=.5;
+  for(let i=0;i<=4;i++){const yy=20+plotH*i/4;x.beginPath();x.moveTo(pad,yy);x.lineTo(pad+plotW,yy);x.stroke()}
+  for(let i=0;i<=4;i++){const xx=pad+plotW*i/4;x.beginPath();x.moveTo(xx,20);x.lineTo(xx,20+plotH);x.stroke()}
+  // Linear
+  x.strokeStyle='rgba(255,255,255,.2)';x.lineWidth=1;x.setLineDash([3,3]);x.beginPath();
+  for(let i=0;i<=100;i++){const xx=pad+plotW*i/100,yy=20+plotH*(1-i/100);i===0?x.moveTo(xx,yy):x.lineTo(xx,yy)}x.stroke();x.setLineDash([]);
+  // Gamma 0.45
+  x.strokeStyle='#4da6ff';x.lineWidth=2;x.beginPath();
+  for(let i=0;i<=100;i++){const vin=i/100,vout=Math.pow(vin,0.45);const xx=pad+plotW*vin,yy=20+plotH*(1-vout);i===0?x.moveTo(xx,yy):x.lineTo(xx,yy)}x.stroke();
+  // Gamma 0.6 (安防)
+  x.strokeStyle='#30d0b0';x.lineWidth=2;x.setLineDash([5,3]);x.beginPath();
+  for(let i=0;i<=100;i++){const vin=i/100,vout=Math.pow(vin,0.6);const xx=pad+plotW*vin,yy=20+plotH*(1-vout);i===0?x.moveTo(xx,yy):x.lineTo(xx,yy)}x.stroke();x.setLineDash([]);
+  // Labels
+  x.font='bold 9px sans-serif';x.fillStyle='#4da6ff';x.fillText('γ=0.45 标准sRGB',pad+plotW*0.35,20+plotH*0.55);
+  x.fillStyle='#30d0b0';x.fillText('γ=0.60 安防暗拉',pad+plotW*0.1,20+plotH*0.72);
+  x.fillStyle='rgba(255,255,255,.2)';x.fillText('线性 (γ=1.0)',pad+plotW*0.65,20+plotH*0.15);
+  x.fillStyle='#fff';x.fillText('输入亮度 →',pad+plotW*0.4,20+plotH+16);
+  x.save();x.translate(14,20+plotH*0.5);x.rotate(-Math.PI/2);x.fillText('输出亮度',0,0);x.restore();
+}
+
+/* ==== ISP S8: NR + EE ==== */
+function rNR(){
+  const C=initCv('cv-nr');if(!C)return;const{c,x,w,h}=C;const lhalf=w/2;
+  const nr=+document.getElementById('sl-nr').value,ee=+document.getElementById('sl-ee').value;
+  document.getElementById('sv-nr').textContent=nr;document.getElementById('sv-ee').textContent=ee;
+  const pw=c.width/2,ph=c.height;
+  // Left: noisy - generate pixel data array at canvas-pixel resolution
+  const src=new Float32Array(pw*ph);
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    let v=100+80*Math.abs(Math.sin(xx/pw*5*Math.PI));
+    const n=(Math.random()-.5)*60;
+    src[y*pw+xx]=Math.max(0,Math.min(255,v+n));
+  }
+  // Draw left side
+  const img=x.createImageData(pw,ph),d=img.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    const v=src[y*pw+xx]|0;
+    const i=(y*pw+xx)*4;
+    d[i]=v;d[i+1]=v;d[i+2]=v;d[i+3]=255;
+  }
+  x.putImageData(img,0,0);
+  // Right: NR + EE using fast box blur on src array
+  const dst=new Float32Array(pw*ph);
+  const blurR=Math.max(1,Math.round(nr*0.6));
+  // Horizontal pass
+  const tmp=new Float32Array(pw*ph);
+  for(let y=0;y<ph;y++){
+    for(let xx=0;xx<pw;xx++){
+      let sum=0,cnt=0;
+      for(let dx=-blurR;dx<=blurR;dx++){
+        const nx=xx+dx;
+        if(nx>=0&&nx<pw){sum+=src[y*pw+nx];cnt++}
+      }
+      tmp[y*pw+xx]=sum/cnt;
+    }
+  }
+  // Vertical pass
+  for(let y=0;y<ph;y++){
+    for(let xx=0;xx<pw;xx++){
+      let sum=0,cnt=0;
+      for(let dy=-blurR;dy<=blurR;dy++){
+        const ny=y+dy;
+        if(ny>=0&&ny<ph){sum+=tmp[ny*pw+xx];cnt++}
+      }
+      dst[y*pw+xx]=sum/cnt;
+    }
+  }
+  // Apply EE and write right side
+  const img2=x.createImageData(pw,ph),d2=img2.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    let v=dst[y*pw+xx];
+    if(ee>0){
+      let hp=-4*v;
+      const offsets=[[-1,0],[1,0],[0,-1],[0,1]];
+      for(const[dy,dx] of offsets){
+        const ny=y+dy,nx=xx+dx;
+        if(ny>=0&&ny<ph&&nx>=0&&nx<pw) hp+=dst[ny*pw+nx];
+      }
+      v+=hp*(ee*0.05);
+    }
+    const vi=Math.max(0,Math.min(255,v))|0;
+    const i=(y*pw+xx)*4;
+    d2[i]=vi;d2[i+1]=vi;d2[i+2]=vi;d2[i+3]=255;
+  }
+  x.putImageData(img2,pw,0);
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([4,3]);x.beginPath();x.moveTo(lhalf,0);x.lineTo(lhalf,h);x.stroke();x.setLineDash([]);
+  x.font='bold 9px sans-serif';x.fillStyle='#e09030';x.fillText('含噪声 高ISO',8,14);
+  x.fillStyle='#3fb950';x.fillText(`NR=${nr} EE=${ee}`,lhalf+8,14);
+}
+
+/* ==== ISP S9: CSC ==== */
+function rCSC(){
+  const C=initCv('cv-csc');if(!C)return;const{c,x,w,h}=C;const lthird=Math.floor(w/3);
+  const pw=c.width,ph=c.height,pthird=Math.floor(pw/3);
+  x.font='bold 9px sans-serif';
+  // Y channel - ImageData at canvas-pixel resolution
+  const imgY=x.createImageData(pthird,ph),dY=imgY.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pthird;xx++){
+    const v=80+100*Math.abs(Math.sin(xx/pthird*4*Math.PI));
+    const i=(y*pthird+xx)*4;
+    dY[i]=v|0;dY[i+1]=v|0;dY[i+2]=v|0;dY[i+3]=255;
+  }
+  x.putImageData(imgY,0,0);
+  x.fillStyle='#fff';x.fillText('Y (亮度)',8,14);
+  // Cb - ImageData
+  const imgCb=x.createImageData(pthird,ph),dCb=imgCb.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pthird;xx++){
+    const v=128+60*Math.sin(xx/pthird*3*Math.PI);
+    const i=(y*pthird+xx)*4;
+    dCb[i]=(v*0.7)|0;dCb[i+1]=(v*0.8)|0;dCb[i+2]=v|0;dCb[i+3]=255;
+  }
+  x.putImageData(imgCb,pthird,0);
+  x.fillStyle='#fff';x.fillText('Cb (蓝色色度)',lthird+8,14);
+  // Cr - ImageData
+  const imgCr=x.createImageData(pthird,ph),dCr=imgCr.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pthird;xx++){
+    const v=128+60*Math.sin(xx/pthird*3*Math.PI);
+    const i=(y*pthird+xx)*4;
+    dCr[i]=v|0;dCr[i+1]=(v*0.5)|0;dCr[i+2]=(v*0.3)|0;dCr[i+3]=255;
+  }
+  x.putImageData(imgCr,pthird*2,0);
+  x.fillStyle='#fff';x.fillText('Cr (红色色度)',lthird*2+8,14);
+  x.strokeStyle='rgba(255,255,255,.3)';x.lineWidth=1;
+  x.beginPath();x.moveTo(lthird,0);x.lineTo(lthird,h);x.stroke();
+  x.beginPath();x.moveTo(lthird*2,0);x.lineTo(lthird*2,h);x.stroke();
+  x.fillStyle='#e09030';x.fillText('4:2:0 → Cb/Cr 分辨率 = Y 的 1/4',8,h-8);
+}
+
+/* ==== ISP S10: WDR ==== */
+function rWDR(){
+  const C=initCv('cv-wdr');if(!C)return;const{c,x,w,h}=C;const lhalf=w/2;
+  const pw=c.width/2,ph=c.height;
+  // Left: single exposure - ImageData at canvas-pixel resolution
+  const img1=x.createImageData(pw,ph),d1=img1.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    let r,g,b;
+    const horiz=ph*0.5;
+    const isWin=xx>pw*0.7&&xx<pw*0.88&&y>ph*0.15&&y<ph*0.45;
+    if(isWin){r=250;g=250;b=250}
+    else if(y<horiz){const t=y/horiz;r=30+20*t;g=40+25*t;b=35+18*t}
+    else{const t=(y-horiz)/(ph-horiz);r=20+30*t;g=30+35*t;b=20+25*t}
+    const i=(y*pw+xx)*4;
+    d1[i]=r|0;d1[i+1]=g|0;d1[i+2]=b|0;d1[i+3]=255;
+  }
+  x.putImageData(img1,0,0);
+  // Right: WDR - ImageData
+  const img2=x.createImageData(pw,ph),d2=img2.data;
+  for(let y=0;y<ph;y++)for(let xx=0;xx<pw;xx++){
+    let r,g,b;
+    const horiz=ph*0.5;
+    const isWin=xx>pw*0.7&&xx<pw*0.88&&y>ph*0.15&&y<ph*0.45;
+    if(isWin){r=180;g=200;b=220}
+    else if(y<horiz){const t=y/horiz;r=80+60*t;g=110+70*t;b=90+55*t}
+    else{const t=(y-horiz)/(ph-horiz);r=50+60*t;g=70+70*t;b=45+50*t}
+    const i=(y*pw+xx)*4;
+    d2[i]=r|0;d2[i+1]=g|0;d2[i+2]=b|0;d2[i+3]=255;
+  }
+  x.putImageData(img2,pw,0);
+  x.strokeStyle='rgba(255,255,255,.3)';x.setLineDash([4,3]);x.beginPath();x.moveTo(lhalf,0);x.lineTo(lhalf,h);x.stroke();x.setLineDash([]);
+  x.font='bold 9px sans-serif';
+  x.fillStyle='#f05040';x.fillText('单曝光：室内全黑 窗外过曝',8,14);
+  x.fillStyle='#3fb950';x.fillText('WDR：室内可视 窗外保留细节',lhalf+8,14);
+  // Person silhouette - left (dark, barely visible)
+  x.globalAlpha=0.25;x.strokeStyle='#888';x.lineWidth=2;
+  x.beginPath();x.arc(lhalf*0.4,h*0.48,8,0,Math.PI*2);x.stroke();
+  x.beginPath();x.moveTo(lhalf*0.4,h*0.52);x.lineTo(lhalf*0.4,h*0.72);x.stroke();
+  // Person silhouette - right (visible)
+  x.globalAlpha=0.8;x.strokeStyle='#e0c080';
+  x.beginPath();x.arc(lhalf+lhalf*0.4,h*0.48,8,0,Math.PI*2);x.stroke();
+  x.beginPath();x.moveTo(lhalf+lhalf*0.4,h*0.52);x.lineTo(lhalf+lhalf*0.4,h*0.72);x.stroke();
+  x.globalAlpha=1;
+}
+
+/* ==== Init ==== */
+document.addEventListener('DOMContentLoaded',()=>{
+  rCMOS();rMIPI();rBayer();rDM();rCCM();rGammaV();rNR();rCSC();rWDR();rEncArch();rGOP();rIntra();rME();rQuant();rCABAC();rNAL();
+});
+</script>
+</body>
+</html>
