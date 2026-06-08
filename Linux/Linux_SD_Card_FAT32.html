@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux SD 卡与 FAT32 文件系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,42px);font-weight:900">Linux SD 卡与 FAT32 文件系统</h2>
+  <p class="sec-sub">系统化知识体系 — SD 协议 · 卡检测流程 · FAT32 磁盘布局 · VFAT 驱动实现 · 实战工具</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;"><strong>SD Card<br>Hardware</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;"><strong>MMC Subsystem<br>mmc_attach_sd()</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;"><strong>/dev/mmcblk0<br>Block Device</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;"><strong>VFAT Driver<br>fs/fat/</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>User Space<br>/mnt/sdcard</strong></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>SD 卡协议层</h4><div class="sub">物理规范 · 速度等级 · 初始化序列</div>
+      <p>从 <em>CMD0→CMD8→ACMD41→CMD2→CMD3</em> 的完整初始化握手。UHS-I/SDR104 电压切换与调谐。Default Speed → High Speed → UHS-I → SD Express 速度演进。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Linux MMC 子系统</h4><div class="sub">mmc_rescan → mmc_attach_sd</div>
+      <p><em>mmc_rescan()</em> 多协议探测 (SDIO→SD→MMC)。SD 卡检测后 <em>mmc_sd_init_card()</em> 读取 CID/CSD/SCR 寄存器，协商总线宽度和速度。最终创建 <code>/dev/mmcblk0</code> 块设备。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>FAT32 文件系统</h4><div class="sub">BPB · FAT 表 · 簇链 · VFAT LFN</div>
+      <p><em>BPB</em> 描述磁盘几何与卷信息。<em>FAT 表</em> 是簇→簇的链表，<code>0x?FFFFFFF</code> = EOF。<em>目录项</em> 32 字节固定格式。VFAT 通过多槽位存储长文件名 (UTF-16LE)。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: SD 卡硬件 ══ -->
+<h2 class="sh">1. SD 卡硬件概览 — 卡类型 · 速度等级 · 总线模式</h2>
+<p class="ss">一张 SD 卡的三重身份 — 容量等级 (SDSC/SDHC/SDXC/SDUC) · 速度等级 (Class/UHS/VSC) · 总线速度 (DS→HS→UHS→Express)</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>容量等级</th><th>标准</th><th>最大容量</th><th>文件系统</th><th>寻址方式</th></tr></thead>
+  <tbody>
+    <tr><td><strong>SDSC</strong></td><td>SD 1.0</td><td>2 GB</td><td>FAT16</td><td>字节寻址 (CSD v1.0)</td></tr>
+    <tr><td class="g"><strong>SDHC</strong></td><td class="g">SD 2.0</td><td class="g">32 GB</td><td class="g">FAT32</td><td class="g">块寻址 (CSD v2.0)</td></tr>
+    <tr><td><strong>SDXC</strong></td><td>SD 3.0</td><td>2 TB</td><td>exFAT</td><td>块寻址</td></tr>
+    <tr><td><strong>SDUC</strong></td><td>SD 7.0</td><td>128 TB</td><td>exFAT</td><td>块寻址</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:12px">
+  <table>
+  <thead><tr><th>总线速度模式</th><th>信号电压</th><th>最高时钟</th><th>最大带宽 (4-bit)</th><th>SD 版本</th></tr></thead>
+  <tbody>
+    <tr><td>Default Speed (DS)</td><td>3.3V</td><td>25 MHz</td><td>12.5 MB/s</td><td>SD 1.01</td></tr>
+    <tr><td>High Speed (HS)</td><td>3.3V</td><td>50 MHz</td><td>25 MB/s</td><td>SD 1.10</td></tr>
+    <tr><td>SDR12</td><td>1.8V (UHS-I)</td><td>25 MHz</td><td>12.5 MB/s</td><td>SD 3.01</td></tr>
+    <tr><td>SDR25</td><td>1.8V (UHS-I)</td><td>50 MHz</td><td>25 MB/s</td><td>SD 3.01</td></tr>
+    <tr><td>SDR50</td><td>1.8V (UHS-I)</td><td>100 MHz</td><td>50 MB/s</td><td>SD 3.01</td></tr>
+    <tr><td>DDR50</td><td>1.8V (UHS-I)</td><td>50 MHz (DDR)</td><td>50 MB/s</td><td>SD 3.01</td></tr>
+    <tr><td class="g"><strong>SDR104</strong></td><td class="g">1.8V (UHS-I)</td><td class="g">208 MHz</td><td class="g"><strong>104 MB/s</strong></td><td class="g">SD 3.01</td></tr>
+    <tr><td>UHS-II (HD312)</td><td>1.8V LVDS</td><td>52 MHz RCLK</td><td>312 MB/s</td><td>SD 4.00</td></tr>
+    <tr><td style="color:#a78bfa;font-weight:600">SD Express (PCIe Gen4)</td><td style="color:#a78bfa">1.8V PCIe</td><td style="color:#a78bfa">—</td><td style="color:#a78bfa"><strong>1970 MB/s</strong></td><td style="color:#a78bfa">SD 8.0</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:12px">
+  <table>
+  <thead><tr><th>速度等级标识</th><th>最小顺序写速度</th><th>适用场景</th><th>示例</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Speed Class</strong> (C2/C4/C6/C10)</td><td>2/4/6/10 MB/s</td><td>静态照片、普通视频</td><td>C10 = 10 MB/s</td></tr>
+    <tr><td><strong>UHS Speed Class</strong> (U1/U3)</td><td>10/30 MB/s</td><td>Full HD / 4K 视频</td><td>U3 = 30 MB/s</td></tr>
+    <tr><td class="g"><strong>Video Speed Class</strong> (V6~V90)</td><td class="g">6~90 MB/s</td><td class="g">8K 视频录制</td><td class="g">V30 = 30 MB/s</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch2: SD 协议 ══ -->
+<h2 class="sh">2. SD 卡协议 — 初始化序列与命令体系</h2>
+<p class="ss">上电 → CMD0 → CMD8 → ACMD41 → CMD2 → CMD3 → SCR → 总线切换 — 从 Idle 到 Transfer 状态</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>上电与识别阶段 (≤400 kHz)</h4><div class="lbl">Card Identification Mode</div>
+    <p>① 上电 VDD → 等待 250ms 稳定<br>
+    ② 发送 <strong>≥74 个时钟周期</strong> (CMD 线保持高)<br>
+    ③ <strong>CMD0</strong> (GO_IDLE_STATE) → 所有卡复位<br>
+    ④ <strong>CMD8</strong> (SEND_IF_COND): 参数=VHS+0xAA，检查电压+SD 版本 (v2.00+)<br>
+    ⑤ <strong>ACMD41</strong> (SD_SEND_OP_COND): HCS=1 (支持 SDHC/XC)，S18R=1 (请求 1.8V)，轮询直到 bit31=1 表示就绪<br>
+    ⑥ (可选) CMD11 VOLTAGE_SWITCH → 切 1.8V 信令</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>数据传输阶段 (升至高速)</h4><div class="lbl">Data Transfer Mode</div>
+    <p>⑦ <strong>CMD2</strong> (ALL_SEND_CID) → 读 128-bit 卡标识<br>
+    ⑧ <strong>CMD3</strong> (SEND_RELATIVE_ADDR) → 分配 RCA，进入 Stand-by<br>
+    ⑨ <strong>CMD9</strong> (SEND_CSD) → 读 CSD 获取容量/速度/版本<br>
+    ⑩ <strong>ACMD51</strong> (SEND_SCR) → 读 SD 配置寄存器 (支持的总线宽度)<br>
+    ⑪ <strong>ACMD6</strong> (SET_BUS_WIDTH) → 切 4-bit<br>
+    ⑫ <strong>CMD6</strong> (SWITCH_FUNC) → 切 High Speed / UHS 模式<br>
+    ⑬ <strong>CMD7</strong> (SELECT_CARD) → 选中卡，进入 Transfer</p>
+  </div>
+</div>
+
+<div class="sg" style="margin-top:12px">
+  <div class="st"><b>CMD0</b> GO_IDLE<br>复位所有卡</div>
+  <div class="st"><b>CMD8</b> IF_COND<br>电压检测</div>
+  <div class="st"><b>ACMD41</b> OP_COND<br>OCR 协商</div>
+  <div class="st"><b>CMD11</b> VOLT_SW<br>切 1.8V</div>
+  <div class="st"><b>CMD2</b> ALL_CID<br>读卡标识</div>
+  <div class="st"><b>CMD3</b> SEND_RCA<br>分配地址</div>
+  <div class="st"><b>CMD9</b> SEND_CSD<br>获取容量</div>
+  <div class="st"><b>ACMD51</b> SEND_SCR<br>总线能力</div>
+  <div class="st"><b>ACMD6</b> BUS_W<br>切 4-bit</div>
+  <div class="st"><b>CMD6</b> SWITCH<br>切换速度</div>
+  <div class="st"><b>CMD7</b> SELECT<br>选中卡</div>
+  <div class="st"><b>READY</b><br>Transfer 状态</div>
+</div>
+
+<div class="callout info">
+  <div class="ct">SD 卡卡状态机 (Card State Machine)</div>
+  <strong>Idle</strong> (CMD0 后) → <strong>Ready</strong> (ACMD41 完成后) → <strong>Ident</strong> (CMD2 后) → <strong>Stby</strong> (CMD3 后) → <strong>Transfer</strong> (CMD7 选中后) → <strong>Data</strong> (CMD17/18 读或 CMD24/25 写时) → 完成后回到 Transfer<br>
+  <strong>初始化时钟</strong>: 100-400 kHz (f_od) · <strong>数据传输时钟</strong>: 最高 208 MHz (取决于卡能力和 Host 支持)
+</div>
+
+<!-- ══ Ch3: Linux SD 检测流程 ══ -->
+<h2 class="sh">3. Linux SD 卡检测 — mmc_rescan → mmc_attach_sd</h2>
+<p class="ss">MMC 子系统三层协同 · mmc_rescan 多协议探测 · mmc_sd_init_card 完整初始化 · sysfs 调试</p>
+
+<div class="chain">
+<span class="cm">/* ═══ Linux SD 卡检测完整路径 (drivers/mmc/core/) ═══ */</span>
+<b>mmc_rescan()</b>                               <span class="cm">// core.c — 由 GPIO 中断或 mmc_add_host 触发</span>
+  ├── <i>mmc_rescan_try_freq(host, 400000)</i>    <span class="cm">// 在 400kHz 初始化频率探测</span>
+  │     ├── mmc_power_up(host)             <span class="cm">// 上电 (OFF→UP→ON, 通过 set_ios)</span>
+  │     ├── mmc_go_idle(host)              <span class="cm">// CMD0 → 卡进入 Idle</span>
+  │     ├── mmc_send_if_cond(host, ocr)    <span class="cm">// CMD8 → 电压+版本检测</span>
+  │     │     └── R7 响应 → SD v2.00+  (无响应 → 可能是 MMC 旧卡)
+  │     │
+  │     ├── <b>mmc_attach_sdio(host)</b>        <span class="cm">// ① 先尝试 SDIO (CMD5)</span>
+  │     │
+  │     ├── <b>mmc_attach_sd(host)</b>          <span class="cm">// ② SD 卡探测 ★ MAIN PATH</span>
+  │     │     ├── mmc_send_app_op_cond(host, 0, &amp;ocr)
+  │     │     │     └── ACMD41 循环 (HCS=1, S18R=1, 超时 1s)
+  │     │     ├── <em>mmc_sd_init_card()</em>
+  │     │     │     ├── CMD2 → 读 CID (128-bit 卡唯一标识)
+  │     │     │     ├── CMD3 → 分配 RCA → 进入 Stand-by
+  │     │     │     ├── CMD9 → 读 CSD (容量/速度/版本)
+  │     │     │     ├── CMD7 → 选中卡 → 进入 Transfer
+  │     │     │     ├── ACMD51 → 读 SCR (总线宽度等能力)
+  │     │     │     ├── ACMD6 → 切 4-bit 总线宽度
+  │     │     │     ├── CMD6 SWITCH → 协商 High Speed / UHS 模式
+  │     │     │     └── (UHS-I) → CMD11 电压切换 1.8V → CMD19 Tuning
+  │     │     └── mmc_add_card() → device_add(card-&gt;dev)
+  │     │           └── mmc_bus_type 匹配 → mmc_blk_probe() → /dev/mmcblkX
+  │     │
+  │     └── <b>mmc_attach_mmc(host)</b>         <span class="cm">// ③ 最后尝试 eMMC (CMD1)</span></div>
+
+<div class="cb" style="margin-top:16px">
+<span class="cm">/* ===== 查看 SD 卡信息 — sysfs + debugfs ===== */</span>
+<span class="cm"># 卡容量</span>
+cat /sys/block/mmcblk0/size       <span class="cm">// 块数 (×512 = 字节)</span>
+
+<span class="cm"># CID / CSD / SCR 寄存器值</span>
+cat /sys/bus/mmc/devices/mmc0:*/cid
+<span class="cm"># 0150415344344742201060c56da600b6</span>
+cat /sys/bus/mmc/devices/mmc0:*/csd
+cat /sys/bus/mmc/devices/mmc0:*/scr
+
+<span class="cm"># 当前 I/O 总线状态 (最强的诊断入口!)</span>
+cat /sys/kernel/debug/mmc0/ios
+<span class="cm"># clock:          50000000 Hz</span>
+<span class="cm"># bus width:      2 (4 bits)</span>
+<span class="cm"># timing spec:    2 (sd high-speed)</span>
+<span class="cm"># signal voltage: 0 (3.30 V)</span>
+
+<span class="cm"># 卡检测日志</span>
+dmesg | grep mmc
+<span class="cm"># mmc0: new high speed SDHC card at address 0007</span>
+<span class="cm"># mmcblk0: mmc0:0007 SD32G 29.7 GiB</span>
+<span class="cm">#  mmcblk0: p1 p2</span></div>
+
+<!-- ══ Ch4: FAT32 磁盘布局 ══ -->
+<h2 class="sh">4. FAT32 磁盘布局 — BPB · FAT 表 · 目录项 · 簇链</h2>
+<p class="ss">从第 0 扇区到文件数据 — FAT32 的五层磁盘结构完整解析</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>BPB — BIOS 参数块</h4><div class="lbl">扇区 0 — 卷的元数据</div>
+    <p><strong>Bytes Per Sector</strong> (偏移 0x0B): 通常 512<br>
+    <strong>Sectors Per Cluster</strong> (0x0D): 2^n (1/2/4/8...128)<br>
+    <strong>Reserved Sectors</strong> (0x0E): FAT32 通常 32<br>
+    <strong>Number of FATs</strong> (0x10): 通常 2 (FAT1 + FAT2 互为备份)<br>
+    <strong>Sectors Per FAT</strong> (0x24): FAT32 用此字段<br>
+    <strong>Root Cluster</strong> (0x2C): 根目录起始簇号 (通常 2)<br>
+    <strong>FS Info Sector</strong> (0x30): 通常 1 (含空闲簇计数)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>FAT 表 — 簇分配链</h4><div class="lbl">簇 → 簇的单链表</div>
+    <p>FAT32 每个表项 32-bit (高 4 位保留 = 28-bit 有效)。<br>
+    <strong>0x00000000</strong>: 空闲簇<br>
+    <strong>0x00000002–0x0FFFFFEF</strong>: 下一个簇号<br>
+    <strong>0x0FFFFFF8–0x0FFFFFFF</strong>: <strong>EOF (文件结束)</strong><br>
+    <strong>0x0FFFFFF7</strong>: 坏簇<br>
+    例: 文件占簇 3→5→7→0x0FFFFFFF 表示 FAT[3]=5, FAT[5]=7, FAT[7]=EOF</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>目录项 — 32 字节固定</h4><div class="lbl">文件名 + 属性 + 首簇号</div>
+    <p>偏移 <strong>0x00</strong>: 短文件名 (8.3, 11 字节)<br>
+    <strong>0x0B</strong>: 属性 (0x10=目录, 0x20=存档, 0x0F=LFN)<br>
+    <strong>0x14</strong>: 首簇号高 16 位 (FAT32)<br>
+    <strong>0x1A</strong>: 首簇号低 16 位<br>
+    <strong>0x1C</strong>: 文件大小 (字节, 32-bit)<br>
+    <strong>VFAT LFN</strong>: 长文件名通过多个 32 字节槽位存储 (每槽 13 个 UTF-16LE 字符)，属性=0x0F</p>
+  </div>
+</div>
+
+<div class="map" style="background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.5;color:#b0b0d0;white-space:pre;overflow-x:auto;">
+<span class="cm">/* ═══ FAT32 磁盘布局全景 ═══ */</span>
+<span class="cm">扇区 0 ┌────────────────────┐</span>
+<span class="cm">       │ BPB + 引导代码      │ 保留扇区 (通常 32 个)</span>
+<span class="cm">       │ Boot Sector (512B)  │</span>
+<span class="cm">  31   ├────────────────────┤</span>
+<span class="cm">       │ FS Info Sector      │ 空闲簇数 + 下一个空闲簇提示</span>
+<span class="cm">  32   ╞════════════════════╡</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       │ FAT 表 #1          │ 每个簇 4 字节 (FAT32)</span>
+<span class="cm">       │ (Sectors Per FAT)  │ FAT[0]=0x0FFFFFF8 (介质类型)</span>
+<span class="cm">       │                    │ FAT[1]=0x0FFFFFFF (脏标志)</span>
+<span class="cm">       ├────────────────────┤</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       │ FAT 表 #2 (备份)    │ 与 FAT1 完全相同</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       ╞════════════════════╡</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       │ 数据区              │ 簇 2 = 根目录</span>
+<span class="cm">       │ (Root Cluster = 2)│ 簇 N = 文件数据</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       │ ...                │</span>
+<span class="cm">       │                    │</span>
+<span class="cm">       └────────────────────┘</span></div>
+
+<div class="cb">
+<span class="cm">/* ===== VFAT 长文件名 (LFN) — 多槽位存储 ===== */</span>
+<span class="cm">// 每 32 字节目录项: 属性=0x0F → LFN 槽</span>
+<span class="cm">// 一个 LFN 槽存储 13 个 UTF-16LE 字符</span>
+<span class="cm">// 长文件名 "My Long File.txt" (18 字符 → 需要 2 个 LFN 槽 + 1 个 8.3 项)</span>
+
+<span class="cm">/* 目录项序列 (按反向顺序存储): */</span>
+<span class="cm">// 槽 0 (属性=0x0F, seq=0x42): "t.x"     ← 第 2 个 LFN (最后 5 字符 + 扩展名)</span>
+<span class="cm">// 槽 1 (属性=0x0F, seq=0x01): "My Long Fi" ← 第 1 个 LFN (前 13 字符)</span>
+<span class="cm">// 槽 2 (属性=0x20, seq=常规): "MYLONG~1.TXT" ← 8.3 短文件名 (兼容 DOS)</span>
+<span class="cm">// seq 字节: 高 6 位=序号(1开始), bit6=最后一个槽(0x40)</span></div>
+
+<!-- ══ Ch5: Linux VFAT 驱动 ══ -->
+<h2 class="sh">5. Linux VFAT 驱动 — fs/fat/ 源码架构</h2>
+<p class="ss">内核中 FAT 文件系统的实现 · 超级块/Inode/FAT 表操作 · 簇分配与回收</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>源码文件</h4><div class="lbl">fs/fat/ 目录结构</div>
+    <p><code>inode.c</code> — inode 读写 (fat_get_block 映射簇→扇区)<br>
+    <code>cache.c</code> — FAT 表缓存 (以扇区为单位)<br>
+    <code>fatent.c</code> — FAT 表项操作 (fat_ent_read/write/blocknr)<br>
+    <code>misc.c</code> — 簇管理 (fat_alloc_clusters/fat_free_clusters)<br>
+    <code>dir.c</code> — 目录遍历 (fat_search_long/fat_add_entries)<br>
+    <code>namei_vfat.c</code> — VFAT 文件名处理 (8.3 + LFN 编解码)<br>
+    <code>file.c</code> — 文件读写</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>关键数据结构</h4><div class="lbl">msdos_sb_info — 超级块私有数据</div>
+    <p><code>fatent_operations</code>: FAT12/16/32 的统一访问接口。三个实现: fat12_ops, fat16_ops, fat32_ops。<br>
+    <code>msdos_sb_info</code>: 挂载时从 BPB 填充 — fat_bits, cluster_size, root_cluster, prev_free, free_clusters。<br>
+    <strong>FAT 缓存</strong>: 以 FAT 扇区为单位缓存，LRU 回收，避免每次都读磁盘。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>关键操作</h4><div class="lbl">簇分配 · 释放 · 读写</div>
+    <p><strong>分配</strong> (<code>fat_alloc_clusters</code>): 从 FAT 表扫描空闲簇 → 建立簇链 → 更新 FAT 表 → 标记脏<br>
+    <strong>释放</strong> (<code>fat_free_clusters</code>): 遍历簇链 → FAT[cluster]=0 → 更新 FS Info 空闲计数<br>
+    <strong>读</strong> (<code>fat_get_block</code>): 文件偏移 → 逻辑簇号 → FAT 链遍历 → 物理扇区号 → <code>map_bh</code> 返回</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ FAT 驱动: 文件读路径 (read) ═══ */</span>
+<b>sys_read(fd, buf, count)</b>
+  ├── vfs_read() → file-&gt;f_op-&gt;read_iter
+  └── generic_file_read_iter()
+        └── <i>address_space_operations.read_folio()</i>  <span class="cm">// 页缓存 miss → 读磁盘</span>
+              └── <b>fat_get_block(inode, block, bh_result, create)</b>
+                    ├── 文件偏移 → 逻辑簇号 (offset / cluster_size)
+                    ├── <b>遍历 FAT 链</b> → 找到目标簇的物理簇号
+                    │     └── fat_ent_read() → fatent_brass()  <span class="cm">// 读 FAT 表项</span>
+                    ├── 物理簇号 → 物理扇区号
+                    └── map_bh(bh_result, sb, sector)  <span class="cm">// 返回扇区号给 block layer</span></div>
+
+<div class="cb">
+<span class="cm">/* ===== fs/fat 注册的文件系统类型 ===== */</span>
+<span class="cm">// vfat: 支持 VFAT 长文件名 (推荐 — 默认使用这个)</span>
+<span class="kw">static struct</span> <span class="ty">file_system_type</span> vfat_fs_type = {
+    <span class="op">.name</span>    = <span class="st">"vfat"</span>,
+    <span class="op">.mount</span>   = vfat_mount,
+    <span class="op">.kill_sb</span> = kill_block_super,
+    <span class="op">.fs_flags</span> = FS_REQUIRES_DEV,
+};
+
+<span class="cm">// msdos: 仅 8.3 短文件名 (兼容纯 DOS 环境)</span>
+<span class="cm">// vfat:  完整 VFAT 支持 — 长文件名 + 8.3 别名</span>
+
+<span class="cm">/* ===== 常用 mount 选项 ===== */</span>
+mount -t vfat /dev/mmcblk0p1 /mnt/sdcard
+mount -t vfat -o iocharset=utf8,fmask=0133,dmask=0022 /dev/mmcblk0p1 /mnt
+<span class="cm">// iocharset=utf8: UTF-8 文件名 (否则依赖 NLS 模块)</span>
+<span class="cm">// fmask/dmask:  文件/目录权限掩码 (FAT 无 Unix 权限属性)</span>
+<span class="cm">// uid=1000,gid=1000: 设置所有文件归属</span></div>
+
+<!-- ══ Ch6: 实战工具 ══ -->
+<h2 class="sh">6. 实战工具 — 分区 · 格式化 · 检查 · 修复</h2>
+<p class="ss">从裸 SD 卡到可挂载文件系统 — fdisk / mkfs.vfat / fsck.vfat / dosfslabel 完整工作流</p>
+
+<div class="sg">
+  <div class="st"><b>①</b> <strong>查看设备</strong><br><code>lsblk</code><br><code>dmesg | grep mmc</code><br>确认 /dev/mmcblk0 存在</div>
+  <div class="st"><b>②</b> <strong>分区</strong><br><code>fdisk /dev/mmcblk0</code><br>创建主分区 → 类型 0x0C<br>(W95 FAT32 LBA)</div>
+  <div class="st"><b>③</b> <strong>格式化</strong><br><code>mkfs.vfat -F 32 -n MYSD /dev/mmcblk0p1</code><br>-F 32=FAT32, -n=卷标</div>
+  <div class="st"><b>④</b> <strong>检查</strong><br><code>fsck.vfat -v /dev/mmcblk0p1</code><br>检查 FAT 表一致性</div>
+  <div class="st"><b>⑤</b> <strong>挂载</strong><br><code>mount /dev/mmcblk0p1 /mnt</code><br>或添加 /etc/fstab 条目</div>
+  <div class="st"><b>⑥</b> <strong>使用</strong><br><code>df -h /mnt</code><br><code>cp / umount</code></div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 创建 FAT32 分区的完整命令序列 ===== */</span>
+<span class="cm"># 1. 分区 — 创建单个主分区</span>
+fdisk /dev/mmcblk0
+<span class="cm"># n → p → 1 → Enter (默认起始) → Enter (默认结束) → t → c (W95 FAT32) → w</span>
+
+<span class="cm"># 2. 格式化 — FAT32, 卷标 "BOOT", 4KB 簇</span>
+mkfs.vfat -F <span class="nu">32</span> -n <span class="st">"BOOT"</span> -s <span class="nu">8</span> /dev/mmcblk0p1
+<span class="cm"># -F 32:  强制 FAT32</span>
+<span class="cm"># -n:     卷标 (最多 11 字符)</span>
+<span class="cm"># -s 8:   每簇 8 扇区 = 4KB (小簇→空间利用好, 大簇→大文件更快)</span>
+
+<span class="cm"># 3. 检查文件系统</span>
+fsck.vfat -v /dev/mmcblk0p1
+<span class="cm"># -v: 详细输出 (显示 BPB 各项参数)</span>
+<span class="cm"># -a: 自动修复</span>
+<span class="cm"># -t: 标记坏簇</span>
+
+<span class="cm"># 4. 查看 FAT32 卷信息</span>
+dosfsck -v /dev/mmcblk0p1
+dosfslabel /dev/mmcblk0p1             <span class="cm">// 读卷标</span>
+dosfslabel /dev/mmcblk0p1 NEW_NAME    <span class="cm">// 写卷标</span>
+
+<span class="cm">/* ===== 挂载到 /etc/fstab ===== */</span>
+<span class="cm">/dev/mmcblk0p1  /mnt/sdcard  vfat  defaults,uid=1000,gid=1000,umask=022  0  0</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ FAT32 的限制</div>
+  <strong>最大文件大小</strong>: 4 GB − 1 字节 (32-bit 文件大小字段的硬限制) — 无法存储超过 4GB 的单个文件。<br>
+  <strong>最大卷大小</strong>: 2 TB (理论), Windows 格式化工具限制为 32 GB。<br>
+  <strong>无 Unix 权限</strong>: FAT 不支持 uid/gid/mode — 挂载时通过 mount 选项统一设定。<br>
+  <strong>无日志</strong>: 突然断电可能导致 FAT 表损坏 — fsck.vfat 可修复但可能丢数据。<br>
+  <strong>碎片化</strong>: 长期使用后文件碎片增加，需要定期检查或在 Windows 下整理。
+</div>
+
+<!-- ══ Ch7: 调试诊断 ══ -->
+<h2 class="sh">7. 调试与诊断</h2>
+<p class="ss">SD 卡常见故障速查 · FAT 文件系统修复 · dd 备份恢复</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断 / 修复</th></tr></thead>
+  <tbody>
+    <tr><td>SD 卡插入后无反应</td><td>卡检测 GPIO 未配置 / 极性错误<br>电源供电不足</td><td><code>cat /sys/kernel/debug/mmcX/ios</code><br>示波器测 VDD</td></tr>
+    <tr><td>只能 1-bit 模式 (低速)</td><td>DAT1-3 引脚虚焊 / 上拉电阻缺失</td><td>检查 PCB 焊接 + 原理图</td></tr>
+    <tr><td>读/写超时 (-ETIMEDOUT)</td><td>时钟频率过高 / 信号走线过长</td><td>降低 max-frequency；检查 PCB layout</td></tr>
+    <tr><td>CRC 错误 (-EILSEQ)</td><td>总线宽度不匹配 / 信号质量差</td><td>降级到 1-bit / 降低时钟 / 检查上拉电阻</td></tr>
+    <tr><td>UHS-I 切换失败</td><td>vqmmc 不支持 1.8V / Tuning 失败</td><td>检查 vqmmc-supply；dmesg 查 tuning 日志</td></tr>
+    <tr><td>挂载失败 "unknown filesystem"</td><td>缺少 exFAT 支持 (SDXC 卡)</td><td>安装 exfatprogs: <code>apt install exfat-fuse</code></td></tr>
+    <tr><td>文件损坏 / 读错误</td><td>FAT 表损坏 / 坏簇</td><td><code>fsck.vfat -a /dev/mmcblk0p1</code></td></tr>
+    <tr><td>SD 卡写保护</td><td>物理 Lock 滑块 / 卡内部写保护</td><td>确认滑块位置；<code>cat ios</code> 查看 ro 状态</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 备份与恢复 ===== */</span>
+<span class="cm"># 完整备份 SD 卡 (包括分区表)</span>
+dd <span class="kw">if</span>=/dev/mmcblk0 of=sdcard.img bs=<span class="nu">4</span>M status=progress
+<span class="cm"># 恢复</span>
+dd <span class="kw">if</span>=sdcard.img of=/dev/mmcblk0 bs=<span class="nu">4</span>M status=progress
+
+<span class="cm"># 备份单个分区</span>
+dd <span class="kw">if</span>=/dev/mmcblk0p1 of=boot_part.img bs=<span class="nu">4</span>M
+
+<span class="cm"># 十六进制查看 BPB (前 512 字节)</span>
+dd <span class="kw">if</span>=/dev/mmcblk0p1 bs=<span class="nu">512</span> count=<span class="nu">1</span> | xxd | head -<span class="nu">40</span>
+
+<span class="cm"># 查看 FAT 表 (通常在扇区 32 开始)</span>
+dd <span class="kw">if</span>=/dev/mmcblk0p1 bs=<span class="nu">512</span> skip=<span class="nu">32</span> count=<span class="nu">1</span> | xxd
+
+<span class="cm">/* ===== 内核调试选项 ===== */</span>
+<span class="cm"># MMC 子系统动态调试</span>
+echo <span class="st">"file drivers/mmc/* +p"</span> &gt; /sys/kernel/debug/dynamic_debug/control
+
+<span class="cm"># FAT 驱动调试</span>
+echo <span class="st">"file fs/fat/* +p"</span> &gt; /sys/kernel/debug/dynamic_debug/control</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux SD Card &amp; FAT32 Filesystem — 系统化知识体系 · 2026-06 · Linux Kernel v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

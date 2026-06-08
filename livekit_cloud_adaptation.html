@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveKit Cloud 适配实践 — PawRTC</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cmake.min.js"></script>
+<style>
+body{background:#0a0e17;color:#e2e8f0;font-family:'Inter',-apple-system,'Segoe UI',Roboto,'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif}
+.sidebar{background:linear-gradient(180deg,#0d1220,#141c2e 40%,#1a2438);border-right-color:rgba(42,53,80,0.5)}
+.sidebar .logo h2{color:#e2e8f0}.sidebar .logo p{color:#64748b}
+.sidebar nav a{color:#94a3b8;border-left-color:transparent}
+.sidebar nav a:hover{color:#e2e8f0;background:rgba(59,130,246,.06);border-left-color:#3b82f6}
+.sidebar nav a.active{color:#3b82f6;background:rgba(59,130,246,.08);border-left-color:#3b82f6}
+.sidebar nav .sec{color:#475569}
+.hero{background:linear-gradient(135deg,#0a0e17,#1e3a5f 50%,#141c2e)}
+.hero h1{background:linear-gradient(135deg,#06b6d4,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-size:26px}
+.hero p{color:#94a3b8}
+.hero .tag{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.25);color:#93c5fd}
+.hero .meta{color:#64748b}
+.section h2{color:#e2e8f0;border-bottom-color:rgba(42,53,80,.5)}
+.section h2::before{background:#3b82f6}
+.section h3{color:#c4b5fd}
+.section h4{color:#94a3b8}
+.section p{color:#94a3b8}
+.section strong{color:#e2e8f0}
+.section em{color:#06b6d4;font-weight:600}
+a{color:#3b82f6}
+pre{background:#0d1117;border-color:rgba(42,53,80,.5);color:#e2e8f0}
+code{background:rgba(59,130,246,.08);color:#67e8f9}
+.callout.info{background:rgba(59,130,246,.06);border-left-color:#3b82f6;color:#94a3b8}
+.callout.warning{background:rgba(245,158,11,.06);border-left-color:#f59e0b;color:#d4a84a}
+.callout.danger{background:rgba(239,68,68,.06);border-left-color:#ef4444;color:#e08090}
+.callout.success{background:rgba(16,185,129,.06);border-left-color:#10b981;color:#6ee7b7}
+.callout.info .ct{color:#3b82f6}
+.callout.warning .ct{color:#f59e0b}
+.callout.danger .ct{color:#ef4444}
+.callout.success .ct{color:#10b981}
+.table-wrap{border-color:rgba(42,53,80,.4)}
+thead{background:rgba(26,34,54,.8)}
+th{border-bottom-color:rgba(42,53,80,.6);color:#94a3b8}
+td{border-bottom-color:rgba(42,53,80,.3);color:#94a3b8}
+::-webkit-scrollbar-track{background:#0a0e17}
+::-webkit-scrollbar-thumb{background:#2a3550}
+.problem-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:rgba(59,130,246,.15);color:#3b82f6;font-weight:800;font-size:13px;margin-right:8px;flex-shrink:0}
+.root-cause-list{counter-reset:cause;list-style:none;padding:0}
+.root-cause-list li{counter-increment:cause;padding:12px 16px;margin:8px 0;background:rgba(26,34,54,.5);border:1px solid rgba(42,53,80,.4);border-radius:10px;color:#94a3b8;line-height:1.7}
+.root-cause-list li::before{content:counter(cause);display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(245,158,11,.12);color:#fbbf24;font-weight:700;font-size:11px;margin-right:10px}
+.root-cause-list li strong{color:#e2e8f0}
+.fix-diff{margin:8px 0}
+.fix-diff .del{color:#ef4444;background:rgba(239,68,68,.08);padding:0 4px;border-radius:3px;text-decoration:line-through}
+.fix-diff .add{color:#10b981;background:rgba(16,185,129,.08);padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <h2>PawRTC Docs</h2>
+    <p>Cloud 适配实践</p>
+  </div>
+  <nav>
+    <div class="sec">概述</div>
+    <a href="#overview" class="active">适配背景</a>
+    <div class="sec">问题与修复</div>
+    <a href="#p1">一、WebSocket 升级失败</a>
+    <a href="#p2">二、SDP 缓冲区溢出</a>
+    <a href="#p3">三、URL 默认路径</a>
+    <a href="#p4">四、TCP 候选拒绝</a>
+    <div class="sec">附录</div>
+    <a href="#files">修改清单</a>
+    <a href="#params">连接参数</a>
+    <a href="#test">测试命令</a>
+    <a href="#lessons">经验教训</a>
+  </nav>
+</aside>
+
+<!-- ===== Main Content ===== -->
+<main>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>LiveKit Cloud 适配实践</h1>
+  <p>mipsel 板端连接 LiveKit Cloud 的四重问题与修复</p>
+  <div class="tags">
+    <span class="tag">WebSocket</span>
+    <span class="tag">ALPN/H2</span>
+    <span class="tag">nanopb</span>
+    <span class="tag">ICE/TCP</span>
+  </div>
+  <div class="meta">JY1C / Ingenic T41 &middot; KVS-WebRTC + LWS + mbedTLS</div>
+</div>
+
+<!-- Overview -->
+<div class="section" id="overview">
+<h2>适配背景</h2>
+<p>mipsel 板端（JY1C/Ingenic T41）通过 <strong>KVS-WebRTC + LWS + mbedTLS</strong> 连接 LiveKit Cloud，实现 H.264 视频推流到浏览器。适配过程中遇到四重问题，以下逐项记录根因和修复。</p>
+
+<div class="callout info">
+  <div class="ct">架构</div>
+  <p>板端 → Cloudflare CDN → LiveKit Cloud SFU → 浏览器订阅观看。<br>信令通道 WSS，媒体通道 ICE/DTLS/SRTP。</p>
+</div>
+</div>
+
+<!-- Problem 1 -->
+<div class="section" id="p1">
+<h2><span class="problem-num">1</span> WebSocket 升级失败（HTTP 200 而非 101）</h2>
+
+<h3>现象</h3>
+<pre><code class="language-bash">[signaling] ESTABLISHED_CLIENT_HTTP: status=200 (expected 101 for WS!)
+CONNECTION_ERROR: HS: ws upgrade response not 101</code></pre>
+<p>板端 curl 和 openssl s_client 均正常返回 101，但 LWS 连接返回 HTTP 200。</p>
+
+<h3>根因（三重叠加）</h3>
+<ol class="root-cause-list">
+  <li><strong>LWS_WITH_HTTP2 重复定义冲突</strong> — CMakeLists 同时传了 <code>-DLWS_WITH_HTTP2=1</code> 和 <code>-DLWS_WITH_HTTP2=0</code>，前者优先生效。CDN（Cloudflare）协商 H2 后，WS upgrade 头丢失（H2 不支持 Upgrade 机制）。</li>
+  <li><strong>交叉编译 ALPN 功能检测失败</strong> — LWS 的 <code>CHECK_C_SOURCE_COMPILES</code> 在 x86 主机无法链接 mipsel 的 mbedTLS，<code>LWS_HAVE_mbedtls_ssl_conf_alpn_protocols</code> 未定义。运行时 ALPN 不生效 → CDN 默认协商 H2 → WS upgrade 失败。</li>
+  <li><strong>mbedtls_ssl_get_alpn_protocol 同样缺失</strong> — 即使 conf_alpn 生效，get_alpn 缺失导致协商结果无法验证。</li>
+</ol>
+
+<h3>修复</h3>
+
+<div class="callout success">
+  <div class="ct">CMake</div>
+  <p><strong>文件</strong>: <code>kvs-webrtc/CMake/Dependencies/libwebsockets-CMakeLists.txt</code></p>
+</div>
+
+<p>1. 删除重复的 <code>-DLWS_WITH_HTTP2=1</code>，只保留 <code>=0</code></p>
+<p>2. 通过 <code>CMAKE_C_FLAGS</code> 注入 ALPN/SNI 宏，绕过 cmake try_compile：</p>
+
+<pre><code class="language-cmake">set(LWS_EXTRA_CFLAGS "${CMAKE_C_FLAGS}")
+string(APPEND LWS_EXTRA_CFLAGS " -DLWS_HAVE_mbedtls_ssl_conf_alpn_protocols=1")
+string(APPEND LWS_EXTRA_CFLAGS " -DLWS_HAVE_mbedtls_ssl_get_alpn_protocol=1")
+string(APPEND LWS_EXTRA_CFLAGS " -DLWS_HAVE_mbedtls_ssl_conf_sni=1")</code></pre>
+
+<p>3. <code>CMAKE_ARGS</code> 中用 <code>${LWS_EXTRA_CFLAGS}</code> 替代 <code>${CMAKE_C_FLAGS}</code></p>
+
+<div class="callout success">
+  <div class="ct">信令代码</div>
+  <p><strong>文件</strong>: <code>src/LiveKitSignaling.cpp</code></p>
+</div>
+
+<pre><code class="language-cpp">ctxInfo.alpn = "http/1.1";   // 强制 ALPN 协商 HTTP/1.1
+ccInfo.alpn = "http/1.1";
+ccInfo.method = NULL;          // NULL = WS upgrade，非 NULL = HTTP method</code></pre>
+
+<h3>验证</h3>
+<pre><code class="language-bash">LWS: 4.3.5, MbedTLS-3.6.3 NET CLI H1 WS ConMon IPV6-on
+WS 101 升级成功 → JoinResponse</code></pre>
+
+<div class="callout warning">
+  <div class="ct">原则</div>
+  <p>LWS 交叉编译时 try_compile 无法执行，feature detection 全部失败。必须手动强制定义 mbedTLS 功能宏。未来升级 LWS 或 mbedTLS 版本时需确认这些宏仍适用。</p>
+</div>
+</div>
+
+<!-- Problem 2 -->
+<div class="section" id="p2">
+<h2><span class="problem-num">2</span> 浏览器订阅后设备断开（nanopb SDP 缓冲区溢出）</h2>
+
+<h3>现象</h3>
+<p>设备推流正常，浏览器打开 meet.livekit.io 订阅后几秒，设备收到 LEAVE reason=6 断开。</p>
+
+<pre><code class="language-bash">[signaling] decodeSignalResponse FAILED for 4385 bytes
+[ICE] CheckCandidatePairConnection: agent=0x75e51cc8 pairs=0 waiting=0 inProgress=0 succeeded=0 failed=0
+IceAgent failed with 0x5a00000d
+=== LEAVE === can_reconnect=0 reason=6</code></pre>
+
+<h3>根因</h3>
+<ol class="root-cause-list">
+  <li>浏览器订阅时，LiveKit SFU 向设备发送 subscriber offer（包含远端 ICE 候选），该消息 <strong>4385 字节</strong>，超过 nanopb <code>SessionDescription.sdp</code> 的 <code>max_size:4096</code> 限制。</li>
+  <li>protobuf 解码失败 → 设备收不到远端候选 → subscriber ICE agent 有 0 个 candidate pair → ICE 超时失败 → 服务器发送 LEAVE。</li>
+</ol>
+
+<div class="callout info">
+  <div class="ct">为什么能出流几秒？</div>
+  <p>Publisher ICE agent 的 host→host STUN 对确实成功了，DTLS/SRTP 正常初始化。但这个连接依赖 NAT 映射，没有 TURN relay 备份。浏览器订阅时 SFU 发起新的 subscriber transport，这条消息解码失败才是断开的直接原因。</p>
+</div>
+
+<h3>修复</h3>
+
+<div class="callout success">
+  <div class="ct">Protobuf Options</div>
+  <p><strong>文件</strong>: <code>protos/livekit_rtc.options</code></p>
+</div>
+
+<pre><code># 4096 → 8192
+livekit.SessionDescription.sdp      max_size:8192</code></pre>
+
+<p>重新生成 nanopb 文件：</p>
+<pre><code class="language-bash">cd vendor/linkric/livekit-client/protos
+python3 -m grpc_tools.protoc \
+  --plugin=protoc-gen-nanopb=$HOME/.local/bin/protoc-gen-nanopb \
+  --nanopb_out=./nanopb \
+  --proto_path=. \
+  --nanopb_opt="-I." \
+  livekit_rtc.proto</code></pre>
+</div>
+
+<!-- Problem 3 -->
+<div class="section" id="p3">
+<h2><span class="problem-num">3</span> URL 缺少默认路径 /rtc</h2>
+
+<h3>现象</h3>
+<pre><code class="language-bash">lk_demo wss://pawrtc-qbbhiyec.livekit.cloud &lt;token&gt; --mp4 /data/test.mp4
+→ ESTABLISHED_CLIENT_HTTP: status=200 (expected 101 for WS!)</code></pre>
+
+<h3>根因</h3>
+<p><code>parseWsUrl()</code> 解析无路径的 URL 时默认 <code>path=/</code>，而 LiveKit Cloud WS 端点是 <code>/rtc</code>。</p>
+
+<h3>修复</h3>
+<p><strong>文件</strong>: <code>src/LiveKitSignaling.cpp</code></p>
+<pre><code class="language-cpp">// 之前
+path = (slashPos != std::string::npos) ? rest.substr(slashPos) : "/";
+// 之后
+path = (slashPos != std::string::npos) ? rest.substr(slashPos) : "/rtc";</code></pre>
+
+<p>用法：</p>
+<pre><code class="language-bash"># 以下两种等价
+lk_demo wss://pawrtc-qbbhiyec.livekit.cloud &lt;jwt-token&gt; --mp4 /data/test.mp4
+lk_demo wss://pawrtc-qbbhiyec.livekit.cloud/rtc &lt;jwt-token&gt; --mp4 /data/test.mp4</code></pre>
+</div>
+
+<!-- Problem 4 -->
+<div class="section" id="p4">
+<h2><span class="problem-num">4</span> KVS ICE 不支持 TCP 候选（已知限制）</h2>
+
+<h3>现象</h3>
+<pre><code class="language-bash">[LkTransport] addRemoteCandidate failed: 0x5a000005 for a=candidate:... tcptype passive</code></pre>
+
+<h3>根因</h3>
+<ul>
+  <li><code>0x5a000005</code> = <code>STATUS_ICE_CANDIDATE_STRING_IS_TCP</code></li>
+  <li><code>IceAgent.c:438</code> 显式拒绝所有 TCP 候选</li>
+  <li>LiveKit Cloud 通过 CDN 提供的候选多数是 TCP（<code>tcptype passive</code>），全部被丢弃</li>
+  <li>目前靠 UDP host 候选 + TURN UDP relay 工作</li>
+</ul>
+
+<h3>当前状态</h3>
+<p>TURN UDP 可正常分配 relay 候选，publisher 和 subscriber 都能通过 TURN relay 连接。TURN TLS（<code>turns:...?transport=tcp</code>）因板端缺 CA 证书而失败，但不影响功能。</p>
+
+<h3>后续（如需）</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>优化项</th><th>方法</th><th>工作量</th></tr></thead>
+<tbody>
+<tr><td>添加 CA 证书</td><td>将 CA bundle 放到 <code>/etc/ssl/certs/ca-certificates.crt</code></td><td>半天</td></tr>
+<tr><td>支持 TCP 候选</td><td>修改 KVS ICE agent 添加 TCP 传输支持</td><td>大，暂不必要</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- Files -->
+<div class="section" id="files">
+<h2>关键文件修改清单</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>文件</th><th>改动</th><th>对应问题</th></tr></thead>
+<tbody>
+<tr><td><code>kvs-webrtc/CMake/Dependencies/libwebsockets-CMakeLists.txt</code></td><td>删 LWS_WITH_HTTP2=1，CFLAGS 注入 ALPN 宏</td><td>问题一</td></tr>
+<tr><td><code>src/LiveKitSignaling.cpp</code></td><td>alpn=http/1.1, method=NULL, 默认路径/rtc</td><td>问题一/三</td></tr>
+<tr><td><code>protos/livekit_rtc.options</code></td><td>SDP max_size 4096→8192</td><td>问题二</td></tr>
+<tr><td><code>protos/nanopb/livekit_rtc.pb.h</code> + <code>.pb.c</code></td><td>重新生成</td><td>问题二</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- Params -->
+<div class="section" id="params">
+<h2>LiveKit Cloud 连接参数</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>参数</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>Cloud URL</td><td><code>wss://pawrtc-qbbhiyec.livekit.cloud</code></td></tr>
+<tr><td>WS 端点</td><td><code>/rtc</code></td></tr>
+<tr><td>信令协议版本</td><td>17（URL 参数 <code>protocol=17</code>）</td></tr>
+<tr><td>JWT 字段</td><td><code>video.canPublish=true, canSubscribe=true, roomJoin=true, room="test"</code></td></tr>
+<tr><td>TURN UDP</td><td><code>turn:ip-161-115-163-46.host.livekit.cloud:3478?transport=udp</code></td></tr>
+<tr><td>TURN TLS</td><td><code>turns:oosaka1a.turn.livekit.cloud:443?transport=tcp</code>（板端缺 CA 证书，失败但不影响）</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- Test -->
+<div class="section" id="test">
+<h2>板端测试命令</h2>
+<pre><code class="language-bash"># 停止 ACS（IMP 独占）
+/etc/init.d/S06-acs stop
+
+# MP4 推流
+lk_demo wss://pawrtc-qbbhiyec.livekit.cloud &lt;jwt-token&gt; --mp4 /data/test_video.mp4
+
+# IMP 摄像头推流
+lk_demo wss://pawrtc-qbbhiyec.livekit.cloud &lt;jwt-token&gt; --imp
+
+# Test Pattern
+lk_demo wss://pawrtc-qbbhiyec.livekit.cloud &lt;jwt-token&gt; --test</code></pre>
+<p>浏览器打开 <a href="https://meet.livekit.io" target="_blank">meet.livekit.io</a> 订阅观看。</p>
+</div>
+
+<!-- Lessons -->
+<div class="section" id="lessons">
+<h2>经验教训</h2>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="cn">1</div>
+  <div class="ct2">CDN + WS 的坑</div>
+  <div class="cd">Cloudflare 等 CDN 默认协商 H2，H2 不支持 Upgrade 机制。必须通过 ALPN 强制 <code>http/1.1</code> 并禁用 H2。</div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="cn">2</div>
+  <div class="ct2">交叉编译 try_compile 不可靠</div>
+  <div class="cd">LWS/mbedTLS 的 feature detection 在交叉编译时全部失败，需要手动注入宏定义。</div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="cn">3</div>
+  <div class="ct2">嵌入式 protobuf 缓冲区</div>
+  <div class="cd">nanopb 的固定大小缓冲区是双刃剑——省内存但要预留足够空间。LiveKit Cloud 的 SDP 消息较大（&gt;4KB），<code>max_size</code> 至少 8192。</div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="cn">4</div>
+  <div class="ct2">先看官方文档和协议</div>
+  <div class="cd">遇到问题先查 LiveKit 官方 client 实现和协议文档，不要盲目调试。</div>
+</div>
+</div>
+
+</main>
+
+<script>
+hljs.highlightAll();
+const links=document.querySelectorAll('.sidebar nav a');
+const secs=document.querySelectorAll('.section');
+const observer=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove('active'));const a=document.querySelector(`.sidebar nav a[href="#${e.target.id}"]`);if(a)a.classList.add('active')}})},{rootMargin:'-20% 0px -60% 0px'});
+secs.forEach(s=>observer.observe(s));
+</script>
+</body>
+</html>

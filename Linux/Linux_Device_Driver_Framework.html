@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 设备驱动框架 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:165px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 设备驱动框架</h2>
+  <p class="sec-sub">系统化知识体系 — 设备模型 · platform 总线 · I2C/SPI · 字符设备 · 设备树 · 中断 · DMA</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Device Tree</strong><br><small>硬件描述</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Bus</strong><br><small>platform / i2c / spi</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>Driver</strong><br><small>probe / remove / ops</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Class</strong><br><small>/dev · /sys · uevent</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Userspace</strong><br><small>open / read / write / ioctl</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">bus/device/driver</div><div class="l">设备模型核心</div></div>
+    <div class="stat"><div class="n">platform</div><div class="l">最常用总线</div></div>
+    <div class="stat"><div class="n">probe/remove</div><div class="l">驱动入口</div></div>
+    <div class="stat"><div class="n">file_operations</div><div class="l">用户态接口</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ── Ch1 ── -->
+<h2 class="sh">1. 驱动分类与内核视角</h2>
+<p class="ss">Linux 将设备分为三大类——字符设备、块设备、网络设备。这是选择驱动框架的第一决策点。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>字符设备 (cdev)</h4>
+    <div class="lbl">最常见的类型 — 字节流访问</div>
+    <p>以<strong>字节流</strong>方式顺序读写，不支持随机寻址。通过 <code>/dev/xxx</code> 节点访问（major+minor 号标识）。实现 <code>struct file_operations</code>（open/read/write/ioctl/llseek/mmap）。典型：串口(/dev/ttyS0)、GPIO 控制器、I2C 设备(/dev/i2c-N)、Input 设备(/dev/input/eventX)。<strong>绝大多数外设驱动都是字符设备</strong>。通过 <code>cdev_init() + cdev_add()</code> 注册。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>块设备 (blkdev)</h4>
+    <div class="lbl">支持随机寻址 — 固定大小块</div>
+    <p>以<strong>固定大小的块</strong>（通常 512B/4KB）为单位随机访问，支持 seek。通过 <code>/dev/sdX</code>、<code>/dev/mmcblkX</code> 访问。实现 <code>struct block_device_operations</code> + 请求队列（<code>blk_mq</code> 多队列）。典型：eMMC/SD 卡、SATA/NVMe 磁盘、U 盘。<strong>内核提供完整的通用块层</strong>——驱动只需处理硬件 I/O 请求，调度/缓存/合并由 blk-mq 负责。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>网络设备 (netdev)</h4>
+    <div class="lbl">完全不同的模型 — sk_buff 数据包</div>
+    <p>网络设备<strong>没有 /dev 节点</strong>——通过 <code>struct net_device</code> 注册，暴露为 ethX/wlanX。数据以 <code>sk_buff</code>（内核网络数据包结构）传递。实现 <code>struct net_device_ops</code>（ndo_open/ndo_stop/ndo_start_xmit）。典型：以太网 MAC 驱动、WiFi 驱动。网络子系统有自己的 NAPI（中断+轮询混合）接收模型，与字符/块设备完全不同。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">应用程序</span><span class="b c4">open/read/write/ioctl</span><span class="n">POSIX 系统调用 → 陷入内核</span></div>
+  <div class="r"><span class="a">VFS 层</span><span class="b c3">struct inode / file</span><span class="n">路径解析 → inode → file_operations 派发</span></div>
+  <div class="r"><span class="a">字符设备层</span><span class="b c2">cdev (major,minor)</span><span class="n">cdev_map[major] → file_operations → 驱动函数</span></div>
+  <div class="r"><span class="a">设备驱动</span><span class="b c1">xxx_read / xxx_write</span><span class="n">硬件寄存器操作 (readl/writel / i2c_transfer / spi_sync)</span></div>
+  <div class="r"><span class="a">硬件</span><span class="b c5">SoC 外设 / I2C 设备 / SPI Flash</span><span class="n">物理总线上的寄存器 / FIFO / DMA 引擎</span></div>
+</div>
+
+<!-- ── Ch2 ── -->
+<h2 class="sh">2. 设备模型：bus · device · driver · class</h2>
+<p class="ss">Linux 2.6 引入的统一设备模型是<strong>所有驱动框架的基石</strong>——理解这四个核心结构体，任何驱动框架都能触类旁通。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>struct bus_type — 总线</h4>
+    <div class="lbl">platform_bus_type · i2c_bus_type · spi_bus_type</div>
+    <p>总线是<strong>device 和 driver 的匹配桥梁</strong>。核心函数：<code>match(dev, drv)</code>——返回 true 则绑定。platform 总线通过 dev->name 与 drv->name <strong>字符串比较</strong>匹配；I2C/SPI 通过设备树 compatible 或 I2C device ID table 匹配；USB/PCI 通过 vendorID/productID 匹配。注册了 bus_type 后，内核自动为每对该总线上的 device-driver 尝试 match→probe。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>struct device_driver — 驱动</h4>
+    <div class="lbl">platform_driver · i2c_driver · spi_driver</div>
+    <p>每种总线有自己的 driver 封装，但都内嵌 <code>struct device_driver</code>。核心函数：<code>probe(dev)</code>——匹配成功后初始化硬件（ioremap、request_irq、注册 cdev）、<code>remove(dev)</code>——模块卸载时清理。所有现代驱动都<strong>不应手动创建设备节点</strong>——应由 device/driver 绑定后自动触发 uevent → udev 创建设备节点。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>struct device — 设备</h4>
+    <div class="lbl">platform_device · i2c_client · spi_device</div>
+    <p>代表物理总线上<strong>真实存在的一个硬件设备</strong>。对于 platform 总线，设备由内核从<strong>设备树</strong>解析创建（<code>of_platform_populate()</code>）；对于可枚举总线（USB/PCI），由总线控制器在枚举时创建。device 存储硬件资源（IORESOURCE_MEM/IORESOURCE_IRQ）、设备树节点指针（of_node）、DMA 掩码、电源管理域。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>struct class — 设备类</h4>
+    <div class="lbl">input_class · rtc_class · gpio_class</div>
+    <p>Class 将同一类<strong>功能</strong>的设备（而非同一总线）组织在一起。主要职责：① 在 <code>/sys/class/xxx/</code> 创建 sysfs 目录 ② 向 udev 发送 uevent（触发 /dev 节点创建）。驱动调用 <code>device_create()</code> 时指定 class——内核自动创建 /dev 节点并设置权限。class 还提供 <strong>class_attribute</strong> 让驱动导出 class 级别的 sysfs 属性。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// 设备模型的核心绑定流程</span>
+<b>1. 注册 driver</b>
+   driver_register(&amp;drv->driver)
+   → bus_add_driver()
+     → <i>bus_for_each_dev</i>(bus, drv, __driver_attach)   <span class="cm">// 遍历 bus 上所有 device</span>
+
+<b>2. 匹配</b>
+   driver_match_device(drv, dev)
+   → bus-><u>match</u>(dev, drv)        <span class="cm">// platform: strcmp(dev->name, drv->name)</span>
+                                    <span class="cm">// i2c/spi: of_match_table 或 id_table</span>
+
+<b>3. 绑定与 probe</b>
+   driver_probe_device(drv, dev)
+   → <i>really_probe</i>(dev, drv)
+     → dev->driver = drv
+     → drv-><b>probe</b>(dev)            <span class="cm">// 驱动的核心入口函数</span>
+
+<b>4. 创建用户态接口</b>
+   probe 成功后 → device_create(dev, class, ...)
+   → udev 收到 uevent → mknod /dev/xxx  → 用户态可用</div>
+
+<!-- ── Ch3 ── -->
+<h2 class="sh">3. Platform 总线与设备树绑定</h2>
+<p class="ss">Platform 总线是嵌入式 Linux <strong>最核心的总线模型</strong>——所有挂载在 SoC 内部总线（非 USB/PCI/I2C/SPI）上的外设都是 platform device。设备树是描述这些设备的现代方式。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>设备树 → platform_device</h4>
+    <div class="lbl">内核启动时将 DT 节点转换为 platform_device</div>
+    <p>内核初始化时调用 <code>of_platform_default_populate()</code>，遍历设备树中 <code>/soc</code> 或根节点下<strong>有 compatible 属性</strong>的子节点，为每个节点创建 <code>platform_device</code>。设备树中的 <code>reg</code> 属性 → IORESOURCE_MEM 资源、<code>interrupts</code> → IORESOURCE_IRQ 资源、<code>clocks</code> → 时钟引用。驱动通过 <code>platform_get_resource()</code> 或更现代的 <code>devm_platform_ioremap_resource()</code> 获取资源。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>of_match_table 匹配</h4>
+    <div class="lbl">struct of_device_id — .compatible 字符串匹配</div>
+    <p>platform 驱动通过 <code>of_match_table</code> 声明支持的设备树 compatible 字符串。内核将 device 的 compatible 与 driver 的 of_match_table 逐条比较——<strong>匹配成功 → probe 调用</strong>。同一个驱动可以匹配多个 compatible（如支持多代硬件）。</p>
+    <div class="cb" style="margin-top:8px"><span class="kw">static const struct</span> of_device_id my_match[] = {
+    { .compatible = <span class="st">"vendor,ipc-camera-isp"</span> },
+    { .compatible = <span class="st">"vendor,ipc-camera-isp-v2"</span> },
+    { <span class="cm">/* sentinel */</span> }
+};
+<span class="kw">MODULE_DEVICE_TABLE</span>(of, my_match);</div>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">设备树 vs 板级文件 — 历史与现状</div>
+  在设备树引入之前（ARM Linux 早期），platform_device 在<strong>板级文件</strong>（arch/arm/mach-xxx/board-xxx.c）中硬编码创建设备并注册。这导致每个板子都需要修改内核代码。设备树<strong>将硬件描述从内核代码中分离</strong>——同一份内核镜像适配多块板子，只需更换 .dtb。ARM 从 2011 年起全面迁移到设备树，板级文件已基本废弃。
+</div>
+
+<!-- ── Ch4 ── -->
+<h2 class="sh">4. 字符设备驱动完整模板</h2>
+<p class="ss">从 platform_driver 注册到 /dev 节点创建——一个完整的、可编译的嵌入式设备驱动骨架。</p>
+
+<details open style="margin-top:18px">
+  <summary>完整的 platform 字符设备驱动模板</summary>
+  <div class="cb"><span class="kw">#include</span> <span class="st">&lt;linux/module.h&gt;</span>
+<span class="kw">#include</span> <span class="st">&lt;linux/platform_device.h&gt;</span>
+<span class="kw">#include</span> <span class="st">&lt;linux/cdev.h&gt;</span>
+<span class="kw">#include</span> <span class="st">&lt;linux/io.h&gt;</span>
+
+<span class="kw">struct</span> my_device {
+    <span class="kw">struct</span> device *dev;        <span class="cm">// 指向 platform_device.dev</span>
+    <span class="kw">void</span> __iomem *regs;        <span class="cm">// ioremap 后的寄存器基址</span>
+    <span class="kw">struct</span> cdev cdev;          <span class="cm">// 字符设备</span>
+    <span class="kw">dev_t</span> devt;                <span class="cm">// 主次设备号</span>
+    <span class="kw">int</span> irq;                  <span class="cm">// 中断号</span>
+};
+
+<span class="cm">// ═══════ file_operations — 用户态接口 ═══════</span>
+
+<span class="kw">static int</span> <span class="fn">my_open</span>(<span class="kw">struct</span> inode *inode, <span class="kw">struct</span> file *filp) {
+    <span class="kw">struct</span> my_device *dev = <span class="fn">container_of</span>(inode->i_cdev,
+                                          <span class="kw">struct</span> my_device, cdev);
+    filp->private_data = dev;   <span class="cm">// 将设备私有数据挂在 file 上</span>
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static ssize_t</span> <span class="fn">my_read</span>(<span class="kw">struct</span> file *filp, <span class="kw">char</span> __user *buf,
+                      <span class="kw">size_t</span> count, <span class="kw">loff_t</span> *ppos) {
+    <span class="kw">struct</span> my_device *dev = filp->private_data;
+    <span class="kw">u32</span> val = <span class="fn">readl</span>(dev->regs + MY_REG_DATA); <span class="cm">// 读硬件 FIFO</span>
+    <span class="kw">if</span> (<span class="fn">copy_to_user</span>(buf, &amp;val, <span class="kw">sizeof</span>(val)))
+        <span class="kw">return</span> -EFAULT;
+    <span class="kw">return</span> <span class="kw">sizeof</span>(val);
+}
+
+<span class="kw">static long</span> <span class="fn">my_ioctl</span>(<span class="kw">struct</span> file *filp, <span class="kw">unsigned int</span> cmd,
+                     <span class="kw">unsigned long</span> arg) {
+    <span class="kw">struct</span> my_device *dev = filp->private_data;
+    <span class="kw">switch</span> (cmd) {
+    <span class="kw">case</span> MY_IOC_RESET:
+        <span class="fn">writel</span>(BIT(<span class="nu">0</span>), dev->regs + MY_REG_CTRL); <span class="kw">break</span>;
+    <span class="kw">case</span> MY_IOC_GET_STATUS:
+        <span class="kw">return</span> <span class="fn">readl</span>(dev->regs + MY_REG_STATUS);
+    }
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static const struct</span> file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .unlocked_ioctl = my_ioctl,
+};
+
+<span class="cm">// ═══════ IRQ Handler ═══════</span>
+
+<span class="kw">static irqreturn_t</span> <span class="fn">my_isr</span>(<span class="kw">int</span> irq, <span class="kw">void</span> *data) {
+    <span class="kw">struct</span> my_device *dev = data;
+    <span class="kw">u32</span> status = <span class="fn">readl</span>(dev->regs + MY_REG_IRQ_STATUS);
+    <span class="fn">writel</span>(status, dev->regs + MY_REG_IRQ_CLEAR);  <span class="cm">// W1C 清中断</span>
+    <span class="kw">return</span> IRQ_WAKE_THREAD;  <span class="cm">// 或 IRQ_HANDLED / IRQ_NONE</span>
+}
+
+<span class="cm">// ═══════ platform_driver probe/remove ═══════</span>
+
+<span class="kw">static int</span> <span class="fn">my_probe</span>(<span class="kw">struct</span> platform_device *pdev) {
+    <span class="kw">struct</span> my_device *dev;
+    <span class="kw">int</span> ret;
+
+    <span class="cm">// 1. 分配私有数据结构</span>
+    dev = <span class="fn">devm_kzalloc</span>(&amp;pdev->dev, <span class="kw">sizeof</span>(*dev), GFP_KERNEL);
+
+    <span class="cm">// 2. ioremap 寄存器（设备树 reg = &lt;0xXXXX 0xYYYY&gt;）</span>
+    dev->regs = <span class="fn">devm_platform_ioremap_resource</span>(pdev, <span class="nu">0</span>);
+    <span class="kw">if</span> (IS_ERR(dev->regs)) <span class="kw">return</span> PTR_ERR(dev->regs);
+
+    <span class="cm">// 3. 获取并注册中断</span>
+    dev->irq = <span class="fn">platform_get_irq</span>(pdev, <span class="nu">0</span>);
+    ret = <span class="fn">devm_request_irq</span>(&amp;pdev->dev, dev->irq, my_isr,
+                          IRQF_SHARED, <span class="st">"my-device"</span>, dev);
+
+    <span class="cm">// 4. 分配设备号 + 注册 cdev</span>
+    ret = <span class="fn">alloc_chrdev_region</span>(&amp;dev->devt, <span class="nu">0</span>, <span class="nu">1</span>, <span class="st">"mydevice"</span>);
+    <span class="fn">cdev_init</span>(&amp;dev->cdev, &amp;my_fops);
+    <span class="fn">cdev_add</span>(&amp;dev->cdev, dev->devt, <span class="nu">1</span>);
+
+    <span class="cm">// 5. 创建 /dev 节点（自动触发 udev）</span>
+    dev->dev = <span class="fn">device_create</span>(my_class, &amp;pdev->dev, dev->devt,
+                            dev, <span class="st">"mydevice%d"</span>, <span class="nu">0</span>);
+
+    <span class="fn">platform_set_drvdata</span>(pdev, dev);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static int</span> <span class="fn">my_remove</span>(<span class="kw">struct</span> platform_device *pdev) {
+    <span class="kw">struct</span> my_device *dev = <span class="fn">platform_get_drvdata</span>(pdev);
+    <span class="fn">device_destroy</span>(my_class, dev->devt);
+    <span class="fn">cdev_del</span>(&amp;dev->cdev);
+    <span class="fn">unregister_chrdev_region</span>(dev->devt, <span class="nu">1</span>);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static const struct</span> of_device_id my_of_match[] = {
+    { .compatible = <span class="st">"vendor,my-device"</span> }, { }
+};
+<span class="kw">MODULE_DEVICE_TABLE</span>(of, my_of_match);
+
+<span class="kw">static struct</span> platform_driver my_driver = {
+    .probe  = my_probe,
+    .remove = my_remove,
+    .driver = {
+        .name = <span class="st">"my-device"</span>,
+        .of_match_table = my_of_match,
+    },
+};
+<span class="fn">module_platform_driver</span>(my_driver);  <span class="cm">// 一行替代 init/exit 样板</span>
+
+<span class="kw">MODULE_LICENSE</span>(<span class="st">"GPL"</span>);
+<span class="kw">MODULE_AUTHOR</span>(<span class="st">"Your Name"</span>);</div>
+</details>
+
+<div class="callout warning" style="margin-top:16px">
+  <div class="ct">⚠ devm_* 系列函数 — 内核的资源管理革命</div>
+  <code>devm_kzalloc</code> / <code>devm_ioremap_resource</code> / <code>devm_request_irq</code> 等 <strong>devm (Managed Device Resource)</strong> 函数在内核中分配资源并<strong>自动绑定到 device 生命周期</strong>——probe 失败或 remove 时无需手动释放。<strong>强烈推荐所有新驱动使用 devm</strong>——大幅减少 remove 函数的复杂度和内存泄漏风险。唯一例外：cdev 和 device_create 没有 devm 版本，需在 remove 中手动清理。
+</div>
+
+<!-- ── Ch5 ── -->
+<h2 class="sh">5. I2C 与 SPI 驱动框架</h2>
+<p class="ss">外围传感器、编解码芯片、RTC、EEPROM 大多挂在 I2C 或 SPI 总线上——这两种框架是嵌入式驱动开发的日常。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>I2C 驱动框架</h4>
+    <div class="lbl">i2c_driver · i2c_client · i2c_transfer</div>
+    <p><strong>设备树绑定</strong>：I2C 设备作为子节点挂在 I2C 控制器节点下。内核自动从 reg 属性创建 i2c_client。<br>
+    <strong>probe 参数</strong>：<code>i2c_probe(struct i2c_client *client)</code>——client 包含 addr、adapter、of_node。<br>
+    <strong>数据传输</strong>：<code>i2c_transfer(adapter, msgs, num)</code> 发送 i2c_msg 数组——每个 msg 包含 addr/flags/buf/len。<strong>SMBus 快捷函数</strong>：<code>i2c_smbus_read_byte_data/write_byte_data</code> 封装了常见的单字节寄存器读写。I2C 设备地址 7bit（标准）或 10bit——设备树中写 7bit 地址（内核自动左移 1 位加 R/W 位）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>SPI 驱动框架</h4>
+    <div class="lbl">spi_driver · spi_device · spi_transfer</div>
+    <p><strong>设备树绑定</strong>：SPI 从设备挂在 SPI 控制器节点下，reg 为 chip select 编号。<br>
+    <strong>probe 参数</strong>：<code>spi_probe(struct spi_device *spi)</code>——包含 max_speed_hz、mode (CPOL/CPHA)、bits_per_word。<br>
+    <strong>数据传输</strong>：<code>spi_sync_transfer()</code> 或异步 <code>spi_async()</code>。支持<strong>全双工</strong>（MOSI+MISO 同时收发）。<code>spi_message</code> 可包含多个 <code>spi_transfer</code>（如先发命令字节、再读数据字节——中间 CS 保持拉低）。<strong>SPI 比 I2C 快得多</strong>（10MHz+ vs 400KHz/3.4MHz），适合高频数据传输（ADC、DAC、Flash）。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>I2C 设备 — 设备树示例</h4>
+    <div class="cb"><span class="cm">// Sensor 挂在 I2C-0 上，地址 0x36</span>
+&amp;i2c0 {
+    status = <span class="st">"okay"</span>;
+    clock-frequency = <span class="kw">&lt;</span><span class="nu">400000</span><span class="kw">&gt;</span>;  <span class="cm">// 400KHz Fast Mode</span>
+
+    light-sensor@<span class="nu">36</span> {
+        compatible = <span class="st">"vendor,light-sensor"</span>;
+        reg = <span class="kw">&lt;</span><span class="nu">0x36</span><span class="kw">&gt;</span>;         <span class="cm">// 7-bit I2C 地址</span>
+        interrupt-parent = <span class="kw">&lt;</span>&amp;pio<span class="kw">&gt;</span>;
+        interrupts = <span class="kw">&lt;</span><span class="nu">5</span> IRQ_TYPE_EDGE_FALLING<span class="kw">&gt;</span>;
+    };
+};</div>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>SPI 设备 — 设备树示例</h4>
+    <div class="cb"><span class="cm">// SPI Flash 挂在 SPI-1 的 CS0</span>
+&amp;spi1 {
+    status = <span class="st">"okay"</span>;
+
+    flash@<span class="nu">0</span> {
+        compatible = <span class="st">"jedec,spi-nor"</span>;
+        reg = <span class="kw">&lt;</span><span class="nu">0</span><span class="kw">&gt;</span>;             <span class="cm">// CS0</span>
+        spi-max-frequency = <span class="kw">&lt;</span><span class="nu">50000000</span><span class="kw">&gt;</span>;  <span class="cm">// 50 MHz</span>
+        spi-cpha;              <span class="cm">// CPHA=1</span>
+        spi-cpol;              <span class="cm">// CPOL=1 → SPI Mode 3</span>
+    };
+};</div>
+  </div>
+</div>
+
+<!-- ── Ch6 ── -->
+<h2 class="sh">6. 中断处理与下半部</h2>
+<p class="ss">中断是设备驱动的脉搏——理解上半部/下半部分离、threaded IRQ、工作队列的选择是写出高性能驱动的关键。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>上半部 (Top Half)</h4>
+    <div class="lbl">硬中断上下文 — 不能睡眠 — 越快越好</div>
+    <p>中断触发 → CPU 跳转到中断向量 → <code>do_IRQ()</code> → 调用注册的 handler。上半部<strong>运行在硬中断上下文</strong>：① 不能调用可能睡眠的函数（mutex_lock、kmalloc(GFP_KERNEL)）② 不能被同 IRQ 线中断（IRQF_DISABLED）③<strong>必须尽可能快</strong>（μs 级）——长时间占用中断上下文会让系统响应迟钝。典型操作：清中断标志、读关键寄存器、禁用该中断、触发下半部。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Threaded IRQ</h4>
+    <div class="lbl">request_threaded_irq — 推荐方式</div>
+    <p><code>request_threaded_irq(irq, hard_handler, thread_fn, flags, name, dev)</code>。hard_handler 在硬中断上下文中运行（可返回 <code>IRQ_WAKE_THREAD</code> 唤醒 thread_fn），thread_fn 在<strong>内核线程</strong>中运行——<strong>可以睡眠、可以使用 mutex、可以调用 I2C/SPI</strong>。大部分驱动只需要 thread_fn 而 hard_handler 设为 NULL（内核自动用默认 handler）。这是现代 Linux 推荐的 IRQ 处理方式。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>下半部机制对比</h4>
+    <div class="lbl">softirq · tasklet · workqueue — 选择指南</div>
+    <p><strong>softirq</strong>：最底层的下半部——ISR 中触发，在 do_softirq 中执行。固定数量（10 种），用于网络(TX/RX)、块设备等高频关键路径。普通驱动<strong>不应使用</strong>。<br>
+    <strong>tasklet</strong>：基于 softirq 的轻量下半部——同一 tasklet 不会在多 CPU 上并发，实现简单。<br>
+    <strong>workqueue</strong>：运行在内核线程中——<strong>可以睡眠</strong>，适合需要调用 I2C/SPI 或持锁较长的场景。<code>alloc_ordered_workqueue()</code> 保证顺序执行。<br>
+    <strong>推荐</strong>：首选 threaded IRQ，其次 workqueue。避免在普通驱动中使用 tasklet/softirq。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="ct">中断共享 (IRQF_SHARED) — 注意事项</div>
+  多个设备可以共享同一条中断线（IRQF_SHARED）。共享时：① 所有共享该 IRQ 的 handler 都会被调用 ② handler 必须<strong>检查"是不是我的设备产生的中断"</strong>——不是则返回 IRQ_NONE ③ request_irq 必须指定 IRQF_SHARED ④ 不能使用 IRQF_ONESHOT（threaded IRQ 用 IRQF_ONESHOT 保证同一 IRQ 线在 thread_fn 执行期间不会被重新触发——与共享不兼容时需权衡）。
+</div>
+
+<!-- ── Ch7 ── -->
+<h2 class="sh">7. DMA 与内存映射</h2>
+<p class="ss">高性能设备驱动离不开 DMA——理解 cache 一致性与 streaming/coherent DMA 的区别是避免数据损坏的关键。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Coherent DMA (一致性)</h4>
+    <div class="lbl">dma_alloc_coherent — CPU 和设备看到的永远一致</div>
+    <p><strong>不需要手动 cache 操作</strong>——内核自动保证 CPU 写入后设备立即可见，反之亦然。分配的内存通常是<strong>non-cacheable</strong>或 write-through。代价：每次 CPU 读写都绕开 cache → <strong>性能较低</strong>。适用场景：设备控制结构体（descriptor ring）、小数据量频繁交互的 buffer。<code>dma_alloc_coherent(dev, size, &dma_handle, GFP_KERNEL)</code> 返回 CPU 虚拟地址 + DMA 地址。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Streaming DMA (流式)</h4>
+    <div class="lbl">dma_map_single — 需要手动同步 cache</div>
+    <p>使用<strong>普通的 kmalloc 内存</strong>（cacheable），但在 DMA 传输前后显式调用同步操作。CPU 写完后：<code>dma_map_single(DMA_TO_DEVICE)</code> → cache flush 到 DDR → 设备可读。设备写完后：<code>dma_unmap_single(DMA_FROM_DEVICE)</code> → cache invalidate → CPU 可读。<strong>性能高</strong>（CPU 读写时用 cache），但<strong>必须正确同步</strong>否则有数据损坏。适合：视频帧 buffer、大块数据传输。必须检查 <code>dma_mapping_error()</code>。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f472b6">
+    <h4>DMA-BUF 零拷贝共享</h4>
+    <div class="lbl">跨设备、跨驱动、跨进程的 DMA 缓冲区共享</div>
+    <p><code>DMA-BUF</code> 框架允许一个驱动导出 DMA buffer（exporter），另一个驱动导入（importer）——<strong>物理内存只存在一份</strong>。IPC 相机的典型链路：ISP 驱动导出 YUV 帧 DMA-BUF → 编码器驱动（或用户态 V4L2）导入同一 DMA-BUF → 硬件编码器直接从 DDR 读帧编码。<strong>全程零 memcpy</strong>。用户态通过 <code>DMA_BUF_IOCTL_EXPORT</code> 获取 fd 传递给另一进程。内核态用 <code>dma_buf_attach() + dma_buf_map_attachment()</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ioremap 与寄存器访问</h4>
+    <div class="lbl">物理地址 → 虚拟地址 → readl/writel</div>
+    <p>CPU 无法直接访问物理地址——需要 <code>ioremap(phys, size)</code> 将设备寄存器的物理地址<strong>映射到内核虚拟地址空间</strong>（返回 <code>void __iomem *</code>）。访问映射后的寄存器<strong>必须使用专用函数</strong>：<code>readl/writel</code>（32bit LE）、<code>ioread32/iowrite32</code>（自动处理字节序）、<code>readb/writeb</code>（8bit）。<strong>绝对不能用普通指针解引用</strong>（在某些架构上会出错、且破坏了 sparse 静态检查）。现代驱动用 <code>devm_ioremap_resource()</code> 一步完成 request_mem_region + ioremap。</p>
+  </div>
+</div>
+
+<!-- ── Ch8 ── -->
+<h2 class="sh">8. 内核模块机制</h2>
+<p class="ss">Linux 驱动以内核模块(.ko)形式编译和加载——理解模块的编译体系、加载过程和参数传递。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>模块编译 (Kbuild)</h4>
+    <div class="lbl">obj-m := xxx.o  → make -C /lib/modules/... → xxx.ko</div>
+    <p>① 编写 <code>Kconfig</code>（定义配置选项和依赖）→ <code>make menuconfig</code> 可见 ② 编写 <code>Makefile</code>：<code>obj-$(CONFIG_MY_DRIVER) += my_driver.o</code> ③ <strong>模块签名</strong>：内核配置 CONFIG_MODULE_SIG_FORCE → 未签名模块无法加载 ④ <strong>modpost</strong>：编译后检查未导出符号引用、license 不匹配 ⑤ .ko 文件是<strong>可重定位 ELF</strong>，insmod 时内核链接器完成符号解析（MODULE_LICENSE 会影响能引用哪些符号——GPL 模块只能引用 EXPORT_SYMBOL_GPL 的符号）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>模块参数与依赖</h4>
+    <div class="lbl">module_param · MODULE_DESCRIPTION · depmod</div>
+    <p><strong>模块参数</strong>：<code>module_param(name, type, perm)</code> — insmod 时传递（如 <code>insmod my_drv.ko debug=1</code>）。参数暴露在 <code>/sys/module/xxx/parameters/</code> 可运行时读写（如果 perm 允许）。<br>
+    <strong>模块依赖</strong>：<code>depmod -a</code> 扫描所有 .ko 生成 <code>modules.dep</code> 依赖图。modprobe 自动加载依赖模块。符号导出：<code>EXPORT_SYMBOL(func)</code> 使其他模块可引用。<br>
+    <strong>模块版本</strong>：<code>MODULE_VERSION("1.0")</code> + CONFIG_MODVERSIONS 编译时生成 CRC 校验——内核版本不同时拒绝加载。</p>
+  </div>
+</div>
+
+<!-- ── Ch9 ── -->
+<h2 class="sh">9. 驱动调试与验证</h2>
+<p class="ss">驱动 crash 可能导致内核 panic——掌握调试工具链是驱动开发者的必备技能。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>printk 与动态调试</h4>
+    <div class="lbl">dev_dbg · pr_debug · dynamic_debug</div>
+    <p><strong>内核日志级别</strong>：KERN_EMERG(0)~KERN_DEBUG(7)。<code>dmesg -n 7</code> 让所有级别打印到控制台。<br>
+    <strong>dev_* 系列</strong>：<code>dev_err/dev_warn/dev_info/dev_dbg(dev, fmt, ...)</code>——自动带设备名前缀。<br>
+    <strong>Dynamic Debug</strong>（<code>CONFIG_DYNAMIC_DEBUG</code>）：运行时通过 <code>/sys/kernel/debug/dynamic_debug/control</code> 启用/禁用特定文件/函数的 pr_debug/dev_dbg 输出——不需要重新编译。非常适合生产环境按需开启。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>sysfs / debugfs</h4>
+    <div class="lbl">导出驱动内部状态给用户态</div>
+    <p><strong>sysfs</strong>：<code>device_create_file()</code> 在 <code>/sys/devices/...</code> 为设备的属性文件创建属性文件（read/write 回调）。适合导出稳定 ABI。<br>
+    <strong>debugfs</strong>：<code>debugfs_create_file/u32_regset32</code> 在 <code>/sys/kernel/debug/</code> 创建调试文件——<strong>无 ABI 稳定性承诺</strong>，可以随时修改格式。适合导出寄存器 dump、ring buffer 内容、统计计数器等调试信息。嵌入式设备可以直接在 release build 中保留——不挂载 debugfs 就零开销。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>KASAN · lockdep · sparse</h4>
+    <div class="lbl">静态分析 + 运行时检测</div>
+    <p><strong>sparse</strong>：<code>make C=2</code>，检测 <code>__user/__iomem/__rcu</code> 等地址空间混用、endian 错误。<br>
+    <strong>lockdep</strong>：运行时锁依赖分析——检测死锁可能性（锁序违反）、中断上下文不安全的锁使用。<br>
+    <strong>KASAN</strong>（Kernel Address Sanitizer）：运行时内存错误检测（use-after-free、out-of-bounds、stack overflow）——类似用户态的 ASan。代价约 2x 慢。<br>
+    <strong>Kmemleak</strong>：检测内核内存泄漏——周期性扫描未引用的分配内存块。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>调试场景</th><th>工具/命令</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>模块加载失败</td><td><code>dmesg | tail -30</code></td><td>probe 返回 -ENODEV/-EINVAL 的详细原因</td></tr>
+    <tr><td>驱动 probe 未调用</td><td>检查 compatible 字符串是否与设备树完全一致</td><td>of_match_table 中的 compatible 和 DT 中必须逐字符匹配</td></tr>
+    <tr><td>中断未触发</td><td><code>cat /proc/interrupts</code></td><td>确认中断号正确，中断计数是否增加</td></tr>
+    <tr><td>寄存器读写异常</td><td><code>devmem 0xXXXX</code> (用户态)</td><td>确认时钟/电源域已使能（pm_runtime/clk_prepare_enable）</td></tr>
+    <tr><td>内存泄漏</td><td><code>echo scan > /sys/kernel/debug/kmemleak; cat /sys/kernel/debug/kmemleak</code></td><td>未释放的 kmalloc/vmalloc/devm 分配</td></tr>
+    <tr><td>Oops/Panic 分析</td><td><code>scripts/decode_stacktrace.sh</code> + vmlinux</td><td>解码 Oops 的 PC/LR 偏移量为函数名+行号</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch10 ── -->
+<h2 class="sh">10. IPC 相机驱动全景：从硬件到用户态</h2>
+<p class="ss">以 IPC 相机为实例，展示完整的设备驱动栈——从 Sensor 驱动到 /dev/video0 的全链路。</p>
+
+<div class="mb">
+  <div class="r"><span class="a">应用层</span><span class="b c4">/dev/video0 · /dev/i2c-0</span><span class="n">V4L2 应用 / GStreamer / LinkricAI</span></div>
+  <div class="r"><span class="a">V4L2 框架</span><span class="b c3">video_device · vb2_queue</span><span class="n">格式协商 · 缓冲管理 (DMA-BUF) · 流控制</span></div>
+  <div class="r"><span class="a">Sensor 驱动</span><span class="b c1">v4l2_subdev · I2C</span><span class="n">寄存器配置 · 曝光/增益控制 · MIPI 输出配置</span></div>
+  <div class="r"><span class="a">MIPI 控制器驱动</span><span class="b c2">platform_driver · DMA</span><span class="n">MIPI D-PHY 配置 · CSI 接收 · DMA 到 DDR</span></div>
+  <div class="r"><span class="a">ISP 驱动</span><span class="b c5">platform_driver · V4L2</span><span class="n">Bayer→YUV 硬件管线 · 3A 统计 · DMA-BUF 输出</span></div>
+  <div class="r"><span class="a">硬件层</span><span class="b c1">Sensor → MIPI → ISP → DDR</span><span class="n">物理信号链：光子→电荷→MIPI D-PHY→CSI-2→ISP→AXI Master→DDR</span></div>
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机驱动关键设计决策</div>
+  <strong>Sensor 驱动</strong>：v4l2_subdev，实现 get_fmt/set_fmt、s_ctrl（曝光/增益/AWB）、s_stream（开始/停止输出）。通过 I2C 写寄存器。设备树中声明为 I2C 子节点。<br>
+  <strong>MIPI 控制器</strong>：platform_driver，配置 D-PHY lane 数/速率、CSI-2 virtual channel。通常不需要用户态直接访问——由 ISP 驱动或 Media Controller 管理。<br>
+  <strong>ISP 驱动</strong>：platform_driver + video_device，注册为 <code>/dev/videoX</code>。内部管理 3A 统计中断、DMA 完成中断。输出通过 vb2_queue + DMA-BUF 供编码器零拷贝消费。<br>
+  <strong>Media Controller</strong>：通过 <code>/dev/mediaX</code> 暴露上述子设备的拓扑（Sensor→MIPI→ISP），应用通过 pad/link 配置数据通路。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 设备驱动框架 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

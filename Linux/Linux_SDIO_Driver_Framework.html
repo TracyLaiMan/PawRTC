@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux SDIO 驱动框架 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; }
+.cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; } .st code { font-size: 10px; }
+
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+.reg-map { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:14px 18px; margin:14px 0; font-family:"JetBrains Mono",monospace;
+  font-size:10.5px; line-height:1.55; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux SDIO 驱动框架</h2>
+  <p class="sec-sub">系统化知识体系 — SDIO 协议 · CCCR/CIS/FBR 寄存器 · Linux 函数驱动开发 · WiFi/BT/GPS 实战</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>SDIO Host</strong><br><small>硬件控制器</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>MMC Core</strong><br><small>mmc_core / sdio_bus</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>SDIO Func Driver</strong><br><small>WiFi / BT / GPS</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>SDIO 协议</h4><div class="sub">SD Association 规范</div>
+      <p><em>Secure Digital I/O</em> 扩展 SD 物理总线，使同一接口不仅能访问存储卡，还能连接 WiFi、蓝牙、GPS、UART 等 <em>I/O 功能设备</em>。一张 SDIO 卡最多支持 <strong>7 个 I/O 功能</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>与 MMC 子系统的关系</h4><div class="sub">drivers/mmc/core/sdio*.c</div>
+      <p>SDIO 是 MMC 子系统的三大协议之一（MMC / SD / SDIO）。Core 层解析 <em>CCCR / FBR / CIS</em> 寄存器，创建 <code>sdio_func</code> 设备。函数驱动通过 <code>sdio_bus</code> 匹配并驱动具体 I/O 功能。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>典型设备</h4><div class="sub">WiFi · BT · GPS · UART</div>
+      <p>Broadcom FullMAC (brcmfmac)、Marvell (mwifiex)、Qualcomm Atheros (ath6kl)、TI WiLink — 这些都是经典的 SDIO 接口 WiFi/BT 芯片。Android/iOS 设备广泛使用 SDIO WiFi。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOC ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1: SDIO 协议基础 ── -->
+<h2 class="sh">1. SDIO 协议基础</h2>
+<p class="ss">SDIO 卡类型 · CIA 寄存器体系 · CCCR · FBR · CIS — 理解 SDIO 必须先掌握这三个寄存器结构</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>SDIO 卡类型</h4><div class="lbl">四种卡分类</div>
+    <p><strong>全速 (Full-Speed)</strong>: 1-bit/4-bit，≤25MHz (SD) 或更高<br>
+    <strong>低速 (Low-Speed, LSC=1)</strong>: 仅 1-bit (除非 4BLS)，≤400kHz<br>
+    <strong>纯 I/O 卡</strong>: 无 Memory 部分，仅响应 CMD5<br>
+    <strong>Combo 卡</strong>: 同时含 SD Memory + SDIO I/O</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>CIA — 通用 I/O 区域</h4><div class="lbl">Function 0 的 128KB 地址空间</div>
+    <p><strong>CCCR</strong> (0x000–0x0FF)：卡通用控制寄存器<br>
+    <strong>FBR</strong> (0x100–0x7FF)：每 Function 256 字节基础寄存器<br>
+    <strong>CIS</strong> (0x1000–0x17FFF)：卡信息结构（Tuple 链表）<br>
+    主机通过 <strong>CMD52</strong>(单字节) 和 <strong>CMD53</strong>(多字节) 读写 CIA。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>标准功能接口码</h4><div class="lbl">FBR 0x00 字段</div>
+    <p><code>0x01</code> UART · <code>0x02</code> Bluetooth Type-A<br>
+    <code>0x03</code> Bluetooth Type-B · <code>0x04</code> GPS<br>
+    <code>0x05</code> Camera · <code>0x06</code> PHS<br>
+    <code>0x07</code> <strong>WLAN (WiFi)</strong> · <code>0x08</code> SDIO-ATA<br>
+    <code>0x0F</code> 扩展 (见 FBR 0x01)</p>
+  </div>
+</div>
+
+<div class="reg-map">
+<span class="cm">/* ===== CIA (Common I/O Area) 完整内存映射 — Function 0 ===== */</span>
+<span class="cm">0x000000 ──────────────────────────────────────────────────────────</span>
+<span class="cm">│ 0x000 – 0x0FF │ CCCR         │ 卡通用控制寄存器                      │</span>
+<span class="cm">│ 0x100 – 0x1FF │ FBR Fn1      │ Function 1 基础寄存器                │</span>
+<span class="cm">│ 0x200 – 0x2FF │ FBR Fn2      │ Function 2 基础寄存器                │</span>
+<span class="cm">│ ...           │ ...          │ (Fn3~Fn7 依次排列)                  │</span>
+<span class="cm">│ 0x700 – 0x7FF │ FBR Fn7      │ Function 7 基础寄存器                │</span>
+<span class="cm">│ 0x800 – 0xFFF │ RFU          │ 保留                                 │</span>
+<span class="cm">│ 0x1000–0x17FFF│ CIS Area     │ 公共 CIS + 各 Function 的 CIS       │</span>
+<span class="cm">│ 0x18000–0x1FFFF│ RFU         │ 保留                                 │</span>
+<span class="cm">0x01FFFF ──────────────────────────────────────────────────────────</span></div>
+
+<!-- ── Ch2: CCCR 寄存器详解 ── -->
+<h2 class="sh">2. CCCR — 卡通用控制寄存器 (0x00–0xFF)</h2>
+<p class="ss">CCCR 允许主机检查和控制每个 Function 的使能、中断、总线宽度和块大小</p>
+
+<div class="ptbl" style="margin-top:18px">
+  <table>
+  <thead><tr><th>偏移</th><th>寄存器名</th><th>类型</th><th>关键位</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x00</code></td><td>SDIO Revision</td><td>R/O</td><td>CCCRx[3:0] · SDIOx[7:4]</td><td>CCCR 格式版本 &amp; SDIO 规范版本 (0x03=SDIO 2.0)</td></tr>
+    <tr><td><code>0x02</code></td><td>I/O Enable</td><td>R/W</td><td class="g"><strong>IOE1–IOE7</strong></td><td class="g">写 1 使能对应 Function</td></tr>
+    <tr><td><code>0x03</code></td><td>I/O Ready</td><td>R/O</td><td>IOR1–IOR7</td><td>Function 是否已准备好工作</td></tr>
+    <tr><td><code>0x04</code></td><td>Interrupt Enable</td><td>R/W</td><td class="y"><strong>IEN1–IEN7 · IENM</strong></td><td class="y">逐一使能中断 + 总中断使能</td></tr>
+    <tr><td><code>0x05</code></td><td>Interrupt Pending</td><td>R/O</td><td class="y"><strong>INT1–INT7</strong></td><td class="y">指示哪个 Function 有挂起中断</td></tr>
+    <tr><td><code>0x06</code></td><td>I/O Abort</td><td>W/O</td><td>RES · AS[2:0]</td><td>中止进行中的传输 + 复位 I/O</td></tr>
+    <tr><td><code>0x07</code></td><td>Bus Interface</td><td>R/W</td><td>CD Disable · Bus Width[1:0]</td><td>卡检测禁止 · 1-bit(00) 或 4-bit(10)</td></tr>
+    <tr><td><code>0x08</code></td><td>Card Capability</td><td>R/O</td><td>4BLS · LSC · E4MI · S4MI · SBS · SRW · SMB · SDC</td><td>低速/多块/挂起/读等待/直接命令能力</td></tr>
+    <tr><td><code>0x09–0x0B</code></td><td>Common CIS Pointer</td><td>R/O</td><td>24-bit LE addr</td><td><strong>指向公共 CIS 的起始地址</strong></td></tr>
+    <tr><td><code>0x0C</code></td><td>Bus Suspend</td><td>R/W</td><td>BR · BS</td><td>总线释放请求/状态</td></tr>
+    <tr><td><code>0x0D</code></td><td>Function Select</td><td>R/W</td><td class="g"><strong>DF · FS[3:0]</strong></td><td class="g">选择当前寻址的 Function (CIA=0, Fn1–7=1–7)</td></tr>
+    <tr><td><code>0x0E</code></td><td>Exec Flags</td><td>R/O</td><td>EX1–EX7 · EXM</td><td>哪个 Function 正在执行命令</td></tr>
+    <tr><td><code>0x0F</code></td><td>Ready Flags</td><td>R/O</td><td>RF1–RF7 · RFM</td><td>哪个 Function 不忙 (可写入)</td></tr>
+    <tr><td><code>0x10–0x11</code></td><td>FN0 Block Size</td><td>R/W</td><td>16-bit value</td><td>Function 0 的 I/O 块大小 (≤2048)</td></tr>
+    <tr><td><code>0x13</code></td><td>High-Speed</td><td>R/W</td><td class="g"><strong>EHS · SHS</strong></td><td class="g">使能/支持高速 (50MHz) 模式</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch3: FBR + CIS ── -->
+<h2 class="sh">3. FBR — 功能基础寄存器 &amp; CIS — 卡信息结构</h2>
+<p class="ss">FBR 快速标识每个 Function 的能力 · CIS 以 Tuple 链表形式提供详细的卡和功能描述</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>FBR 结构 (每个 Function 256B)</h4><div class="lbl">Fn n 基址 = n × 0x100</div>
+    <p><strong>0x00</strong>: 标准功能接口码 + CSA 能力<br>
+    <strong>0x01</strong>: 扩展接口码 (当 0x00=0x0F 时)<br>
+    <strong>0x02</strong>: 电源支持 (EPS/SPS 位)<br>
+    <strong>0x09–0x0B</strong>: Function CIS 指针 (24-bit)<br>
+    <strong>0x0C–0x0E</strong>: CSA 指针 (Code Storage Area)<br>
+    <strong>0x10–0x11</strong>: 此 Function 的 I/O 块大小</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>CIS — Tuple 链表结构</h4><div class="lbl">基于 PCMCIA/Card16 metaformat</div>
+    <p>每个 Tuple：<code>{TPL_CODE(1B) | TPL_LINK(1B) | Data[N]}</code><br>
+    <strong>0x15 CISTPL_VERS_1</strong>：版本/产品字符串<br>
+    <strong>0x20 CISTPL_MANFID</strong>：制造商 ID (JEDEC)<br>
+    <strong>0x21 CISTPL_FUNCID</strong>：功能标识<br>
+    <strong>0x22 CISTPL_FUNCE</strong>：功能扩展数据<br>
+    <strong>0x91 CISTPL_SDIO_STD</strong>：SDIO 标准标志<br>
+    <strong>0xFF CISTPL_END</strong>：链结束标记</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">Linux 内核中的解析路径</div>
+  <code>mmc_attach_sdio()</code> (core/sdio.c) → <code>sdio_read_cccr()</code> → <code>sdio_read_common_cis()</code> → <code>sdio_read_func_cis()</code> (core/sdio_cis.c)<br>
+  解析结果存入 <code>sdio_func</code> 的 <code>vendor</code>、<code>device</code>、<code>class</code>、<code>max_blksize</code> 等字段，构造 <code>sdio_device_id</code> 用于驱动匹配。
+</div>
+
+<!-- ── Ch4: Linux SDIO 架构 ── -->
+<h2 class="sh">4. Linux SDIO 驱动架构</h2>
+<p class="ss">SDIO 在 MMC 子系统中的三层位置 · 核心源文件 · sdio_func 与 sdio_driver 的匹配机制</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Host 层</h4><div class="lbl">drivers/mmc/host/</div>
+    <p>硬件控制器驱动，实现 <code>mmc_host_ops</code>。SDIO 特有回调：<code>enable_sdio_irq</code>（使能 SDIO 中断）、<code>ack_sdio_irq</code>（应答）。<br>
+    SDHCI 标准控制器天然支持 SDIO 中断。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Core 层</h4><div class="lbl">drivers/mmc/core/sdio*.c</div>
+    <p><code>sdio.c</code>：卡检测 (CMD5) + 初始化<br>
+    <code>sdio_cis.c</code>：CIS Tuple 解析<br>
+    <code>sdio_bus.c</code>：<strong>sdio_bus_type</strong> 总线 + 设备/驱动匹配<br>
+    <code>sdio_io.c</code>：I/O 辅助函数<br>
+    <code>sdio_irq.c</code>：SDIO 中断分发<br>
+    <code>sdio_ops.c</code>：底层 CMD52/53 封装</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Function Driver 层</h4><div class="lbl">drivers/net/wireless/ 等</div>
+    <p>SDIO 函数驱动不放在 <code>drivers/mmc/</code> 下，而是放在各自子系统目录。<br>
+    <strong>brcmfmac</strong> (Broadcom WiFi)<br>
+    <strong>mwifiex</strong> (Marvell WiFi)<br>
+    <strong>ath6kl</strong> (Atheros WiFi)<br>
+    通过 <code>sdio_register_driver()</code> 注册到 sdio_bus。</p>
+  </div>
+</div>
+
+<div class="reg-map">
+<span class="cm">/* ===== SDIO 初始化流程 — 从卡检测到驱动 probe ===== */</span>
+<span class="cm">mmc_rescan()</span>
+<span class="cm">  └── mmc_attach_sdio()                           // CMD5 → R4 响应 → 确认 SDIO 卡</span>
+<span class="cm">        ├── mmc_send_io_op_cond()                  // CMD5 查询 I/O OCR</span>
+<span class="cm">        ├── mmc_sdio_init_card()                   // 读 CCCR → CIS → 初始化每个 Function</span>
+<span class="cm">        │     ├── sdio_read_cccr()                 // 读 CCCR 0x00–0x13</span>
+<span class="cm">        │     ├── sdio_read_common_cis()           // 解析公共 CIS Tuples</span>
+<span class="cm">        │     ├── sdio_read_func_cis(fn)           // 解析每个 Function 的 CIS</span>
+<span class="cm">        │     └── sdio_init_func(fn)               // 设置块大小、使能 Function</span>
+<span class="cm">        └── mmc_add_card()                         // 注册 card → sdio_bus 扫描</span>
+<span class="cm">              └── sdio_bus_match()                 // vendor/device/class 三元组匹配</span>
+<span class="cm">                    └── sdio_driver.probe(func, id) // 函数驱动入口</span></div>
+
+<!-- ── Ch5: 函数驱动开发 ── -->
+<h2 class="sh">5. SDIO 函数驱动开发 — 完整模板</h2>
+<p class="ss">sdio_driver 注册 · probe/remove · CMD52/CMD53 I/O 操作 · 中断处理 · 主机锁定</p>
+
+<div class="cb">
+<span class="cm">/* ===== 1. 设备 ID 表 + MODULE_DEVICE_TABLE ===== */</span>
+<span class="kw">static const struct</span> <span class="ty">sdio_device_id</span> my_ids[] = {
+    { <span class="fn">SDIO_DEVICE</span>(<span class="nu">0x02d0</span>, <span class="nu">0xa9a6</span>) },              <span class="cm">// vendor=device, 匹配单个产品</span>
+    { <span class="fn">SDIO_DEVICE_CLASS</span>(<span class="ma">SDIO_CLASS_WLAN</span>) },       <span class="cm">// 匹配所有 WLAN 类 SDIO 设备</span>
+    { },                                                <span class="cm">// 终止标记</span>
+};
+<span class="fn">MODULE_DEVICE_TABLE</span>(sdio, my_ids);
+
+<span class="cm">/* ===== 2. probe — 函数被检测到时调用 ===== */</span>
+<span class="kw">static int</span> <span class="fn">my_probe</span>(<span class="kw">struct</span> <span class="ty">sdio_func</span> *func,
+                    <span class="kw">const struct</span> <span class="ty">sdio_device_id</span> *id)
+{
+    <span class="kw">struct</span> <span class="ty">my_dev</span> *priv;
+    <span class="ty">int</span> ret;
+
+    <span class="fn">sdio_claim_host</span>(func);                            <span class="cm">// 获取主机 -- 保证原子操作</span>
+
+    <span class="cm">/* 使能 Function (若尚未使能) */</span>
+    ret = <span class="fn">sdio_enable_func</span>(func);
+    <span class="kw">if</span> (ret) <span class="kw">goto</span> release;
+
+    <span class="cm">/* 设置 I/O 块大小 */</span>
+    <span class="fn">sdio_set_block_size</span>(func, <span class="nu">512</span>);
+
+    <span class="cm">/* 通过 CMD53 读设备信息 (多字节 burst) */</span>
+    <span class="ty">u8</span> buf[<span class="nu">64</span>];
+    <span class="fn">sdio_memcpy_fromio</span>(func, buf, <span class="nu">0x00</span>, <span class="nu">64</span>);
+
+    <span class="cm">/* 通过 CMD52 写单字节寄存器 */</span>
+    <span class="fn">sdio_writeb</span>(func, <span class="nu">0x01</span>, <span class="nu">0x02</span>, &amp;ret);          <span class="cm">// 写 0x01 到地址 0x02</span>
+
+    <span class="fn">sdio_release_host</span>(func);
+
+    <span class="cm">/* 分配私有数据结构 */</span>
+    priv = <span class="fn">kzalloc</span>(<span class="kw">sizeof</span>(*priv), <span class="ma">GFP_KERNEL</span>);
+    <span class="fn">sdio_set_drvdata</span>(func, priv);
+
+    <span class="cm">/* 注册中断处理 */</span>
+    <span class="fn">sdio_claim_irq</span>(func, my_irq_handler);
+
+    <span class="kw">return</span> <span class="nu">0</span>;
+
+<span class="kw">release:</span>
+    <span class="fn">sdio_release_host</span>(func);
+    <span class="kw">return</span> ret;
+}
+
+<span class="cm">/* ===== 3. remove — 设备拔出或驱动卸载 ===== */</span>
+<span class="kw">static void</span> <span class="fn">my_remove</span>(<span class="kw">struct</span> <span class="ty">sdio_func</span> *func)
+{
+    <span class="kw">struct</span> <span class="ty">my_dev</span> *priv = <span class="fn">sdio_get_drvdata</span>(func);
+
+    <span class="fn">sdio_release_irq</span>(func);                           <span class="cm">// 注销中断</span>
+    <span class="fn">sdio_claim_host</span>(func);
+    <span class="fn">sdio_disable_func</span>(func);                         <span class="cm">// 关闭 Function</span>
+    <span class="fn">sdio_release_host</span>(func);
+
+    <span class="fn">kfree</span>(priv);
+}
+
+<span class="cm">/* ===== 4. 中断处理 — 运行在中断上下文 ===== */</span>
+<span class="kw">static void</span> <span class="fn">my_irq_handler</span>(<span class="kw">struct</span> <span class="ty">sdio_func</span> *func)
+{
+    <span class="kw">struct</span> <span class="ty">my_dev</span> *priv = <span class="fn">sdio_get_drvdata</span>(func);
+    <span class="ty">u8</span> status;
+    <span class="ty">int</span> err;
+
+    <span class="fn">sdio_claim_host</span>(func);                           <span class="cm">// IRQ 中也需要 claim</span>
+    status = <span class="fn">sdio_readb</span>(func, MY_INT_STATUS_REG, &amp;err);
+    <span class="fn">sdio_writeb</span>(func, status, MY_INT_CLEAR_REG, &amp;err); <span class="cm">// W1C 清除</span>
+    <span class="fn">sdio_release_host</span>(func);
+
+    <span class="kw">if</span> (status &amp; MY_RX_READY)
+        <span class="fn">schedule_work</span>(&amp;priv-&gt;rx_work);             <span class="cm">// 推迟到 workqueue</span>
+}
+
+<span class="cm">/* ===== 5. sdio_driver 结构体 + 注册 ===== */</span>
+<span class="kw">static struct</span> <span class="ty">sdio_driver</span> my_driver = {
+    <span class="op">.name</span>     = <span class="st">"my_sdio"</span>,
+    <span class="op">.id_table</span> = my_ids,
+    <span class="op">.probe</span>    = my_probe,
+    <span class="op">.remove</span>   = my_remove,
+};
+
+<span class="fn">module_driver</span>(my_driver, sdio_register_driver, sdio_unregister_driver);</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>I/O 操作</th><th>底层命令</th><th>用途</th><th>数据量</th></tr></thead>
+  <tbody>
+    <tr><td><code>sdio_readb/writeb</code></td><td><strong>CMD52</strong></td><td>读写单字节 (CCCR/FBR/配置寄存器)</td><td>1 字节</td></tr>
+    <tr><td><code>sdio_memcpy_fromio/toio</code></td><td><strong>CMD53 (incr addr)</strong></td><td>Burst 读写 (递增地址 — 数据块)</td><td>≤ block_size × N</td></tr>
+    <tr><td><code>sdio_readsb/writesb</code></td><td><strong>CMD53 (fixed addr)</strong></td><td>FIFO 读写 (固定地址 — 数据端口)</td><td>≤ block_size × N</td></tr>
+    <tr><td><code>sdio_f0_readb/writeb</code></td><td><strong>CMD52 (Fn0)</strong></td><td>强制操作 Function 0 (CCCR 区域)</td><td>1 字节</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 关键注意点</div>
+  <strong>claim_host</strong>: 任何需要原子性保证的多步 I/O 序列必须包裹在 <code>sdio_claim_host()/release_host()</code> 之间，包括中断处理函数！<br>
+  <strong>中断上下文</strong>: <code>sdio_claim_irq()</code> 的回调在硬中断上下文执行 → 不能睡眠 → 重活必须推后到 workqueue 或 tasklet。<br>
+  <strong>块大小</strong>: 务必在 probe 中通过 <code>sdio_set_block_size()</code> 设置合适的值。CMD53 多字节传输受此限制。
+</div>
+
+<!-- ── Ch6: 主流 WiFi 驱动分析 ── -->
+<h2 class="sh">6. 主流 SDIO WiFi 驱动</h2>
+<p class="ss">brcmfmac (Broadcom) · mwifiex (Marvell) · ath6kl (Atheros) — 三大 SDIO WiFi 驱动对比</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>brcmfmac (Broadcom)</h4><div class="lbl">drivers/net/wireless/broadcom/brcm80211/</div>
+    <p><strong>架构</strong>: FullMAC — 固件处理全部 802.11 协议，驱动仅负责 SDIO 传输 + cfg80211 接口。<br>
+    <strong>兼容 ID</strong>: <code>SDIO_DEVICE(BRCM_VENDOR_ID, xxx)</code><br>
+    <strong>固件加载</strong>: probe 时通过 firmware API 加载 <code>brcmfmacXXXX-sdio.bin</code> + NV 配置文件。<br>
+    <strong>特点</strong>: 最常见的树莓派 WiFi 方案 (Cypress CYW43438)，Linux 主线支持最完善。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>mwifiex (Marvell)</h4><div class="lbl">drivers/net/wireless/marvell/mwifiex/</div>
+    <p><strong>架构</strong>: FullMAC — 固件处理 MLME。<br>
+    <strong>SDIO 入口</strong>: <code>mwifiex_sdio_probe()</code> — 在 sdio_bus 上注册。<br>
+    <strong>特点</strong>: 同时支持 SDIO + PCIe 接口 (共用核心逻辑)，广泛应用于 Chromebook、Steam Deck。<br>
+    <strong>芯片</strong>: 88W8797, 88W8897, 88W8997 (NXP 收购后)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ath6kl (Atheros/Qualcomm)</h4><div class="lbl">drivers/net/wireless/ath/ath6kl/</div>
+    <p><strong>架构</strong>: FullMAC — 固件管理 802.11 协议。<br>
+    <strong>特点</strong>: AR6003/AR6004 系列，广泛应用于嵌入式设备。由 ath6kl 演变出的 ath10k 支持 PCIe/USB/SDIO。<br>
+    <strong>注意</strong>: 新一代 Qualcomm 方案用 ath11k/ath12k，支持 SDIO 的 WCN 系列芯片。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>特性</th><th>brcmfmac</th><th>mwifiex</th><th>ath6kl</th></tr></thead>
+  <tbody>
+    <tr><td>厂商</td><td>Broadcom (博通)</td><td>Marvell → NXP</td><td>Qualcomm Atheros</td></tr>
+    <tr><td>架构</td><td>FullMAC</td><td>FullMAC</td><td>FullMAC</td></tr>
+    <tr><td>SDIO 类匹配</td><td class="g">✓ <code>SDIO_CLASS_WLAN</code></td><td>— (vendor-device only)</td><td>— (vendor-device only)</td></tr>
+    <tr><td>固件文件</td><td><code>brcm/brcmfmac*-sdio.bin</code></td><td><code>mrvl/sd*.bin</code></td><td><code>ath6k/AR600X/hw*/fw-*.bin</code></td></tr>
+    <tr><td>主线状态</td><td class="g">完善</td><td class="g">完善</td><td class="g">完善</td></tr>
+    <tr><td>常见平台</td><td>树莓派、Intel NUC</td><td>Chromebook、Steam Deck</td><td>嵌入式 IoT</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">SoftMAC vs FullMAC — 理解 WiFi 驱动架构</div>
+  <strong>SoftMAC</strong> (<code>mac80211</code>)：MLME 在驱动/内核中实现，硬件只做 PHY+部分 MAC。例：Intel iwlwifi、Mediatek mt76。<br>
+  <strong>FullMAC</strong>：MLME 完全在固件中，驱动仅负责传输 802.3 帧 + cfg80211 命令。SDIO WiFi 几乎都是 FullMAC — 固件处理复杂的 802.11 状态机，驱动代码相对精简。<br>
+  FullMAC 的代价：需要加载 vendor 闭源固件，调试 802.11 问题只能看固件日志。
+</div>
+
+<!-- ── Ch7: Device Tree 绑定 ── -->
+<h2 class="sh">7. Device Tree 绑定</h2>
+<p class="ss">SDIO Host 节点的 DT 配置 · 子节点定义 SDIO 功能设备 · WLAN 唤醒与电源保持</p>
+
+<div class="cb">
+<span class="cm">/* ===== SDIO Host 节点 ===== */</span>
+&amp;sdio {
+    bus-width = &lt;<span class="nu">4</span>&gt;;                         <span class="cm">/* SDIO 通常 4-bit */</span>
+    non-removable;                         <span class="cm">/* MMC_CAP_NONREMOVABLE — 焊死在板上 */</span>
+    cap-sd-highspeed;                      <span class="cm">/* 支持 50MHz 高速 */</span>
+    keep-power-in-suspend;                 <span class="cm">/* ⭐ 休眠不断电 — WoWLAN 心脏 */</span>
+    wakeup-source;                         <span class="cm">/* ⭐ SDIO 中断可唤醒系统 */</span>
+    vmmc-supply = &lt;&amp;vcc_wifi&gt;;
+    mmc-pwrseq = &lt;&amp;wifi_pwrseq&gt;;          <span class="cm">/* 上电时序 (enable/reset GPIO) */</span>
+    status = <span class="st">"okay"</span>;
+
+    <span class="cm">/* ===== Function 1: WiFi ===== */</span>
+    brcmf: wifi@<span class="nu">1</span> {
+        reg = &lt;<span class="nu">1</span>&gt;;                            <span class="cm">/* SDIO Function 编号 */</span>
+        compatible = <span class="st">"brcm,bcm4329-fmac"</span>;  <span class="cm">/* ← 匹配 brcmfmac 驱动 */</span>
+    };
+};
+
+<span class="cm">/* ===== 上电时序 — mmc-pwrseq-simple ===== */</span>
+wifi_pwrseq: pwrseq {
+    compatible = <span class="st">"mmc-pwrseq-simple"</span>;
+    reset-gpios = &lt;&amp;gpio0 <span class="nu">10</span> GPIO_ACTIVE_LOW&gt;;  <span class="cm">/* WiFi 复位引脚 */</span>
+    post-power-on-delay-ms = &lt;<span class="nu">50</span>&gt;;              <span class="cm">/* 上电后等待稳定 */</span>
+};
+
+<span class="cm">/* ===== brcmfmac 完整 WiFi 节点示例 (Raspberry Pi) ===== */</span>
+&amp;sdhci {
+    pinctrl-<span class="nu">0</span> = &lt;&amp;emmc_gpio34&gt;;
+    bus-width = &lt;<span class="nu">4</span>&gt;;
+    non-removable;
+    mmc-pwrseq = &lt;&amp;wifi_pwrseq&gt;;
+    status = <span class="st">"okay"</span>;
+
+    brcmf: wifi@<span class="nu">1</span> {
+        reg = &lt;<span class="nu">1</span>&gt;;
+        compatible = <span class="st">"brcm,bcm4329-fmac"</span>;
+        interrupt-parent = &lt;&amp;gpio&gt;;
+        interrupts = &lt;<span class="nu">24</span> IRQ_TYPE_LEVEL_LOW&gt;;    <span class="cm">/* OOB 中断 (唤醒用) */</span>
+        interrupt-names = <span class="st">"host-wake"</span>;
+    };
+};</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>属性</th><th>说明</th><th>属性</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>non-removable</code></td><td>SDIO 芯片焊死在 PCB</td><td><code>keep-power-in-suspend</code></td><td class="g"><strong>休眠时保持供电</strong></td></tr>
+    <tr><td><code>wakeup-source</code></td><td>允许 SDIO IRQ 唤醒 SoC</td><td><code>cap-sd-highspeed</code></td><td>50MHz 高速模式</td></tr>
+    <tr><td><code>bus-width</code></td><td>通常 &lt;4&gt;</td><td><code>mmc-pwrseq</code></td><td class="y">上电时序 phandle</td></tr>
+    <tr><td><code>reg = &lt;1&gt;</code></td><td>SDIO Function 编号</td><td><code>compatible</code></td><td>驱动匹配字符串</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ keep-power-in-suspend + wakeup-source 是 WoWLAN 的必须项</div>
+  没有这两个属性 → 系统休眠时 SDIO 断电 → WiFi 连接断开 → 无法接收网络唤醒包 (如 ARP/NS/mDNS)。正确配置后，WiFi 固件保持连接，收到匹配包时通过 SDIO 中断唤醒 SoC。
+</div>
+
+<!-- ── Ch8: 调试诊断 ── -->
+<h2 class="sh">8. 调试与诊断</h2>
+<p class="ss">SDIO 寄存器 dump · 内核日志 · sdio_show · 常见问题速查</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内核诊断</h4><div class="lbl">DebugFS + sysfs</div>
+    <p><code>/sys/kernel/debug/mmcX/ios</code> — 总线状态<br>
+    <code>cat /sys/bus/sdio/devices/*/modalias</code> — 已检测设备<br>
+    <code>cat /sys/bus/sdio/devices/*/vendor</code> — 厂商 ID<br>
+    <code>echo "file brcmfmac/* +p" &gt; dyndbg</code> — 动态调试</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SDIO 寄存器 dump</h4><div class="lbl">sdio_show / sdio_tool</div>
+    <p><code>sdio_show</code> — dump CCCR/FBR/CIS<br>
+    <code>sdio_tool</code> — 厂商提供的诊断工具<br>
+    <code>mmc extcsd read /dev/mmcblkX</code> — eMMC 不适用于 SDIO<br>
+    通常依靠驱动自身的 debugfs 接口和 <code>ethtool</code> (WiFi)。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>固件诊断</h4><div class="lbl">vendor-specific</div>
+    <p><strong>brcmfmac</strong>: <code>brcmfmac.debug=0x1416</code> 内核参数<br>
+    <strong>mwifiex</strong>: <code>drvdbg=0x7</code> 模块参数<br>
+    固件日志通常通过 debugfs 节点 <code>fw_dump</code> 或 <code>fw_log</code> 获取。FullMAC 架构下，大量问题需看固件日志。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断方法</th></tr></thead>
+  <tbody>
+    <tr><td>SDIO 设备未被检测到</td><td>上电时序 / 时钟 / 总线宽度不匹配</td><td>示波器检查 CLK/CMD 波形，确认 mmc-pwrseq 拉高</td></tr>
+    <tr><td>驱动匹配失败 (modalias 不匹配)</td><td>SDIO device ID 表未包含该设备</td><td><code>cat /sys/bus/sdio/devices/*/modalias</code></td></tr>
+    <tr><td>probe 时固件加载失败</td><td>固件文件缺失 / 路径不对 / 版本不匹配</td><td><code>dmesg | grep "Direct firmware load"</code></td></tr>
+    <tr><td>SDIO 中断风暴</td><td>中断未被正确清除<br>wakeup GPIO 配置错误</td><td><code>cat /proc/interrupts | grep mmc</code><br>检查 OOB 中断引脚配置</td></tr>
+    <tr><td>休眠后 WiFi 不可用</td><td>缺 keep-power-in-suspend</td><td>dmesg 查 suspend/resume 日志</td></tr>
+    <tr><td>CMD53 传输超时</td><td>块大小设置过大 / 时钟过高</td><td>降低 max-frequency / 减小块大小</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux SDIO Driver Framework — 系统化知识体系 · 2026-06 · Linux Kernel v5.x / v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

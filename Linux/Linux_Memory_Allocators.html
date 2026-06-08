@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 内存分配器深度对比 — ptmalloc2 · jemalloc · mimalloc</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain u { color:#fbbf24; text-decoration:none; } .chain em { color:#f87171; font-style:normal; }
+
+/* verdict tags */
+.tag { display:inline-block; padding:2px 8px; border-radius:5px; font-size:10px; font-weight:700; margin:0 2px; }
+.tg { background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.2); }
+.ty { background:rgba(251,191,36,.1); color:#fbbf24; border:1px solid rgba(251,191,36,.2); }
+.tr { background:rgba(248,113,113,.08); color:#f87171; border:1px solid rgba(248,113,113,.15); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,42px);font-weight:900">Linux 内存分配器深度对比</h2>
+  <p class="sec-sub">ptmalloc2 (glibc) · jemalloc (Facebook/FreeBSD) · mimalloc (Microsoft) — 架构 · 性能 · 选型</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>ptmalloc2</strong><br><small>glibc 默认</small></span>
+    <span class="flow-arr">vs</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>jemalloc</strong><br><small>FreeBSD · Redis</small></span>
+    <span class="flow-arr">vs</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>mimalloc</strong><br><small>Microsoft · Rust</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>ptmalloc2 (1996→)</h4><div class="sub">glibc · Doug Lea → Wolfram Gloger</div>
+      <p>基于 dlmalloc 的<em>多线程版本</em>。arena 锁 + bin 体系。Linux 默认分配器，<em>兼容性最好</em> 但多线程锁竞争是瓶颈。所有 Linux 程序默认使用。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>jemalloc (2005→)</h4><div class="sub">FreeBSD · Jason Evans · Meta</div>
+      <p>强调<em>并发性能与碎片控制</em>。Per-CPU arena + 线程缓存 + 两阶段 decay 内存回收。Redis、Rust、FreeBSD 默认。独有 profiling/heap dump 内置支持。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>mimalloc (2019→)</h4><div class="sub">Microsoft · Daan Leijen</div>
+      <p>核心创新：<em>Free List Sharding</em> — 每个 page 维护独立空闲链表，将竞争分散到数千个独立链表。极致低延迟 (~7 指令 fast path)，v3.0 重构中。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 架构全景对比 ══ -->
+<h2 class="sh">1. 三大分配器架构对比</h2>
+<p class="ss">一张表看清三种分配器的核心设计差异 — 线程模型 · 空闲链表 · 碎片策略 · 内存归还</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>维度</th><th>ptmalloc2 (glibc)</th><th>jemalloc</th><th>mimalloc</th></tr></thead>
+  <tbody>
+    <tr><td><strong>作者 / 维护方</strong></td><td>Doug Lea → glibc</td><td>Jason Evans / Meta</td><td>Daan Leijen / Microsoft</td></tr>
+    <tr><td><strong>首发年份</strong></td><td>~1996 (ptmalloc)</td><td>2005</td><td>2019</td></tr>
+    <tr><td><strong>当前版本</strong></td><td>glibc 2.40 内置</td><td>5.3.0</td><td>v2.1.7 / v3.1 beta</td></tr>
+    <tr><td><strong>代码量</strong></td><td>~6K LOC</td><td>~50K LOC</td><td>~8-10K LOC</td></tr>
+    <tr><td><strong>线程模型</strong></td><td>Arena (≤8×CPU)<br>互斥锁</td><td class="g">Per-CPU arena<br>无锁 tcache</td><td class="g">TLS heap<br>无锁 free list</td></tr>
+    <tr><td><strong>空闲链表</strong></td><td>5 类 bins (128 链)<br>全局 arena 锁</td><td class="g">bin + slab 位图<br>tcache 批量缓存</td><td class="g">每 page 独立 free list<br>三重分片 (free/local/xthread)</td></tr>
+    <tr><td><strong>小对象路径</strong></td><td>tcache → fastbin → smallbin<br>需 arena 锁</td><td class="g">tcache (无锁) → bin</td><td class="g">TLS page → free pop<br>~7 条指令</td></tr>
+    <tr><td><strong>大对象</strong></td><td>≥128KB 直接 mmap</td><td>≥14KB large extent</td><td>≥512KB huge os page</td></tr>
+    <tr><td><strong>内存回收</strong></td><td>brk 收缩 + malloc_trim<br>被动、碎片化后难回收</td><td class="g">两阶段 decay<br>(dirty→muzzy→retained)<br>后台线程异步 purging</td><td class="g">eager page reset<br>retire 到期归还 OS<br>原子 page 所有权</td></tr>
+    <tr><td><strong>碎片控制</strong></td><td class="r">弱 — 无迁移/压缩</td><td class="g">强 — slab 位图<br>size class 优化</td><td class="g">强 — free list sharding<br>分配局部性天然好</td></tr>
+    <tr><td><strong>内置 profiling</strong></td><td class="r">无 (mtrace 外部)</td><td class="g">✓ heap dump + 统计</td><td class="y">部分 (stats API)</td></tr>
+    <tr><td><strong>默认使用者</strong></td><td>所有 Linux 程序</td><td>FreeBSD, Redis, Rust</td><td>Koka, Lean, 新兴 Rust 项目</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch2: ptmalloc2 深度解析 ══ -->
+<h2 class="sh">2. ptmalloc2 — glibc 默认分配器</h2>
+<p class="ss">arena · bin · chunk · tcache — 最广泛使用的分配器，兼容性之王</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>核心架构</h4><div class="lbl">Arena → Bins → Chunks</div>
+    <p><strong>Arena</strong>: 每个线程竞争 arena 锁。main_arena 使用 brk 扩展，thread_arena 通过 mmap 创建。arena 数 ≤ 8×CPU，超出后复用已有 arena。<br>
+    <strong>Bins (5 类 128 链表)</strong>: fastbins (≤128B, LIFO, 不合并) → smallbins (32B~1008B, FIFO) → largebins (≥1KB, best-fit+跳表) → unsorted bin (缓存池)。glibc 2.26 新增 <strong>tcache</strong> (每线程 76 链, 无锁)。<br>
+    <strong>Top Chunk</strong>: 堆顶万能备胎，所有 bin 都空时从 top chunk 分割。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>关键问题与瓶颈</h4><div class="lbl">多线程锁竞争 · 碎片 · 回收难</div>
+    <p><strong>Arena 锁竞争</strong>: 多个线程映射到同一 arena → 互斥锁成为瓶颈。高并发下吞吐量急剧下降。<br>
+    <strong>内存碎片</strong>: 无内存迁移/压缩机制。brk 只能从顶部释放 → 底部有存活对象时整段内存无法归还 OS。<br>
+    <strong>回收被动</strong>: 依赖 malloc_trim (手动触发) 或 top chunk 自然收缩。无后台回收线程。<br>
+    <strong>tcache 安全</strong>: 2.26 引入时无 double-free 检查 → 成为安全利用热点。2.32+ 增加 safe-linking XOR 保护。</p>
+  </div>
+</div>
+
+<!-- ══ Ch3: jemalloc 深度解析 ══ -->
+<h2 class="sh">3. jemalloc — Facebook 的并发内存引擎</h2>
+<p class="ss">arena · extent · slab · bin · 两阶段 decay — Redis / Rust / FreeBSD 的选择</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#34d399">
+    <h4>分层架构</h4><div class="lbl">arena → extent → slab → region</div>
+    <p><strong>arena</strong>: 独立内存管理域，默认每 CPU 4 个。arena 之间完全无锁竞争。<br>
+    <strong>extent</strong> (5.0+): 取代旧 chunk，大小为 N×page 的虚拟内存块。通过 extent_hooks (9 个函数指针) 自定义生命周期。<br>
+    <strong>slab</strong>: 用于 small class 的 extent，内部通过<strong>位图</strong> 追踪每个 region 的占用状态。<br>
+    <strong>bin</strong>: 管理同一 size class 的所有 slab，有 slabcur (活跃) 和 slabs_nonfull 两个队列。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>tcache — 高速分配路径</h4><div class="lbl">per-thread · 批量缓存 · 无锁</div>
+    <p>每个线程有独立 <strong>tcache</strong> (thread cache)。每个 bin 对应一个 cache_bin，预缓存多个 region。<br>
+    分配: tcache→bin→slab，绝大部分请求在 tcache 命中 (无锁)。<br>
+    <strong>tcache GC</strong>: 每 228 次分配/释放触发一次 GC。low_water>0 → 回收 ~3/4 缓存；low_water&lt;0 → 增大缓存上限。<br>
+    <strong>批量填充</strong>: tcache miss 时从 slab 批量拿一批 region (lg_fill_div 控制数量)。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>两阶段 Decay 回收</h4><div class="lbl">dirty → muzzy → retained</div>
+    <p><strong>Lazy Purge</strong> (dirty→muzzy): <code>MADV_FREE</code> — 内核在内存压力时才回收，此前内容仍有效。<br>
+    <strong>Forced Purge</strong> (muzzy→retained): <code>MADV_DONTNEED</code> — 立即丢弃物理页，下次访问为全零。使用 smoothstep 平滑算法将 purge 分散到 200 个时间片中，避免 IO 尖峰。<br>
+    <code>dirty_decay_ms</code>=10000 · <code>muzzy_decay_ms</code>=10000 (可调)<br>
+    <strong>后台线程</strong>: opt-in 异步 purging，从用户关键路径剥离回收工作。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ jemalloc 小对象分配路径 ═══ */</span>
+<b>malloc(small_size)</b>
+  ├── tsd (Thread Specific Data) → tcache
+  ├── <i>tcache → bins_small[binind]</i>  — 缓存命中? → 弹出返回 (无锁!)
+  ├── <i>bin → slabcur</i>  — 当前 slabs 有空闲?
+  ├── <i>bin → slabs_nonfull</i>  — 扫描非满 slab 链表
+  ├── 从 extent heap 分配新 slab → 分配首个 region
+  └── extent heap 也空 → 逐级查找: extents_dirty → muzzy → retained → OS</div>
+
+<!-- ══ Ch4: mimalloc 深度解析 ══ -->
+<h2 class="sh">4. mimalloc — Free List Sharding 的极致设计</h2>
+<p class="ss">heap · segment · page · block — 微软研究院出品，~7 指令 fast path，代码量仅 8-10K</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>核心创新: Free List Sharding</h4><div class="lbl">每 page 独立空闲链表 → 数千个独立竞争域</div>
+    <p>传统分配器每个 size class 维护<strong>一个</strong>全局空闲链表 → 所有线程竞争同一把锁。mimalloc 每个 <strong>page 维护自己的空闲链表</strong> → 竞争自然分散到成千上万个链表上。<br>
+    <strong>三重空闲链表</strong>: 每个 page 维护三个链表 — <code>free</code> (主分配, 仅拥有线程访问)、<code>local_free</code> (本地释放)、<code>xthread_free</code> (跨线程释放, CAS 原子)。<br>
+    <strong>局部性保证</strong>: "同时分配的靠近存储" — 同一 page 内的分配在内存上连续。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>三层内存体系</h4><div class="lbl">Heap → Segment → Page → Block</div>
+    <p><strong>mi_heap_t</strong>: 每线程一个 TLS 堆。包含 pages_direct[] 快速查找数组 (按 size/8 索引)。<br>
+    <strong>mi_segment_t</strong>: 4MB 连续虚拟内存 (mmap)。内部划分为 slices → pages。通过 <code>ptr & ~(4MB)</code> 单指令定位。<br>
+    <strong>mi_page_t</strong>: 固定大小 blocks 的集合。三种: small (64KB page, &lt;8KB blocks)、large (4MB, &lt;512KB)、huge (≥512KB, 动态)。<br>
+    <strong>mi_block_t</strong>: 用户可见分配块，侵入式链表 (空闲 block 的前字节存 next 指针)。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ mimalloc 小对象分配 — Fast Path (~7 条 x86 指令) ═══ */</span>
+<b>malloc_small(n)</b>
+  ├── heap = TLS slot                    <span class="cm">// 线程本地堆</span>
+  ├── page = heap→pages_direct[(n+7)&gt;&gt;3]  <span class="cm">// 直接索引查 page</span>
+  ├── block = page→free                  <span class="cm">// 弹出可用 block</span>
+  ├── <i>if block == NULL → malloc_generic()</i>  <span class="cm">// slow path — 回收/扩展</span>
+  ├── page→free = block→next             <span class="cm">// 更新 free 头</span>
+  ├── page→used++                        <span class="cm">// 计数</span>
+  └── return block
+
+<span class="cm">/* ═══ Slow Path (malloc_generic) — 也是"垃圾回收"时机 ═══ */</span>
+<b>malloc_generic(heap, n)</b>
+  ├── <i>延迟释放</i> — 批量处理延迟释放的 blocks
+  ├── <i>Page 收集</i> — 遍历 page queue, 收集 local_free + xthread_free → free
+  ├── <i>释放空 page</i> — used - thread_freed == 0 → 归还
+  ├── <i>Page 旋转</i> — 找到空闲 page 后移到队首
+  └── <i>分配新 page</i> — 从 segment 获取或 mmap 新 segment</div>
+
+<div class="cg c2" style="margin-top:16px">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Full Page 优化</h4><div class="lbl">避免线性扫描满 page</div>
+    <p>满 page (free==NULL) 被移入独立的<strong>满页列表</strong> (MI_BIN_FULL)，不在常规扫描路径中。当 page 中的 block 被释放时，通过<strong>延迟释放 + 指针低位编码</strong> 实现无锁通知 heap 该 page 不再满。同一 page 的多次释放合并为一次检查 (批量化)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>安全模式</h4><div class="lbl">~3-10% 性能损失</div>
+    <p><strong>Guard Pages</strong>: 在 segment 末尾放置不可访问的保护页，检测缓冲区溢出。<br>
+    <strong>Free List 随机化 & 加密</strong>: 空闲链表指针 XOR 混淆，防止攻击者预测。<br>
+    <strong>Heap Corruption Detection</strong>: 释放时校验 block 合法性。<br>
+    通过 <code>MI_SECURE=1</code> 编译选项启用。适合安全敏感的生产环境。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">v3.0 重大变更 (alpha)</div>
+  v3.0 正在<strong>移除 segment 概念</strong>。不再有 4MB 固定段，page 直接通过独立的 OS allocator 分配。这简化了所有权模型，改善了跨线程内存共享和归还 OS 的效率。当前 v3.1.5 beta (2025-06)。
+</div>
+
+<!-- ══ Ch5: 并发模型对比 ══ -->
+<h2 class="sh">5. 并发模型 — 线程安全设计的三种哲学</h2>
+<p class="ss">三种分配器对多线程并发的处理方式截然不同</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>ptmalloc2 — 粗粒度 Arena 锁</h4><div class="lbl">arena mutex — 互斥锁全局保护</div>
+    <p>多个线程共享少数 arena，每个 arena 一把<strong>互斥锁</strong>。锁竞争随线程数增长而急剧恶化 — 典型瓶颈。tcache (2.26+) 缓解了单页分配，但 tcache miss 仍需获取 arena 锁。<br>
+    无锁退化: tcache → 加锁 arena → 扫描 bins。<br>
+    <strong>适合</strong>: 低并发、兼容性优先场景。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>jemalloc — Per-CPU Arena</h4><div class="lbl">arena × CPU — 细粒度隔离</div>
+    <p>每个 CPU 独占一组 arena，线程绑定到 CPU 的 arena。<strong>tcache 完全无锁</strong>。arena 内部使用<strong>多个细粒度 mutex</strong> (bin/extent 分别加锁)。<br>
+    后台线程异步 purging，不受用户分配路径影响。<br>
+    无锁退化: tcache → bin lock (细粒度) → extent lock。<br>
+    <strong>适合</strong>: 高并发服务、NUMA 环境。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>mimalloc — Free List Sharding</h4><div class="lbl">数千个独立竞争域 · 原子操作</div>
+    <p>每个 page 一个独立 free list → 竞争天然分散。<strong>全部使用原子 CAS 操作</strong>，无互斥锁。分配全在 TLS 中完成。跨线程 free 通过单次 CAS 原子推入 xthread_free → 拥有线程在 slow path 时批量合并。<br>
+    无锁退化: fast path (TLS) → slow path (bulk collect)。<br>
+    <strong>适合</strong>: 极致低延迟、无锁优先场景。</p>
+  </div>
+</div>
+
+<!-- ══ Ch6: 内存回收对比 ══ -->
+<h2 class="sh">6. 内存回收 — 如何归还空闲内存给 OS</h2>
+<p class="ss">三种分配器对"何时及如何归还物理内存"有不同的策略 — 直接影响系统整体内存使用</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>ptmalloc2 — 被动回收</h4><div class="lbl">brk 收缩 + malloc_trim</div>
+    <p><strong>brk 限制</strong>: 只能从堆顶收缩。底部有存活对象 → 整个堆段无法归还。<br>
+    <strong>mmap 大块</strong> (≥128KB): free 时立即 munmap，归还及时。<br>
+    <strong>malloc_trim</strong>: 手动触发 top chunk 收缩，非自动。<br>
+    <strong>问题</strong>: 长时间运行的服务 → 堆碎片化 → 内存越用越多 → 需要周期性重启。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>jemalloc — 两阶段 Smooth Decay</h4><div class="lbl">dirty→muzzy→retained · 后台线程</div>
+    <p><strong>Dirty Decay</strong> (默认 10s): <code>MADV_FREE</code> 标记 — 内核按需回收。<br>
+    <strong>Muzzy Decay</strong> (默认 10s): <code>MADV_DONTNEED</code> 强制回收物理页。<br>
+    <strong>Smoothstep 平滑</strong>: 200 个时间片逐步 purge，无 IO 尖峰。<br>
+    <strong>后台线程</strong>: 异步完成 purging，零分配路径开销。<br>
+    <strong>Retained</strong>: 未归还 OS 但可复用的虚存池。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>mimalloc — Eager Page Reset</h4><div class="lbl">积极归还 + retire 防抖</div>
+    <p><strong>Page 退休</strong>: page 变空后不立即释放 → 保留 retire_expire 时间 (防抖动)。<strong>超时后释放</strong>。<br>
+    <strong>Eager Reset</strong>: 定期 <code>MADV_DONTNEED</code> 重置空闲 page。<br>
+    <strong>Segment 释放</strong>: 整个 segment (4MB) 所有 page 都空闲 → munmap 归还 OS。<br>
+    <strong>v3.0 改进</strong>: 移除 segment 后归还粒度更细。目前 v2.1.x 中 segment 级别的归还较 jemalloc 的 retained 池化稍弱。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>回收维度</th><th>ptmalloc2</th><th>jemalloc</th><th>mimalloc</th></tr></thead>
+  <tbody>
+    <tr><td>归还 OS 的主动性</td><td class="r">被动</td><td class="g">主动 (后台异步)</td><td class="g">主动 (eager reset)</td></tr>
+    <tr><td>归还粒度</td><td class="y">粗 — top chunk</td><td class="g">细 — extent 级别</td><td class="g">细 — page 级别</td></tr>
+    <tr><td>碎片耐受</td><td class="r">差</td><td class="g">好</td><td class="g">好</td></tr>
+    <tr><td>长时间运行稳定性</td><td class="r">弱 (需重启)</td><td class="g">强</td><td class="g">强</td></tr>
+    <tr><td>后台线程</td><td class="r">无</td><td class="g">有</td><td class="r">无</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch7: 性能特征 ══ -->
+<h2 class="sh">7. 性能特征对比</h2>
+<p class="ss">多线程争用 · 分配延迟 · 碎片率 · 内存开销 — 横评基准</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>性能维度</th><th>ptmalloc2</th><th>jemalloc</th><th>mimalloc</th></tr></thead>
+  <tbody>
+    <tr><td><strong>单线程分配</strong></td><td class="y">中等</td><td class="y">中等</td><td class="g"><strong>最快 (~7 指令)</strong></td></tr>
+    <tr><td><strong>多线程 (低并发)</strong></td><td class="y">可接受</td><td class="g">优秀</td><td class="g">优秀</td></tr>
+    <tr><td><strong>多线程 (高并发)</strong></td><td class="r"><strong>锁竞争急剧恶化</strong></td><td class="g">优秀 (per-CPU arena)</td><td class="g">优秀 (free list sharding)</td></tr>
+    <tr><td><strong>分配延迟 (p99)</strong></td><td class="r">高 (锁 + 遍历)</td><td class="g">低 (tcache 批量)</td><td class="g"><strong>极低 (~7 insns fast)</strong></td></tr>
+    <tr><td><strong>内存碎片</strong></td><td class="r">高 (长期运行)</td><td class="g">低 (slab + size class)</td><td class="g">低 (页局部性)</td></tr>
+    <tr><td><strong>内存开销 (元数据)</strong></td><td class="y">~1% (8B/chunk)</td><td class="y">~2% (位图+extent)</td><td class="g">~0.2%</td></tr>
+    <tr><td><strong>false sharing 防护</strong></td><td class="r">无</td><td class="y">部分 (cache-oblivious)</td><td class="g">自然隔离 (sharding)</td></tr>
+    <tr><td><strong>NUMA 感知</strong></td><td class="r">无</td><td class="g">有 (arena-node 绑定)</td><td class="y">有限</td></tr>
+    <tr><td><strong>实时性 (WCAT)</strong></td><td class="r">无保证</td><td class="y">有限 (bin 固定大小)</td><td class="g"><strong>有界</strong></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch8: 选型指南 ══ -->
+<h2 class="sh">8. 选型指南 &amp; 实战切换</h2>
+<p class="ss">根据场景选择最合适的分配器 · 一行命令切换 · 典型配置示例</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>选择 ptmalloc2 当…</h4><div class="lbl">兼容性 > 性能</div>
+    <p>① 无法替换 libc 的嵌入式环境<br>
+    ② 低并发 (< 4 线程) 的应用<br>
+    ③ 需要 glibc 官方支持的生产环境<br>
+    ④ 调试工具链依赖 glibc malloc<br>
+    ⑤ 不愿引入额外依赖</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>选择 jemalloc 当…</h4><div class="lbl">并发 + 稳定 + 可观测</div>
+    <p>① 高并发网络服务 (Redis、Nginx)<br>
+    ② 需要 heap profiling / dump<br>
+    ③ 长时间运行的服务 (避免碎片)<br>
+    ④ NUMA 环境多核服务器<br>
+    ⑤ 内存敏感 + 需要细粒度控制</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>选择 mimalloc 当…</h4><div class="lbl">延迟 + 简洁 + 现代</div>
+    <p>① 延迟敏感 (游戏、HFT、GUI)<br>
+    ② 新项目、Rust 生态<br>
+    ③ 重视代码简洁性 (8K LOC)<br>
+    ④ 模块化部署 (单头文件可选)<br>
+    ⑤ 安全敏感 (secure mode)</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 切换分配器的三种方式 ===== */</span>
+
+<span class="cm"># 方法 1: LD_PRELOAD — 运行时替换 (最常用)</span>
+<span class="cm"># jemalloc</span>
+LD_PRELOAD=/usr/lib/libjemalloc.so ./myapp
+<span class="cm"># mimalloc</span>
+LD_PRELOAD=/usr/lib/libmimalloc.so ./myapp
+
+<span class="cm"># 方法 2: 链接时替换 — 编译期静态选择</span>
+gcc myapp.c -o myapp -ljemalloc       <span class="cm">// 链接 jemalloc</span>
+gcc myapp.c -o myapp -lmimalloc       <span class="cm">// 链接 mimalloc</span>
+
+<span class="cm"># 方法 3: Rust — Cargo.toml 配置</span>
+<span class="cm"># jemalloc (Rust 默认 — 可通过 feature 切换)</span>
+<span class="cm"># mimalloc</span>
+[<span class="kw">dependencies</span>]
+mimalloc = { version = <span class="st">"0.1"</span>, features = [<span class="st">"local_dynamic_tls"</span>] }
+<span class="cm">// 在 main.rs 顶部:</span>
+<span class="kw">use</span> mimalloc::MiMalloc;
+<span class="kw">#[global_allocator]</span>
+<span class="kw">static</span> GLOBAL: MiMalloc = MiMalloc;
+
+<span class="cm">/* ===== jemalloc 调优 — /etc/malloc.conf 或环境变量 ===== */</span>
+<span class="kw">export</span> MALLOC_CONF=<span class="st">"background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000"</span>
+
+<span class="cm">/* ===== 确认当前使用的分配器 ===== */</span>
+ldd ./myapp | grep -E <span class="st">'jemalloc|mimalloc|tcmalloc'</span>
+pmap -x $$ | head -<span class="nu">5</span>                     <span class="cm">// 查看进程内存布局</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ LD_PRELOAD 的注意事项</div>
+  ① LD_PRELOAD 只能替换动态链接的 malloc/free 调用 — <strong>静态链接 glibc 或内联的 malloc 不受影响</strong>。<br>
+  ② 某些程序通过 dlsym(RTLD_NEXT, "malloc") 调用 — 可能与 preload 的分配器冲突。<br>
+  ③ 替换分配器后内存行为可能完全不同 — <strong>必须重新做内存压力测试</strong>。<br>
+  ④ glibc 的 <code>mallopt()</code>、<code>malloc_info()</code>、<code>malloc_trim()</code> 接口在替换后不可用。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Memory Allocators — ptmalloc2 · jemalloc · mimalloc 深度对比 · 2026-06
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

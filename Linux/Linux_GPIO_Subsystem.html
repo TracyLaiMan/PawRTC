@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux GPIO 子系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,42px);font-weight:900">Linux GPIO 子系统</h2>
+  <p class="sec-sub">系统化知识体系 — gpiolib · gpio_chip · pinctrl · Device Tree · IRQ · 用户空间交互</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>GPIO 驱动</strong><br><small>gpio_chip ops</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>GPIOLIB</strong><br><small>核心管理层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Consumer API</strong><br><small>gpiod_*()</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>User Space</strong><br><small>/dev/gpiochipX</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>硬件抽象</h4><div class="sub">gpio_chip → gpio_desc</div>
+      <p>每个 GPIO 控制器实现 <code>gpio_chip</code> 结构体，注册到 <em>GPIOLIB 核心层</em>。每条物理引脚对应一个 <code>gpio_desc</code>。2024 年重构: <code>gpio_device</code> 封装替代直接访问 chip。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>消费者 API</h4><div class="sub">gpiod_get() · gpiod_set_value()</div>
+      <p>驱动开发者通过 <em>描述符 API</em> 请求和控制 GPIO：<code>devm_gpiod_get()</code> 自动从 DT 解析、<code>gpiod_set_value()</code> 写电平、<code>gpiod_to_irq()</code> 转中断。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>pinctrl 协作</h4><div class="sub">引脚复用 + 电气配置</div>
+      <p>pinctrl 子系统管理<em>引脚复用</em> (GPIO vs UART vs I2C…) 和<em>电气特性</em> (上下拉·驱动强度·施密特触发)。GPIO 仅在其被复用为 GPIO 模式后才能操作电平。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 架构总览 ══ -->
+<h2 class="sh">1. 架构总览 — GPIO 子系统的三层模型</h2>
+<p class="ss">GPIOLIB 核心 · gpio_chip 驱动接口 · gpiod_* 消费者 API — 从硬件到应用的完整数据路径</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>层级</th><th>角色</th><th>核心数据结构</th><th>关键文件</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Provider 层</strong></td><td>GPIO 控制器驱动</td><td><code>gpio_chip</code></td><td><code>drivers/gpio/gpio-*.c</code></td></tr>
+    <tr><td><strong>GPIOLIB 核心层</strong></td><td>统一抽象 &amp; 管理</td><td><code>gpio_desc</code> · <code>gpio_device</code></td><td><code>drivers/gpio/gpiolib*.c</code></td></tr>
+    <tr><td><strong>Consumer 层</strong></td><td>驱动程序使用者</td><td><code>gpio_desc</code> (不透明句柄)</td><td><code>include/linux/gpio/consumer.h</code></td></tr>
+    <tr><td><strong>User Space</strong></td><td>应用层访问</td><td>字符设备 <code>/dev/gpiochipX</code></td><td><code>drivers/gpio/gpiolib-cdev.c</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c3" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>gpio_chip — 控制器抽象</h4><div class="lbl">include/linux/gpio/driver.h</div>
+    <p>GPIO 控制器驱动必须填充的回调集。<code>get_direction / direction_input / direction_output / get / set</code> 为 6 个核心 ops。<code>ngpio</code> 声明管理的引脚数，<code>can_sleep</code> 标记是否可睡眠 (I2C/SPI 扩展器 = true)。通过 <code>devm_gpiochip_add_data()</code> 注册。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>gpio_desc — 单线描述符</h4><div class="lbl">gpiolib.h (私有)</div>
+    <p>每个物理 GPIO 线对应一个 <code>gpio_desc</code>。包含指向 <code>gpio_chip</code> 的指针、<strong>FLAG_REQUESTED / FLAG_IS_OUT / FLAG_OPEN_DRAIN / FLAG_USED_AS_IRQ</strong> 等状态位、label 名称字符串。2024 年将 <code>debounce_period_us</code> 移出以缩小结构体。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>gpio_device — 设备抽象 (NEW)</h4><div class="lbl">2023-2024 重构的封装层</div>
+    <p>2024 年重大封装改进: <code>gpio_device</code> 替代直接访问 gpio_chip。包含全局 ID、嵌入的 <code>device</code> (sysfs)、<code>cdev</code> (字符设备)、SRCU 保护的 chip 指针。新 API: <code>gpio_device_find_by_label/fwnode()</code> 替代已删除的 <code>gpiochip_find()</code>。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ GPIO 注册路径 ═══ */</span>
+<b>gpio-mychip.c</b>  (驱动)
+  ├── 填充 <i>gpio_chip</i>
+  │     ├── .label = <span class="st">"mygpio"</span>
+  │     ├── .ngpio = <span class="nu">32</span>
+  │     ├── .get_direction / .direction_input / .direction_output
+  │     ├── .get / .set
+  │     └── 可选: .to_irq / .set_config / .set_debounce
+  └── <b>devm_gpiochip_add_data(dev, chip, priv)</b>
+        └── gpiochip_add_data_with_key()
+              ├── 分配 <i>gpio_device</i> + 内嵌 device + cdev
+              ├── 分配 <i>gpio_desc[ngpio]</i> 数组
+              ├── 每个 desc 反向指向 chip
+              ├── 注册字符设备 <b>/dev/gpiochipX</b>
+              ├── 注册 sysfs 属性
+              └── 加入全局 SRCU 保护的设备链表</div>
+
+<!-- ══ Ch2: 2024 重构 ══ -->
+<h2 class="sh">2. GPIOLIB 2024 年度重构 — SRCU 并发 · 封装 · 废弃清理</h2>
+<p class="ss">Bartosz Golaszewski 主导的最大重构 — 全局自旋锁退役 · gpio_chip 封装 · API 现代化</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>并发模型升级: spinlock → SRCU</h4><div class="lbl">gpio_lock 自旋锁被彻底移除</div>
+    <p>旧设计中全局 <code>gpio_lock</code> spinlock 保护设备链表和描述符字段 → 所有 GPIO 操作<strong>竞争同一把锁</strong>。新设计使用 <strong>SRCU (Sleepable RCU)</strong>: 读取方无锁并发，写入方 (注册/注销) 使用 <code>synchronize_srcu()</code> 等所有读取方退出。描述符 label、chip 指针等字段均受 SRCU 保护。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>删除/废弃的旧 API</h4><div class="lbl">v6.8 – v6.11 清理清单</div>
+    <p><code>gpiochip_add()</code> — 已删除，统一用 <code>gpiochip_add_data()</code><br>
+    <code>gpiochip_find()</code> — 已删除，改用 <code>gpio_device_find()</code><br>
+    <code>gpiochip_is_requested()</code> — 已删除，改用 <code>gpiochip_dup_line_label()</code><br>
+    <code>gpio_cansleep()</code> — 已删除<br>
+    <code>gpiochip_get_desc()</code> — 已 unexport (内部函数)<br>
+    IRQ domain 函数 — 全部 unexport 为内部专用</p>
+  </div>
+</div>
+
+<!-- ══ Ch3: Consumer API ══ -->
+<h2 class="sh">3. Consumer API — 驱动开发者如何使用 GPIO</h2>
+<p class="ss">描述符获取 → 方向设置 → 读写值 → 中断转换 — 完整的驱动侧 GPIO 操作手册</p>
+
+<div class="cb">
+<span class="cm">/* ===== Consumer API 完整示例 (include/linux/gpio/consumer.h) ===== */</span>
+
+<span class="cm">/* 1. 获取 GPIO 描述符 */</span>
+<span class="kw">struct</span> <span class="ty">gpio_desc</span> *reset_gpio;     <span class="cm">// 不透明句柄 — 不再使用 int 编号</span>
+<span class="kw">struct</span> <span class="ty">gpio_desc</span> *led_gpio;
+<span class="kw">struct</span> <span class="ty">gpio_descs</span> *data_bus;      <span class="cm">// 批量 GPIO</span>
+
+<span class="cm">// 从设备树 "reset-gpios" 属性获取 (推荐 devm 托管版本)</span>
+reset_gpio = <span class="fn">devm_gpiod_get</span>(dev, <span class="st">"reset"</span>, <span class="ma">GPIOD_OUT_HIGH</span>);
+led_gpio   = <span class="fn">devm_gpiod_get_optional</span>(dev, <span class="st">"led"</span>, <span class="ma">GPIOD_OUT_LOW</span>);
+
+<span class="cm">// 按索引获取 (如 "gpios" = &lt;&amp;gpio 5 0, &amp;gpio 6 0&gt;)</span>
+data_0 = <span class="fn">devm_gpiod_get_index</span>(dev, <span class="st">"data"</span>, <span class="nu">0</span>, <span class="ma">GPIOD_IN</span>);
+data_1 = <span class="fn">devm_gpiod_get_index</span>(dev, <span class="st">"data"</span>, <span class="nu">1</span>, <span class="ma">GPIOD_IN</span>);
+
+<span class="cm">// 批量获取 (一把拿所有)</span>
+data_bus = <span class="fn">devm_gpiod_get_array</span>(dev, <span class="st">"data"</span>, <span class="ma">GPIOD_IN</span>);
+
+<span class="cm">/* 2. 方向与值操作 */</span>
+<span class="fn">gpiod_direction_input</span>(desc);            <span class="cm">// 设为输入</span>
+<span class="fn">gpiod_direction_output</span>(desc, <span class="nu">1</span>);       <span class="cm">// 设为输出, 初始值=1</span>
+
+<span class="ty">int</span> val = <span class="fn">gpiod_get_value</span>(desc);         <span class="cm">// 读电平 (0/1)</span>
+<span class="fn">gpiod_set_value</span>(desc, <span class="nu">0</span>);               <span class="cm">// 写电平</span>
+
+<span class="cm">/* 3. 高级配置 */</span>
+<span class="fn">gpiod_set_debounce</span>(desc, <span class="nu">5000</span>);         <span class="cm">// 去抖 5ms</span>
+<span class="fn">gpiod_set_open_drain</span>(desc);             <span class="cm">// 开漏模式</span>
+<span class="fn">gpiod_set_open_source</span>(desc);            <span class="cm">// 开源模式</span>
+
+<span class="cm">/* 4. 中断 — GPIO 线作为 IRQ 源 */</span>
+<span class="ty">int</span> irq = <span class="fn">gpiod_to_irq</span>(desc);            <span class="cm">// GPIO → IRQ 编号</span>
+<span class="fn">request_irq</span>(irq, my_handler, <span class="ma">IRQF_TRIGGER_RISING</span>, <span class="st">"myirq"</span>, dev);
+
+<span class="cm">/* 5. 释放 — devm 版本自动释放, 手动版本: */</span>
+<span class="fn">gpiod_put</span>(desc);</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>GPIOD_* 标志</th><th>含义</th><th>GPIOD_* 标志</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><code>GPIOD_IN</code></td><td>获取后设为输入</td><td><code>GPIOD_OUT_LOW</code></td><td>获取后输出低电平</td></tr>
+    <tr><td><code>GPIOD_OUT_HIGH</code></td><td>获取后输出高电平</td><td><code>GPIOD_ASIS</code></td><td>不改变方向</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">GPIO 查找优先级</div>
+  ① <strong>Device Tree</strong> — <code>reset-gpios = &lt;&amp;gpio0 5 0&gt;</code> → gpiod_get(dev, "reset")<br>
+  ② <strong>ACPI</strong> — GpioIo/GpioInt 资源描述符<br>
+  ③ <strong>Software Nodes</strong> — 编程式定义的 fwnode 属性<br>
+  ④ <strong>Platform Lookup Table</strong> — 传统 <code>gpiod_lookup_table</code> (板文件使用)
+</div>
+
+<!-- ══ Ch4: pinctrl ══ -->
+<h2 class="sh">4. pinctrl — 引脚复用与电气配置</h2>
+<p class="ss">GPIO 只是众多引脚功能之一 · pinctrl 负责决定"这个引脚是什么"· GPIO 操作其电平</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>pinctrl 管理的三个维度</h4><div class="lbl">Pin · Pin Group · Pin Function</div>
+    <p><strong>Pin (引脚)</strong>: 单个物理 PAD — 通过 <code>pinctrl_pin_desc</code> 描述<br>
+    <strong>Pin Group (引脚组)</strong>: 一组功能相关的引脚。如 SPI0 的 MOSI/MISO/CLK/CS 四条线<br>
+    <strong>Pin Function (功能)</strong>: 引脚的 ALT 模式。如 "gpio", "spi0", "uart2_tx", "i2c0_scl"<br>
+    <strong>Pin Configuration (电气)</strong>: bias-pull-up/down、drive-strength、slew-rate、schmitt-trigger</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>GPIO 与 pinctrl 的桥接</h4><div class="lbl">gpio_request 隐式调用 pinctrl</div>
+    <p><code>gpiod_get()</code> → <code>gpiod_request()</code> → <code>pinctrl_gpio_request()</code> → <code>pinmux_ops.gpio_request_enable()</code> — <strong>将引脚复用切换为 GPIO 模式</strong>。<br>
+    反过来，consumer 设备的 <code>pinctrl-0</code> 属性在驱动 probe 时自动应用，将引脚切换到对应外设功能。<br>
+    两个子系统<strong>自动协同</strong> — 驱动开发者通常无需手动管理。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>pinctrl 状态</th><th>何时应用</th><th>典型用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>"default"</code></td><td>驱动 probe 时自动</td><td>正常工作模式</td></tr>
+    <tr><td><code>"sleep"</code></td><td>系统 suspend</td><td>低功耗引脚配置</td></tr>
+    <tr><td><code>"idle"</code></td><td>runtime PM idle</td><td>空闲省电但不全休眠</td></tr>
+    <tr><td><code>"init"</code></td><td>probe 前 (先于 default)</td><td>硬件初始化状态</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch5: Device Tree ══ -->
+<h2 class="sh">5. Device Tree 绑定 — Provider &amp; Consumer 双视角</h2>
+<p class="ss">gpio-controller 节点声明 · 消费者引用 · gpio-cells 编码 · 实际板级示例</p>
+
+<div class="cb">
+<span class="cm">/* ===== Provider 端: GPIO 控制器节点 ===== */</span>
+gpio0: gpio@<span class="nu">44e07000</span> {
+    compatible = <span class="st">"ti,am3352-gpio"</span>;
+    reg = &lt;<span class="nu">0x44e07000 0x1000</span>&gt;;
+    interrupts = &lt;<span class="nu">96</span>&gt;;
+
+    <span class="kw">gpio-controller</span>;                    <span class="cm">// ⭐ 声明"我是 GPIO 控制器"</span>
+    <span class="kw">#gpio-cells</span> = &lt;<span class="nu">2</span>&gt;;                  <span class="cm">// ⭐ Consumer 引用的 cell 数量</span>
+    <span class="kw">gpio-ranges</span> = &lt;&amp;pinctrl <span class="nu">0 0 32</span>&gt;;    <span class="cm">// 关联 pinctrl (pinctrl, gpio_base, pin_base, count)</span>
+
+    <span class="kw">interrupt-controller</span>;               <span class="cm">// 可选 — GPIO 同时是中断控制器</span>
+    <span class="kw">#interrupt-cells</span> = &lt;<span class="nu">2</span>&gt;;
+    <span class="kw">gpio-line-names</span> = <span class="st">"LED0"</span>, <span class="st">"LED1"</span>, <span class="st">"BTN0"</span>, <span class="st">"NC"</span>;  <span class="cm">// 可选的线名称</span>
+};
+
+<span class="cm">/* ===== Consumer 端: 使用者如何引用 GPIO ===== */</span>
+&amp;i2c0 {
+    <span class="kw">pinctrl-names</span> = <span class="st">"default"</span>, <span class="st">"sleep"</span>;
+    <span class="kw">pinctrl-0</span> = &lt;&amp;i2c0_pins_default&gt;;       <span class="cm">// 引脚功能配置</span>
+    <span class="kw">pinctrl-1</span> = &lt;&amp;i2c0_pins_sleep&gt;;
+
+    <span class="kw">sda-gpios</span> = &lt;&amp;gpio0 <span class="nu">2</span> <span class="ma">GPIO_ACTIVE_HIGH</span>&gt;;  <span class="cm">// gpio-cells=2: [pin, flags]</span>
+    <span class="kw">scl-gpios</span> = &lt;&amp;gpio0 <span class="nu">3</span> (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)&gt;;
+};
+
+<span class="cm">/* ===== LED / Button / Regulator — 纯 GPIO Consumer ===== */</span>
+leds {
+    compatible = <span class="st">"gpio-leds"</span>;
+    led-act {
+        <span class="kw">gpios</span> = &lt;&amp;gpio1 <span class="nu">21</span> <span class="ma">GPIO_ACTIVE_HIGH</span>&gt;;  <span class="cm">// 驱动中: gpiod_get(dev, NULL, ...)</span>
+        linux,default-trigger = <span class="st">"heartbeat"</span>;
+    };
+};
+
+gpio_keys {
+    compatible = <span class="st">"gpio-keys"</span>;
+    button {
+        <span class="kw">gpios</span> = &lt;&amp;gpio0 <span class="nu">15</span> <span class="ma">GPIO_ACTIVE_LOW</span>&gt;;
+        linux,code = &lt;<span class="ma">KEY_ENTER</span>&gt;;
+        debounce-interval = <span class="nu">50</span>;              <span class="cm">// 去抖 50ms</span>
+    };
+};
+
+<span class="cm">/* ===== GPIO Hog — 内核启动时自动占用的 GPIO ===== */</span>
+&amp;gpio0 {
+    line-x-hog {
+        <span class="kw">gpio-hog</span>;                           <span class="cm">// 启动时自动 request</span>
+        gpios = &lt;<span class="nu">22</span> <span class="ma">GPIO_ACTIVE_HIGH</span>&gt;;
+        output-high;                       <span class="cm">// 或 output-low / input</span>
+        line-name = <span class="st">"usb-power-en"</span>;
+    };
+};</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>Consumer 属性名</th><th>Driver 侧 API 调用</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>gpios</code></td><td><code>devm_gpiod_get(dev, NULL, flags)</code></td><td>通用 GPIO 列表</td></tr>
+    <tr><td><code>&lt;name&gt;-gpios</code></td><td><code>devm_gpiod_get(dev, "name", flags)</code></td><td>命名单个 GPIO</td></tr>
+    <tr><td><code>reset-gpios</code></td><td><code>devm_gpiod_get(dev, "reset", flags)</code></td><td>复位引脚</td></tr>
+    <tr><td><code>enable-gpios</code></td><td><code>devm_gpiod_get(dev, "enable", flags)</code></td><td>使能引脚</td></tr>
+    <tr><td><code>cd-gpios</code></td><td><code>devm_gpiod_get(dev, "cd", flags)</code></td><td>卡检测 (MMC 子系统)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">gpio-cells=2 的编码</div>
+  cell 0 = GPIO 线编号 (在 gpio-controller 内部的偏移)<br>
+  cell 1 = 标志位: <code>GPIO_ACTIVE_HIGH</code> (0) / <code>GPIO_ACTIVE_LOW</code> (1) / <code>GPIO_OPEN_DRAIN</code> / <code>GPIO_OPEN_SOURCE</code> / <code>GPIO_PULL_UP</code> / <code>GPIO_PULL_DOWN</code><br>
+  某些控制器使用 <code>#gpio-cells = &lt;3&gt;</code> — 第三个 cell 传去抖时间或 bank 编号。
+</div>
+
+<!-- ══ Ch6: 驱动实例 ══ -->
+<h2 class="sh">6. GPIO 驱动开发 — Provider 侧完整模板</h2>
+<p class="ss">从零编写 gpio_chip 驱动 · devm 托管 · IRQ chip 集成 · 2024 推荐实践</p>
+
+<div class="cb">
+<span class="cm">/* ===== GPIO 控制器驱动 — 最小实现 (platform_driver) ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/gpio/driver.h&gt;</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/platform_device.h&gt;</span>
+
+<span class="kw">struct</span> <span class="ty">my_gpio_priv</span> {
+    <span class="kw">struct</span> <span class="ty">gpio_chip</span>  chip;       <span class="cm">// 嵌入 gpio_chip</span>
+    <span class="ty">void</span> __iomem      *base;       <span class="cm">// 寄存器基址</span>
+    <span class="ty">spinlock_t</span>       lock;       <span class="cm">// 寄存器访问锁</span>
+};
+
+<span class="cm">/* ===== gpio_chip 核心回调实现 ===== */</span>
+<span class="kw">static int</span> <span class="fn">my_gpio_get</span>(<span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc, <span class="kw">unsigned int</span> offset)
+{
+    <span class="kw">struct</span> <span class="ty">my_gpio_priv</span> *priv = <span class="fn">gpiochip_get_data</span>(gc);
+    <span class="ty">u32</span> val = <span class="fn">readl</span>(priv-&gt;base + GPIO_DATA_IN);
+    <span class="kw">return</span> !!(val &amp; <span class="fn">BIT</span>(offset));
+}
+
+<span class="kw">static void</span> <span class="fn">my_gpio_set</span>(<span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc, <span class="kw">unsigned int</span> offset, <span class="ty">int</span> value)
+{
+    <span class="kw">struct</span> <span class="ty">my_gpio_priv</span> *priv = <span class="fn">gpiochip_get_data</span>(gc);
+    <span class="ty">unsigned long</span> flags;
+    <span class="fn">spin_lock_irqsave</span>(&amp;priv-&gt;lock, flags);
+    <span class="kw">if</span> (value)
+        <span class="fn">writel</span>(<span class="fn">BIT</span>(offset), priv-&gt;base + GPIO_DATA_SET);
+    <span class="kw">else</span>
+        <span class="fn">writel</span>(<span class="fn">BIT</span>(offset), priv-&gt;base + GPIO_DATA_CLR);
+    <span class="fn">spin_unlock_irqrestore</span>(&amp;priv-&gt;lock, flags);
+}
+
+<span class="kw">static int</span> <span class="fn">my_gpio_direction_input</span>(<span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc, <span class="kw">unsigned int</span> offset)
+    { <span class="cm">/* 写方向寄存器: 0 = 输入 */</span> <span class="kw">return</span> <span class="nu">0</span>; }
+
+<span class="kw">static int</span> <span class="fn">my_gpio_direction_output</span>(<span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc, <span class="kw">unsigned int</span> offset, <span class="ty">int</span> v)
+    { <span class="cm">/* 写方向寄存器: 1 = 输出, 再写值 */</span> <span class="kw">return</span> <span class="nu">0</span>; }
+
+<span class="kw">static int</span> <span class="fn">my_gpio_get_direction</span>(<span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc, <span class="kw">unsigned int</span> offset)
+    { <span class="cm">/* 读方向寄存器 */</span> <span class="kw">return</span> <span class="ma">GPIO_LINE_DIRECTION_IN</span>; }
+
+<span class="cm">/* ===== probe — 注册 gpio_chip ===== */</span>
+<span class="kw">static int</span> <span class="fn">my_gpio_probe</span>(<span class="kw">struct</span> <span class="ty">platform_device</span> *pdev)
+{
+    <span class="kw">struct</span> <span class="ty">my_gpio_priv</span> *priv;
+    <span class="kw">struct</span> <span class="ty">gpio_chip</span> *gc;
+
+    priv = <span class="fn">devm_kzalloc</span>(&amp;pdev-&gt;dev, <span class="kw">sizeof</span>(*priv), <span class="ma">GFP_KERNEL</span>);
+    priv-&gt;base = <span class="fn">devm_platform_ioremap_resource</span>(pdev, <span class="nu">0</span>);
+    <span class="fn">spin_lock_init</span>(&amp;priv-&gt;lock);
+
+    gc = &amp;priv-&gt;chip;
+    gc-&gt;<span class="op">label</span>    = <span class="st">"mygpio"</span>;                <span class="cm">// 显示名</span>
+    gc-&gt;<span class="op">ngpio</span>    = <span class="nu">32</span>;                      <span class="cm">// 管理的线数</span>
+    gc-&gt;<span class="op">parent</span>   = &amp;pdev-&gt;dev;              <span class="cm">// 父设备 (sysfs 关联)</span>
+    gc-&gt;<span class="op">base</span>     = -<span class="nu">1</span>;                      <span class="cm">// 动态分配基址 (推荐)</span>
+    gc-&gt;<span class="op">can_sleep</span> = <span class="kw">false</span>;                  <span class="cm">// MMIO 寄存器访问不同睡眠</span>
+    gc-&gt;<span class="op">get_direction</span> = my_gpio_get_direction;
+    gc-&gt;<span class="op">direction_input</span>  = my_gpio_direction_input;
+    gc-&gt;<span class="op">direction_output</span> = my_gpio_direction_output;
+    gc-&gt;<span class="op">get</span>   = my_gpio_get;
+    gc-&gt;<span class="op">set</span>   = my_gpio_set;
+
+    <span class="kw">return</span> <span class="fn">devm_gpiochip_add_data</span>(&amp;pdev-&gt;dev, gc, priv);
+}
+
+<span class="kw">static struct</span> <span class="ty">platform_driver</span> my_gpio_drv = {
+    <span class="op">.driver</span> = { <span class="op">.name</span> = <span class="st">"my-gpio"</span>, <span class="op">.of_match_table</span> = my_match_table },
+    <span class="op">.probe</span>  = my_gpio_probe,
+};
+<span class="fn">module_platform_driver</span>(my_gpio_drv);</div>
+
+<!-- ══ Ch7: 用户空间 ══ -->
+<h2 class="sh">7. 用户空间交互 — gpio-tools 与字符设备</h2>
+<p class="ss">CDev /dev/gpiochipX · gpiodetect/gpioinfo/gpioget/gpioset/gpiomon · 废弃的 sysfs /sys/class/gpio</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>字符设备接口 (现代推荐)</h4><div class="lbl">/dev/gpiochipX — ioctl + poll</div>
+    <p><strong>gpiodetect</strong> — 列出所有 GPIO 控制器<br>
+    <strong>gpioinfo</strong> — 查看控制器所有线的状态 (consumer/方向/电平)<br>
+    <strong>gpioget</strong> — 读一条线 (自动 request→读→release)<br>
+    <strong>gpioset</strong> — 写一条线 (支持保持模式: 退出后不释放)<br>
+    <strong>gpiomon</strong> — 监控边沿事件 (上升/下降/双沿 + 时间戳)</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>旧 sysfs 接口 (已废弃)</h4><div class="lbl">/sys/class/gpio/ — 勿用于新设计</div>
+    <p><code>echo N &gt; /sys/class/gpio/export</code> — 导出 GPIO N<br>
+    <code>echo out &gt; /sys/class/gpio/gpioN/direction</code><br>
+    <code>echo 1 &gt; /sys/class/gpio/gpioN/value</code><br>
+    问题: 全局编号不稳定、无所有权追踪、已导出 GPIO 拔模块时内核 oops。字符设备已完全覆盖所有功能且更安全。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== gpio-tools 实战 ===== */</span>
+<span class="cm"># 列出所有 GPIO 控制器</span>
+gpiodetect
+<span class="cm"># gpiochip0 [gpio0] (32 lines)</span>
+<span class="cm"># gpiochip1 [gpio1] (32 lines)</span>
+<span class="cm"># gpiochip2 [pca953x] (16 lines)</span>
+
+<span class="cm"># 查看 gpiochip0 所有线的详细信息</span>
+gpioinfo <span class="nu">0</span>
+<span class="cm"># line  0:  "LED0"  output  active-high  [used]</span>
+<span class="cm"># line  1:  unnamed  input   active-high  [unused]</span>
+
+<span class="cm"># 读一条 GPIO</span>
+gpioget <span class="nu">0 1</span>          <span class="cm">// gpiochip0 line 1</span>
+
+<span class="cm"># 写一条 GPIO (保持模式: 退出后不释放)</span>
+gpioset --hold <span class="nu">0 0</span>=<span class="nu">1</span>   <span class="cm">// gpiochip0 line 0 = high, 不释放</span>
+
+<span class="cm"># 监控边沿事件</span>
+gpiomon <span class="nu">0 15</span>          <span class="cm">// 监控 gpiochip0 line 15 的双沿事件</span>
+<span class="cm"># event: RISING EDGE offset: 15 timestamp: [1730123456.789012]</span></div>
+
+<div class="callout info">
+  <div class="ct">字符设备 IOCTL 支持的高级操作</div>
+  <strong>Line Handle</strong>: 一次取多条线 → 原子性读写 → 适合并行总线控制<br>
+  <strong>Line Event</strong>: 边沿检测 + 实时时间戳 (CLOCK_MONOTONIC / CLOCK_REALTIME) → 无需轮询<br>
+  <strong>Watch 模式</strong>: 内核主动通知线信息变更 (consumer 请求/释放) → <code>gpio-watch</code> 工具
+</div>
+
+<!-- ══ Ch8: 调试 ══ -->
+<h2 class="sh">8. 调试与诊断</h2>
+<p class="ss">debugfs · Dynamic Debug · /sys/kernel/debug/gpio · 常见问题速查</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>调试入口</th><th>内容</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>cat /sys/kernel/debug/gpio</code></td><td>所有已注册 GPIO 控制器的线状态一览</td><td><strong>第一手诊断</strong> — 看哪些线被哪些驱动占用</td></tr>
+    <tr><td><code>echo "file drivers/gpio/* +p" &gt; dyndbg</code></td><td>启用所有 GPIO 驱动 pr_debug 输出</td><td>追踪 gpiod_get/set 调用链路</td></tr>
+    <tr><td><code>gpioinfo &lt;chip&gt;</code></td><td>字符设备级线状态</td><td>与 debugfs 互补 — 显示 consumer label</td></tr>
+    <tr><td>示波器 / 逻辑分析仪</td><td>真实的硬件引脚波形</td><td>确认软件配置确实生效 — 最终真理</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>gpiod_get 返回 -EPROBE_DEFER</td><td>GPIO 控制器驱动尚未加载</td><td>确认 gpiochip 驱动 probe 成功</td></tr>
+    <tr><td>gpiod_get 返回 -ENOENT</td><td>DT 属性名错误 / 拼写不匹配</td><td>DT 属性必须是 <code>&lt;name&gt;-gpios</code> 或 <code>gpios</code></td></tr>
+    <tr><td>GPIO 电平不变化</td><td>pinctrl 未切换到 GPIO 模式<br>引脚被其它外设占用</td><td><code>cat /sys/kernel/debug/pinctrl/*/pinmux-pins</code></td></tr>
+    <tr><td>gpiod_set_value 无效果</td><td>方向仍为输入 / 开漏无上拉</td><td><code>cat /sys/kernel/debug/gpio</code></td></tr>
+    <tr><td>中断不触发</td><td>边沿类型不匹配 / 未配置中断父节点</td><td><code>cat /proc/interrupts</code> + 示波器确认波形</td></tr>
+    <tr><td>GPIO 在 suspend 后状态丢失</td><td>未配置 sleep pinctrl 状态</td><td>DT 添加 <code>pinctrl-1 = &lt;&amp;sleep_state&gt;;</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux GPIO Subsystem — 系统化知识体系 · 2026-06 · Linux Kernel v6.8 – v6.11
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

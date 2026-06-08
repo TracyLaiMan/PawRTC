@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音视频同步 (AV Sync) — 从原理到实战</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+/* ===== Page-specific overrides ===== */
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+
+/* Hero stats */
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}
+.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+
+/* Stage card */
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:12px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:8px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+/* Formula */
+.formula{display:inline-block;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);border-radius:8px;padding:4px 12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#a78bfa;margin:4px 2px}
+
+/* Canvas wrap */
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.canvas-wrap canvas{width:100%;height:100%;display:block}
+
+/* Table */
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg, rgba(108,99,255,.12), rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+/* Top nav */
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}
+.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}
+.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+
+/* Footer */
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+/* Section colors */
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s8 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<!-- ===== Top Nav ===== -->
+<nav class="topnav" id="topnav">
+  <a href="#s1">问题引入</a><span class="sep"></span>
+  <a href="#s2">根因分析</a><span class="sep"></span>
+  <a href="#s3">PTS 体系</a><span class="sep"></span>
+  <a href="#s4">时钟源</a><span class="sep"></span>
+  <a href="#s5">同步策略</a><span class="sep"></span>
+  <a href="#s6">IPC 实战</a><span class="sep"></span>
+  <a href="#s7">代码实现</a><span class="sep"></span>
+  <a href="#s8">调试诊断</a><span class="sep"></span>
+</nav>
+
+<!-- ===== S1: Hero ===== -->
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:10%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:28%;animation-duration:16s;animation-delay:3s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:75%;animation-duration:18s;animation-delay:4s"></div>
+  <div class="particle" style="left:92%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(32px,5.5vw,52px);font-weight:900">音视频同步 (AV Sync)</h2>
+  <p class="sec-sub" id="s1s" style="max-width:680px">说话人的嘴型和声音对不上？画面比声音慢半拍？——这是 IPC 产品化最核心的用户体验问题，也是最容易被低估的技术难题。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">🎤 音频采集</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">🎬 视频采集</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">⏱ 打时间戳</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">📦 编码打包</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">📡 网络传输</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#c084fc">🔧 同步渲染</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">&lt;40ms</div><div class="l">可接受偏移</div></div>
+    <div class="stat"><div class="n">-160~+45ms</div><div class="l">人感知阈值</div></div>
+    <div class="stat"><div class="n">2 条</div><div class="l">独立时钟链路</div></div>
+    <div class="stat"><div class="n">5+</div><div class="l">同步策略</div></div>
+  </div>
+
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S2: Root Cause ===== -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">为什么音视频会不同步？</h2>
+  <p class="sec-sub" id="s2s">根本原因：音频和视频是<strong>两条完全独立的采集-编码-传输-渲染管线</strong>，各自有自己的时钟、缓冲区和延迟</p>
+
+  <div class="canvas-wrap" data-reveal style="height:340px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>时钟不同源</h4>
+      <div class="sub">Audio: I2S 时钟 / Video: MIPI 时钟</div>
+      <p>音频 ADC 使用 I2S 的 MCLK（通常 12.288MHz/24.576MHz），视频 Sensor 使用 MIPI 的 PCLK（几十到几百 MHz）。两个时钟晶体 <strong>物理上是两颗不同的晶振</strong>——即使标称频率相同，实际偏差 10-50ppm 意味着每小时可能漂移 36-180ms。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>延迟不对称</h4>
+      <div class="sub">Audio: ~5-20ms / Video: ~30-100ms</div>
+      <p>音频帧（20ms/帧）处理极快：采集→编码→打包，总延迟通常 5-20ms。视频帧（33ms/帧@30fps）需要 ISP 处理（1-3 帧）+ 编码（5-15ms）+ 更大的缓冲区——总延迟 30-100ms。两者天然不同步。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>缓冲区差异</h4>
+      <div class="sub">Jitter Buffer 独立运作</div>
+      <p>接收端的音频 Jitter Buffer（10-60ms）和视频 Jitter Buffer（100-500ms）<strong>各自独立调整</strong>——网络抖动时音频可能丢帧而视频在缓冲，反之亦然。两者缓冲区深度变化不同步导致相对延迟持续变化。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S3: PTS System ===== -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">PTS：统一的时间坐标系</h2>
+  <p class="sec-sub" id="s3s">Presentation Time Stamp——让音频帧和视频帧在时间轴上有共同的语言</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#34d399">
+    <div class="stage-num" style="background:#34d399">PTS</div>
+    <div class="stage-body">
+      <h4>PTS 是什么？</h4>
+      <div class="en">Presentation Time Stamp — 呈现时间戳</div>
+      <p>每一帧音频和视频在采集时被打上一个"应该在什么时刻播放"的时间标签。这个标签基于<strong>同一个参考时钟</strong>（通常是系统单调时钟 CLOCK_MONOTONIC），单位是时钟的 tick 数（如 90kHz 时间基或 μs 级）。接收端拿到音视频帧后，将它们按照 PTS 排序，在正确的时刻发送给声卡和显示器——这就是同步的核心机制。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>采集端打时间戳</h4>
+      <div class="sub">在源头对齐——最重要的一步</div>
+      <p>每帧数据从驱动读出时，立刻用 <code>clock_gettime(CLOCK_MONOTONIC)</code> 记录当前时刻作为 PTS。音频 PTS 和视频 PTS 使用<strong>同一个时钟源</strong>，保证它们在同一时间轴上。延迟补偿：视频 ISP 处理引入的已知固定延迟（如 66ms）需要在 PTS 上扣除或由接收端补偿。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>接收端按 PTS 排序</h4>
+      <div class="sub">Jitter Buffer → PTS 排序 → 定时渲染</div>
+      <p>接收端维护音视频两个 Jitter Buffer。渲染线程不断检查：当前系统时间 ≥ 帧的 PTS 时，将该帧送入解码器 → 渲染。如果音频先到而视频未到 → 音频等待（或做时域拉伸）。如果视频先到 → 视频等待或丢帧。最终效果：<strong>PTS 相近的音视频帧被同时渲染</strong>。</p>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" data-reveal style="height:280px;margin-top:20px">
+    <canvas id="c2"></canvas>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S4: Clock Sources ===== -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">时钟源：选哪个钟来对表？</h2>
+  <p class="sec-sub" id="s4s">同步的本质是<strong>让两个独立时钟对齐</strong>——选谁做"基准时钟"决定了整个同步策略</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>系统时钟</h4>
+      <div class="sub">CLOCK_MONOTONIC</div>
+      <p>Linux 内核维护的单调递增时钟，不受系统时间调整影响。精度通常为纳秒级。是所有 PTS 的<strong>默认基准</strong>——采集端用这个打时间戳，接收端用这个判断播放时机。问题：如果采集端和接收端是不同设备（IPC → App），两端系统时钟不同步——需要 NTP/PTP 或 SRTP Sender Report 做时钟映射。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>音频时钟</h4>
+      <div class="sub">声卡硬件时钟</div>
+      <p>声卡以固定采样率（如 48000Hz）消费音频数据——它有自己的硬件时钟。如果采集端音频时钟跑在 48001Hz 而接收端声卡跑在 47999Hz，每秒有 0.002% 的速率偏差——看似微小，但 <strong>10 分钟后音频会比视频多/少 72ms</strong>。必须以音频时钟为基准来调整视频渲染节奏。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>网络时钟 (NTP/RTP)</h4>
+      <div class="sub">SRTP Sender Report / NTP</div>
+      <p>WebRTC 通过 RTCP Sender Report 在发送端和接收端之间建立<strong>RTP 时间戳 ↔ NTP 时间戳</strong>的映射关系。接收端由此可以推算：发送端在 T1 时刻采集的帧，在我本地时钟的什么时刻应该播放。NTP 同步精度通常 1-10ms（局域网）到 50ms（互联网），对于亚帧级同步不够，但对于 IPC 场景足够。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠️ 时钟漂移——同步问题的终极杀手</div>
+    即使采集端和接收端在 T=0 时刻完美对齐，两端时钟晶振的频率偏差（10-50ppm）也会导致<strong>每小时累积 36-180ms 的相对漂移</strong>。这不是一次性偏移，是<strong>持续的、累积的</strong>。解决：实时监测音频时钟的消费速率，动态调整视频渲染时钟的频率（不是跳帧，是微调时钟频率）来跟随音频时钟——这叫 <strong>Clock Drift Compensation（时钟漂移补偿）</strong>。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S5: Sync Strategies ===== -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">五种同步策略</h2>
+  <p class="sec-sub" id="s5s">没有银弹——每种策略都有其适用场景和代价</p>
+
+  <div class="ptbl" style="margin-top:24px">
+    <table>
+    <thead>
+      <tr><th>策略</th><th>基准时钟</th><th>音频操作</th><th>视频操作</th><th>适用场景</th><th>挑战</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="g">音频主时钟</td>
+        <td>声卡硬件时钟</td>
+        <td>不操作（被动播放）</td>
+        <td>根据音频位置动态调整视频渲染时间</td>
+        <td>对讲、直播、IPC</td>
+        <td>视频可能出现轻微抖动或丢帧</td>
+      </tr>
+      <tr>
+        <td class="y">视频主时钟</td>
+        <td>系统时钟</td>
+        <td>丢帧 / 时域拉伸</td>
+        <td>不操作（按帧率渲染）</td>
+        <td>电影播放、本地文件回放</td>
+        <td>音频操作容易产生人耳可察觉的断续</td>
+      </tr>
+      <tr>
+        <td>外部时钟</td>
+        <td>网络时钟 (NTP/RTP)</td>
+        <td>调整播放速率</td>
+        <td>调整渲染时刻</td>
+        <td>远程监控、WebRTC 通话</td>
+        <td>依赖网络质量，NTP 抖动影响同步</td>
+      </tr>
+      <tr>
+        <td>无主时钟 (Free-Run)</td>
+        <td>各自独立</td>
+        <td>按采集速率播放</td>
+        <td>按帧率播放</td>
+        <td>非实时、可后期处理</td>
+        <td class="r">长时间必然漂移，不可用于实时场景</td>
+      </tr>
+      <tr>
+        <td class="g">混合策略</td>
+        <td>音频时钟 + 外部时钟修正</td>
+        <td>短期跟音频时钟<br>长期跟 NTP/PTP</td>
+        <td>跟随修正后的基准时钟</td>
+        <td>高要求 IPC 产品</td>
+        <td>实现复杂度最高</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#f472b6">
+    <div class="stage-num" style="background:#f472b6">★</div>
+    <div class="stage-body">
+      <h4>IPC 场景的最佳实践：音频主时钟 + 时钟漂移补偿</h4>
+      <div class="en">Audio Master Clock with Drift Compensation — 工业界公认的最优方案</div>
+      <p>1. 声卡以固定采样率消费音频——这是<strong>不可压缩、不可任意加速/减速</strong>的硬实时约束。<br>
+      2. 将声卡的消费位置（已播放样本数）映射为"当前时间"——这就是音频主时钟。<br>
+      3. 视频帧按 PTS 与此音频时钟比较：PTS 已到 → 渲染；PTS 未到 → 等待；PTS 已过 → 跳过。<br>
+      4. 同时持续计算音频时钟的速率偏差（期望消费速率 vs 实际消费速率），对视频渲染时钟做频率微调——消除长期漂移。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S6: IPC Real-world Issues ===== -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">IPC 实战：六种常见的同步问题</h2>
+  <p class="sec-sub" id="s6s">这些问题在实验室很难复现，但在真实部署中频繁出现</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>1. 启动时初始偏移</h4>
+      <div class="sub">Startup Offset — 最容易被忽略</div>
+      <p>音频和视频的采集启动不是同一时刻——音频设备打开可能比视频快 50-200ms。如果启动时没有做<strong>初始同步对齐</strong>（等待双方第一帧都到齐再开始计算 PTS 基准），这个初始偏移会永久存在。表现：从头到尾嘴型始终差固定值。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>2. 持续漂移</h4>
+      <div class="sub">Clock Drift — 温水煮青蛙</div>
+      <p>音频晶振和视频晶振的 ppm 偏差导致：运行 10 分钟后差了 50ms，30 分钟后差了 150ms——用户刚开始觉得正常，慢慢发现越来越不对。没有持续漂移补偿的系统必然出现此问题。关键指标：每小时漂移量应控制在 &lt;10ms。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>3. 网络抖动导致的瞬时失步</h4>
+      <div class="sub">Network Jitter Burst</div>
+      <p>WiFi/4G 场景下网络突发抖动（几百ms 丢包→重传）可能让视频帧延迟到达而音频帧正常。此时用户看到：<strong>画面卡住、声音继续</strong>——恢复时画面突然快进追上声音。解决：视频 Jitter Buffer 需要足够深以吸收突发抖动；如果帧严重迟到（&gt;200ms），主动丢帧而非追帧。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>4. GOP 导致的周期性偏移</h4>
+      <div class="sub">I-Frame Latency Spike</div>
+      <p>H.264 编码中，I 帧的数据量是 P 帧的 5-20 倍。即使 CBR 码率控制，I 帧在网络上的<strong>传输时间更长</strong>（受 MTU 分包影响）。每个 GOP（如 2 秒一次 I 帧）都会出现一次周期性的同步抖动。解决：减小 I 帧尺寸（增加 I 帧 QP 偏移）、或使用<strong>低延迟 GOP 结构</strong>（如 I-P-P-P 无 B 帧）。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>5. 双向对讲的回声延迟</h4>
+      <div class="sub">Round-Trip Audio Delay</div>
+      <p>IPC 双向对讲场景：App 说话 → 网络到 IPC → 扬声器播放 → IPC 麦克风采集到回声 → 编码传回 App。如果整个过程延迟 &gt;200ms，App 用户会听到<strong>自己说话的回声</strong>。这不是传统 AV 同步问题，但需要 AEC（回声消除）配合精准的音频时钟管理才能解决。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>6. 录像回放时的同步</h4>
+      <div class="sub">Seek/Playback Sync</div>
+      <p>历史录像回放时 Seek 到随机位置——音频帧和视频帧在文件中的<strong>物理位置不对齐</strong>（音频帧小且密集，视频帧大且稀疏）。需要根据 PTS 做二分查找，找到最接近目标时刻的音频帧和视频帧，<strong>从同一个 PTS 基准重新开始</strong>同步渲染。MP4 的 moov 头中存储了音视频的 Sample Table，提供了快速定位的索引。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S7: Code Implementation ===== -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">代码级实现：音频主时钟同步器</h2>
+  <p class="sec-sub" id="s7s">以下展示一个完整的音频主时钟 AV 同步器的核心代码结构</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>核心数据结构</h4>
+      <div class="sub">AVSync — 同步器的内部状态</div>
+      <div class="cblock" style="margin-top:0">
+<span class="cm">// 音频主时钟同步器</span>
+<span class="kw">struct</span> AVSync {
+    <span class="cm">// 音频时钟（以已播放样本数为基准）</span>
+    <span class="kw">int</span> audio_sample_rate;         <span class="cm">// 48000</span>
+    <span class="kw">int64_t</span> audio_samples_played;    <span class="cm">// 声卡已播放样本数</span>
+    <span class="kw">int64_t</span> audio_clock_base_pts;    <span class="cm">// 基准 PTS</span>
+
+    <span class="cm">// 漂移补偿</span>
+    <span class="kw">double</span> drift_rate;               <span class="cm">// 当前漂移率 (1.0 = 无漂移)</span>
+    <span class="kw">int64_t</span> drift_samples;           <span class="cm">// 累积漂移量（样本数）</span>
+
+    <span class="cm">// 视频渲染控制</span>
+    <span class="kw">int64_t</span> video_delay_target;      <span class="cm">// 目标视频延迟（μs）</span>
+    <span class="kw">int</span> frame_drop_threshold;        <span class="cm">// 丢帧阈值（μs）</span>
+};
+</div>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>获取音频时钟</h4>
+      <div class="sub">从声卡消费位置反推当前时间</div>
+      <div class="cblock" style="margin-top:0">
+<span class="kw">int64_t</span> <span class="fn">avsync_get_audio_clock</span>(AVSync *s) {
+    <span class="cm">// 1. 获取声卡当前已播放样本数</span>
+    <span class="kw">int64_t</span> played = snd_pcm_delay(pcm)
+                   + s->audio_samples_played;
+
+    <span class="cm">// 2. 转换为时间（微秒）</span>
+    <span class="kw">int64_t</span> now_us = (played * <span class="nu">1000000LL</span>)
+                     / s->audio_sample_rate;
+
+    <span class="cm">// 3. 漂移补偿</span>
+    now_us = (<span class="kw">int64_t</span>)(now_us * s->drift_rate);
+
+    <span class="kw">return</span> s->audio_clock_base_pts + now_us;
+}
+</div>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>视频渲染决策</h4>
+      <div class="sub">根据音频时钟判断视频帧该渲染、等待还是跳过</div>
+      <div class="cblock" style="margin-top:0">
+<span class="kw">int</span> <span class="fn">avsync_render_video</span>(AVSync *s,
+                       VideoFrame *vf) {
+    <span class="kw">int64_t</span> audio_clock = avsync_get_audio_clock(s);
+    <span class="kw">int64_t</span> diff = vf->pts - audio_clock;
+
+    <span class="kw">if</span> (diff > s->video_delay_target + <span class="nu">10000</span>) {
+        <span class="kw">return</span> SYNC_WAIT;      <span class="cm">// 视频超前，等待</span>
+    } <span class="kw">else</span> <span class="kw">if</span> (diff < -s->frame_drop_threshold) {
+        <span class="kw">return</span> SYNC_DROP;      <span class="cm">// 视频落后太多，丢帧</span>
+    } <span class="kw">else</span> {
+        <span class="kw">return</span> SYNC_RENDER;    <span class="cm">// 在阈值范围内，渲染</span>
+    }
+}
+</div>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>漂移补偿计算</h4>
+      <div class="sub">持续监控音频时钟速率，动态调整</div>
+      <div class="cblock" style="margin-top:0">
+<span class="kw">void</span> <span class="fn">avsync_update_drift</span>(AVSync *s) {
+    <span class="cm">// 每 5 秒计算一次漂移率</span>
+    <span class="kw">int64_t</span> expected = (s->drift_samples
+                       * <span class="nu">1000000</span>) / s->sample_rate;
+    <span class="kw">int64_t</span> actual = clock_gettime(MONOTONIC);
+    <span class="kw">int64_t</span> elapsed = actual - s->last_check;
+
+    <span class="cm">// 漂移率 = 期望耗时 / 实际耗时</span>
+    s->drift_rate = (<span class="kw">double</span>)expected / elapsed;
+    s->drift_rate = CLAMP(s->drift_rate,
+                          <span class="nu">0.999</span>, <span class="nu">1.001</span>);
+}
+</div>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">关键设计决策：为什么 IPC 用音频做主时钟？</div>
+    音频数据是<strong>硬实时</strong>的——声卡以固定速率消费样本，一旦开始播放就不能暂停、不能加速（除非用时域拉伸，但会引入失真）。视频则<strong>可以丢帧或等待</strong>——人眼对画面微调（±20ms）不敏感，但对音频的断续（±5ms）极其敏感。因此，<strong>让音频自由流动、让视频跟随音频</strong>，是唯一合理的方案。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S8: Debugging ===== -->
+<div class="sec s8" id="s8">
+  <h2 class="sec-title" id="s8t">调试与诊断：如何量化同步精度？</h2>
+  <p class="sec-sub" id="s8s">"感觉嘴型对不上"不能作为 bug report——需要可量化的测量方法和诊断工具</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>方法 1: PTS 差值监控</h4>
+      <div class="sub">最直接的量化指标</div>
+      <p>在接收端持续记录：<span class="formula">ΔPTS = Video_PTS − Audio_PTS</span>。正常范围：-40ms ~ +40ms。监控三个统计量：<strong>均值</strong>（反映固定偏移）、<strong>标准差</strong>（反映抖动）、<strong>斜率</strong>（反映漂移）。输出到日志或通过 WebSocket 实时推送到调试面板。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>方法 2: 同步测试视频</h4>
+      <div class="sub">Flash-Beep 测试法</div>
+      <p>播放一段特殊录制的测试视频：画面中出现<strong>闪烁白块 + 同时发出"嘀"声</strong>（Flash-Beep）。用另一台设备拍摄播放画面，逐帧分析：白块亮起的帧和声音起始点的帧数差 × 帧间隔 = 同步误差。这是 YouTube/Netflix 使用的标准 QA 方法。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>方法 3: 时间戳注入</h4>
+      <div class="sub">在码流中嵌入时间标记</div>
+      <p>在 SEI 中嵌入 NTP 时间戳或 UTC 时间。在接收端解码后叠加显示到 OSD 上。录制一段视频后逐帧分析：<strong>视频帧上显示的 OSD 时间</strong> 应与 <strong>音频波形的实际时刻</strong>（通过音频编辑软件查看）对齐。差值即同步误差。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;margin-top:16px;--sc:#f87171">
+    <div class="stage-num" style="background:#f87171">!</div>
+    <div class="stage-body">
+      <h4>常见诊断信号</h4>
+      <div class="en">从数据中发现问题的规律</div>
+      <p>• <strong>ΔPTS 为固定值</strong>（如始终 +150ms）→ 视频管线有未补偿的固定延迟，调整 video_delay_target<br>
+      • <strong>ΔPTS 持续增大</strong>（斜率 >0）→ 音频时钟比系统时钟慢，drift_rate < 1.0，需补偿<br>
+      • <strong>ΔPTS 周期性跳变</strong>→ I 帧延迟尖峰，检查 GOP 结构和编码器 P 帧输出时序<br>
+      • <strong>ΔPTS 随机大幅波动</strong>→ 网络抖动超过 Jitter Buffer 容量，增大 buffer 或启用 FEC<br>
+      • <strong>ΔPTS 在 Seek/切换流后跳变</strong>→ 重新同步逻辑未正确初始化 audio_clock_base_pts</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠️ "看起来同步" ≠ "测量同步"</div>
+    人耳-人脑对 AV 同步的感知是<strong>非对称的</strong>：画面超前声音（视频快于音频）在 -160ms 以内人很难察觉；但画面落后声音（音频快于视频）超过 +45ms 就会明显不适。这是因为<strong>自然界中光速远大于声速</strong>——我们习惯了先看到闪电再听到雷声（画面超前 = 正常），但从未经历过先听到声音再看到画面（画面落后 = 诡异）。<br><br>
+    <strong>调试策略：有意让视频略超前音频（-40~-20ms），而不是完美对齐（0ms）。</strong>这个不对称窗口是人因工程的基本原理。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  音视频同步 (AV Sync) · 从原理到实战 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="linux_alsa_audio_learn.html">ALSA 音频采集 →</a>
+</footer>
+
+<script>
+// ===== Scroll Reveal =====
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+
+// ===== Top Nav =====
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});
+  });
+});
+
+// ===== Canvas 1: Dual Pipeline Timeline =====
+(function() {
+  const c = document.getElementById('c1');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=340;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawPipeline(x, y, w, items, color, label) {
+    ctx.save();
+    // Label
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + w/2, y - 14);
+
+    // Pipeline background
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.04;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, 44, 10);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.12;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Items
+    const itemW = (w - 20) / items.length;
+    items.forEach((it, i) => {
+      const ix = x + 10 + i * itemW;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.15 + i*0.05;
+      ctx.beginPath();
+      ctx.roundRect(ix, y+5, itemW-4, 34, 6);
+      ctx.fill();
+      ctx.fillStyle = '#d0d0f0';
+      ctx.globalAlpha = 0.8;
+      ctx.font = '10px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(it, ix + (itemW-4)/2, y+28);
+    });
+
+    // End-to-end time
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.5;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.restore();
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+
+    const mid = W/2;
+    const leftX = 40;
+    const pipeW = mid - 80;
+
+    // Title
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 15px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('两条独立的采集-编码-传输-渲染管线', mid, 28);
+
+    // Audio pipeline
+    drawPipeline(leftX, 70, pipeW, ['采集','AAC编码','RTP打包','J.Buf','解码','渲染'], '#fbbf24', '🔊 音频管线: 总延迟 ~15ms');
+
+    // Video pipeline
+    drawPipeline(leftX, 170, pipeW, ['采集','ISP','H.264','RTP','J.Buf','解码','渲染'], '#38bdf8', '🎬 视频管线: 总延迟 ~80ms');
+
+    // Timing comparison bars
+    const audioEnd = leftX + pipeW;
+    const videoEnd = leftX + pipeW;
+    const barY1 = 270;
+    const barH = 20;
+
+    // Audio bar
+    const audioLen = pipeW * 0.15; // 15ms relative
+    ctx.fillStyle = '#fbbf24';
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.roundRect(leftX, barY1, audioLen, barH, 4);
+    ctx.fill();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.8;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('音频: ~15ms', leftX + audioLen + 8, barY1+15);
+
+    // Video bar
+    const videoLen = pipeW * 0.8; // 80ms relative
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.roundRect(leftX, barY1+30, videoLen, barH, 4);
+    ctx.fill();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.8;
+    ctx.fillText('视频: ~80ms', leftX + videoLen + 8, barY1+45);
+
+    // Gap highlight
+    const gapX = leftX + audioLen;
+    ctx.fillStyle = '#f87171';
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.roundRect(gapX, barY1, videoLen - audioLen, barH + 30, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fca5a5';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`音视频延迟差: ~65ms — 这就是不同步的根源`, mid, barY1+65);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 2: PTS Timeline Alignment =====
+(function() {
+  const c = document.getElementById('c2');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=280;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+
+    const lx = 120, rx = W-100;
+    const ty = 50, timelineY = 140, renderY = 220;
+
+    // Title
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PTS 对齐：将音频和视频帧放到同一时间轴上', W/2, 26);
+
+    // Time axis
+    ctx.strokeStyle = 'rgba(255,255,255,.1)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx, timelineY); ctx.lineTo(rx, timelineY); ctx.stroke();
+
+    // Tick marks
+    for(let i=0; i<=10; i++) {
+      const x = lx + (rx-lx)*i/10;
+      ctx.beginPath(); ctx.moveTo(x, timelineY-8); ctx.lineTo(x, timelineY+8); ctx.stroke();
+      ctx.fillStyle = '#5555aa';
+      ctx.font = '9px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(i*10+'ms', x, timelineY+22);
+    }
+
+    // Audio frames (yellow, on timeline)
+    for(let i=0; i<9; i++) {
+      const x = lx + (rx-lx)*(i*10+5)/100;
+      const pulse = 1 + Math.sin(t*3 + i)*0.2;
+      ctx.fillStyle = '#fbbf24';
+      ctx.globalAlpha = 0.5 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, timelineY+50, 8, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#d0d0f0';
+      ctx.globalAlpha = 0.8;
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText('A'+i, x-8, timelineY+54);
+    }
+
+    // Video frames (blue, offset from audio due to longer pipeline)
+    const videoOffset = 40; // px offset to simulate video delay
+    for(let i=0; i<8; i++) {
+      const x = lx + (rx-lx)*(i*12+videoOffset/3)/100;
+      ctx.fillStyle = '#38bdf8';
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.roundRect(x-14, timelineY+72, 28, 20, 4);
+      ctx.fill();
+      ctx.fillStyle = '#d0d0f0';
+      ctx.globalAlpha = 0.8;
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('V'+i, x, timelineY+86);
+    }
+
+    // Labels
+    ctx.fillStyle = '#fbbf24';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('🔊 音频帧 (每 20ms 一帧)', lx-80, timelineY+54);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('🎬 视频帧 (每 33ms 一帧)', lx-80, timelineY+82);
+
+    // Bottom: PTS alignment
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(20, renderY-10); ctx.lineTo(W-20, renderY-10); ctx.stroke();
+
+    const syncPulse = Math.abs(Math.sin(t*0.5));
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = 0.4 + syncPulse*0.3;
+    ctx.font = 'bold 12px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⏱ 渲染时刻 = 系统时钟 ≥ 帧的 PTS 时输出 → 音频 V2 和视频 V1 的 PTS 相近 → 同时渲染', W/2, renderY+16);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

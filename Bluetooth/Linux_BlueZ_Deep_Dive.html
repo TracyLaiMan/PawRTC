@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux BlueZ 深度剖析 — 从内核到 D-Bus</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+/* ── document layout ── */
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+
+/* ── section heading ── */
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+/* ── code block ── */
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; }
+.cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; }
+.cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; }
+.cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+/* ── card grid ── */
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; }
+.cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.cg.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3,.cg.c4 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc, #6c63ff); background: rgba(255,255,255,.04); transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc, #6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; }
+.cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+.cd ul { margin: 6px 0 0 16px; font-size: 12px; color: #9999bb; line-height: 1.8; }
+
+/* ── step grid ── */
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+.st code { font-size: 10px; }
+
+/* ── hero ── */
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+/* ── hr ── */
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+/* ── stack diagram ── */
+.stack { display: flex; flex-direction: column; gap: 2px; margin: 20px 0; width: 100%; max-width: 640px; }
+.stack .ly { padding: 12px 20px; border-radius: 8px; font-size: 12.5px; font-weight: 700; text-align: center; }
+.stack .ly.app { background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.25); color: #a78bfa; }
+.stack .ly.host { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.18); color: #34d399; }
+.stack .ly.ctrl { background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.18); color: #38bdf8; }
+.stack .ly.link { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.18); color: #fbbf24; }
+.stack .ly.phy  { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.18); color: #f87171; }
+.stack .ly.kern { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); color: #f87171; }
+.stack .ly.bus  { background: rgba(108,99,255,.08); border: 1px solid rgba(108,99,255,.18); color: #6c63ff; }
+.stack .arrow { text-align: center; color: #555577; font-size: 10px; letter-spacing: 1px; }
+
+/* ── canvas wrapper ── */
+.freq-wrap { width: 100%; background: rgba(0,0,0,.15); border-radius: 12px; padding: 20px; margin: 16px 0;
+  border: 1px solid rgba(255,255,255,.04); text-align: center; }
+.freq-wrap canvas { max-width: 100%; }
+
+/* ── tag ── */
+.tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 5px; margin-right: 4px; }
+.tag.g { background: rgba(52,211,153,.1); color: #34d399; border: 1px solid rgba(52,211,153,.25); }
+.tag.b { background: rgba(56,189,248,.1); color: #38bdf8; border: 1px solid rgba(56,189,248,.25); }
+.tag.y { background: rgba(251,191,36,.1); color: #fbbf24; border: 1px solid rgba(251,191,36,.25); }
+.tag.p { background: rgba(167,139,250,.1); color: #a78bfa; border: 1px solid rgba(167,139,250,.25); }
+.tag.r { background: rgba(248,113,113,.1); color: #f87171; border: 1px solid rgba(248,113,113,.25); }
+
+/* ── path breadcrumb ── */
+.path { font-family: "JetBrains Mono",monospace; font-size: 11px; color: #8888aa; margin: 8px 0; }
+.path .seg { color: #a78bfa; }
+.path .sep { color: #555; padding: 0 4px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux BlueZ</h2>
+  <p class="sec-sub">官方 Linux 蓝牙协议栈 — 从内核到用户态，从 HCI 到 D-Bus</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>Application</strong><br><small>GATT Client/Server</small></span>
+    <span class="flow-arr">↕</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>bluetoothd</strong><br><small>D-Bus 守护进程</small></span>
+    <span class="flow-arr">↕</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Kernel</strong><br><small>net/bluetooth/</small></span>
+    <span class="flow-arr">↕</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>HCI Driver</strong><br><small>hci_uart / btusb</small></span>
+    <span class="flow-arr">↕</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>Controller</strong><br><small>BLE SoC 固件</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>内核子系统</h4><div class="sub">net/bluetooth/ + 驱动</div>
+      <p>L2CAP、HCI Core、SMP、RFCOMM、BNEP 等协议层。HCI 驱动支持 <em>UART (H4/H5)</em>、<em>USB (btusb)</em>、<em>SPI</em>、<em>SDIO</em> 等传输层。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>bluetoothd</h4><div class="sub">用户态守护进程 · D-Bus 服务</div>
+      <p>实现 GAP/GATT/SDP 等高层协议。通过 <em>D-Bus System Bus</em> 暴露 <code>org.bluez</code> 接口。所有现代 Linux 蓝牙应用的标准入口。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>发展历程</h4><div class="sub">2002 年 Qualcomm → Linux 内核</sub></div>
+      <p>2002 年 Qualcomm 贡献初始代码。2005 年进入内核主线。<br>BlueZ 4 (2008) → BlueZ 5 (2013, D-Bus API 断代重写)。当前稳定版 <code>5.79</code>。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1: 架构全景 ── -->
+<h2 class="sh">1. BlueZ 架构全景</h2>
+<p class="ss">用户态 + 内核态协同 — bluetoothd 守护进程通过 mgmt socket 控制内核蓝牙子系统</p>
+
+<div class="stack">
+  <div class="ly app">▸ Application (C / Python / JS / ...)</div>
+  <div class="arrow">▼ D-Bus System Bus (org.bluez)</div>
+  <div class="ly bus">bluetoothd (GAP · GATT · SDP · A2DP · HFP)</div>
+  <div class="arrow">▼ mgmt socket (AF_BLUETOOTH · Management Interface)</div>
+  <div class="ly kern">Kernel: net/bluetooth/ (L2CAP · HCI Core · SMP · RFCOMM · BNEP · 6LoWPAN)</div>
+  <div class="arrow">♦</div>
+  <div class="ly ctrl">HCI Transport Driver (hci_uart · btusb · btsdio · hci_bcm · hci_intel)</div>
+  <div class="arrow">▼ HCI Protocol (H4 / H5 / BCSP / USB)</div>
+  <div class="ly phy">BLE Controller Firmware (nRF52 · TI CC26xx · Cypress CYW · ...)</div>
+</div>
+
+<p style="text-align:center;font-size:11px;color:#555;margin:12px 0">
+  ▲ Userspace &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; ▼ Kernelspace &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; ▼ Hardware
+</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>mgmt Socket</h4>
+    <div class="lbl">BlueZ 5 核心控制通道</div>
+    <p>
+    <strong>Management Interface</strong> — BlueZ 5 引入的<em>内核-用户态控制接口</em>。<br>
+    <code>socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)</code> + bind to <code>HCI_CHANNEL_CONTROL</code><br>
+    替代旧版 <code>ioctl</code> 和 <code>hci_sock</code>，提供：<em>adapter 上下电、扫描、配对、连接、设备白名单</em> 等管理操作。<br>
+    事件驱动：内核主动上报 <code>MGMT_EV_*</code> 事件（Device Found、Connected、Disconnected…）。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>D-Bus System Bus</h4>
+    <div class="lbl">org.bluez — 应用层唯一入口</div>
+    <p>
+    <strong>服务名</strong>: <code>org.bluez</code><br>
+    <strong>对象路径</strong>: <code>/org/bluez/hci0</code><br>
+    <strong>核心接口</strong>:<br>
+    <code>org.bluez.Adapter1</code> — 控制器管理<br>
+    <code>org.bluez.Device1</code> — 设备管理<br>
+    <code>org.bluez.GattService1</code> — GATT 服务<br>
+    <code>org.bluez.GattCharacteristic1</code> — GATT 特征<br>
+    应用只需连接 D-Bus，无需触碰 HCI socket 或 mgmt 接口。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>内核子系统层次</h4>
+    <div class="lbl">net/bluetooth/ — 完整协议栈</div>
+    <p>
+    <strong>HCI Core</strong> (<code>hci_core.c</code>): 设备注册、命令排队、事件分发<br>
+    <strong>HCI Socket</strong> (<code>hci_sock.c</code>): 用户态原始 HCI 访问<br>
+    <strong>L2CAP</strong> (<code>l2cap_core.c</code>): 逻辑链路控制与适配<br>
+    <strong>SMP</strong> (<code>smp.c</code>): LE 安全管理<br>
+    <strong>RFCOMM</strong> (<code>rfcomm/</code>): 串口仿真 (Classic BT)<br>
+    <strong>BNEP</strong> (<code>bnep/</code>): 以太网封装 (PAN/NAP)<br>
+    <strong>6LoWPAN</strong> (<code>6lowpan.c</code>): IPv6 over BLE
+    </p>
+  </div>
+</div>
+
+<div class="freq-wrap">
+<canvas id="archCanvas"></canvas>
+</div>
+
+<!-- ── Ch2: 内核层深度解析 ── -->
+<h2 class="sh">2. 内核蓝牙子系统 — net/bluetooth/</h2>
+<p class="ss">源码树结构 · HCI Core · L2CAP · SMP · 关键数据结构与调用路径</p>
+
+<details style="margin-top:14px">
+  <summary>📁 内核源码树 net/bluetooth/ (Linux 6.x)</summary>
+  <div class="cb" style="font-size:10.5px;line-height:1.6;margin:8px 0 0">
+<span class="cm">net/bluetooth/
+├── hci_core.c             HCI 核心：设备注册 (hci_register_dev)、命令队列、事件处理
+├── hci_event.c            HCI 事件分发器 (hci_event_packet)
+├── hci_conn.c             连接管理：创建/销毁/超时 (hci_connect_le / hci_conn_del)
+├── hci_sock.c             HCI socket (AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)
+├── hci_request.c          HCI 命令请求封装 (hci_req_add / hci_req_run)
+├── hci_sysfs.c            /sys/class/bluetooth/ 导出
+├── hci_codec.c            音频编解码接口
+├── hci_sync.c             HCI 同步命令辅助
+├── mgmt.c                 Management Interface (mgmt socket 控制面)
+├── smp.c                  Security Manager Protocol (LE 配对/加密)
+├── smp.h                  SMP 数据结构和常量
+├── l2cap_core.c           L2CAP 核心：信道管理 (l2cap_chan_create / l2cap_connect)
+├── l2cap_sock.c           L2CAP socket (BTPROTO_L2CAP)
+├── sco.c                  SCO/eSCO 同步面向连接信道 (Classic Audio)
+├── rfcomm/                RFCOMM (串口仿真) — core/sock/tty
+├── bnep/                  BNEP (蓝牙网络封装) — core/sock/netdev
+├── hidp/                  HID Profile (人机接口设备)
+├── cmtp/                  CIP (通用 ISDN 接入 Profile, 已废弃)
+├── a2mp.c / amp.c         A2MP / AMP (Alternate MAC/PHY, 已废弃)
+├── 6lowpan.c              6LoWPAN (IPv6 over BLE)
+├── iso.c                  Isochronous Channels (LE Audio, BT 5.2+)
+├── mSBC.c                 mSBC 编解码
+├── ecdh_generic.c         ECDH 密钥交换
+├── ecdh_helper.c/h        ECDH 辅助函数
+├── leds.c / led.h         Bluetooth LED 指示
+├── selftest/              自测试
+├── lib.c / lib.h          通用工具函数
+├── Kconfig / Makefile     编译配置
+└── af_bluetooth.c         AF_BLUETOOTH 地址族注册入口</span></div>
+</details>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.1 HCI Core — 设备注册与数据流</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>hci_register_dev()</h4>
+    <div class="lbl">驱动 → 内核：注册 HCI 设备</div>
+    <p>
+    <strong>调用方</strong>: HCI 传输驱动 (hci_uart / btusb / …)<br>
+    <strong>流程</strong>:<br>
+    1. 分配 <code>struct hci_dev</code> (<code>hci_alloc_dev()</code>)<br>
+    2. 初始化工作队列 (<code>cmd_work</code>, <code>tx_work</code>, <code>rx_work</code>)<br>
+    3. 设置 <code>hdev-&gt;open/close/send</code> 回调<br>
+    4. <code>hci_register_dev(hdev)</code> → 分配 hciX 索引 → 创建 sysfs → 通知 mgmt<br>
+    5. <strong>结果</strong>: <code>/sys/class/bluetooth/hci0/</code> 出现, bluetoothd 可检测到新 adapter。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>数据收发路径</h4>
+    <div class="lbl">TX: 应用 → Controller | RX: Controller → 应用</div>
+    <p>
+    <strong>TX 发送路径</strong>:<br>
+    App → L2CAP socket → <code>l2cap_chan_send()</code> → <code>hci_send_acl()</code> → <code>hdev-&gt;send()</code> → HCI 驱动 → Controller<br>
+    <strong>RX 接收路径</strong>:<br>
+    Controller → HCI 驱动 → <code>hci_recv_frame()</code> → <code>hci_event_packet()</code> / <code>hci_acldata_packet()</code> → L2CAP → socket → App<br>
+    <strong>关键</strong>: 所有 HCI 包通过 <code>struct hci_dev</code> 的工作队列 (<code>workqueue</code>) 异步处理，确保内核上下文安全。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.2 L2CAP — 信道多路复用</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>L2CAP 信道类型</h4>
+    <div class="lbl">CID 分配 + LE Credit Based 流控</div>
+    <p>
+    <strong>固定 CID</strong>: <code>0x0001</code> (Signaling), <code>0x0004</code> (ATT), <code>0x0005</code> (LE Signaling), <code>0x0006</code> (SMP)<br>
+    <strong>动态 CID</strong>: <code>0x0040-0xFFFF</code> — 面向连接信道<br>
+    <strong>LE Credit Based Flow Control</strong> (BT 4.1+): 内核实现 <code>l2cap_le_credits</code> 跟踪信用额度。l2cap_le_flowctl 结构维护 <code>credits</code> 计数器，每收到 <em>LE Flow Control Credit</em> 信号增加额度。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>关键函数</h4>
+    <div class="lbl">信道创建 → 连接 → 数据传输</div>
+    <p>
+    <code>l2cap_chan_create()</code>: 分配 <code>struct l2cap_chan</code><br>
+    <code>l2cap_chan_connect()</code>: 发起连接请求<br>
+    <code>l2cap_connect_req()</code>: 发送 L2CAP_LE_CONN_REQ<br>
+    <code>l2cap_chan_send()</code>: 发送 SDU（自动分片为 LE-frames）<br>
+    <code>l2cap_recv_frame()</code>: 接收帧处理（重组 SDU）<br>
+    <code>l2cap_le_flowctl_init()</code>: LE Credit 流控初始化<br>
+    信道状态机: <code>BT_CONNECT → BT_CONNECT2 → BT_CONFIG → BT_CONNECTED</code>
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.3 SMP — LE 安全管理</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>配对流程 (内核态)</h4>
+    <div class="lbl">smp.c — 密钥协商与加密</div>
+    <p>
+    <strong>SMP 命令</strong>: Pairing Request/Response、Pairing Confirm/Random、Encryption Info、Identity Info 等。<br>
+    <strong>LE Legacy</strong>: <code>smp_cmd_pairing_req()</code> → TK→STK → <code>hci_le_start_enc()</code><br>
+    <strong>LE Secure Connections</strong>: <code>smp_cmd_public_key()</code> → ECDH P-256 → DHKey Check → LTK<br>
+    <strong>加密启动</strong>: <code>hci_le_enable_encryption()</code> → <code>HCI_LE_Start_Encryption</code> command → Controller 硬件 AES-CCM。<br>
+    内核维护 <code>struct smp_chan</code> 记录配对会话状态。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>关键数据结构</h4>
+    <div class="lbl">smp.h 中的常量与标志</div>
+    <p>
+    <code>struct smp_dev</code>: 本地 SMP 配置 (IOCap, AuthReq, 密钥分发标志)<br>
+    <code>struct smp_chan</code>: 活跃配对会话 (TK, STK/LTK, ECDH 密钥对)<br>
+    <code>SMP_IO_DISPLAY_ONLY / _YESNO / _KEYBOARD_ONLY / _NO_INPUT_OUTPUT</code><br>
+    <code>SMP_AUTH_BONDING / _MITM / _SC / _KEYPRESS</code><br>
+    <strong>加密完成回调</strong>: <code>hci_encrypt_change_evt()</code> → 通知 L2CAP "链路已加密" → ATT 允许安全特征访问。
+    </p>
+  </div>
+</div>
+
+<!-- ── Ch3: bluetoothd ── -->
+<h2 class="sh">3. bluetoothd — 用户态守护进程</h2>
+<p class="ss">系统 D-Bus 服务 — 插件架构 — 协议实现 — 从 mgmt socket 到 D-Bus API</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>启动流程</h4>
+    <div class="lbl">main() → adapter_init() → plugin 加载</div>
+    <p>
+    <strong>1. btd_init()</strong>: 初始化 D-Bus 连接、日志、存储后端<br>
+    <strong>2. plugin_init()</strong>: 加载内置/外部插件 (src/plugins/*.c)<br>
+    <strong>3. adapter_init()</strong>: 打开 mgmt socket → <code>MGMT_OP_READ_INFO</code> 获取所有 adapter<br>
+    <strong>4. btd_register_adapter()</strong>: 在 D-Bus 上注册 <code>/org/bluez/hciX</code> 对象<br>
+    <strong>5. g_main_loop_run()</strong>: 进入 GLib event loop，等待 D-Bus 调用和 mgmt 事件。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>插件架构</h4>
+    <div class="lbl">src/plugins/ — 可扩展协议实现</div>
+    <p>
+    BlueZ 5 使用 <em>插件系统</em> 组织高层协议：<br>
+    <code>hciops.c</code>: mgmt 操作封装<br>
+    <code>gatt-dbus.c</code>: GATT D-Bus 接口<br>
+    <code>device.c</code>: 设备对象管理<br>
+    <code>adapter.c</code>: Adapter 属性与方法<br>
+    <code>policy.c</code>: 重连策略<br>
+    <code>admin.c</code>: 管理策略 (BT 5.3+)<br>
+    <code>a2dp.c / avrcp.c / hfp.c</code>: Classic 音频<br>
+    外部插件可通过 <code>--plugin=&lt;path&gt;</code> 加载。
+    </p>
+  </div>
+</div>
+
+<div class="freq-wrap">
+<canvas id="btdCanvas"></canvas>
+</div>
+
+<!-- ── Ch4: D-Bus API ── -->
+<h2 class="sh">4. D-Bus API — org.bluez 接口体系</h2>
+<p class="ss">对象层级 · 核心接口 · 方法/属性/信号 · GATT 操作流程</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4.1 对象层级 (Object Hierarchy)</h3>
+
+<div class="cb">
+<span class="cm">// BlueZ D-Bus Object Tree — 每个设备/服务/特征都是一个独立 D-Bus 对象</span>
+<span class="st">/org/bluez</span>                           ← Agent Manager, Profile Manager
+<span class="st">├── /org/bluez/hci0</span>                   ← Adapter1: 控制器级别操作 (扫描/广播/配对)
+<span class="st">│   └── /org/bluez/hci0/dev_XX_XX_XX_XX_XX_XX</span>  ← Device1: 已发现/已连接设备
+<span class="st">│       └── /org/bluez/hci0/dev_XX.../serviceXXXX</span>    ← GattService1
+<span class="st">│           └── /org/bluez/hci0/dev_XX.../charXXXX</span>      ← GattCharacteristic1
+<span class="st">│               └── /org/bluez/hci0/dev_XX.../descXXXX</span>      ← GattDescriptor1
+<span class="st">├── /org/bluez/hci1</span>
+<span class="st">└── /org/bluez/app</span>                     ← GattProfile1 (GATT Server 注册点)</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4.2 核心接口一览</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>接口</th><th>关键方法</th><th>关键属性</th><th>关键信号</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>org.bluez.Adapter1</code></td>
+      <td>StartDiscovery / StopDiscovery<br>SetDiscoveryFilter / RemoveDevice</td>
+      <td>Address / Name / Alias / Class<br>Powered / Discoverable / Pairable<br>Discovering / UUIDs / Modalias</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.Device1</code></td>
+      <td>Connect / Disconnect<br>ConnectProfile / DisconnectProfile<br>Pair / CancelPairing</td>
+      <td>Address / Name / Alias / Icon<br>Paired / Connected / Trusted<br>Blocked / RSSI / TxPower<br>UUIDs / Adapter / ServicesResolved</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.GattService1</code></td>
+      <td>—</td>
+      <td>UUID / Primary / Device<br>Includes (子 Service)</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.GattCharacteristic1</code></td>
+      <td>ReadValue / WriteValue<br>StartNotify / StopNotify<br>AcquireWrite / AcquireNotify (fd)</td>
+      <td>UUID / Service / Value<br>Notifying / Flags<br>WriteAcquired / NotifyAcquired</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.GattDescriptor1</code></td>
+      <td>ReadValue / WriteValue</td>
+      <td>UUID / Characteristic / Value / Flags</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.GattManager1</code></td>
+      <td>RegisterApplication<br>UnregisterApplication</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.LEAdvertisement1</code></td>
+      <td>Release</td>
+      <td>Type / ServiceUUIDs / ManufacturerData<br>SolicitUUIDs / Includes / LocalName<br>Appearance / Duration / Timeout</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>org.bluez.LEAdvertisingManager1</code></td>
+      <td>RegisterAdvertisement<br>UnregisterAdvertisement</td>
+      <td>ActiveInstances<br>SupportedIncludes<br>SupportedSecondaryChannels</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4.3 GATT Client 典型操作流程 (D-Bus)</h3>
+
+<div class="sg">
+  <div class="st"><b>1. StartDiscovery</b><br>调用 <code>Adapter1.StartDiscovery</code>，监听 <code>InterfacesAdded</code> 信号发现新设备</div>
+  <div class="st"><b>2. Connect</b><br>调用 <code>Device1.Connect</code>，等待 <code>Connected: true</code> + <code>ServicesResolved: true</code></div>
+  <div class="st"><b>3. Discover GATT</b><br>ObjectManager <code>GetManagedObjects()</code> 枚举 /hci0/dev_XX/ 下的所有 Service/Char/Desc</div>
+  <div class="st"><b>4. Write CCCD</b><br>调用 <code>GattDescriptor1.WriteValue([0x01,0x00])</code> 开启 Notify（Descriptor UUID 0x2902）</div>
+  <div class="st"><b>5. Read/Write</b><br><code>Char.ReadValue()</code> 或 <code>Char.WriteValue(bytes)</code> 进行数据交互</div>
+  <div class="st"><b>6. Handle Notify</b><br>监听 D-Bus <code>PropertiesChanged</code> 信号，<code>GattCharacteristic1.Value</code> 属性变化时收到通知数据</div>
+</div>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="ct">💡 GATT Server 注册流程</div>
+  <strong>GATT Client</strong> (手机/PC 作为 Central): 上述流程 — 调用 Remote 设备提供的 D-Bus 对象方法。<br>
+  <strong>GATT Server</strong> (设备作为 Peripheral): 应用在 <code>/org/bluez/app</code> 注册 <code>GattProfile1</code> 对象 → 调用 <code>GattManager1.RegisterApplication()</code> → bluetoothd 将本地 GATT 数据库发布到 BLE 广播/连接中。
+</div>
+
+<!-- ── Ch5: HCI 传输层 ── -->
+<h2 class="sh">5. HCI 传输驱动 — Controller 通信链路</h2>
+<p class="ss">UART (H4/H5) · USB (btusb) · SPI · SDIO — 协议栈与硬件的最后一段</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>H4 (UART 4-Wire)</h4>
+    <div class="lbl">drivers/bluetooth/hci_h4.c · 最普遍的嵌入式传输</div>
+    <p>
+    <strong>物理层</strong>: UART (TX/RX/CTS/RTS)，波特率 115200~4Mbps<br>
+    <strong>协议</strong>: 包类型指示字节 (1B) + payload<br>
+    <code>0x01</code> HCI Command &nbsp; <code>0x02</code> ACL Data<br>
+    <code>0x03</code> SCO Data &nbsp; <code>0x04</code> HCI Event<br>
+    <strong>优点</strong>: 简单、跨平台、几乎所有 BLE 模块支持。<br>
+    <strong>缺点</strong>: 无纠错、无重传，依赖硬件流控。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>H5 (3-Wire UART)</h4>
+    <div class="lbl">drivers/bluetooth/hci_h5.c · 可靠传输</div>
+    <p>
+    <strong>物理层</strong>: UART (仅需 TX/RX，可选 RTS/CTS)<br>
+    <strong>协议</strong>: 基于 <em>SLIP (Serial Line IP)</em> 的链路层协议。提供：<br>
+    • 数据包分帧 (起始/结束标志 <code>0xC0</code>)<br>
+    • 16-bit CRC 校验<br>
+    • 链路建立 (Link Establishment) 协商<br>
+    • 可靠重传 (基于序列号和 ACK)<br>
+    <strong>状态机</strong>: Uninitialized → Initialized → Active<br>
+    适用于不可靠物理链路（无硬件流控的 UART）。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>btusb (USB Bluetooth Dongle)</h4>
+    <div class="lbl">drivers/bluetooth/btusb.c · 桌面/网关主流</div>
+    <p>
+    <strong>USB Class</strong>: Wireless Controller (E0h), Subclass RF (01h), Protocol Bluetooth (01h)<br>
+    <strong>端点</strong>: Bulk IN/OUT (ACL + Command) + Interrupt IN (Event) + Isochronous (SCO)<br>
+    <strong>设备列表</strong>: btusb 驱动内置 ~400+ USB VID/PID 表 (Intel, Realtek, Broadcom, CSR, …)。<br>
+    <strong>固件加载</strong>: 部分 dongle 需要启动时加载固件 (<code>/lib/firmware/</code>)。<br>
+    带宽: USB 2.0 HS (480Mbps) 远超 BLE/Classic BT 需求。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>设备树配置示例</h4>
+    <div class="lbl">嵌入式 Linux 中通过 DT 或 platform_data 注册</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// Device Tree: nRF52840 via UART H4</span>
+<span class="kw">&amp;</span><span class="ty">uart2</span> {
+    bluetooth {
+        compatible = <span class="st">"nordic,nrf52840-bluetooth"</span>;
+        reset-gpios  = <span class="kw">&lt;&amp;</span><span class="ty">gpio0</span> <span class="nu">12</span> <span class="nu">1</span><span class="kw">&gt;</span>;
+        device-wake-gpios = <span class="kw">&lt;&amp;</span><span class="ty">gpio0</span> <span class="nu">11</span> <span class="nu">0</span><span class="kw">&gt;</span>;
+        host-wake-gpios   = <span class="kw">&lt;&amp;</span><span class="ty">gpio0</span> <span class="nu">13</span> <span class="nu">0</span><span class="kw">&gt;</span>;
+        max-speed = <span class="nu">1000000</span>;
+    };
+};
+
+<span class="cm">// 驱动 probe 时调用:</span>
+<span class="fn">hci_register_dev</span>(hdev);</div>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">📦 hci_uart — UART 协议多路复用</div>
+  <strong>drivers/bluetooth/hci_uart.c</strong> 是一个<em>多协议 UART 驱动框架</em>。它不直接处理 UART 硬件（由 Linux serial core 处理），而是在 UART 之上注册多个协议处理程序 (proto)：<br>
+  <code>h4 (HCI_UART_H4)</code> · <code>h5 (HCI_UART_3WIRE)</code> · <code>bcsp (HCI_UART_BCSP)</code> · <code>ath3k / intel / bcm / qca</code><br>
+  通过 <code>hci_uart_register_proto(&amp;h4_proto)</code> 注册协议。上层通过 <code>HCIUARTSETPROTO (ioctl)</code> 或 Bluetooth 配置选择协议。现代 BlueZ 中推荐使用 <em>serdev</em> (serial device bus) 替代传统 line discipline。
+</div>
+
+<!-- ── Ch6: 编译与构建 ── -->
+<h2 class="sh">6. 编译与构建 — 从源码到固件</h2>
+<p class="ss">原生编译 · Buildroot 交叉编译 · Yocto · Android · 依赖与配置</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">6.1 Buildroot 交叉编译 (嵌入式目标)</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Buildroot 配置</h4>
+    <div class="lbl">Target packages → Networking → BlueZ</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># make menuconfig</span>
+<span class="st">Target packages</span>  →  <span class="st">Networking applications</span>
+    [*] bluez-utils
+    [*]   enable client
+    [*]   enable command line tools
+    [*]   enable GATT tool
+    [*]   install test scripts
+
+<span class="cm"># Kernel config</span>
+CONFIG_BT=m
+CONFIG_BT_HCIUART=y
+CONFIG_BT_HCIUART_H4=y
+CONFIG_BT_HCIUART_H5=y
+CONFIG_BT_LE=y
+CONFIG_BT_L2CAP=y
+CONFIG_BT_RFCOMM=y
+CONFIG_BT_BNEP=y
+CONFIG_BT_SMP=y
+CONFIG_BT_6LOWPAN=y</div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>依赖库</h4>
+    <div class="lbl">BlueZ 5 编译依赖链</div>
+    <p>
+    <strong>必需</strong>:<br>
+    <code>glib-2.0</code> (事件循环、数据结构)<br>
+    <code>dbus-1</code> (D-Bus IPC)<br>
+    <code>libudev</code> (设备热插拔检测)<br>
+    <strong>可选但推荐</strong>:<br>
+    <code>readline</code> (bluetoothctl 交互式)<br>
+    <code>libical</code> (日历/时间相关)<br>
+    <code>json-c</code> (JSON 配置解析)<br>
+    <code>ell</code> (Embedded Linux Library, Intel 出品 — 可选替代部分 GLib 功能)
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">6.2 原生编译 (开发调试)</h3>
+
+<div class="cb">
+<span class="cm"># 克隆源码</span>
+git clone git://git.kernel.org/pub/scm/bluetooth/bluez.git
+<span class="kw">cd</span> bluez
+
+<span class="cm"># 安装依赖 (Ubuntu/Debian)</span>
+sudo apt build-dep bluez
+<span class="cm"># 或手动安装</span>
+sudo apt install libglib2.0-dev libdbus-1-dev libudev-dev libical-dev libreadline-dev
+
+<span class="cm"># 配置与编译</span>
+./bootstrap                    <span class="cm"># 生成 configure (git 源码需要)</span>
+./configure <span class="se">\</span>
+    --prefix=/usr <span class="se">\</span>
+    --sysconfdir=/etc <span class="se">\</span>
+    --localstatedir=/var <span class="se">\</span>
+    --enable-library <span class="se">\</span>
+    --enable-client <span class="se">\</span>
+    --enable-tools <span class="se">\</span>
+    --enable-experimental     <span class="cm"># 启用实验性 LE 特性</span>
+
+make -j$(nproc)
+sudo make install
+
+<span class="cm"># 启动</span>
+sudo systemctl start bluetooth
+sudo systemctl status bluetooth</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 交叉编译注意事项</div>
+  <strong>1. --enable-library</strong>: 必须开启，生成 <code>libbluetooth.so</code> 供 C/C++ 应用链接。<br>
+  <strong>2. D-Bus 配置</strong>: 确保 <code>/etc/dbus-1/system.d/bluetooth.conf</code> 正确安装，否则 bluetoothd 无法注册 D-Bus 服务。<br>
+  <strong>3. GLib 版本</strong>: BlueZ 5.60+ 要求 GLib ≥ 2.44。<br>
+  <strong>4. 内核版本</strong>: LE 高级特性 (BT 5.0+ Coded PHY, Isochronous) 需要 Linux 5.x+。<br>
+  <strong>5. firmware</strong>: 许多 BLE 芯片需要启动时加载固件到 Controller。固件需放入 <code>/lib/firmware/</code> 或 <code>/lib/firmware/brcm/</code>。
+</div>
+
+<!-- ── Ch7: 工具链实战 ── -->
+<h2 class="sh">7. 工具链实战 — 调试与诊断</h2>
+<p class="ss">bluetoothctl · btmon · hcitool · gatttool · bluemoon · btmgmt · 日志分析</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7.1 bluetoothctl — 交互式蓝牙管理</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>常用命令</h4>
+    <div class="lbl">扫描 · 连接 · 配对 · GATT</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># Adapter 管理</span>
+power on / power off
+show                           <span class="cm"># 查看 adapter 信息</span>
+list                           <span class="cm"># 列出所有 adapter</span>
+select <span class="st">hci0</span>                  <span class="cm"># 选择当前 adapter</span>
+
+<span class="cm"># 扫描与发现</span>
+scan on / scan off
+devices                        <span class="cm"># 列出已发现设备</span>
+paired-devices                 <span class="cm"># 列出已配对设备</span>
+
+<span class="cm"># 连接与配对</span>
+connect <span class="st">AA:BB:CC:DD:EE:FF</span>
+disconnect <span class="st">AA:BB:CC:DD:EE:FF</span>
+pair <span class="st">AA:BB:CC:DD:EE:FF</span>
+trust <span class="st">AA:BB:CC:DD:EE:FF</span>
+remove <span class="st">AA:BB:CC:DD:EE:FF</span>
+
+<span class="cm"># 设备查看</span>
+info <span class="st">AA:BB:CC:DD:EE:FF</span></div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>GATT 子菜单</h4>
+    <div class="lbl">menu gatt — 进入 GATT 交互模式</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># 进入 GATT 模式</span>
+menu gatt
+
+<span class="cm"># 列出设备的所有 GATT 属性</span>
+list-attributes <span class="st">AA:BB:CC:DD:EE:FF</span>
+
+<span class="cm"># 选择要操作的 Characteristic</span>
+select-attribute <span class="st">/org/bluez/hci0/dev_XX_.../serviceXXXX/charXXXX</span>
+
+<span class="cm"># 操作</span>
+read
+write <span class="st">"0x01 0x02 0x03"</span>
+notify <span class="kw">on</span> / notify <span class="kw">off</span>
+
+<span class="cm"># 注册本地 GATT Application</span>
+register-application <span class="st">/path/to/gatt/app</span></div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7.2 btmon — HCI 抓包分析</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>实时抓取</h4>
+    <div class="lbl">btmon — Bluetooth Monitor</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># 实时查看所有 HCI 通信</span>
+btmon
+
+<span class="cm"># 写入文件 (可用 Wireshark 打开)</span>
+btmon -w /tmp/hci_trace.log
+
+<span class="cm"># 仅监控特定 adapter</span>
+btmon -i hci0
+
+<span class="cm"># 带时间戳</span>
+btmon -t
+
+<span class="cm"># 结合 bluetoothd 启动时开启 monitor</span>
+bluetoothd -n -d</div>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>btmon 输出解读</h4>
+    <div class="lbl">分层显示：HCI → L2CAP → ATT → GATT</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">&lt; HCI Command: LE Set Scan Parameters</span>
+    Type: Active (<span class="nu">0x01</span>)
+    Interval: <span class="nu">60.000</span> ms
+    Window: <span class="nu">30.000</span> ms
+    Own_Address_Type: Random (<span class="nu">0x01</span>)
+
+<span class="cm">&gt; HCI Event: Command Complete</span>
+    LE Set Scan Parameters (<span class="nu">0x08</span>|<span class="nu">0x000b</span>) ncmd <span class="nu">1</span>
+    Status: Success (<span class="nu">0x00</span>)
+
+<span class="cm">&lt; HCI Command: LE Set Scan Enable</span>
+    Scanning_Enabled: true (<span class="nu">0x01</span>)</div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7.3 其他诊断工具</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>命令</th><th>用途</th><th>示例</th></tr></thead>
+  <tbody>
+    <tr><td><code>hcitool dev</code></td><td>列出本地 HCI 设备</td><td><code>hcitool dev</code> → <code>hci0 00:11:22:33:44:55</code></td></tr>
+    <tr><td><code>hcitool lescan</code></td><td>被动 BLE 扫描 (仅显示地址)</td><td><code>hcitool lescan --duplicates</code></td></tr>
+    <tr><td><code>hcitool leinfo</code></td><td>读取 BLE 连接信息</td><td><code>hcitool leinfo AA:BB:CC:DD:EE:FF</code></td></tr>
+    <tr><td><code>btmgmt info</code></td><td>查看 Controller 管理信息 (mgmt 层)</td><td><code>btmgmt info</code> → 显示支持的命令、特性</td></tr>
+    <tr><td><code>btmgmt find</code></td><td>mgmt 层设备发现</td><td><code>btmgmt find -l</code> (LE only)</td></tr>
+    <tr><td><code>btmgmt power on/off</code></td><td>通过 mgmt 控制电源</td><td><code>btmgmt power off</code></td></tr>
+    <tr><td><code>bluemoon</code></td><td>Intel/Realtek 控制器固件管理</td><td><code>bluemoon -F /lib/firmware/intel/ibt-*.sfi</code></td></tr>
+    <tr><td><code>btattach</code></td><td>HCI 传输层附加工具</td><td><code>btattach -B /dev/ttyS1 -P h4</code></td></tr>
+    <tr><td><code>gatttool</code></td><td>GATT 命令行客户端 (已弃用，推荐 bluetoothctl)</td><td><code>gatttool -b AA:BB:CC -t random --char-write-req</code></td></tr>
+    <tr><td><code>dbus-send</code></td><td>直接向 BlueZ D-Bus 发送命令</td><td>见下方示例</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb" style="margin-top:12px">
+<span class="cm"># 使用 dbus-send 直接调用 BlueZ D-Bus API</span>
+<span class="cm"># 启动扫描</span>
+dbus-send --system --dest=org.bluez --print-reply <span class="se">\</span>
+    /org/bluez/hci0 org.bluez.Adapter1.StartDiscovery
+
+<span class="cm"># 连接设备</span>
+dbus-send --system --dest=org.bluez --print-reply <span class="se">\</span>
+    /org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF org.bluez.Device1.Connect
+
+<span class="cm"># 使用 gdbus (GLib D-Bus 工具) 监控 BlueZ 对象树</span>
+gdbus monitor --system --dest org.bluez</div>
+
+<!-- ── Ch8: 项目中集成 BlueZ ── -->
+<h2 class="sh">8. 项目实战 — C/C++ 集成 BlueZ</h2>
+<p class="ss">libbluetooth · D-Bus C API · GDBus · D-Bus XML Introspection · GATT Server 实现</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">8.1 libbluetooth C API (内核 HCI Socket)</h3>
+
+<div class="cb">
+<span class="cm">// 低级 HCI 编程 — 直接操作 HCI socket</span>
+<span class="cp">#include &lt;bluetooth/bluetooth.h&gt;
+#include &lt;bluetooth/hci.h&gt;
+#include &lt;bluetooth/hci_lib.h&gt;</span>
+
+<span class="ty">int</span> dev_id = <span class="fn">hci_get_route</span>(<span class="kw">NULL</span>);        <span class="cm">// 获取第一个可用 adapter</span>
+<span class="ty">int</span> sock = <span class="fn">hci_open_dev</span>(dev_id);            <span class="cm">// 打开 HCI socket</span>
+
+<span class="cm">// BLE 扫描 (LE Set Scan Parameters + LE Set Scan Enable)</span>
+<span class="ty">uint8_t</span> own_type = <span class="nu">0x00</span>;  <span class="cm">// Public address</span>
+<span class="ty">uint8_t</span> scan_type = <span class="nu">0x01</span>;  <span class="cm">// Active scanning</span>
+<span class="ty">uint16_t</span> interval = <span class="fn">htobs</span>(<span class="nu">0x0010</span>);
+<span class="ty">uint16_t</span> window   = <span class="fn">htobs</span>(<span class="nu">0x0010</span>);
+
+<span class="fn">hci_le_set_scan_parameters</span>(sock, scan_type, interval, window, own_type, <span class="nu">0x00</span>, <span class="nu">1000</span>);
+<span class="fn">hci_le_set_scan_enable</span>(sock, <span class="nu">0x01</span>, <span class="nu">0x00</span>, <span class="nu">1000</span>);
+
+<span class="cm">// 读取扫描结果 (HCI LE Advertising Report events)</span>
+<span class="kw">struct</span> <span class="ty">hci_filter</span> nf;
+<span class="fn">hci_filter_clear</span>(&amp;nf);
+<span class="fn">hci_filter_set_ptype</span>(HCI_EVENT_PKT, &amp;nf);
+<span class="fn">hci_filter_set_event</span>(EVT_LE_META_EVENT, &amp;nf);
+<span class="fn">setsockopt</span>(sock, SOL_HCI, HCI_FILTER, &amp;nf, <span class="kw">sizeof</span>(nf));
+
+<span class="ty">unsigned char</span> buf[HCI_MAX_EVENT_SIZE];
+<span class="kw">while</span> (<span class="fn">read</span>(sock, buf, <span class="kw">sizeof</span>(buf)) &gt; <span class="nu">0</span>) {
+    <span class="fn">process_event</span>(buf);  <span class="cm">// 解析 evt_le_meta_event → LE Advertising Report</span>
+}</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">8.2 GDBus — 推荐的 BlueZ D-Bus 编程方式</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>GDBus 编程模型</h4>
+    <div class="lbl">GLib D-Bus 绑定 — 项目实际使用</div>
+    <p>
+    <strong>核心对象</strong>:<br>
+    <code>GDBusConnection</code>: D-Bus 连接（system bus）<br>
+    <code>GDBusProxy</code>: 远程 D-Bus 对象代理<br>
+    <code>GDBusObjectManagerClient</code>: 对象管理器（自动发现 Service/Char/Desc）<br>
+    <strong>异步模式</strong>: GDBus 全部异步，通过 <em>GAsyncReadyCallback</em> 回调获取结果。<br>
+    参考项目中 <code>DBusConnection.cpp</code> 和 <code>DBusProxy.cpp</code> 的实现。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>GATT Server 注册 (典型代码骨架)</h4>
+    <div class="lbl">通过 D-Bus 将本地对象发布到 BlueZ</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 1. 创建 D-Bus 连接</span>
+GDBusConnection *conn = <span class="fn">g_bus_get_sync</span>(
+    G_BUS_TYPE_SYSTEM, <span class="kw">NULL</span>, <span class="kw">NULL</span>);
+
+<span class="cm">// 2. 注册 GATT Application (在 /org/bluez/app)</span>
+<span class="fn">g_dbus_connection_call_sync</span>(conn,
+    <span class="st">"org.bluez"</span>, <span class="st">"/org/bluez/hci0"</span>,
+    <span class="st">"org.bluez.GattManager1"</span>,
+    <span class="st">"RegisterApplication"</span>,
+    application_path, ...);
+
+<span class="cm">// 3. 实现 org.bluez.GattService1 接口</span>
+<span class="cm">//    属性: UUID (s), Primary (b)</span>
+<span class="cm">// 4. 实现 org.bluez.GattCharacteristic1 接口</span>
+<span class="cm">//    方法: ReadValue, WriteValue, StartNotify</span></div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">8.3 项目中的 BlueZ 集成架构 (LinkricAI)</h3>
+
+<div class="freq-wrap">
+<canvas id="projCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>核心封装类</h4>
+    <div class="lbl">BluetoothImplementations/BlueZ/</div>
+    <p>
+    <code>BlueZDeviceManager</code>: Adapter 管理 — 发现设备、连接/断开、配对、获取设备列表<br>
+    <code>BlueZBluetoothDevice</code>: 设备抽象 — GATT 服务发现、连接状态管理<br>
+    <code>BlueZLEGattManager</code>: GATT Server 注册 — 向 BlueZ 注册本地 GATT Application<br>
+    <code>BlueZLEGattService</code>: GATT Service 封装 — UUID、Primary/Secondary<br>
+    <code>BlueZLEGattCharacteristic</code>: Characteristic 封装 — ReadValue/WriteValue/Notify<br>
+    <code>BlueZHostController</code>: HCI 控制器抽象<br>
+    <code>PairingAgent</code>: 配对代理 — 实现 <code>org.bluez.Agent1</code> 接口<br>
+    <code>DBusConnection</code>: RAII 风格 D-Bus 连接管理
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>技术栈层次</h4>
+    <div class="lbl">从上到下：业务 → 封装 → BlueZ → 内核</div>
+    <p>
+    <strong>PetCollarScanner</strong> (业务层): 调用 BlueZDeviceManager 扫描 BLE 项圈设备<br>
+    <strong>BlueZ 封装层</strong>: GDBus 异步调用 org.bluez API<br>
+    <strong>bluetoothd</strong>: D-Bus 服务进程<br>
+    <strong>内核 net/bluetooth/</strong>: L2CAP/SMP/HCI<br>
+    <strong>hci_uart (H4)</strong>: UART 驱动 → nRF52840 Controller<br>
+    关键: 所有 D-Bus 调用通过 <code>GDBusProxy</code> 进行，错误通过 <code>ManagedGError</code> 管理。<br>
+    GATT 数据使用 <code>GVariant</code> 序列化/反序列化。
+    </p>
+  </div>
+</div>
+
+<!-- ── Ch9: 调试与故障排查 ── -->
+<h2 class="sh">9. 调试与故障排查</h2>
+<p class="ss">常见问题 · 日志分析 · 内核调试 · 性能调优</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">9.1 调试日志层级</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>层级</th><th>启用方式</th><th>日志位置</th><th>查看什么</th></tr></thead>
+  <tbody>
+    <tr><td><code>bluetoothd 调试</code></td><td><code>bluetoothd -n -d</code></td><td>stdout / journalctl</td><td>D-Bus 方法调用、GATT 操作、mgmt 通信</td></tr>
+    <tr><td><code>内核 HCI 调试</code></td><td><code>echo 1 &gt; /sys/kernel/debug/bluetooth/hci0/bt_debug</code></td><td>dmesg / debugfs</td><td>HCI 命令/事件、连接状态变化、加密过程</td></tr>
+    <tr><td><code>btmon 抓包</code></td><td><code>btmon -w /tmp/trace.log</code></td><td>/tmp/trace.log</td><td>完整 HCI 通信 → Wireshark 分析</td></tr>
+    <tr><td><code>D-Bus 监控</code></td><td><code>dbus-monitor --system</code></td><td>stdout</td><td>所有 D-Bus 方法调用和信号</td></tr>
+    <tr><td><code>mgmt socket 调试</code></td><td><code>btmgmt monitor</code></td><td>stdout</td><td>Management Interface 事件</td></tr>
+    <tr><td><code>蓝牙芯片日志</code></td><td>通过厂商工具 (如 nRF Connect)</td><td>芯片侧</td><td>Controller 侧状态、射频参数</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">9.2 常见问题速查</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>设备扫描不到</h4>
+    <div class="lbl">hcitool lescan 无结果</div>
+    <p>
+    <strong>1. 检查 adapter 状态</strong>: <code>hciconfig hci0</code> → 确认 <code>UP RUNNING</code><br>
+    <strong>2. 检查 firmware 是否加载</strong>: <code>dmesg | grep -i bluetooth</code> 或 <code>dmesg | grep -i firmware</code><br>
+    <strong>3. 检查射频 killswitch</strong>: <code>rfkill list</code> → 确认 bluetooth 未被 blocked<br>
+    <strong>4. 检查 BLE 是否启用</strong>: <code>btmgmt info</code> → Supported settings 包含 "le"<br>
+    <strong>5. 查看 mgmt 状态</strong>: <code>btmgmt info</code> → current settings 包含 "le" + "powered"
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f59e0b">
+    <h4>连接失败 / 频繁断连</h4>
+    <div class="lbl">Connection timeout / Disconnected</div>
+    <p>
+    <strong>1. 检查连接参数</strong>: Supervision Timeout 是否过短 → <code>btmon</code> 抓包查看 <code>CONNECT_IND</code> 参数<br>
+    <strong>2. 检查晶振精度</strong>: 32kHz RC 误差过大导致错过连接事件 → 校准或改用外部晶振<br>
+    <strong>3. 检查 UART 流控</strong>: <code>stty -F /dev/ttyS1 -a</code> 确认 <code>crtscts</code> 已启用<br>
+    <strong>4. 蓝牙芯片复位</strong>: 通过 GPIO 拉低复位脚，等待 100ms 后恢复<br>
+    <strong>5. 供电噪声</strong>: 使用外部 DC-DC 时注意 switching noise 耦合到 RF 前端 → 加 LC 滤波
+    </p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>D-Bus 注册失败</h4>
+    <div class="lbl">GATT Application 无法注册</div>
+    <p>
+    <strong>1. 确认 bluetoothd 运行</strong>: <code>systemctl status bluetooth</code> 或 <code>ps aux | grep bluetoothd</code><br>
+    <strong>2. 检查 D-Bus 策略配置</strong>: <code>/etc/dbus-1/system.d/bluetooth.conf</code> 是否允许当前用户<br>
+    <strong>3. 验证对象路径</strong>: GATT Application 必须以 <code>/</code> 开头（如 <code>/org/bluez/app</code>）<br>
+    <strong>4. 确认接口实现完整</strong>: <code>GattService1</code> + <code>GattCharacteristic1</code> 所有必需属性和方法都实现<br>
+    <strong>5. 使用 gdbus 检查</strong>: <code>gdbus introspect --system --dest org.bluez --object-path /org/bluez/hci0</code>
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>HCI 通信超时</h4>
+    <div class="lbl">Command Complete timeout / ACL lost</div>
+    <p>
+    <strong>1. 检查 UART 波特率</strong>: 是否匹配 Controller 预期速率<br>
+    <strong>2. 检查 CTS/RTS 连接</strong>: 若使用硬件流控，确保 CTS/RTS 引脚正确连接<br>
+    <strong>3. 检查 H4/H5 协议匹配</strong>: kernel driver 协议设置与 Controller 固件一致<br>
+    <strong>4. 查看内核错误</strong>: <code>dmesg -w</code> 实时监控 <code>Bluetooth: hci0: command 0xXXXX tx timeout</code><br>
+    <strong>5. 降低 ACL 负载</strong>: 减小 Connection Interval 或 Data Length 缓解 UART 拥塞
+    </p>
+  </div>
+</div>
+
+<!-- ── Ch10: BlueZ 未来方向 ── -->
+<h2 class="sh">10. BlueZ 演进与未来</h2>
+<p class="ss">LE Audio · Isochronous Channels · EATT · Mesh · ELL 迁移 · Android 替代</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>LE Audio / Isochronous</h4>
+    <div class="lbl">Linux 5.x+ · BT 5.2+</div>
+    <p>
+    内核 <code>iso.c</code> 实现 Isochronous Channels (CIS/BIS)。<br>
+    bluetoothd 支持 <code>org.bluez.MediaTransport1</code> 等时传输。<br>
+    Auracast (BIS) 广播音频仍在积极开发中。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>EATT (Enhanced ATT)</h4>
+    <div class="lbl">多信道并行 ATT 操作</div>
+    <p>
+    BlueZ 5.56+ 开始支持 EATT。<br>
+    允许多个 L2CAP ATT 信道并行，解决传统 ATT 串行化瓶颈。<br>
+    内核 <code>l2cap_core.c</code> 中 <code>l2cap_eatt_chan</code> 相关实现。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ELL (Embedded Linux Library)</h4>
+    <div class="lbl">Intel 出品 · 轻量化替代 GLib</div>
+    <p>
+    <code>ell</code> 是 Intel 开发的嵌入式 Linux 库，提供类似 GLib 的 event loop / D-Bus / 数据结构。<br>
+    BlueZ 正在逐步迁移部分组件到 ELL（目前主要用于 mgmt 和部分工具）。目标：减小嵌入式系统上的内存占用。
+    </p>
+  </div>
+</div>
+
+<div class="callout success" style="margin-top:20px">
+  <div class="ct">🎯 BlueZ 在嵌入式 IoT 中的最佳实践</div>
+  <strong>1. 选择稳定的 BlueZ 版本</strong> — 推荐 BlueZ 5.66+ (LE Audio 支持较完善)，或 5.55 (保守稳定版)<br>
+  <strong>2. 使用 H4 协议 (UART 4-Wire)</strong> — 最简单可靠，硬件流控确保不丢包<br>
+  <strong>3. 内核编译成模块 (m)</strong> — <code>CONFIG_BT=m</code> + 按需加载，节约内存 (模块化可节省 ~200KB)<br>
+  <strong>4. D-Bus 策略最小化</strong> — 仅允许必要用户访问，生产环境关闭实验性特性 (<code>--disable-experimental</code>)<br>
+  <strong>5. 监控日志</strong> — bluetoothd 日志重定向到 syslog，设置合理的 log level 避免日志刷屏<br>
+  <strong>6. OTA 升级</strong> — Controller 固件需支持 OTA (Device Firmware Update)，通过 HCI Vendor Specific 命令或 D-Bus 接口更新
+</div>
+
+<hr>
+
+<p style="text-align:center;color:#555577;font-size:11px;margin-top:32px">
+  Reference: BlueZ 5.x source (kernel.org) · Linux Kernel Documentation/networking/bluetooth.rst · Bluetooth Core Spec v5.4<br>
+  Linux BlueZ Deep Dive — immersive dark style
+</p>
+
+</div><!-- /doc -->
+
+<!-- Scroll reveal -->
+<script>
+(function(){
+  var els=document.querySelectorAll('.g-card,.cd,.sec-title,.sec-sub,.cv-wrap,.gap-card');
+  var ob=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('vis'); } });
+  },{rootMargin:'0px 0px -40px 0px'});
+  els.forEach(function(el){ el.classList.add('will-observe'); ob.observe(el); });
+})();
+</script>
+
+<!-- Architecture Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('archCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=380;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function rbox(x,y,w,h,txt,sub,color,borderColor){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle=borderColor||'rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(txt,x+w/2,y+h/2-4);
+    if(sub){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(sub,x+w/2,y+h/2+14); }
+  }
+
+  var m=12;
+  var panelW=220, panelH=58, panelX=m*2;
+  var bottomW=(W-m*2-panelW-16);
+  var y=20;
+
+  // Left column — Userspace
+  ctx.fillStyle='#a78bfa'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Userspace', m+6, y-4);
+
+  var uy=y;
+  rbox(m, uy, W-m*2, 42, 'Application  (C / C++ / Python / JS)',
+    '使用 libbluetooth / GDBus / PyBluez / Node-ble 调用 BlueZ API',
+    'rgba(167,139,250,0.12)');
+
+  uy+=50;
+  rbox(m, uy, W-m*2, 42, 'bluetoothd  (D-Bus System Service · org.bluez)',
+    'GAP · GATT · SDP · A2DP · HFP · Agent · Advertisement Manager · Profile Manager',
+    'rgba(52,211,153,0.15)');
+
+  // D-Bus arrow
+  uy+=50;
+  ctx.fillStyle='rgba(108,99,255,0.4)'; ctx.fillRect(m+10,uy-4,4,14);
+  ctx.fillStyle='rgba(108,99,255,0.5)'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('D-Bus System Bus (AF_UNIX socket /var/run/dbus/system_bus_socket)', m+22, uy+6);
+
+  // mgmt arrow
+  uy+=20;
+  ctx.strokeStyle='rgba(248,113,113,0.3)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(m+12, uy); ctx.lineTo(m+12, uy+18); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(248,113,113,0.6)'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('mgmt socket (AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI, HCI_CHANNEL_CONTROL)', m+22, uy+12);
+
+  // Kernel
+  uy+=24;
+  ctx.fillStyle='#f87171'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Kernelspace', m+6, uy-4);
+
+  var ky=uy;
+  rbox(m, ky, W-m*2, 38, 'net/bluetooth/  (L2CAP · HCI Core · SMP · RFCOMM · BNEP · 6LoWPAN)',
+    'hci_core.c · hci_event.c · l2cap_core.c · smp.c · mgmt.c · iso.c',
+    'rgba(248,113,113,0.12)');
+
+  ky+=46;
+  rbox(m, ky, W-m*2, 36, 'HCI Transport Drivers  (hci_uart · btusb · btsdio · hci_bcm · hci_intel · serdev)',
+    'UART(H4/H5/BCSP) · USB(btusb) · SPI · SDIO · serdev (serial device bus)',
+    'rgba(248,113,113,0.18)');
+
+  // Hardware
+  ky+=44;
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Hardware', m+6, ky-4);
+
+  rbox(m, ky, W-m*2, 34, 'Bluetooth Controller  (nRF52840 / TI CC26xx / Cypress CYW / Intel / Realtek / Qualcomm)',
+    'BLE PHY + Link Layer 固件 · HCI Firmware · RF Frontend · Antenna',
+    'rgba(251,191,36,0.12)');
+
+  // Right side annotation: data flow
+  var rx=W-180;
+  ctx.fillStyle='#666688'; ctx.font='11px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('┌─ D-Bus API ─┐', W-20, 60);
+  ctx.fillText('├─ mgmt API ──┤', W-20, 160);
+  ctx.fillText('├─ HCI Proto ─┤', W-20, 260);
+  ctx.fillText('└── RF/Air ───┘', W-20, 330);
+})();
+</script>
+
+<!-- bluetoothd Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('btdCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=320;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function rbox(x,y,w,h,txt,sub,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(txt,x+w/2,y+h/2-3);
+    if(sub){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(sub,x+w/2,y+h/2+14); }
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c||'rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+
+  var m=14, panelW=W-m*2, y=16;
+
+  // Main loop
+  rbox(m, y, panelW, 64, 'GLib Main Event Loop  (g_main_loop_run)',
+    'D-Bus method calls → GDBus dispatch → Plugin callbacks → mgmt socket I/O → GATT operations',
+    'rgba(167,139,250,0.2)');
+
+  // Down arrows
+  var cy=y+70;
+  arrow(m+80,cy, m+80,cy+18);
+  arrow(m+200,cy, m+200,cy+18);
+  arrow(m+panelW-80,cy, m+panelW-80,cy+18);
+
+  cy+=24;
+  // Three modules
+  var cw=panelW/3-20;
+  rbox(m, cy, cw, 60, 'D-Bus Dispatcher','org.bluez API\n方法调用 & 信号','rgba(52,211,153,0.18)');
+  rbox(m+cw+14, cy, cw, 60, 'Plugin Engine','hciops · gatt-dbus\ndevice · adapter · policy','rgba(52,211,153,0.14)');
+  rbox(m+2*(cw+14), cy, cw, 60, 'mgmt Socket','HCI_CHANNEL_CONTROL\n命令/事件 · adapter 管理','rgba(52,211,153,0.14)');
+
+  // Bottom: storage
+  cy+=70;
+  arrow(m+panelW/2-60,cy, m+panelW/2-60,cy+16);
+  arrow(m+panelW/2+60,cy, m+panelW/2+60,cy+16);
+  cy+=22;
+  rbox(m, cy, cw, 44, 'Storage Backend','/var/lib/bluetooth/\n设备信息 · 配对密钥','rgba(56,189,248,0.12)');
+  rbox(m+cw+14, cy, cw, 44, 'D-Bus Policy','/etc/dbus-1/system.d/\nbluetooth.conf','rgba(56,189,248,0.12)');
+  rbox(m+2*(cw+14), cy, cw, 44, 'sysfs / debugfs','/sys/class/bluetooth/\n/sys/kernel/debug/bluetooth/','rgba(56,189,248,0.12)');
+})();
+</script>
+
+<!-- Project Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('projCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=460;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function rbox(x,y,w,h,txt,sub,color,borderColor){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle=borderColor||'rgba(255,255,255,0.18)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(txt,x+w/2,y+h/2-4);
+    if(sub){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(sub,x+w/2,y+h/2+14); }
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c||'rgba(108,99,255,0.4)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.fillStyle=c||'rgba(108,99,255,0.6)'; ctx.beginPath(); ctx.arc(x2,y2,3.5,0,Math.PI*2); ctx.fill(); }
+
+  var m=12, panelW=W-m*2;
+  var y=14;
+
+  // App layer
+  rbox(m, y, panelW, 52, 'Application Layer  (C++ · ACS Device SDK)',
+    'PetCollarScanner · CapabilityAgents/Bluetooth/ · acssdkBluetooth · 业务逻辑',
+    'rgba(167,139,250,0.22)');
+
+  y+=64;
+  arrow(m+panelW/2, y-6, m+panelW/2, y+8);
+
+  // BlueZ Wrapper
+  rbox(m, y, panelW, 64, 'BlueZ C++ Wrapper  (BluetoothImplementations/BlueZ/)',
+    'BlueZDeviceManager · BlueZLEGattManager · BlueZLEGattService/Characteristic · PairingAgent · DBusConnection',
+    'rgba(52,211,153,0.18)');
+
+  y+=78;
+  arrow(m+panelW/2, y-8, m+panelW/2, y+6);
+
+  // D-Bus layer
+  rbox(m, y, panelW, 36, 'GDBus / libdbus  (D-Bus System Bus — org.bluez)',
+    'GVariant 序列化 · GDBusProxy 远程调用 · D-Bus Introspection XML · ManagedGVariant',
+    'rgba(108,99,255,0.18)');
+
+  y+=50;
+  arrow(m+panelW/2, y-10, m+panelW/2, y+4);
+
+  // bluetoothd
+  rbox(m, y, panelW, 38, 'bluetoothd  (D-Bus Daemon · /usr/libexec/bluetooth/bluetoothd)',
+    'org.bluez.Adapter1 · Device1 · GattManager1 · GattService1/Char1/Desc1 · Agent1 · LEAdvertisingManager1',
+    'rgba(56,189,248,0.18)');
+
+  y+=52;
+  // Split arrows
+  arrow(m+panelW/2-120, y-8, m+panelW/2-120, y+6, 'rgba(248,113,113,0.4)');
+  arrow(m+panelW/2+120, y-8, m+panelW/2+120, y+6, 'rgba(248,113,113,0.4)');
+
+  // Kernel + HAL
+  rbox(m, y, panelW/2-20, 56, 'Kernel net/bluetooth/',
+    'L2CAP · HCI Core · SMP\nhci_uart (H4) Driver',
+    'rgba(248,113,113,0.15)');
+  rbox(m+panelW/2+20, y, panelW/2-20, 56, 'HAL (hal/ble_api.h)',
+    'ms_hal_ble · ms_hal\n硬件抽象层 · GPIO/UART 控制',
+    'rgba(248,113,113,0.15)');
+
+  y+=72;
+  arrow(m+panelW/2, y-10, m+panelW/2, y+4);
+
+  // Hardware
+  rbox(m, y, panelW, 48, 'Hardware  (JY1C Board · mipsel · Buildroot)',
+    'nRF52840 Controller · UART H4 1Mbps · 32MHz XOSC · 32.768kHz RC · PCB Antenna',
+    'rgba(251,191,36,0.15)');
+
+  // Right labels
+  ctx.fillStyle='#666688'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('C++ App Code', W-14, 40);
+  ctx.fillText('BlueZ SDK Wrapper', W-14, 120);
+  ctx.fillText('GDBus IPC', W-14, 178);
+  ctx.fillText('BlueZ Daemon', W-14, 236);
+  ctx.fillText('Kernel  ·  HAL', W-14, 310);
+  ctx.fillText('BLE SoC', W-14, 390);
+})();
+</script>
+
+</body>
+</html>

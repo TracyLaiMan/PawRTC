@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastDDS — ROS2 进程间通信核心</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}
+.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.canvas-wrap canvas{width:100%;height:100%;display:block}
+
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}
+.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}
+.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s8 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* code block inside card — tighter padding */
+.g-card .cblock{margin:10px 0 0 0;font-size:10.5px;padding:12px 14px;line-height:1.6}
+/* code block inside callout */
+.callout .cblock{margin:8px 0 0 0;font-size:10.5px;line-height:1.55}
+/* card grid spacing override */
+.card-grid + .card-grid{margin-top:0}
+.card-grid + .stage-card{margin-top:12px}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">DDS 架构</a><span class="sep"></span>
+  <a href="#s3">RTPS 协议</a><span class="sep"></span>
+  <a href="#s4">QoS 策略</a><span class="sep"></span>
+  <a href="#s5">发现机制</a><span class="sep"></span>
+  <a href="#s6">ROS2 集成</a><span class="sep"></span>
+  <a href="#s7">配置调优</a><span class="sep"></span>
+  <a href="#s8">对比总结</a>
+</nav>
+
+<!-- ===== S1: Hero ===== -->
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">FastDDS (eProsima Fast DDS)</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">ROS2 的默认通信中间件——基于 DDS 标准的<strong>去中心化、实时、高性能发布-订阅框架</strong>。不再需要 ROS1 的 roscore，节点直接对等发现和通信</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">Domain</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">Participant</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">Publisher</span><span class="flow-arr">↔</span>
+    <span class="flow-box" style="color:#f472b6">Subscriber</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">Topic</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">QoS</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">DDS</div><div class="l">OMG 标准 (2004)</div></div>
+    <div class="stat"><div class="n">RTPS</div><div class="l">线协议 (IEC 61158)</div></div>
+    <div class="stat"><div class="n">P2P</div><div class="l">去中心化发现</div></div>
+    <div class="stat"><div class="n">22种</div><div class="l">QoS 策略</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S2: DDS Architecture ===== -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">DDS 架构：从 ROS1 到 ROS2 的进化</h2>
+  <p class="sec-sub" id="s2s">ROS1 依赖中心化的 <code>roscore</code>（XML-RPC + TCP）协调节点通信——单点故障、延迟高、不适合实时系统。DDS 彻底解决了这些问题。</p>
+
+  <div class="canvas-wrap" data-reveal style="height:340px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>ROS1 的问题</h4>
+      <div class="sub">中心化 — roscore 单点故障 · XML-RPC 慢 · TCP only</div>
+      <p>• <strong>roscore 必须最先启动</strong>——一旦 crash，整个系统通信中断<br>• <strong>XML-RPC 握手</strong>——每次建立话题连接需要数次 XML-RPC 往返（~10ms/次）<br>• <strong>传输协议单一</strong>——仅 TCP，无 UDP 多播、无实时性保证<br>• <strong>无 QoS</strong>——无法指定可靠性、持久性、截止时间等策略<br>• <strong>无内置安全</strong>——需额外添加</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>ROS2 + DDS 的优势</h4>
+      <div class="sub">去中心化 — 自动发现 · 共享内存 · UDP 多播 · QoS</div>
+      <p>• <strong>无中心节点</strong>——节点直接对等发现（Simple Discovery Protocol），零依赖<br>• <strong>自动发现</strong>——新节点加入，自动被其他节点感知，无需配置<br>• <strong>共享内存传输</strong>——同主机节点通信走 SHM，延迟 &lt;10μs<br>• <strong>22 种 QoS 策略</strong>——可靠性、持久性、截止时间、存活检测……<br>• <strong>内置安全</strong>——DDS-Security（认证、加密、访问控制）</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#38bdf8">
+    <div class="stage-num" style="background:#38bdf8">DDS</div>
+    <div class="stage-body">
+      <h4>核心概念：DCPS 模型 (Data-Centric Publish-Subscribe)</h4>
+      <div class="en">Domain → Participant → Publisher/Subscriber → DataWriter/DataReader → Topic → QoS</div>
+      <p><strong>Domain</strong>（域）：一个逻辑隔离的通信空间——Domain ID 不同的 Participant 互相不可见。<br>
+      <strong>Participant</strong>（参与者）：通信的入口——一个进程通常创建一个 Participant。<br>
+      <strong>Publisher + DataWriter</strong>：发布端——DataWriter 绑定 Topic 并指定 QoS，Publisher 管理多个 DataWriter。<br>
+      <strong>Subscriber + DataReader</strong>：订阅端——DataReader 指定回调函数接收数据。<br>
+      <strong>Topic</strong>（话题）：数据的逻辑通道——由名称 + 类型唯一标识。<br>
+      <strong>QoS</strong>（服务质量）：22 种可组合的策略控制通信的每一个方面。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S3: RTPS ===== -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">RTPS — Real-Time Publish-Subscribe 线协议</h2>
+  <p class="sec-sub" id="s3s">RTPS (Real-Time Publish-Subscribe) 是 DDS 的<strong>标准线协议</strong>——定义了 Participant 之间如何通过 UDP 交换数据。这是 DDS 互操作性的基础。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>RTPS 消息类型</h4>
+      <div class="sub">Header + Submessage 列表</div>
+      <p>每条 RTPS 消息 = RTPS Header (4B 协议标识 + 版本 + Vendor ID + GUID 前缀) +<strong>一个或多个 Submessage</strong>。<br>
+      每个 Submessage 有类型 + 标志位（Endianness）+ 长度 + 负载。Submessage 类型包括：<strong>DATA</strong>（用户数据）、<strong>HEARTBEAT</strong>（Writer 声明可用序列号范围）、<strong>ACKNACK</strong>（Reader 请求缺失序列号）、<strong>GAP</strong>（Writer 告知"这些序列号被跳过"）、<strong>INFO_TS</strong>（时间戳）、<strong>INFO_DST</strong>（目标 GUID）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>可靠通信 (Reliable)</h4>
+      <div class="sub">Heartbeat + ACKNACK + 重传 = 类 TCP 保证</div>
+      <p>Writer 定期发送 <strong>HEARTBEAT</strong>（声明"我有 seq 1~100 的数据"）。Reader 检查本地缺失的序列号，回复 <strong>ACKNACK</strong>（"请重传 seq 3, 7, 42"）。Writer 收到 ACKNACK 后<strong>重传</strong>缺失序列号的数据。<br>
+      <strong>与 TCP 的差异</strong>：① NACK-based——只通知缺失的，不需要每包都 ACK（比 TCP 更高效）② 应用层重传——可以给不同 seq 设不同的重传策略 ③ 支持多播可靠（TCP 做不到）。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Best-Effort 通信</h4>
+      <div class="sub">零开销 · 无保证 · 低延迟</div>
+      <p>Writer 直接发送数据，无 Heartbeat、无 ACKNACK、无重传。Reader 收到什么算什么——丢了就丢了。<br>
+      适合：<strong>高频传感器数据</strong>（1000Hz IMU、Camera 视频帧）——丢一帧不影响整体，关键是最低延迟。<br>
+      与 Reliable 的延迟对比：Best-Effort <strong>~50μs</strong> vs Reliable <strong>~200μs</strong>（SHM 模式下）。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">RTPS Writer-Reader 可靠通信的交互流程</div>
+    <div class="cblock" style="margin-top:0;line-height:1.9;font-size:11px">Writer                                          Reader
+  │                                                │
+  │── DATA(seq=1) ─────────────────────────────→  │  <span class="cm">持续发送数据包</span>
+  │── DATA(seq=2) ─────────────────────────────→  │
+  │── DATA(seq=3) ────X (丢包)                    │
+  │── DATA(seq=4) ─────────────────────────────→  │
+  │                                                │
+  │── HEARTBEAT(available: 1..4) ───────────────→│  <span class="cm">周期心跳: 声明已有 seq 范围</span>
+  │                                                │  Reader 检查本地: 发现缺 seq 3
+  │←── ACKNACK(missing: seq=3) ─────────────────│  <span class="cm">请求重传缺失的 seq 3</span>
+  │── DATA(seq=3) (repair) ────────────────────→│  <span class="cm">Writer 从 HistoryCache 取出重传</span>
+  │                                                │
+  │── HEARTBEAT(available: 1..100) ─────────────→│  <span class="cm">后续心跳: seq 1~100 已全部就绪</span>
+  │←── ACKNACK(final: seq=100) ────────────────│  <span class="cm">全部确认收到，通信完成 ✓</span></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S4: QoS ===== -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">QoS — 22 种服务质量策略</h2>
+  <p class="sec-sub" id="s4s">QoS 是 DDS 的<strong>灵魂</strong>——也是它与 ROS1、MQTT、ZeroMQ 等所有消息中间件最根本的区别。组合 QoS = 为每个通信通道定制行为。</p>
+
+  <div class="ptbl" style="margin-top:24px">
+    <table>
+    <thead><tr><th>QoS 策略</th><th>可选值</th><th>作用</th><th>ROS2 默认</th></tr></thead>
+    <tbody>
+      <tr><td class="g">RELIABILITY</td><td>RELIABLE / BEST_EFFORT</td><td>是否需要保证送达 + 重传</td><td class="g">RELIABLE</td></tr>
+      <tr><td class="g">DURABILITY</td><td>VOLATILE / TRANSIENT_LOCAL / TRANSIENT / PERSISTENT</td><td>后加入的 Subscriber 能否收到历史数据</td><td>VOLATILE</td></tr>
+      <tr><td class="g">HISTORY</td><td>KEEP_LAST(n) / KEEP_ALL</td><td>Writer 缓存多少条历史数据</td><td>KEEP_LAST(1)</td></tr>
+      <tr><td>DEADLINE</td><td>最大发布间隔（秒）</td><td>超时 → 通知应用层 missed deadline</td><td>无限</td></tr>
+      <tr><td>LIFESPAN</td><td>数据有效时间（秒）</td><td>超时的数据自动丢弃</td><td>无限</td></tr>
+      <tr><td>LIVELINESS</td><td>AUTOMATIC / MANUAL_BY_TOPIC / MANUAL_BY_PARTICIPANT</td><td>Writer 存活检测——多久没心跳判定离线</td><td>AUTOMATIC</td></tr>
+      <tr><td>OWNERSHIP</td><td>SHARED / EXCLUSIVE</td><td>多个 Writer 同 Topic 时——谁的优先</td><td>SHARED</td></tr>
+      <tr><td>PARTITION</td><td>字符串列表</td><td>在同一 Topic 内进一步逻辑分区分组</td><td>空（全局）</td></tr>
+      <tr><td class="y">TRANSPORT_PRIORITY</td><td>uint32</td><td>多个 Transport 时的优先级</td><td>0</td></tr>
+      <tr><td>RESOURCE_LIMITS</td><td>max_samples / max_instances</td><td>限制 Reader/Writer 资源使用</td><td>100 / 10</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>DURABILITY — 迟到订阅者能收到历史数据</h4>
+      <div class="sub">ROS2 的 "latched topics" = TRANSIENT_LOCAL</div>
+      <p><strong>VOLATILE</strong>：默认——Subscriber 只收到订阅<strong>之后</strong>发布的数据。迟到 = 错过。<br>
+      <strong>TRANSIENT_LOCAL</strong>：Writer 在内存中保留最近 n 条（HISTORY 决定）——后加入的 Subscriber 自动收到历史数据。<strong>这是 ROS2 中"latched topic"的实现原理</strong>（如 /clock、/map、/robot_description）。<br>
+      <strong>TRANSIENT</strong>：同上，但保留在持久存储（如磁盘）而非内存。<br>
+      <strong>PERSISTENT</strong>：数据在 Writer 退出后仍然保留——永久存储。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>OWNERSHIP + STRENGTH — 多 Writer 的高可用</h4>
+      <div class="sub">主备 Writer 自动切换的秘诀</div>
+      <p><strong>SHARED</strong>：默认——所有 Writer 的数据都被接受。<br>
+      <strong>EXCLUSIVE</strong>：同一 Topic 同时只接受<strong>一个 Writer</strong>的数据——OWNERSHIP_STRENGTH 最高的 Writer 胜出。主 Writer 下线 → 自动切换到 STRENGTH 次高的备 Writer。<br>
+      <strong>应用场景</strong>：冗余传感器（主传感器故障 → 自动切到备用传感器）、Leader 选举（STRENGTH 最高的节点成为 Leader，无需外部选举协议）。这是 DDS 实现<strong>零切换时间冗余</strong>的核心机制。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S5: Discovery ===== -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">自动发现机制 — 去中心化的核心</h2>
+  <p class="sec-sub" id="s5s">没有 roscore、没有 DNS、没有配置——FastDDS 通过<strong>两阶段自动发现</strong>让节点互相感知。这是 ROS2 去中心化的技术基础。</p>
+
+  <div class="canvas-wrap" data-reveal style="height:360px">
+    <canvas id="c2"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>阶段1: PDP (Participant Discovery)</h4>
+      <div class="sub">SPDP — Simple Participant Discovery Protocol</div>
+      <p>每个 Participant 周期性（默认每 1 秒）通过<strong>UDP 多播</strong>（239.255.0.1:7400）或<strong>单播</strong>（Initial Peers 列表）发送 <strong>SPDP DATA 包</strong>——包含自己的 GUID、支持的 Topic 列表、QoS 配置、Locator（IP+Port）列表。<br>
+      收到其他 Participant 的 SPDP 包 → 记录其 Locator → <strong>建立对等连接</strong>。<br>
+      多播适用于局域网（零配置自动发现），单播适用于跨子网或云部署（需指定 IP 列表）。<br>
+      <strong>存活检测</strong>：如果 8 秒（leaseDuration）未收到 SPDP → 判定该 Participant 离线 → 自动清理。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>阶段2: EDP (Endpoint Discovery)</h4>
+      <div class="sub">SEDP — Simple Endpoint Discovery Protocol</div>
+      <p>PDP 建立 Participant 连接后，进入端点级发现——交换 DataWriter 和 DataReader 信息。<br>
+      每个 Participant 通过<strong>内置的 3 个可靠 Topic</strong>（Writers → Readers → 端点信息 Topic）通告自己的端点：<br>
+      ① <strong>PublicationBuiltinTopic</strong>（我有哪些 Writer）。<br>
+      ② <strong>SubscriptionBuiltinTopic</strong>（我有哪些 Reader）。<br>
+      ③ <strong>TopicBuiltinTopic</strong>（我有哪些 Topic 类型）。<br>
+      当 Reader 发现匹配的 Writer（Topic + type + QoS compatible）→ <strong>自动建立通信通道</strong>——应用层无需任何手动 connect 调用。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">发现参数 — 可调节的"心跳"频率</div>
+    <strong>SPDP 周期</strong>（leaseAnnouncementPeriod）：默认 1 秒——影响发现速度。减小到 100ms 可加快发现，但增加多播流量。<br>
+    <strong>租约时长</strong>（leaseDuration）：默认 8 秒——超时判定离线的时间。需 > leaseAnnouncementPeriod × 安全系数。<br>
+    <strong>Initial Peers</strong>：静态 IP 列表——用于跨子网或禁止多播的环境。<br>
+    <strong>ROS2 默认</strong>：多播发现 + localhost only（<code>ROS_LOCALHOST_ONLY=1</code> 时禁用多播，仅本地 IPC）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S6: ROS2 Integration ===== -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">FastDDS 在 ROS2 中的集成</h2>
+  <p class="sec-sub" id="s6s">ROS2 通过 <code>rmw</code>（ROS Middleware）抽象层接入 FastDDS——每一行 ros2 topic pub 调用最终映射到 FastDDS 的 DataWriter API</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>rmw 抽象层</h4>
+      <div class="sub">ROS Middleware — 中间件可插拔</div>
+      <p>ROS2 的 <strong>rmw</strong>（ros middleware）层是 DDS 实现与 ROS2 Client Library（rcl）之间的<strong>抽象接口</strong>。通过实现 <code>rmw_init/node_create/publisher_create/subscription_create...</code> 等 API，可以接入任意 DDS 实现——FastDDS 只是 <code>rmw_fastrtps</code>，还有 <code>rmw_cyclonedds</code>、<code>rmw_connextdds</code>。<br>
+      <strong>切换 DDS 实现无需改应用代码</strong>——只需设置 <code>RMW_IMPLEMENTATION=rmw_fastrtps_cpp</code>。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>ROS2 概念 → DDS 映射</h4>
+      <div class="sub">Node · Topic · QoS → Participant · DataWriter · DataReader</div>
+      <p><strong>ROS2 Node</strong> → DDS Participant（一个进程多个 Node 共享一个 Participant）。<br>
+      <strong>ROS2 Publisher</strong> → DDS DataWriter（每个 Topic 一个）。<br>
+      <strong>ROS2 Subscription</strong> → DDS DataReader。<br>
+      <strong>ROS2 Topic name</strong> → DDS Topic name（如 /cmd_vel）。<br>
+      <strong>ROS2 QoS</strong> → DDS QoS 策略组合（reliability/durability/history/depth/deadline...）。<br>
+      <strong>ROS2 Service</strong> → DDS 的 Request/Reply 模式（底层用两个 Topic 实现：Request Topic + Reply Topic）。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>共享内存 (SHM) 加速</h4>
+      <div class="sub">同主机节点通信 → 零拷贝</div>
+      <p>FastDDS 的 <strong>SHM Transport</strong> 检测到 Reader 和 Writer 在同一台机器 → 自动切换到<strong>共享内存传输</strong>（绕过 UDP 协议栈）。延迟从 UDP 的 ~80μs 降到 ~5-10μs，吞吐从 ~2Gbps 升到 ~10Gbps+（受限于内存带宽）。<br>
+      <strong>完全透明</strong>——应用代码不需要任何修改，同一份 Topic 的 QoS 配置对 SHM 和 UDP 都有效。<br>
+      底层实现：POSIX 共享内存段（/dev/shm/fastdds_*）+ 互斥锁 + 条件变量。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">ROS2 的 Topic/Service/Action 在 DDS 层面的实现</div>
+    <div class="cblock" style="margin-top:0"><span class="cm">// ROS2 Topic ("/cmd_vel") — 一对一映射到 DDS Topic</span>
+Publisher   → rcl_publish() → rmw_publish() → DataWriter::write()
+Subscriber → rcl_subscription → rmw_create_subscription() → DataReader::take()
+
+<span class="cm">// ROS2 Service ("/add_two_ints") — 底层用 2 个 DDS Topic</span>
+Client { Request  Publisher → <span class="st">rq/add_two_intsRequest</span>
+       { Response Subscriber← <span class="st">rr/add_two_intsReply</span>
+Server { Request  Subscriber← <span class="st">rq/add_two_intsRequest</span>
+       { Response Publisher → <span class="st">rr/add_two_intsReply</span>
+
+<span class="cm">// ROS2 Action ("/navigate") — 底层用 5 个 DDS Topic</span>
+Goal Topic (rq) + Result Topic (rr) + Feedback Topic (fb)
++ Cancel Topic (rq) + Status Topic (rr)</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S7: Config ===== -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">配置与性能调优</h2>
+  <p class="sec-sub" id="s7s">FastDDS 通过 XML Profile 或 ROS2 QoS API 配置——默认参数适合通用场景但远非最优。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>XML Profile 配置</h4>
+      <div class="sub">完整的 DDS 配置通过 XML 文件注入</div>
+      <div class="cblock" style="margin-top:6px;font-size:10.5px"><span class="kw">&lt;participant&gt;</span>
+  <span class="kw">&lt;rtps&gt;</span>
+    <span class="kw">&lt;builtin&gt;</span>
+      <span class="cm">&lt;!-- 发现配置 --&gt;</span>
+      <span class="kw">&lt;discovery_config&gt;</span>
+        <span class="kw">&lt;leaseDuration&gt;</span>10<span class="kw">&lt;/leaseDuration&gt;</span>
+        <span class="kw">&lt;leaseAnnouncement&gt;</span>2<span class="kw">&lt;/leaseAnnouncement&gt;</span>
+      <span class="kw">&lt;/discovery_config&gt;</span>
+    <span class="kw">&lt;/builtin&gt;</span>
+    <span class="cm">&lt;!-- SHM + UDP 双 Transport --&gt;</span>
+    <span class="kw">&lt;transport_descriptors&gt;</span>
+      <span class="kw">&lt;transport_id&gt;</span>udp<span class="kw">&lt;/transport_id&gt;</span>
+      <span class="kw">&lt;transport_id&gt;</span>shm<span class="kw">&lt;/transport_id&gt;</span>
+    <span class="kw">&lt;/transport_descriptors&gt;</span>
+  <span class="kw">&lt;/rtps&gt;</span>
+<span class="kw">&lt;/participant&gt;</span></div>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>ROS2 QoS Profile 速查</h4>
+      <div class="sub">4 种预定义 QoS Profile + 自定义</div>
+      <p><strong>rmw_qos_profile_sensor_data</strong>：Best-Effort + Volatile + KeepLast(5)。适合传感器（高频、允许丢帧）。<br>
+      <strong>rmw_qos_profile_services_default</strong>：Reliable + Volatile + KeepLast(1)。Service 默认。<br>
+      <strong>rmw_qos_profile_parameters</strong>：Reliable + TransientLocal + KeepLast(1000)。参数服务器——后加入节点也能获取已设置的参数。<br>
+      <strong>rmw_qos_profile_system_default</strong>：Reliable + Volatile + KeepLast(1)。Topic 默认。<br>
+      自定义：<code>rclcpp::QoS(10).reliable().transient_local()</code> C++ API。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>SHM Transport 调优</h4>
+      <div class="sub">segment_size · port_queue_capacity · 零拷贝</div>
+      <p>• <strong>segment_size</strong>：共享内存段大小——默认 512MB。大数据话题（图像/点云）需调大。<br>
+      • <strong>port_queue_capacity</strong>：每个端点的环形缓冲大小——默认 512。高频话题（&gt;1KHz）需调大避免丢帧。<br>
+      • <strong>零拷贝模式</strong>（Zero-Copy）：Writer 直接将数据写入共享内存 → Reader 直接从共享内存读（无 memcpy）。需数据类型支持（固定大小 + 无指针）。吞吐可提升 2-3×。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>网络 Transport 调优</h4>
+      <div class="sub">UDP socket buffer · 异步发送 · 多播配置</div>
+      <p>• <strong>socket buffer</strong>：增大 <code>send_buff_size/recv_buff_size</code>——默认 65KB 太小。设置为 2-4MB 避免因应用来不及读而丢包。<br>
+      • <strong>异步模式</strong>（ASYNC）：Publisher 的 write() 非阻塞——数据进入内部队列，后台线程批量发送。适合高吞吐场景。<br>
+      • <strong>多播 TTL</strong>：默认 1（局域网）。跨路由器需增大 TTL。</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>关键性能指标</h4>
+      <div class="sub">FastDDS 在典型场景的延迟/吞吐</div>
+      <p>• <strong>SHM, 256B payload</strong>：~6μs 延迟（Reliable）/~3μs（Best-Effort）<br>
+      • <strong>UDP loopback, 256B</strong>：~40μs（Reliable）/~20μs（Best-Effort）<br>
+      • <strong>SHM 吞吐</strong>：~12 GB/s（256KB payload）<br>
+      • <strong>对比 Cyclone DDS</strong>：SHM 延迟 Cyclone 略快（~4μs vs ~6μs），但 FastDDS 的零拷贝模式在大 payload 时有优势<br>
+      • 实际数字取决于 CPU 架构、内核版本、负载。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S8: Comparison ===== -->
+<div class="sec s8" id="s8">
+  <h2 class="sec-title" id="s8t">对比总结：FastDDS · Cyclone · ZeroMQ · MQTT · Unix Socket</h2>
+  <p class="sec-sub" id="s8s">IPC 选型的关键维度——不存在万能方案，只看哪个方案在哪些维度上符合需求</p>
+
+  <div class="ptbl" style="margin-top:24px">
+    <table>
+    <thead><tr><th>IPC 方案</th><th>延迟 (SHM)</th><th>发现机制</th><th>QoS</th><th>跨平台</th><th>ROS2 集成</th><th>适合场景</th></tr></thead>
+    <tbody>
+      <tr><td class="g">FastDDS</td><td class="g">~6μs</td><td class="g">自动 (P2P 多播)</td><td class="g">22 种</td><td class="g">Linux/Win/Mac/QNX</td><td class="g">默认 (rmw_fastrtps)</td><td>ROS2 机器人、实时系统</td></tr>
+      <tr><td class="g">Cyclone DDS</td><td class="g">~4μs</td><td class="g">自动 (P2P 多播)</td><td class="g">22 种</td><td class="g">Linux/Win/Mac</td><td class="g">可选 (rmw_cyclonedds)</td><td>对延迟极致敏感的场景</td></tr>
+      <tr><td>RTI Connext</td><td>~5μs</td><td class="g">自动 (P2P + WAN)</td><td class="g">22 种</td><td class="g">最广 (含 VxWorks/INTEGRITY)</td><td>付费 (rmw_connextdds)</td><td>安全认证要求极高的军工/医疗</td></tr>
+      <tr><td>ZeroMQ</td><td>~15μs</td><td class="r">手动 (需指定地址)</td><td class="r">无</td><td class="g">极广</td><td class="r">不支持</td><td>非 ROS2 的通用 IPC</td></tr>
+      <tr><td>MQTT</td><td class="r">~1-10ms</td><td class="y">Broker (中心化)</td><td>3 级 QoS</td><td class="g">极广 (含嵌入式)</td><td class="r">不支持 (仅 Bridge)</td><td>IoT 遥测、低带宽 WAN</td></tr>
+      <tr><td>Unix Socket</td><td class="g">~5μs</td><td class="r">手动 (需文件路径)</td><td class="r">无</td><td>Linux/Unix only</td><td class="r">不支持</td><td>简单本地 C/S 通信</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#6c63ff;margin-top:20px">
+    <div class="stage-num" style="background:#6c63ff">★</div>
+    <div class="stage-body">
+      <h4>为什么 ROS2 选 DDS（FastDDS）而不是其他 IPC？</h4>
+      <div class="en">关键决策因素：去中心化 + 自动发现 + 丰富的 QoS + 工业标准</div>
+      <p>① <strong>去中心化</strong>：ROS1 的 roscore 单点故障在机器人上不可接受——物理机器人不能在 roscore crash 后失去所有通信。DDS 的 P2P 自动发现解决了这个根本问题。<br>
+      ② <strong>丰富的 QoS</strong>：机器人系统中有完全不同的通信需求——传感器数据容忍丢帧（Best-Effort）、控制命令必须可靠送达（Reliable）、TF 变换需要后加入节点也能获取（Transient Local）——DDS 是唯一能在一个框架内覆盖所有这些需求的标准。<br>
+      ③ <strong>工业标准</strong>：DDS 是 OMG 标准，在军工/航空/医疗/自动驾驶领域有 20+ 年验证历史——NASA、Airbus、Siemens、Bosch 都在用。<br>
+      ④ <strong>可替换性</strong>：rmw 抽象层让 ROS2 不锁定任何 DDS 实现——FastDDS 是默认选择（开源、社区活跃），但可以根据性能/安全需求切换到 Cyclone DDS 或 RTI Connext。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  FastDDS — ROS2 进程间通信核心 &nbsp;|&nbsp;
+  <a href="../index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="../livekit_protocols_learn.html">WebRTC 协议栈 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});
+  });
+});
+
+// ===== Canvas 1: ROS1 vs ROS2 Architecture =====
+(function() {
+  const c = document.getElementById('c1');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=340;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawBox(x, y, w, h, label, color, alpha) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha||0.12;
+    ctx.beginPath(); ctx.roundRect(x-w/2, y-h/2, w, h, 8); ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    const lines = label.split('\n');
+    lines.forEach((l, i) => ctx.fillText(l, x, y - (lines.length-1)*8 + i*16));
+    ctx.globalAlpha = 1;
+  }
+
+  function drawLink(x1, y1, x2, y2, color, dashed) {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.35; ctx.lineWidth = 2;
+    if(dashed) ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+    const mid = W/2;
+
+    // Left: ROS1
+    ctx.fillStyle = '#f87171';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ROS1 — 中心化', W*0.25, 24);
+
+    drawBox(W*0.25, 80, 100, 40, 'roscore\n(必须最先启动)', '#f87171', 0.2);
+    drawBox(W*0.25, 150, 80, 36, 'Node A', '#fbbf24', 0.1);
+    drawBox(W*0.25-55, 220, 80, 36, 'Node B', '#38bdf8', 0.1);
+    drawBox(W*0.25+55, 220, 80, 36, 'Node C', '#34d399', 0.1);
+
+    drawLink(W*0.25, 100, W*0.25, 132, '#f87171', false);
+    drawLink(W*0.25, 168, W*0.25-55, 202, '#f87171', false);
+    drawLink(W*0.25, 168, W*0.25+55, 202, '#f87171', false);
+    drawLink(W*0.25-25, 220, W*0.25+25, 220, '#8888aa', true);
+
+    ctx.fillStyle = '#fca5a5';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '9px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('❌ 单点故障', W*0.25, 280);
+    ctx.fillText('XML-RPC 握手慢', W*0.25, 296);
+
+    // Right: ROS2 + DDS
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('ROS2 + FastDDS — 去中心化', W*0.75, 24);
+
+    drawBox(W*0.75-55, 150, 80, 36, 'Node A\n(Writer)', '#fbbf24', 0.1);
+    drawBox(W*0.75+55, 150, 80, 36, 'Node B\n(Reader)', '#38bdf8', 0.1);
+    drawBox(W*0.75-55, 230, 80, 36, 'Node C\n(Writer+Reader)', '#34d399', 0.1);
+    drawBox(W*0.75+55, 230, 80, 36, 'Node D\n(Reader)', '#a78bfa', 0.1);
+
+    drawLink(W*0.75-15, 150, W*0.75+15, 150, '#fbbf24', true);
+    drawLink(W*0.75-30, 168, W*0.75-30, 212, '#34d399', true);
+    drawLink(W*0.75+30, 168, W*0.75+30, 212, '#a78bfa', true);
+    drawLink(W*0.75-15, 230, W*0.75+15, 230, '#8888aa', true);
+
+    ctx.fillStyle = '#6ee7b7';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '9px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('✅ 去中心化 P2P 发现', W*0.75, 280);
+    ctx.fillText('UDP 多播 + SHM 零拷贝', W*0.75, 296);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(mid, 30); ctx.lineTo(mid, 310); ctx.stroke();
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 2: Discovery Process =====
+(function() {
+  const c = document.getElementById('c2');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=360;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawP(x, y, name, color) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath(); ctx.roundRect(x-40, y-16, 80, 32, 8); ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 10px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(name, x, y+4);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPulse(x1, y1, x2, y2, color, label) {
+    const progress = (t*2) % 2.5;
+    const alpha = progress < 1 ? progress : (2 - progress);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc((x1+x2)/2, (y1+y2)/2, 20 + Math.sin(t*3)*10, 0, Math.PI*2);
+    ctx.stroke();
+    if(label) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.6;
+      ctx.font = '9px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, (x1+x2)/2, (y1+y2)/2 - 14);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('FastDDS 自动发现：两阶段让参与者互相感知', W/2, 22);
+
+    const p1x = W*0.15, p2x = W*0.85;
+    drawP(p1x, 60, 'Participant A', '#fbbf24');
+    drawP(p2x, 60, 'Participant B', '#38bdf8');
+    drawPulse(p1x, 60, p2x, 60, '#fbbf24', 'Phase 1: SPDP (多播)');
+
+    ctx.fillStyle = '#8888aa';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '10px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GUID · Locator(IP:Port) · Topic 列表 · QoS', W/2, 110);
+    ctx.fillText('租约 8s 无心跳 → 判定离线', W/2, 126);
+    ctx.globalAlpha = 1;
+
+    // Phase 2
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(20, 145); ctx.lineTo(W-20, 145); ctx.stroke();
+
+    ctx.fillStyle = '#a78bfa';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 12px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('Phase 2: SEDP — 端点级匹配', W/2, 168);
+
+    drawP(p1x, 200, 'Writer\n/camera/image', '#f472b6');
+    drawP(p2x, 200, 'Reader\n/camera/image', '#34d399');
+    drawPulse(p1x, 210, p2x, 210, '#a78bfa', 'Topic + Type + QoS match → 自动建立连接');
+
+    ctx.fillStyle = '#8888aa';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '10px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('通过内置 Topic 交换端点信息: PublicationBuiltin / SubscriptionBuiltin', W/2, 260);
+
+    // Bottom result
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 12px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('结果：无需 roscore，无需配置 IP，两个节点自动发现对方并开始通信', W/2, 300);
+
+    drawP(p1x, 330, '数据流 →', '#f472b6');
+    drawP(p2x, 330, '回调 on_data()', '#34d399');
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

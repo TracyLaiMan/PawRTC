@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveKit 本地视频回看 — PawRTC</title>
+<link rel="stylesheet" href="livekit_docs_style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+<style>
+body{background:#0a0e17;color:#e2e8f0;font-family:'Inter',-apple-system,'Segoe UI',Roboto,'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif}
+.sidebar{background:linear-gradient(180deg,#0d1220,#141c2e 40%,#1a2438);border-right-color:rgba(42,53,80,0.5)}
+.sidebar .logo h2{color:#e2e8f0}.sidebar .logo p{color:#64748b}
+.sidebar nav a{color:#94a3b8;border-left-color:transparent}
+.sidebar nav a:hover{color:#e2e8f0;background:rgba(59,130,246,.06);border-left-color:#3b82f6}
+.sidebar nav a.active{color:#3b82f6;background:rgba(59,130,246,.08);border-left-color:#3b82f6}
+.sidebar nav .sec{color:#475569}
+.hero{background:linear-gradient(135deg,#0a0e17,#1e3a5f 50%,#141c2e)}
+.hero h1{background:linear-gradient(135deg,#06b6d4,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-size:26px}
+.hero p{color:#94a3b8}
+.hero .tag{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.25);color:#93c5fd}
+.hero .meta{color:#64748b}
+.section h2{color:#e2e8f0;border-bottom-color:rgba(42,53,80,.5)}
+.section h2::before{background:#3b82f6}
+.section h3{color:#c4b5fd}
+.section h4{color:#94a3b8}
+.section p{color:#94a3b8}
+.section strong{color:#e2e8f0}
+.section em{color:#06b6d4;font-weight:600}
+a{color:#3b82f6}
+pre{background:#0d1117;border-color:rgba(42,53,80,.5);color:#e2e8f0}
+code{background:rgba(59,130,246,.08);color:#67e8f9}
+.callout.info{background:rgba(59,130,246,.06);border-left-color:#3b82f6;color:#94a3b8}
+.callout.warning{background:rgba(245,158,11,.06);border-left-color:#f59e0b;color:#d4a84a}
+.callout.danger{background:rgba(239,68,68,.06);border-left-color:#ef4444;color:#e08090}
+.callout.success{background:rgba(16,185,129,.06);border-left-color:#10b981;color:#6ee7b7}
+.callout.info .ct{color:#3b82f6}
+.callout.warning .ct{color:#f59e0b}
+.callout.danger .ct{color:#ef4444}
+.callout.success .ct{color:#10b981}
+.table-wrap{border-color:rgba(42,53,80,.4)}
+thead{background:rgba(26,34,54,.8)}
+th{border-bottom-color:rgba(42,53,80,.6);color:#94a3b8}
+td{border-bottom-color:rgba(42,53,80,.3);color:#94a3b8}
+::-webkit-scrollbar-track{background:#0a0e17}
+::-webkit-scrollbar-thumb{background:#2a3550}
+.tag-p0{background:rgba(239,68,68,.12);color:#ef4444}
+.tag-p1{background:rgba(245,158,11,.12);color:#f59e0b}
+.tag-p2{background:rgba(59,130,246,.12);color:#3b82f6}
+.arch-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:16px;background:rgba(26,34,54,.4);border:1px solid rgba(42,53,80,.4);border-radius:12px;margin:14px 0}
+.arch-node{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid}
+.arch-node.device{background:rgba(6,182,212,.1);border-color:rgba(6,182,212,.3);color:#22d3ee}
+.arch-node.sfu{background:rgba(139,92,246,.1);border-color:rgba(139,92,246,.3);color:#a78bfa}
+.arch-node.browser{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3);color:#34d399}
+.arch-arr{color:#3b82f6;font-size:14px;font-weight:700}
+.protocol-msg{margin:8px 0;padding:12px 16px;background:rgba(26,34,54,.5);border:1px solid rgba(42,53,80,.3);border-radius:8px}
+.protocol-msg .dir{font-size:11px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.protocol-msg .dir.tx{color:#06b6d4}
+.protocol-msg .dir.rx{color:#a78bfa}
+.protocol-msg pre{margin:4px 0 0;padding:8px 12px;font-size:11px}
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <h2>PawRTC Docs</h2>
+    <p>本地视频回看</p>
+  </div>
+  <nav>
+    <div class="sec">概述</div>
+    <a href="#overview" class="active">方案概述</a>
+    <a href="#arch">架构设计</a>
+    <div class="sec">实现</div>
+    <a href="#protocol">远程控制协议</a>
+    <a href="#source">Mp4FileSource 扩展</a>
+    <a href="#weaknet">弱网优化</a>
+    <a href="#files">文件管理</a>
+    <div class="sec">计划</div>
+    <a href="#priority">实施优先级</a>
+    <a href="#mvp">最小可用版本</a>
+  </nav>
+</aside>
+
+<!-- ===== Main Content ===== -->
+<main>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>LiveKit 本地视频回看方案</h1>
+  <p>复用实时推流通道，实现设备在线时的远程历史录像回看</p>
+  <div class="tags">
+    <span class="tag">DataChannel</span>
+    <span class="tag">Mp4FileSource</span>
+    <span class="tag">弱网对抗</span>
+    <span class="tag">Pacing</span>
+  </div>
+  <div class="meta">JY1C / Ingenic T41 &middot; LiveKit SFU</div>
+</div>
+
+<!-- Overview -->
+<div class="section" id="overview">
+<h2>方案概述</h2>
+<p>利用现有 LiveKit 通道实现本地视频远程回看，不需要额外的 HLS/CDN 存储，设备在线即可回看历史录像。</p>
+
+<h3>核心思路</h3>
+<div class="callout info">
+  <div class="ct">回看 = 切换视频源 + 远程控制 + 弱网自适应</div>
+  <p>复用实时推流的全部通道，无需额外服务。</p>
+</div>
+
+<h3>优势</h3>
+<div class="table-wrap"><table>
+<tbody>
+<tr><td>零额外存储成本</td><td>视频在设备本地磁盘</td></tr>
+<tr><td>复用 LiveKit 信令 + SFU</td><td>无需 HLS/DASH 服务</td></tr>
+<tr><td>浏览器端无需额外播放器</td><td>同一个 <code>&lt;video&gt;</code> 标签</td></tr>
+</tbody></table></div>
+
+<h3>局限</h3>
+<div class="table-wrap"><table>
+<tbody>
+<tr><td>设备必须在线</td><td>离线时不可用（家用摄像头场景可接受）</td></tr>
+<tr><td>不能精确到帧拖拽</td><td>WebRTC 本身 1-3s 缓冲延迟</td></tr>
+<tr><td>同一时间只能推一个源</td><td>回看或实时，互斥</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- Architecture -->
+<div class="section" id="arch">
+<h2>架构设计</h2>
+
+<div class="arch-flow">
+  <span class="arch-node browser">浏览器点"回看"</span>
+  <span class="arch-arr">→</span>
+  <span class="arch-node sfu">LiveKit DataChannel</span>
+  <span class="arch-arr">→</span>
+  <span class="arch-node device">设备收到指令</span>
+  <span class="arch-arr">→</span>
+  <span class="arch-node device">Mp4FileSource 切文件</span>
+  <span class="arch-arr">→</span>
+  <span class="arch-node sfu">推流到 SFU</span>
+  <span class="arch-arr">→</span>
+  <span class="arch-node browser">浏览器订阅观看</span>
+</div>
+</div>
+
+<!-- Protocol -->
+<div class="section" id="protocol">
+<h2>远程控制协议</h2>
+<p>通过 LiveKit DataChannel 传输 JSON 控制指令。</p>
+
+<h3>设备 → 浏览器（状态上报）</h3>
+
+<div class="protocol-msg">
+  <div class="dir tx">TX 设备 → 浏览器</div>
+  <pre><code class="language-json">{"type": "playback:state", "source": "live", "file": null, "position_ms": 0, "duration_ms": 0}
+{"type": "playback:state", "source": "file", "file": "20260520.mp4", "position_ms": 45000, "duration_ms": 3600000}</code></pre>
+</div>
+
+<div class="protocol-msg">
+  <div class="dir tx">TX 缓冲状态</div>
+  <pre><code class="language-json">{"type": "playback:buffer", "depth_ms": 1500, "state": "playing"}
+{"type": "playback:buffer", "depth_ms": 0, "state": "stalling"}</code></pre>
+</div>
+
+<h3>浏览器 → 设备（控制指令）</h3>
+
+<div class="protocol-msg">
+  <div class="dir rx">RX 浏览器 → 设备</div>
+  <pre><code class="language-json">{"type": "playback:start", "file": "20260520.mp4"}
+{"type": "playback:seek", "position_ms": 120000}
+{"type": "playback:pause"}
+{"type": "playback:resume"}
+{"type": "playback:speed", "rate": 2.0}
+{"type": "playback:stop"}</code></pre>
+</div>
+
+<h3>指令说明</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>指令</th><th>作用</th><th>设备行为</th></tr></thead>
+<tbody>
+<tr><td><code>playback:start</code></td><td>开始回看指定文件</td><td>关闭当前源，打开 MP4 文件，从起点开始推帧</td></tr>
+<tr><td><code>playback:seek</code></td><td>跳转到指定位置</td><td>计算目标 sample index，seek 并请求 IDR</td></tr>
+<tr><td><code>playback:pause</code></td><td>暂停推帧</td><td>停止从缓冲取帧，保持连接</td></tr>
+<tr><td><code>playback:resume</code></td><td>恢复推帧</td><td>从暂停位置继续</td></tr>
+<tr><td><code>playback:speed</code></td><td>变速播放</td><td>调整帧间隔（0.5x/1x/2x/4x）</td></tr>
+<tr><td><code>playback:stop</code></td><td>停止回看</td><td>关闭文件，切回实时源（IMP）</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- Source Extension -->
+<div class="section" id="source">
+<h2>Mp4FileSource 扩展</h2>
+<p>当前 Mp4FileSource 只支持顺序读帧 + EOF 循环，回看需要增加 seek/pause/resume/speed 能力。</p>
+
+<h3>新增接口</h3>
+<pre><code class="language-cpp">class Mp4FileSource : public VideoSource {
+public:
+    bool open(const std::string& path) override;
+    bool readFrame(Frame& frame) override;
+    void close() override;
+
+    // 回看扩展
+    bool seek(uint64_t targetMs);       // 跳转到指定时间点
+    void pause();                        // 暂停推帧
+    void resume();                       // 恢复推帧
+    void setSpeed(float rate);           // 设置播放倍速（0.5/1/2/4）
+    uint64_t getPositionMs() const;      // 当前播放位置
+    uint64_t getDurationMs() const;      // 文件总时长
+
+private:
+    bool requestNextIdr = false;         // seek 后强制请求 IDR
+    bool paused = false;
+    float speed = 1.0f;
+    std::deque&lt;Frame&gt; frameBuffer;       // 帧预读缓冲
+};</code></pre>
+
+<h3>seek 实现（Bento4 API）</h3>
+<pre><code class="language-cpp">bool Mp4FileSource::seek(uint64_t targetMs) {
+    AP4_UI32 targetSampleIndex = 0;
+    AP4_Cardinal sampleCount = videoTrack_->GetSampleCount();
+    AP4_UI32 timescale = videoTrack_->GetMediaTimeScale();
+    AP4_Timestamp targetTs = (AP4_Timestamp)(targetMs * timescale / 1000);
+
+    // 二分查找最近的 sync sample
+    for (AP4_Ordinal i = 0; i < sampleCount; i++) {
+        AP4_Sample sample;
+        videoTrack_->ReadSample(i, sample);
+        if (sample.IsSync() && sample.GetCts() >= targetTs) {
+            targetSampleIndex = i;
+            break;
+        }
+    }
+
+    m_sampleIndex = targetSampleIndex;
+    requestNextIdr = true;  // 标记需要 IDR 前缀
+    frameBuffer.clear();     // 清空预读缓冲
+    refillBuffer();          // 重新填充
+    return true;
+}</code></pre>
+
+<h3>变速播放</h3>
+<pre><code class="language-cpp">void Mp4FileSource::setSpeed(float rate) {
+    speed = rate;
+    // 帧间隔调整：33ms @30fps × 1/rate
+    // 2x → 16.5ms/帧，0.5x → 66ms/帧
+}
+
+// 推帧主循环中使用
+int64_t frameIntervalUs = (1000000 / fps) / speed;
+usleep(frameIntervalUs);</code></pre>
+</div>
+
+<!-- Weak Network -->
+<div class="section" id="weaknet">
+<h2>弱网优化</h2>
+<p>回看场景比实时直播更有优化空间——拥有完整文件，可预读和精确控制节奏。</p>
+
+<h3>4.1 发送端优化</h3>
+
+<h4>帧预读缓冲</h4>
+<p>提前读 N 帧到内存，网络抖动时不会卡在磁盘 IO。</p>
+<pre><code class="language-cpp">std::deque&lt;Frame&gt; frameBuffer;  // 缓存 5-10 帧
+int bufferLowWatermark = 3;     // 低于 3 帧触发预读
+
+void refillBuffer() {
+    while (frameBuffer.size() < 8) {
+        Frame f;
+        if (!readNextFrameFromFile(f)) break;
+        frameBuffer.push_back(std::move(f));
+    }
+}
+
+bool readFrame(Frame& out) {
+    if (frameBuffer.empty()) return false;
+    out = std::move(frameBuffer.front());
+    frameBuffer.pop_front();
+    if (frameBuffer.size() < bufferLowWatermark) refillBuffer();
+    return true;
+}</code></pre>
+
+<h4>Pacing 平滑发送</h4>
+<p>一帧的 RTP 分片按间隔发出，避免突发拥塞。</p>
+<pre><code class="language-cpp">void sendFramePaced(std::vector&lt;RtpPacket&gt;& packets, int frameDurationMs) {
+    int intervalUs = (frameDurationMs * 1000) / packets.size();
+    for (auto& pkt : packets) {
+        sendRtpPacket(pkt);
+        if (&pkt != &packets.back())
+            usleep(intervalUs);
+    }
+}</code></pre>
+
+<h4>RTCP 驱动的自适应帧率</h4>
+<pre><code class="language-cpp">struct PlaybackController {
+    int targetFps = 30;
+    int64_t frameIntervalMs = 33;
+
+    void onRtcpReceiverReport(int lossRate, int rttMs) {
+        if (lossRate > 10 || rttMs > 500) {
+            targetFps = max(targetFps - 5, 10);   // 弱网降帧
+        } else if (lossRate < 3 && rttMs < 200) {
+            targetFps = min(targetFps + 2, 30);   // 恢复帧率
+        }
+        frameIntervalMs = 1000 / targetFps;
+    }
+};</code></pre>
+
+<h4>IDR 间隔缩短</h4>
+<div class="callout info">
+  <div class="ct">回看关键帧更密</div>
+  <p>实时直播: 每 30 帧 → IDR 每 ~1s<br>回看模式: 每 15 帧 → IDR 每 ~0.5s（编码参数调整或 seek 时强制插 IDR）<br><br>seek 后必须立即发送 IDR，浏览器才能解码渲染。</p>
+</div>
+
+<h3>4.2 传输参数调优</h3>
+
+<h4>KVS 可调参数</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>参数</th><th>默认值</th><th>弱网建议</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>maximumTransmissionUnit</code></td><td>1200</td><td>1000</td><td>减少 IP 分片丢包概率</td></tr>
+<tr><td><code>sendBufSize</code></td><td>0</td><td>262144</td><td>增大 socket 发送缓冲</td></tr>
+<tr><td><code>iceLocalCandidateGatheringTimeout</code></td><td>10s</td><td>15s</td><td>弱网 STUN 响应慢</td></tr>
+<tr><td><code>iceConnectionCheckTimeout</code></td><td>12s</td><td>20s</td><td>给 ICE 更多时间</td></tr>
+<tr><td><code>iceConnectionCheckPollingInterval</code></td><td>50ms</td><td>100ms</td><td>降低检测频率减少开销</td></tr>
+<tr><td><code>disableSenderSideBandwidthEstimation</code></td><td>FALSE</td><td>FALSE</td><td>保持 TWCC 自适应码率</td></tr>
+</tbody></table></div>
+
+<p>设置位置在 <code>LkTransport.c</code> 的 <code>lk_transport_create_offer</code>：</p>
+<pre><code class="language-c">rtcConfig.kvsRtcConfiguration.maximumTransmissionUnit = 1000;
+rtcConfig.kvsRtcConfiguration.sendBufSize = 262144;</code></pre>
+
+<h4>TURN TCP 启用</h4>
+<p>弱网下 UDP 丢包严重时，TURN TCP 更可靠（TCP 自带重传）。</p>
+
+<div class="callout warning">
+  <div class="ct">当前问题</div>
+  <p>TURNS 失败原因：板端 <code>KVS_CA_CERT_PATH</code> 指向 <code>kvs-webrtc/certs/ca-bundle.crt</code>（Amazon Root CA），不含 Cloudflare/Let's Encrypt 证书。</p>
+</div>
+
+<pre><code class="language-bash"># 修复方法
+# 1. 推送完整 CA 证书到板端
+adb push /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# 2. 编译时覆盖 KVS_CA_CERT_PATH
+# 在 livekit-client.mk 的 CMake 配置中添加:
+-DKVS_CA_CERT_PATH="/etc/ssl/certs/ca-certificates.crt"</code></pre>
+
+<h4>LWS 参数调优</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>参数</th><th>当前值</th><th>弱网建议</th><th>位置</th></tr></thead>
+<tbody>
+<tr><td><code>timeout_secs</code></td><td>300</td><td>600</td><td>LiveKitSignaling.cpp</td></tr>
+<tr><td><code>ka_time</code></td><td>30</td><td>15</td><td>LiveKitSignaling.cpp</td></tr>
+<tr><td><code>ka_probes</code></td><td>3</td><td>5</td><td>LiveKitSignaling.cpp</td></tr>
+</tbody></table></div>
+
+<h3>4.3 回看缓冲策略</h3>
+<pre><code>用户点播放
+  ↓
+设备预读 2 秒帧到缓冲区，同时开始推流
+  ↓
+播放端浏览器积累 ≥1s 缓冲后开始渲染
+  ↓
+正常播放：设备按实际帧率推，缓冲保持稳定
+  ↓
+网络变差：设备降帧率/码率，缓冲消耗但不会立即耗尽
+  ↓
+网络恢复：设备恢复正常帧率，缓冲慢慢回充
+  ↓
+缓冲耗尽：画面停滞，缓冲重新积累后恢复</code></pre>
+</div>
+
+<!-- File Management -->
+<div class="section" id="files">
+<h2>文件管理</h2>
+
+<h3>录像文件命名规范</h3>
+<pre><code>/data/Diamond/
+  ├── 20260520_080000.mp4    # 按小时分段
+  ├── 20260520_090000.mp4
+  ├── 20260520_100000.mp4
+  └── ...</code></pre>
+
+<h3>浏览器获取文件列表</h3>
+
+<div class="protocol-msg">
+  <div class="dir rx">RX 浏览器 → 设备</div>
+  <pre><code class="language-json">{"type": "playback:list"}</code></pre>
+</div>
+
+<div class="protocol-msg">
+  <div class="dir tx">TX 设备 → 浏览器</div>
+  <pre><code class="language-json">{"type": "playback:files", "files": [
+  {"name": "20260520_080000.mp4", "size": 52428800, "duration_ms": 3600000},
+  {"name": "20260520_090000.mp4", "size": 48234496, "duration_ms": 3600000}
+]}</code></pre>
+</div>
+
+<h3>存储滚动清理</h3>
+<p>设备端维护滚动窗口（如最近 7 天），自动删除过期录像。</p>
+</div>
+
+<!-- Priority -->
+<div class="section" id="priority">
+<h2>实施优先级</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>优先级</th><th>优化项</th><th>效果</th><th>工作量</th></tr></thead>
+<tbody>
+<tr><td><span class="tag-p0">P0</span></td><td>CA 证书修复，启用 TURN TCP</td><td>弱网走 TCP 更可靠</td><td>半天</td></tr>
+<tr><td><span class="tag-p0">P0</span></td><td>MTU 降到 1000</td><td>减少分片丢包</td><td>改一行</td></tr>
+<tr><td><span class="tag-p0">P0</span></td><td>DataChannel 控制协议</td><td>远程切换文件/暂停/拖拽</td><td>1-2天</td></tr>
+<tr><td><span class="tag-p1">P1</span></td><td>Mp4FileSource seek/pause/resume</td><td>回看基础能力</td><td>1天</td></tr>
+<tr><td><span class="tag-p1">P1</span></td><td>发送端 pacing</td><td>消除突发丢包</td><td>1天</td></tr>
+<tr><td><span class="tag-p1">P1</span></td><td>帧预读缓冲</td><td>抗磁盘 IO 抖动</td><td>1天</td></tr>
+<tr><td><span class="tag-p1">P1</span></td><td>seek 后强制关键帧</td><td>回看拖动恢复快</td><td>半天</td></tr>
+<tr><td><span class="tag-p2">P2</span></td><td>RTCP 驱动自适应帧率</td><td>弱网降帧保流畅</td><td>2天</td></tr>
+<tr><td><span class="tag-p2">P2</span></td><td>回放缓冲状态上报</td><td>浏览器显示缓冲进度</td><td>1天</td></tr>
+<tr><td><span class="tag-p2">P2</span></td><td>变速播放</td><td>2x/4x 快进回看</td><td>半天</td></tr>
+<tr><td><span class="tag-p2">P2</span></td><td>文件列表查询</td><td>浏览器选择回看文件</td><td>半天</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- MVP -->
+<div class="section" id="mvp">
+<h2>最小可用版本（MVP）</h2>
+<div class="callout success">
+  <div class="ct">3-4 天工作量</div>
+  <p>只需 P0 + P1 中前两项，即可实现基本的本地视频回看：</p>
+  <p><strong>DataChannel 控制协议 + Mp4FileSource seek + TURN TCP + MTU 调整</strong></p>
+</div>
+<p>后续 P2 项按需迭代。</p>
+</div>
+
+</main>
+
+<script>
+hljs.highlightAll();
+const links=document.querySelectorAll('.sidebar nav a');
+const secs=document.querySelectorAll('.section');
+const observer=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove('active'));const a=document.querySelector(`.sidebar nav a[href="#${e.target.id}"]`);if(a)a.classList.add('active')}})},{rootMargin:'-20% 0px -60% 0px'});
+secs.forEach(s=>observer.observe(s));
+</script>
+</body>
+</html>

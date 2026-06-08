@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加密 vs 签名 — 为什么不能反过来？</title>
+<style>
+/* ===== Base ===== */
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:#080616;color:#c8c8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;overflow-x:hidden}
+.sec{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sec-title{font-size:clamp(26px,4.5vw,42px);font-weight:800;text-align:center;line-height:1.3;margin-bottom:12px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;opacity:0;transform:translateY(30px);transition:all .8s}
+.sec-title.vis{opacity:1;transform:translateY(0)}
+.sec-sub{font-size:clamp(13px,1.8vw,16px);text-align:center;color:#7777aa;max-width:760px;line-height:1.8;opacity:0;transform:translateY(20px);transition:all .8s .15s}
+.sec-sub.vis{opacity:1;transform:translateY(0)}
+.scroll-hint{position:absolute;bottom:28px;animation:sB 2s ease infinite;font-size:20px;color:rgba(108,99,255,.3);cursor:pointer}
+@keyframes sB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.particle{position:absolute;width:2px;height:2px;background:rgba(108,99,255,.4);border-radius:50%;pointer-events:none;animation:pF linear infinite}
+@keyframes pF{0%{transform:translateY(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh);opacity:0}}
+
+/* ===== Canvas ===== */
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.canvas-wrap canvas{width:100%;height:100%;display:block}
+
+/* ===== Comparison Grid ===== */
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:960px;width:100%;margin-top:24px}
+@media(max-width:700px){.cmp-grid{grid-template-columns:1fr}}
+.cmp-col{border-radius:16px;padding:28px 24px;transition:all .4s;opacity:0;transform:translateY(24px)}
+.cmp-col.vis{opacity:1;transform:translateY(0)}
+.cmp-col.enc{background:rgba(56,189,248,.03);border:1px solid rgba(56,189,248,.1)}
+.cmp-col.enc:hover{border-color:rgba(56,189,248,.25);box-shadow:0 0 40px rgba(56,189,248,.06)}
+.cmp-col.sig{background:rgba(167,139,250,.03);border:1px solid rgba(167,139,250,.1)}
+.cmp-col.sig:hover{border-color:rgba(167,139,250,.25);box-shadow:0 0 40px rgba(167,139,250,.06)}
+.cmp-tag{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.cmp-col.enc .cmp-tag{color:#38bdf8}
+.cmp-col.sig .cmp-tag{color:#a78bfa}
+.cmp-title{font-size:18px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cmp-sub{font-size:13px;color:#8888aa;margin-bottom:16px;line-height:1.6}
+.cmp-flow{display:flex;flex-direction:column;gap:10px}
+.cmp-step{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);font-size:12.5px;line-height:1.6}
+.cmp-step .cs-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.cmp-col.enc .cs-num{background:rgba(56,189,248,.15);color:#38bdf8}
+.cmp-col.sig .cs-num{background:rgba(167,139,250,.15);color:#a78bfa}
+.cmp-step strong{color:#d0d0f0}
+.cmp-col.enc .cmp-step em{color:#38bdf8;font-style:normal;font-weight:600}
+.cmp-col.sig .cmp-step em{color:#a78bfa;font-style:normal;font-weight:600}
+.cmp-why{margin-top:18px;padding:14px 18px;border-radius:10px;font-size:12.5px;line-height:1.7}
+.cmp-col.enc .cmp-why{background:rgba(56,189,248,.04);border:1px solid rgba(56,189,248,.1);color:#b0c8e0}
+.cmp-col.sig .cmp-why{background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.1);color:#c0b8d8}
+
+/* ===== Insight Box ===== */
+.insight{max-width:960px;width:100%;margin-top:24px;padding:20px 28px;border-radius:14px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.12);font-size:13px;line-height:1.8;color:#a0c8b0;opacity:0;transform:translateY(20px);transition:all .6s .4s}
+.insight.vis{opacity:1;transform:translateY(0)}
+.insight em{color:#34d399;font-style:normal;font-weight:600}
+
+/* ===== RSA Math Section ===== */
+.math-box{max-width:900px;width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:28px 24px;margin-top:24px;opacity:0;transform:translateY(24px);transition:all .6s}
+.math-box.vis{opacity:1;transform:translateY(0)}
+.math-title{font-size:17px;font-weight:800;color:#e0e0ff;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.math-title .mt-icon{font-size:22px}
+.math-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.math-grid{grid-template-columns:1fr}}
+.math-card{border-radius:12px;padding:20px;border:1px solid rgba(255,255,255,.04);transition:all .3s}
+.math-card:hover{border-color:rgba(255,255,255,.1)}
+.math-card.fwd{background:rgba(56,189,248,.03);border-color:rgba(56,189,248,.08)}
+.math-card.rev{background:rgba(167,139,250,.03);border-color:rgba(167,139,250,.08)}
+.math-card .mc-tag{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.math-card.fwd .mc-tag{color:#38bdf8}
+.math-card.rev .mc-tag{color:#a78bfa}
+.math-card .mc-formula{font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:14px;color:#d0d0f0;background:rgba(0,0,0,.2);padding:12px 16px;border-radius:8px;text-align:center;margin:10px 0;letter-spacing:1px}
+.math-card .mc-note{font-size:12px;color:#8888aa;line-height:1.7}
+.math-card .mc-note em{font-style:normal;font-weight:600}
+.math-card.fwd .mc-note em{color:#38bdf8}
+.math-card.rev .mc-note em{color:#a78bfa}
+.math-verdict{margin-top:16px;padding:14px 18px;border-radius:10px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.12);font-size:12.5px;line-height:1.8;color:#d0c0a0}
+.math-verdict strong{color:#f59e0b}
+
+/* ===== Attack Scenario ===== */
+.attack-scene{max-width:960px;width:100%;margin-top:24px;opacity:0;transform:translateY(24px);transition:all .6s}
+.attack-scene.vis{opacity:1;transform:translateY(0)}
+.attack-scene h3{font-size:20px;font-weight:800;color:#f43f5e;text-align:center;margin-bottom:8px}
+.attack-scene .as-sub{text-align:center;color:#8888aa;font-size:13px;margin-bottom:20px}
+.attack-flow{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.attack-node{padding:16px 20px;border-radius:12px;border:1px solid rgba(255,255,255,.06);text-align:center;min-width:100px}
+.attack-node.bad{background:rgba(244,63,94,.06);border-color:rgba(244,63,94,.15)}
+.attack-node.good{background:rgba(52,211,153,.06);border-color:rgba(52,211,153,.15)}
+.attack-node .an-icon{font-size:28px;margin-bottom:4px}
+.attack-node .an-label{font-size:12px;font-weight:700;color:#d0d0f0}
+.attack-node.bad .an-label{color:#fca5a5}
+.attack-node.good .an-label{color:#6ee7b7}
+.attack-node .an-key{font-size:10px;color:#7777aa;margin-top:4px}
+.attack-arr{color:rgba(255,255,255,.15);font-size:22px;font-weight:700}
+.attack-conclusion{margin-top:20px;padding:18px 24px;border-radius:12px;background:rgba(244,63,94,.04);border:1px solid rgba(244,63,94,.15);text-align:center;font-size:13px;line-height:1.8;color:#f4a0b0}
+.attack-conclusion strong{color:#fca5a5}
+
+/* ===== ECDSA Section ===== */
+.ecdsa-box{max-width:960px;width:100%;opacity:0;transform:translateY(24px);transition:all .6s}
+.ecdsa-box.vis{opacity:1;transform:translateY(0)}
+.ecdsa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}
+@media(max-width:800px){.ecdsa-grid{grid-template-columns:1fr}}
+.ecdsa-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:22px 18px;transition:all .3s;text-align:center}
+.ecdsa-card:hover{border-color:rgba(167,139,250,.2);transform:translateY(-2px)}
+.ecdsa-card .ec-icon{font-size:32px;margin-bottom:10px}
+.ecdsa-card .ec-title{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.ecdsa-card .ec-desc{font-size:12px;color:#8888aa;line-height:1.7}
+
+/* ===== Rule Cards ===== */
+.rule-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;max-width:960px;width:100%;margin-top:24px}
+@media(max-width:700px){.rule-grid{grid-template-columns:1fr}}
+.rule-card{border-radius:16px;padding:0;overflow:hidden;border:1px solid rgba(255,255,255,.06);transition:all .4s;opacity:0;transform:translateY(24px)}
+.rule-card.vis{opacity:1;transform:translateY(0)}
+.rule-card:hover{border-color:var(--rc);box-shadow:0 8px 30px rgba(0,0,0,.3);transform:translateY(-2px)}
+.rule-card .rc-head{padding:14px 20px;display:flex;align-items:center;gap:10px}
+.rule-card .rc-head .rc-icon{font-size:24px}
+.rule-card .rc-head .rc-label{font-size:14px;font-weight:800;color:#e0e0ff}
+.rule-card .rc-body{padding:0 20px 20px;font-size:12.5px;color:#9999bb;line-height:1.8}
+
+/* ===== Summary Canvas ===== */
+.summary-wrap{max-width:700px;width:100%;margin-top:20px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.summary-wrap.vis{opacity:1;transform:translateY(0)}
+.summary-wrap canvas{width:100%;height:100%;display:block}
+
+/* ===== Top Nav ===== */
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}
+.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}
+.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+
+/* ===== Footer ===== */
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+/* ===== Color variables for the sections ===== */
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f43f5e);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* ===== ECDHE Handshake Diagram ===== */
+.ecdhe-flow{max-width:900px;width:100%;margin-top:20px;opacity:0;transform:translateY(24px);transition:all .6s}
+.ecdhe-flow.vis{opacity:1;transform:translateY(0)}
+.ecdhe-canvas{width:100%;height:420px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03)}
+.ecdhe-canvas canvas{width:100%;height:100%;display:block}
+.ecdhe-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:900px;width:100%;margin-top:16px}
+@media(max-width:800px){.ecdhe-steps{grid-template-columns:repeat(2,1fr)}}
+.ecdhe-step{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:16px 12px;text-align:center;transition:all .3s;cursor:default;opacity:0;transform:translateY(16px)}
+.ecdhe-step.vis{opacity:1;transform:translateY(0)}
+.ecdhe-step:hover{border-color:rgba(245,158,11,.2);background:rgba(245,158,11,.03)}
+.ecdhe-step .es-num{display:inline-block;width:22px;height:22px;line-height:22px;border-radius:50%;background:rgba(245,158,11,.15);color:#f59e0b;font-size:11px;font-weight:800;margin-bottom:8px}
+.ecdhe-step .es-title{font-size:12.5px;font-weight:700;color:#e0e0ff;margin-bottom:4px}
+.ecdhe-step .es-desc{font-size:11px;color:#8888aa;line-height:1.6}
+.ecdhe-step .es-math{font-size:10.5px;color:#f59e0b;font-family:"JetBrains Mono",monospace;margin-top:4px;display:block}
+
+/* G explanation cards */
+.g-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:900px;width:100%;margin-top:18px}
+@media(max-width:700px){.g-cards{grid-template-columns:1fr}}
+.g-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px 18px;transition:all .3s;opacity:0;transform:translateY(16px)}
+.g-card.vis{opacity:1;transform:translateY(0)}
+.g-card:hover{border-color:rgba(245,158,11,.2);transform:translateY(-2px)}
+.g-card .gc-icon{font-size:24px;margin-bottom:8px}
+.g-card .gc-title{font-size:14px;font-weight:800;color:#e0e0ff;margin-bottom:6px}
+.g-card .gc-desc{font-size:12px;color:#8888aa;line-height:1.7}
+.g-card .gc-desc code{background:rgba(245,158,11,.08);color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono",monospace}
+</style>
+</head>
+<body>
+
+<!-- ===== Top Nav ===== -->
+<nav class="topnav" id="topnav">
+  <a href="#s1">问题引入</a><span class="sep"></span>
+  <a href="#s2">双向运算</a><span class="sep"></span>
+  <a href="#s3">攻击推演</a><span class="sep"></span>
+  <a href="#s4">ECDSA 差异</a><span class="sep"></span>
+  <a href="#s5">ECDHE·G 的奥秘</a><span class="sep"></span>
+  <a href="#s6">角色分配</a><span class="sep"></span>
+  <a href="#s7">总结</a>
+</nav>
+
+<!-- ===== S1: The Question ===== -->
+<section class="sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:4s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:1s"></div>
+  <div class="particle" style="left:90%;animation-duration:20s;animation-delay:3s"></div>
+
+  <h1 class="sec-title" data-reveal>为什么不能"签名用对方公钥"？</h1>
+  <p class="sec-sub" data-reveal>
+    加密 = 公钥加密，私钥解密 &nbsp;|&nbsp; 签名 = 私钥签名，公钥验签<br>
+    为什么角色不能互换？如果有人提出"用对方公钥来签名"会怎样？
+  </p>
+
+  <div class="canvas-wrap" data-reveal style="height:340px">
+    <canvas id="c1"></canvas>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('s2').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S2: RSA Bidirectional Math ===== -->
+<section class="sec s2" id="s2">
+  <h2 class="sec-title" data-reveal>RSA：数学上确实可以"双向"</h2>
+  <p class="sec-sub" data-reveal>
+    RSA 的 e 和 d 在数学上完全对称 —— 幂运算不分先后。但这不是问题的全部。
+  </p>
+
+  <div class="math-box" data-reveal>
+    <div class="math-title"><span class="mt-icon">&#x1F4D0;</span> RSA 核心数学：e 和 d 互为逆运算</div>
+    <div class="math-grid">
+      <div class="math-card fwd">
+        <div class="mc-tag">正向：加密 → 解密（公 → 私）</div>
+        <div class="mc-formula">C = M<sup>e</sup> mod n &nbsp;→&nbsp; M = C<sup>d</sup> mod n</div>
+        <div class="mc-note">
+          <em>公钥 (n, e)</em> 加密 → <em>私钥 (n, d)</em> 解密<br>
+          经典用法：任何人用公钥加密，只有私钥持有者能解密
+        </div>
+      </div>
+      <div class="math-card rev">
+        <div class="mc-tag">反向：签名 → 验签（私 → 公）</div>
+        <div class="mc-formula">S = M<sup>d</sup> mod n &nbsp;→&nbsp; M = S<sup>e</sup> mod n</div>
+        <div class="mc-note">
+          <em>私钥 (n, d)</em> 签名 → <em>公钥 (n, e)</em> 验签<br>
+          签名用法：只有私钥持有者能签，任何人用公钥验证
+        </div>
+      </div>
+    </div>
+    <div class="math-verdict">
+      <strong>&#x26A0; 关键发现：</strong>两个方向的数学运算是 <strong>完全对称</strong> 的！<br>
+      e 和 d 没有"方向性"—— 只是 <strong>人为规定了哪个公开、哪个保密</strong>。<br>
+      如果强行把上面两个公式的 e/d 角色互换，数学上完全成立 —— 但安全模型彻底崩塌。
+    </div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('s3').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S3: Attack Scenario ===== -->
+<section class="sec s3" id="s3">
+  <h2 class="sec-title" data-reveal>如果"签名用对方公钥"—— 安全模型崩塌</h2>
+  <p class="sec-sub" data-reveal>
+    下面推演：如果把签名定义为"用对方的公钥对消息做运算，对方用私钥验证"，会发生什么。
+  </p>
+
+  <div class="attack-scene" data-reveal>
+    <h3>&#x26A0; 攻击场景推演</h3>
+    <p class="as-sub">Bob 想给 Alice 发一条签名消息："请转账 $100 给 Bob"</p>
+
+    <div class="attack-flow">
+      <div class="attack-node good">
+        <div class="an-icon">&#x1F468;&#x200D;&#x1F4BB;</div>
+        <div class="an-label">Bob</div>
+        <div class="an-key">持有：Bob 私钥</div>
+      </div>
+      <div class="attack-arr">→</div>
+      <div class="attack-node" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)">
+        <div class="an-icon">&#x270D;&#xFE0F;</div>
+        <div class="an-label" style="color:#f59e0b">签名 = 用 Alice 公钥</div>
+        <div class="an-key" style="color:#f59e0b">← 这是"错误定义"</div>
+      </div>
+      <div class="attack-arr">→</div>
+      <div class="attack-node good">
+        <div class="an-icon">&#x1F469;&#x200D;&#x1F4BB;</div>
+        <div class="an-label">Alice</div>
+        <div class="an-key">验证 = 用 Alice 私钥</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:24px">
+      <div style="display:inline-block;padding:6px 18px;border-radius:8px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.15);font-size:12px;color:#fca5a5;font-weight:700">但是…… Alice 的公钥 是 公开的！</div>
+    </div>
+
+    <div class="attack-flow" style="margin-top:18px">
+      <div class="attack-node bad">
+        <div class="an-icon">&#x1F480;</div>
+        <div class="an-label">攻击者 Mallory</div>
+        <div class="an-key">也有 Alice 的公钥</div>
+      </div>
+      <div class="attack-arr">→</div>
+      <div class="attack-node bad">
+        <div class="an-icon">&#x270D;&#xFE0F;</div>
+        <div class="an-label">伪造签名</div>
+        <div class="an-key">同样用 Alice 公钥</div>
+      </div>
+      <div class="attack-arr">→</div>
+      <div class="attack-node bad">
+        <div class="an-icon">&#x1F4E8;</div>
+        <div class="an-label">发送："转账 $9999 给 Mallory"</div>
+        <div class="an-key">签名"有效"！</div>
+      </div>
+    </div>
+
+    <div class="attack-conclusion">
+      <strong>&#x1F6AB; 结论：Alice 用私钥验证 → 验证通过！</strong><br>
+      Alice 以为消息来自 Bob，实际上来自 Mallory。<br>
+      因为 <strong>任何人都有 Alice 的公钥</strong>，所以 <strong>任何人"签名"出来的结果都一样</strong>——<br>签名彻底失去了"证明发送者身份"的意义。
+    </div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('s4').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S4: ECDSA ===== -->
+<section class="sec s4" id="s4">
+  <h2 class="sec-title" data-reveal>ECDSA：根本不存在"加密"方向</h2>
+  <p class="sec-sub" data-reveal>
+    上面说的是 RSA。但在 WebRTC/DTLS 实际使用的 ECDSA 中，<br>签名根本不是"反向加密"——它是一种完全不同的数学运算。
+  </p>
+
+  <div class="canvas-wrap" data-reveal style="height:380px">
+    <canvas id="c2"></canvas>
+  </div>
+
+  <div class="ecdsa-box" data-reveal>
+    <div class="ecdsa-grid">
+      <div class="ecdsa-card">
+        <div class="ec-icon">&#x1F504;</div>
+        <div class="ec-title">RSA</div>
+        <div class="ec-desc">
+          数学结构：<strong>大整数模幂</strong><br>
+          <code style="color:#a78bfa">M^e mod n</code><br><br>
+          加密和签名是同一个数学运算的正反方向<br>
+          → 可以"双向"用
+        </div>
+      </div>
+      <div class="ecdsa-card">
+        <div class="ec-icon">&#x26D3;&#xFE0F;</div>
+        <div class="ec-title">ECDSA</div>
+        <div class="ec-desc">
+          数学结构：<strong>椭圆曲线点乘</strong><br>
+          <code style="color:#a78bfa">k × G = (x, y)</code><br><br>
+          签名输出 (r, s) 是"零知识证明"<br>
+          → <strong>根本不存在加密功能</strong>
+        </div>
+      </div>
+      <div class="ecdsa-card">
+        <div class="ec-icon">&#x1F4CC;</div>
+        <div class="ec-title">WebRTC 分工</div>
+        <div class="ec-desc">
+          <strong>ECDSA</strong>：只做签名验签<br>
+          <strong>ECDHE</strong>：只做密钥协商<br>
+          <strong>AES-GCM</strong>：只做数据加密<br><br>
+          三项各司其职，不可互换
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('s5').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S5: ECDHE Handshake & G ===== -->
+<section class="sec s5" id="s5">
+  <h2 class="sec-title" data-reveal>ECDHE 握手与 G 的奥秘</h2>
+  <p class="sec-sub" data-reveal>
+    G 是什么？为什么 <code style="color:#f59e0b">k × G</code> 正着算是"点乘"，反着算是"无解"？<br>
+    ECDHE 5 步握手中，双方如何在窃听者眼皮底下协商出只有他们知道的密钥。
+  </p>
+
+  <!-- G Explanation Cards -->
+  <div class="g-cards">
+    <div class="g-card" data-reveal>
+      <div class="gc-icon">&#x1F4CD;</div>
+      <div class="gc-title">G = Generator（基点）</div>
+      <div class="gc-desc">
+        椭圆曲线上一个<strong>公开固定</strong>的点。<br>
+        secp256r1 的 G 坐标写在标准文档里，<strong>全世界所有人用同一个 G</strong>。<br>
+        就像数轴上的"1"——它是所有运算的起点。
+      </div>
+    </div>
+    <div class="g-card" data-reveal>
+      <div class="gc-icon">&#x1F503;</div>
+      <div class="gc-title">单向陷门：k × G</div>
+      <div class="gc-desc">
+        <code>k × G = P</code> &nbsp;→&nbsp; 正向计算 <strong>极快</strong>（微秒级）<br>
+        从 <code>P</code> 反推 <code>k</code> &nbsp;→&nbsp; <strong>计算上不可行</strong><br>
+        这是 <strong>椭圆曲线离散对数难题（ECDLP）</strong><br>
+        ECDHE 的全部安全性都建立在这个假设之上。
+      </div>
+    </div>
+    <div class="g-card" data-reveal>
+      <div class="gc-icon">&#x1F504;</div>
+      <div class="gc-title">循环群：自我闭合</div>
+      <div class="gc-desc">
+        <code>G → 2G → 3G → ... → nG → G</code><br>
+        所有的 <code>k × G</code> 都在同一个曲线上，<br>
+        永远走不出去，也永远不会重复（直到 n）。<br>
+        这保证了密钥空间的 <strong>封闭性和均匀分布</strong>。
+      </div>
+    </div>
+  </div>
+
+  <!-- ECDHE Handshake Canvas -->
+  <div class="ecdhe-flow" data-reveal>
+    <div class="ecdhe-canvas"><canvas id="c4"></canvas></div>
+  </div>
+
+  <!-- 5 Steps -->
+  <div class="ecdhe-steps">
+    <div class="ecdhe-step" data-reveal>
+      <div class="es-num">1</div>
+      <div class="es-title">Server 生成私钥</div>
+      <div class="es-desc">选取随机大整数 a（保密）</div>
+      <span class="es-math">a ∈ [1, n-1]</span>
+    </div>
+    <div class="ecdhe-step" data-reveal>
+      <div class="es-num">2</div>
+      <div class="es-title">Client 生成私钥</div>
+      <div class="es-desc">选取随机大整数 b（保密）</div>
+      <span class="es-math">b ∈ [1, n-1]</span>
+    </div>
+    <div class="ecdhe-step" data-reveal>
+      <div class="es-num">3</div>
+      <div class="es-title">交换公钥</div>
+      <div class="es-desc">A = a×G  B = b×G<br>在公开信道传输</div>
+      <span class="es-math">窃听者可看到 A、B</span>
+    </div>
+    <div class="ecdhe-step" data-reveal>
+      <div class="es-num">4</div>
+      <div class="es-title">各自计算共享密钥</div>
+      <div class="es-desc">Server: S = a×B<br>Client: S = b×A</div>
+      <span class="es-math">都到达 ab×G 这个点</span>
+    </div>
+    <div class="ecdhe-step" data-reveal>
+      <div class="es-num">5</div>
+      <div class="es-title">密钥派生</div>
+      <div class="es-desc">S 的 x 坐标 → HKDF<br>→ AES 对称密钥</div>
+      <span class="es-math">窃听者：有 A、B 但无法算出 ab×G</span>
+    </div>
+  </div>
+
+  <!-- Key Insight -->
+  <div class="insight" data-reveal style="text-align:center">
+    <em>G 的角色总结：</em><br>
+    G 是椭圆曲线上的<strong>公共原点</strong>，所有人都从同一个 G 出发。<br>
+    <strong>a × G = A</strong>（私钥 × G = 公钥）：正向秒算，反向破解需要宇宙年龄。<br>
+    双方各走半程（a×G 和 b×G），交换后再走对方的半程（a×(b×G) 和 b×(a×G)），<br>
+    最终在 <strong>同一个点 ab×G</strong> 会合 —— 窃听者只能看到中间点 A 和 B，永远到不了终点。<br>
+    <span style="font-size:11px;color:#6666aa">这就是 ECDHE 能在公开信道上协商密钥的根本原因。</span>
+  </div>
+
+  <div class="scroll-hint" onclick="document.getElementById('s6').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S6: The Correct Model ===== -->
+<section class="sec s6" id="s6">
+  <h2 class="sec-title" data-reveal>正确的角色分配：私钥做的事 vs 公钥做的事</h2>
+  <p class="sec-sub" data-reveal>核心原则：<em style="color:#34d399;font-style:normal;font-weight:600">私钥做的事必须是"只有这个身份能做"的事。</em></p>
+
+  <div class="rule-grid">
+    <div class="rule-card" style="--rc:rgba(56,189,248,.25)" data-reveal>
+      <div class="rc-head" style="background:rgba(56,189,248,.06);border-bottom:1px solid rgba(56,189,248,.08)">
+        <span class="rc-icon">&#x1F511;</span>
+        <span class="rc-label">加密 / 解密</span>
+      </div>
+      <div class="rc-body" style="padding-top:16px">
+        <strong style="color:#38bdf8">加密用 对方公钥</strong><br>
+        → 任何人都能给你发加密消息<br>
+        → 门槛低 = 好（反正只有你能解密）<br><br>
+        <strong style="color:#38bdf8">解密用 自己私钥</strong><br>
+        → 只有你能看到内容<br>
+        → 门槛高 = 必要（机密性的根基）<br><br>
+        <span style="font-size:11px;color:#555577">保护目标：<strong style="color:#8888aa">机密性</strong> — 数据不给别人看</span>
+      </div>
+    </div>
+
+    <div class="rule-card" style="--rc:rgba(167,139,250,.25)" data-reveal>
+      <div class="rc-head" style="background:rgba(167,139,250,.06);border-bottom:1px solid rgba(167,139,250,.08)">
+        <span class="rc-icon">&#x270D;&#xFE0F;</span>
+        <span class="rc-label">签名 / 验签</span>
+      </div>
+      <div class="rc-body" style="padding-top:16px">
+        <strong style="color:#a78bfa">签名用 自己私钥</strong><br>
+        → 只有你能产生这个签名<br>
+        → 门槛高 = 必要（签名的全部意义）<br><br>
+        <strong style="color:#a78bfa">验签用 签名者公钥</strong><br>
+        → 任何人都能验证是不是你签的<br>
+        → 门槛低 = 好（任何人都能确认真伪）<br><br>
+        <span style="font-size:11px;color:#555577">保护目标：<strong style="color:#8888aa">认证性 + 完整性</strong> — 证明你是谁、内容没被改</span>
+      </div>
+    </div>
+
+    <div class="rule-card" style="--rc:rgba(245,158,11,.25)" data-reveal>
+      <div class="rc-head" style="background:rgba(245,158,11,.06);border-bottom:1px solid rgba(245,158,11,.08)">
+        <span class="rc-icon">&#x26A0;&#xFE0F;</span>
+        <span class="rc-label">反面教材：如果反过来</span>
+      </div>
+      <div class="rc-body" style="padding-top:16px">
+        <strong style="color:#f59e0b">签名用 对方公钥</strong><br>
+        → 公钥是公开的 → 任何人都能"签名"<br>
+        → <span style="color:#fca5a5">签名失去唯一性，形同虚设</span><br><br>
+        <strong style="color:#f59e0b">验证用 对方私钥</strong><br>
+        → 只有对方能验证 → 我竟然无法自己验证<br>
+        → <span style="color:#fca5a5">Bob 发的消息，只有 Alice 能"确认"</span><br><br>
+        <span style="font-size:11px;color:#555577">结论：<strong style="color:#fca5a5">完全不可用</strong></span>
+      </div>
+    </div>
+
+    <div class="rule-card" style="--rc:rgba(52,211,153,.25)" data-reveal>
+      <div class="rc-head" style="background:rgba(52,211,153,.06);border-bottom:1px solid rgba(52,211,153,.08)">
+        <span class="rc-icon">&#x1F4A1;</span>
+        <span class="rc-label">一句话心法</span>
+      </div>
+      <div class="rc-body" style="padding-top:16px">
+        <strong style="color:#34d399">私钥做的事 = 只有我能做的</strong><br>
+        → 解密：只有我能看<br>
+        → 签名：只有我能签<br><br>
+        <strong style="color:#34d399">公钥做的事 = 任何人都能做的</strong><br>
+        → 加密：谁都能给我发<br>
+        → 验签：谁都能验证我的身份<br><br>
+        <span style="font-size:11px;color:#555577">本质：<strong style="color:#8888aa">私钥 = 门槛，公钥 = 无门槛</strong></span>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('s7').scrollIntoView({behavior:'smooth'})">&#x25BD;</div>
+</section>
+
+<!-- ===== S6: Summary ===== -->
+<section class="sec s7" id="s7">
+  <h2 class="sec-title" data-reveal>完整心智模型</h2>
+  <p class="sec-sub" data-reveal>
+    加密与签名的区别不是"用哪把钥匙"，而是<em style="color:#6c63ff;font-style:normal;font-weight:600">保护什么</em>和<em style="color:#6c63ff;font-style:normal;font-weight:600">信任谁</em>。
+  </p>
+
+  <div class="summary-wrap" data-reveal style="height:420px">
+    <canvas id="c3"></canvas>
+  </div>
+
+  <div class="insight" data-reveal style="text-align:center">
+    <em>加密</em> 保护的是 <strong>内容</strong>（confidentiality），信任的是 <strong>对方的接收能力</strong>。<br>
+    <em>签名</em> 保护的是 <strong>身份</strong>（authenticity），信任的是 <strong>自己的唯一性</strong>。<br><br>
+    私钥 = 只有我拥有 → 签名用私钥（证明我是我）、解密用私钥（只有我能看）<br>
+    公钥 = 所有人都拥有 → 验签用公钥（任何人都能验证）、加密用公钥（任何人都能发送）
+  </div>
+
+  <div class="scroll-hint" style="position:relative;bottom:auto;margin-top:40px" onclick="window.scrollTo({top:0,behavior:'smooth'})">&#x25B2; 回到顶部</div>
+</section>
+
+<footer class="footer">
+  加密 vs 签名 · 交互式讲解 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="livekit_ecdsa_learn.html">ECDSA 签名详解 →</a>
+</footer>
+
+<script>
+// ===== Scroll Reveal =====
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll('[data-reveal], .math-box, .attack-scene, .ecdsa-box, .rule-card, .insight, .canvas-wrap, .summary-wrap, .ecdhe-flow, .ecdhe-step, .g-card').forEach(el => obs.observe(el));
+
+// ===== Top Nav =====
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    topnav.classList.toggle('show', !e.isIntersecting);
+  });
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+
+// Smooth scroll nav
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});
+  });
+});
+
+// ===== Canvas 1: The Question — Lock & Key Animation =====
+(function() {
+  const c = document.getElementById('c1');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    W = rect.width; H = 340;
+    c.width = W * dpr; c.height = H * dpr;
+    c.style.width = W+'px'; c.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function drawLock(x, y, s, color, label, keyLabel) {
+    ctx.save();
+    ctx.translate(x, y);
+    // Lock body
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    ctx.roundRect(-s*0.6, -s*0.1, s*1.2, s*0.8, s*0.15);
+    ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Shackle
+    ctx.beginPath();
+    ctx.arc(0, -s*0.1, s*0.35, Math.PI, 0);
+    ctx.stroke();
+    // Keyhole
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(0, s*0.25, s*0.08, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(-s*0.03, s*0.22, s*0.06, s*0.2);
+    // Label
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#d0d0f0';
+    ctx.font = `${s*0.25}px -apple-system, "Noto Sans SC", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, 0, s*0.7);
+    ctx.font = `${s*0.2}px -apple-system, "Noto Sans SC", sans-serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(keyLabel, 0, s*0.95);
+    ctx.restore();
+  }
+
+  function drawArrow(x1, y1, x2, y2, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    // Arrowhead
+    const ang = Math.atan2(y2-y1, x2-x1);
+    const len = 10;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2-len*Math.cos(ang-Math.PI/6), y2-len*Math.sin(ang-Math.PI/6));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2-len*Math.cos(ang+Math.PI/6), y2-len*Math.sin(ang+Math.PI/6));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W/2, cy = H/2;
+
+    // Title
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 16px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('发送方 Bob 想发送加密消息给 Alice', cx, 30);
+
+    // Two rows: encryption (correct) and "signing" (wrong)
+    // Row 1: Encryption (correct) — blue
+    const y1 = 80;
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('✓ 加密（正确）：Bob 用 Alice 的公钥加密 → Alice 用私钥解密', cx, y1);
+
+    drawLock(cx*0.25, y1+65, 55, '#38bdf8', 'Alice 公钥', '(公开)');
+    drawLock(cx*0.75, y1+65, 55, '#38bdf8', 'Alice 私钥', '(保密)');
+    drawArrow(cx*0.25+35, y1+55, cx*0.75-35, y1+55, '#38bdf8');
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('加密', cx*0.5, y1+40);
+    ctx.fillText('解密', cx*0.5, y1+95);
+    ctx.fillText('门槛：任何人都能给你发密文 ✓', cx*0.5, y1+135);
+
+    // Row 2: Signing (correct) — purple
+    const y2 = 215;
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('✓ 签名（正确）：Bob 用自己的私钥签名 → Alice 用 Bob 的公钥验签', cx, y2);
+
+    drawLock(cx*0.25, y2+65, 55, '#a78bfa', 'Bob 私钥', '(保密)');
+    drawLock(cx*0.75, y2+65, 55, '#a78bfa', 'Bob 公钥', '(公开)');
+    drawArrow(cx*0.25+35, y2+55, cx*0.75-35, y2+55, '#a78bfa');
+    ctx.fillStyle = '#a78bfa';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('签名', cx*0.5, y2+40);
+    ctx.fillText('验签', cx*0.5, y2+95);
+    ctx.fillText('签名者唯一 → 任何人都能验证身份 ✓', cx*0.5, y2+135);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 2: ECDSA Signing Process =====
+(function() {
+  const c = document.getElementById('c2');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, phase=0;
+
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    W = rect.width; H = 380;
+    c.width = W * dpr; c.height = H * dpr;
+    c.style.width = W+'px'; c.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  let animT = 0;
+  function animate() {
+    animT += 0.016;
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W/2;
+    const sideW = W * 0.38;
+
+    // ===== Left side: RSA =====
+    const lx = sideW/2;
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('RSA', lx, 30);
+
+    // RSA flow: m → [e] → c → [d] → m
+    const ly = 120;
+    // encrypt box
+    ctx.fillStyle = 'rgba(56,189,248,.08)';
+    ctx.strokeStyle = 'rgba(56,189,248,.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(lx-100, ly-20, 200, 40, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.fillText('C = M^e mod n', lx, ly+4);
+
+    // decrypt box
+    ctx.fillStyle = 'rgba(56,189,248,.08)';
+    ctx.strokeStyle = 'rgba(56,189,248,.25)';
+    ctx.beginPath();
+    ctx.roundRect(lx-100, ly+70, 200, 40, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('M = C^d mod n', lx, ly+94);
+
+    // Arrows
+    ctx.strokeStyle = 'rgba(56,189,248,.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(lx, ly+20); ctx.lineTo(lx, ly+70); ctx.stroke();
+    // Arrowhead
+    ctx.beginPath(); ctx.moveTo(lx-5, ly+62); ctx.lineTo(lx, ly+70); ctx.lineTo(lx+5, ly+62); ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = '#8888aa';
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('同一个数学运算', lx, ly-40);
+    ctx.fillText('的正反方向', lx, ly-25);
+    ctx.fillText('加密', lx-110, ly+4);
+    ctx.fillText('解密', lx-110, ly+94);
+
+    // ===== Right side: ECDSA =====
+    const rx = W - sideW/2;
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('ECDSA', rx, 30);
+
+    // Sign box
+    ctx.fillStyle = 'rgba(167,139,250,.08)';
+    ctx.strokeStyle = 'rgba(167,139,250,.25)';
+    ctx.beginPath();
+    ctx.roundRect(rx-130, ly-40, 260, 52, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = 'bold 11.5px "JetBrains Mono", monospace';
+    ctx.fillText('k×G → r', rx-90, ly-21);
+    ctx.fillText('s = k⁻¹(hash + r·d) mod n', rx-90, ly-3);
+
+    // Verify box
+    ctx.fillStyle = 'rgba(167,139,250,.08)';
+    ctx.strokeStyle = 'rgba(167,139,250,.25)';
+    ctx.beginPath();
+    ctx.roundRect(rx-130, ly+70, 260, 52, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#a78bfa';
+    ctx.fillText('验证等式：', rx-90, ly+88);
+    ctx.fillText('u₁×G + u₂×Q 的 x == r ?', rx-90, ly+106);
+
+    // Arrows
+    ctx.strokeStyle = 'rgba(167,139,250,.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(rx, ly+12); ctx.lineTo(rx, ly+70); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx-5, ly+62); ctx.lineTo(rx, ly+70); ctx.lineTo(rx+5, ly+62); ctx.stroke();
+
+    ctx.fillStyle = '#8888aa';
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('零知识证明', rx, ly-60);
+    ctx.fillText('不是加密/解密的逆运算', rx, ly-45);
+    ctx.fillText('签名', rx-140, ly-14);
+    ctx.fillText('验签', rx-140, ly+96);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, 50); ctx.lineTo(cx, ly+140); ctx.stroke();
+
+    // Bottom note
+    ctx.fillStyle = '#f59e0b';
+    ctx.globalAlpha = 0.8;
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('RSA：e 和 d 数学对称 → 可以双向运算', cx, ly+170);
+    ctx.fillText('ECDSA：签名是"证明"而非"变换" → 不存在加密方向', cx, ly+192);
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 4: ECDHE Handshake with G =====
+(function() {
+  const c = document.getElementById('c4');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    W = rect.width; H = 420;
+    c.width = W * dpr; c.height = H * dpr;
+    c.style.width = W+'px'; c.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function drawCurve(y, h) {
+    // Draw a stylized elliptic curve
+    ctx.strokeStyle = 'rgba(245,158,11,.15)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const cx = W/2, cy = y + h/2;
+    for(let x = -W*0.4; x <= W*0.4; x+=2) {
+      const px = cx + x;
+      const py = cy - Math.sqrt(Math.max(0, x*x*x/3000 + x*2 + h*0.15)) * 3.5;
+      if(x === -W*0.4) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    // Mirror bottom half
+    ctx.strokeStyle = 'rgba(245,158,11,.08)';
+    ctx.beginPath();
+    for(let x = -W*0.4; x <= W*0.4; x+=2) {
+      const px = cx + x;
+      const py = cy + Math.sqrt(Math.max(0, x*x*x/3000 + x*2 + h*0.15)) * 3.5;
+      if(x === -W*0.4) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  function drawPoint(x, y, color, label, radius) {
+    const r = radius || 5;
+    const pulse = 1 + Math.sin(t*3 + x*0.01)*0.25;
+    // Glow
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.15 * pulse;
+    ctx.beginPath();
+    ctx.arc(x, y, r*2.5, 0, Math.PI*2);
+    ctx.fill();
+    // Core
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.7;
+    ctx.stroke();
+    // Label
+    if(label) {
+      ctx.fillStyle = '#d0d0f0';
+      ctx.globalAlpha = 0.9;
+      ctx.font = 'bold 13px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x, y - r - 10);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawArrowX(x1, y1, x2, y2, color, label, dashed) {
+    const progress = 0.5 + Math.sin(t*1.5)*0.3;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 2;
+    if(dashed) ctx.setLineDash([5,5]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrowhead
+    const ang = Math.atan2(y2-y1, x2-x1);
+    const lx = x1 + (x2-x1)*progress;
+    const ly = y1 + (y2-y1)*progress;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2-12*Math.cos(ang-Math.PI/6), y2-12*Math.sin(ang-Math.PI/6));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2-12*Math.cos(ang+Math.PI/6), y2-12*Math.sin(ang+Math.PI/6));
+    ctx.stroke();
+    // Animated dot
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 4, 0, Math.PI*2);
+    ctx.fill();
+    // Label at midpoint
+    if(label) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      const mx = (x1+x2)/2, my = (y1+y2)/2 - 14;
+      ctx.fillText(label, mx, my);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0, 0, W, H);
+
+    const lx = W * 0.2;   // Server x
+    const rx = W * 0.8;   // Client x
+    const ty = 40;        // top y for labels
+    const cy = 130;       // curve center
+    const by = 320;       // bottom shared key area
+
+    // Title
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 15px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ECDHE 密钥交换：在不安全信道上协商共享密钥', W/2, 26);
+
+    // Draw elliptic curve background
+    drawCurve(cy, 160);
+
+    // G point (center of curve)
+    drawPoint(W/2, cy+10, '#f59e0b', 'G (基点)', 6);
+    // G label
+    ctx.fillStyle = '#f59e0b';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('公开固定，全世界用同一个 G', W/2, cy-50);
+    ctx.globalAlpha = 1;
+
+    // Server side
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Server', lx, ty);
+    ctx.fillStyle = '#8888aa';
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('私钥 a（保密）', lx, ty+18);
+    ctx.fillText('公钥 A = a × G', lx, ty+34);
+
+    // Client side
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('Client', rx, ty);
+    ctx.fillStyle = '#8888aa';
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('私钥 b（保密）', rx, ty+18);
+    ctx.fillText('公钥 B = b × G', rx, ty+34);
+
+    // Point A (Server's pubkey on curve)
+    const ax = W/2 - 80 + Math.sin(t*0.7)*15;
+    const ay = cy - 30 + Math.cos(t*0.7)*10;
+    drawPoint(ax, ay, '#38bdf8', 'A = a×G', 5);
+
+    // Point B (Client's pubkey on curve)
+    const bx = W/2 + 80 + Math.sin(t*0.9+2)*15;
+    const by2 = cy - 40 + Math.cos(t*0.9+2)*8;
+    drawPoint(bx, by2, '#a78bfa', 'B = b×G', 5);
+
+    // G → A arrow
+    drawArrowX(W/2-5, cy+5, ax, ay, 'rgba(56,189,248,.4)', '×a', true);
+    // G → B arrow
+    drawArrowX(W/2+5, cy+5, bx, by2, 'rgba(167,139,250,.4)', '×b', true);
+
+    // Exchange arrows (A ↔ B across the network)
+    const netY = cy + 80;
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2,8]);
+    ctx.beginPath();
+    ctx.moveTo(lx+30, netY-20);
+    ctx.lineTo(rx-30, netY-20);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Network label
+    ctx.fillStyle = '#f43f5e';
+    ctx.globalAlpha = 0.5;
+    ctx.font = 'bold 10px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠ 公开信道 — 窃听者可以看到 A 和 B', W/2, netY-30);
+
+    // A → Client
+    drawArrowX(ax+5, ay+8, rx, netY-15, 'rgba(56,189,248,.4)', '发送 A', false);
+    // B → Server
+    drawArrowX(bx-5, by2+8, lx, netY-15, 'rgba(167,139,250,.4)', '发送 B', false);
+
+    // Shared key computation
+    const skY = by;
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(20, skY-40);
+    ctx.lineTo(W-20, skY-40);
+    ctx.stroke();
+
+    // Server computes S = a × B
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 12px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Server 计算: S = a × B = a × (b × G) = ab × G', lx, skY-10);
+
+    // Client computes S = b × A
+    ctx.fillStyle = '#a78bfa';
+    ctx.fillText('Client 计算: S = b × A = b × (a × G) = ab × G', rx, skY-10);
+
+    // Equal sign and shared key
+    const sharedPulse = Math.sin(t*2)*0.15 + 0.7;
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = sharedPulse;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('S = ab × G  ← 双方得到相同的点！', W/2, skY+18);
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('窃听者有 A=a×G, B=b×G，但从 A/B 反推 a/b 是离散对数难题 → 无法算出 ab×G', W/2, skY+42);
+
+    // Eye (eavesdropper)
+    ctx.fillStyle = '#f43f5e';
+    ctx.globalAlpha = 0.5;
+    ctx.font = '22px sans-serif';
+    ctx.fillText('👁', W/2, netY-8);
+    ctx.globalAlpha = 0.4;
+    ctx.font = '9px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('窃听者', W/2, netY+8);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 3: Complete Mental Model =====
+(function() {
+  const c = document.getElementById('c3');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    W = rect.width; H = 420;
+    c.width = W * dpr; c.height = H * dpr;
+    c.style.width = W+'px'; c.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function drawKeyBox(x, y, w, h, title, content, color, isPrivate) {
+    ctx.save();
+    const alpha = 0.06 + Math.sin(t*2 + x)*0.02;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(x-w/2, y-h/2, w, h, 12);
+    ctx.fill();
+    ctx.globalAlpha = isPrivate ? 0.3 : 0.12;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, x, y-h/2+22);
+
+    // Content
+    ctx.fillStyle = '#c8c8e8';
+    ctx.globalAlpha = 1;
+    ctx.font = '12px -apple-system, "Noto Sans SC", sans-serif';
+    const lines = content.split('\n');
+    lines.forEach((line, i) => {
+      ctx.fillText(line, x, y-h/2+50 + i*18);
+    });
+
+    ctx.restore();
+  }
+
+  function drawArrowX(x1, y1, x2, y2, label, color) {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, mx, my-6);
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W/2, cy = H/2;
+
+    // --- Left side: Encryption ---
+    const lx = cx * 0.5;
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('加密 / 解密', lx, 36);
+
+    // Sender (top)
+    drawKeyBox(lx, 110, 170, 65, '发送方', '用 接收方公钥 加密\n→ 任何人都能发', '#38bdf8', false);
+
+    // Receiver (bottom)
+    drawKeyBox(lx, 230, 170, 65, '接收方', '用 自己私钥 解密\n→ 只有自己能看', '#38bdf8', true);
+
+    drawArrowX(lx, 142, lx, 198, '密文传输', '#38bdf8');
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.globalAlpha = 0.35;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('门槛在 解密（私钥）', lx, 278);
+    ctx.fillText('公钥可公开 → 无门槛 ✓', lx, 298);
+    ctx.globalAlpha = 1;
+
+    // --- Right side: Signing ---
+    const rx = cx * 1.5;
+
+    ctx.fillStyle = '#a78bfa';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('签名 / 验签', rx, 36);
+
+    // Signer (top)
+    drawKeyBox(rx, 110, 170, 65, '签名方', '用 自己私钥 签名\n→ 只有自己能签', '#a78bfa', true);
+
+    // Verifier (bottom)
+    drawKeyBox(rx, 230, 170, 65, '验签方', '用 签名者公钥 验签\n→ 任何人都能验证', '#a78bfa', false);
+
+    drawArrowX(rx, 142, rx, 198, '签名 + 原文', '#a78bfa');
+
+    ctx.fillStyle = '#a78bfa';
+    ctx.globalAlpha = 0.35;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.fillText('门槛在 签名（私钥）', rx, 278);
+    ctx.fillText('公钥可公开 → 无门槛 ✓', rx, 298);
+    ctx.globalAlpha = 1;
+
+    // --- Center Divider ---
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, 10); ctx.lineTo(cx, 310); ctx.stroke();
+
+    // --- Bottom Summary ---
+    const by = 340;
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(20, by); ctx.lineTo(W-20, by); ctx.stroke();
+
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 12.5px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('共同原则：私钥做的事 = 只有我能做 | 公钥做的事 = 任何人都能做', cx, by+24);
+    ctx.fillText('如果将"签名用对方公钥" → 任何人都有对方公钥 → 签名失去唯一性 → 身份认证崩溃', cx, by+50);
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

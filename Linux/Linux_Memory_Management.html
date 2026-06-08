@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 内存管理 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; }
+.chain i { color:#34d399; font-style:normal; }
+.chain u { color:#fbbf24; text-decoration:none; }
+.chain em { color:#f87171; font-style:normal; }
+
+.mb { margin:14px 0; font-size:11px; color:#b0b0d0; line-height:1.8; }
+.mb .r { display:flex; align-items:center; margin:2px 0; font-family:"JetBrains Mono","Fira Code",monospace; }
+.mb .a { width:130px; flex-shrink:0; color:#555577; font-size:10.5px; }
+.mb .b { height:22px; border-radius:4px; display:flex; align-items:center; padding:0 10px;
+  font-size:10.5px; font-weight:600; margin:0 8px; min-width:80px; }
+.mb .n { flex:1; color:#666; font-size:10px; }
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa;}.mb .c2{background:rgba(52,211,153,.12);color:#34d399;}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24;}.mb .c4{background:rgba(248,113,113,.1);color:#f87171;}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8;}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 内存管理</h2>
+  <p class="sec-sub">系统化知识体系 — Buddy · SLUB · VMA · Page Cache · Reclaim · Swap · OOM · THP · cgroup</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>物理层</strong><br><small>Buddy Allocator</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>对象层</strong><br><small>SLUB / slab</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>虚拟层</strong><br><small>VMA / 页表</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>用户层</strong><br><small>mmap / malloc</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>物理内存管理</h4><div class="sub">Buddy · Zones · NUMA</div>
+      <p><em>Buddy Allocator</em> 以 2 的幂次页块管理空闲物理页。三个 Zone (DMA/NORMAL/HIGHMEM) 按用途分区，NUMA 节点按访问速度分级。Per-CPU Page Cache 加速单页分配。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>内核内存分配</h4><div class="sub">SLUB · kmalloc · vmalloc</div>
+      <p><em>SLUB</em> 是 slab 家族的现代实现，管理内核对象缓存，底层从 buddy 获取页。<code>kmalloc</code> 基于 SLUB 提供通用分配，<code>vmalloc</code> 分配虚拟连续但物理可能不连续的块。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>内存回收与 OOM</h4><div class="sub">kswapd · LRU · Swap</div>
+      <p>水位线触发 <em>kswapd</em> 后台回收 → 直接回收 → <em>OOM Killer</em> 三级递进响应。LRU 链表区分活跃/非活跃和匿名/文件页，Multi-Gen LRU 提升大系统回收精准度。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 总览 ══ -->
+<h2 class="sh">1. 内存管理全景</h2>
+<p class="ss">Linux 内存管理子系统采用分层架构 — 从底层物理页分配到上层进程虚拟地址空间</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>层级</th><th>子系统</th><th>核心文件</th><th>管理粒度</th><th>关键数据结构</th></tr></thead>
+  <tbody>
+    <tr><td><strong>物理层</strong></td><td>Buddy Allocator</td><td><code>mm/page_alloc.c</code></td><td>Page (4K) / 块 (2^n pages)</td><td><code>struct page</code> · <code>struct zone</code> · <code>free_area[]</code></td></tr>
+    <tr><td><strong>对象层</strong></td><td>SLUB / Slab</td><td><code>mm/slub.c</code></td><td>内核对象 (≤8KB)</td><td><code>struct kmem_cache</code> · <code>struct slab</code></td></tr>
+    <tr><td><strong>缓存层</strong></td><td>Page Cache</td><td><code>mm/filemap.c</code></td><td>Page / Folio</td><td><code>struct address_space</code> · <code>struct folio</code></td></tr>
+    <tr><td><strong>虚拟层</strong></td><td>VMA / 页表</td><td><code>mm/mmap.c</code></td><td>VMA (字节范围)</td><td><code>struct vm_area_struct</code> · PTE</td></tr>
+    <tr><td><strong>回收层</strong></td><td>LRU / kswapd</td><td><code>mm/vmscan.c</code></td><td>Page / Folio</td><td><code>lruvec</code> · <code>enum lru_list</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内存层次</h4><div class="lbl">NUMA Node → Zone → Page</div>
+    <p>物理内存按<strong>NUMA 节点</strong>分区，每个节点细分为<strong>Zone</strong>: <code>ZONE_DMA</code> (遗留 ISA DMA)、<code>ZONE_NORMAL</code> (内核直接映射)、<code>ZONE_HIGHMEM</code> (32-bit 高地址)。64-bit 系统 ZONE_HIGHMEM 基本废弃。UMA 系统模拟单节点。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>分配路径</h4><div class="lbl">Fast path → Slow path</div>
+    <p><strong>Fast path</strong>: Per-CPU page cache → buddy freelist<br>
+    <strong>Slow path</strong>: 唤醒 kswapd → 压缩内存 → 直接回收 → OOM<br>
+    大部分分配走 fast path (PCP hits ~95%+)。Slow path 仅在内存压力下触发。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>关键内核线程</h4><div class="lbl">四个常驻内存管理线程</div>
+    <p><strong>kswapd[N]</strong> — 每个 NUMA 节点一个，后台回收<br>
+    <strong>khugepaged</strong> — 透明大页合并<br>
+    <strong>kcompactd[N]</strong> — 内存压缩 (减少碎片)<br>
+    <strong>oom_reaper</strong> — 收割被 OOM Killed 进程的内存</p>
+  </div>
+</div>
+
+<!-- ══ Ch2: Buddy Allocator ══ -->
+<h2 class="sh">2. Buddy Allocator — 物理页管理器</h2>
+<p class="ss">Linux 物理内存分配的核心 — 以 2 的幂次块管理空闲页 · 分裂与合并 · 迁移类型防碎片</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Buddy 算法原理</h4><div class="lbl">2^n 页块的分裂与合并</div>
+    <p><strong>分配 (分裂)</strong>: 从 <code>free_area[order]</code> 链表取空闲块 → 若无则向上级 order+1 请求并分裂 → 一半分配，一半入对应链表。<br>
+    <strong>释放 (合并)</strong>: 归还块 → 检查 buddy (邻近同大小块) 是否也空闲 → 合并为 order+1 → 递归向上合并。<br>
+    <code>MAX_ORDER = 10</code> → 最大连续分配 2^10 = 1024 页 = <strong>4MB</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>迁移类型 (反碎片)</h4><div class="lbl">5 种迁移类型隔离页面</div>
+    <p><strong>MIGRATE_UNMOVABLE</strong> — 内核分配 (slab, page table)<br>
+    <strong>MIGRATE_MOVABLE</strong> — 用户空间页 (可迁移)<br>
+    <strong>MIGRATE_RECLAIMABLE</strong> — 页缓存 (可回收)<br>
+    <strong>MIGRATE_CMA</strong> — 连续内存区预留<br>
+    <strong>MIGRATE_HIGHATOMIC</strong> — 原子上下文紧急分配<br>
+    同类页面聚合 + 压缩 (compaction) = 生成高阶连续块。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== struct free_area — buddy 每个 order 的空闲链表 ===== */</span>
+<span class="kw">struct</span> <span class="ty">free_area</span> {
+    <span class="kw">struct</span> <span class="ty">list_head</span>    free_list[<span class="ma">MIGRATE_TYPES</span>]; <span class="cm">// 每种迁移类型一个链表</span>
+    <span class="kw">unsigned long</span>     nr_free;                   <span class="cm">// 此 order 的空闲块总数</span>
+};
+
+<span class="kw">struct</span> <span class="ty">zone</span> {
+    <span class="kw">struct</span> <span class="ty">free_area</span>    free_area[<span class="ma">MAX_ORDER</span> + <span class="nu">1</span>]; <span class="cm">// order 0~10 的空闲链表数组</span>
+    <span class="kw">unsigned long</span>     watermark[<span class="ma">NR_WMARK</span>];     <span class="cm">// min, low, high 水位线</span>
+    <span class="kw">struct</span> <span class="ty">per_cpu_pages</span> __percpu *per_cpu_pageset; <span class="cm">// Per-CPU 单页缓存</span>
+    <span class="ty">atomic_long_t</span>     managed_pages;             <span class="cm">// 此 zone 管理的总页数</span>
+};
+
+<span class="cm">/* ===== 分配页的 GFP 标志 (Get Free Pages) ===== */</span>
+<span class="ma">GFP_KERNEL</span>      <span class="cm">// 标准内核分配 — 可睡眠，可触发回收</span>
+<span class="ma">GFP_ATOMIC</span>      <span class="cm">// 原子上下文 — 不可睡眠，使用紧急预留</span>
+<span class="ma">GFP_DMA</span>         <span class="cm">// 从 ZONE_DMA 分配</span>
+<span class="ma">GFP_HIGHUSER</span>    <span class="cm">// 用户空间分配 — 允许使用 HIGHMEM</span>
+<span class="ma">__GFP_RECLAIM</span>   <span class="cm">// 允许回收 (配合 GFP_KERNEL 使用)</span>
+<span class="ma">__GFP_ZERO</span>      <span class="cm">// 返回清零的页</span></div>
+
+<div class="callout info">
+  <div class="ct">Per-CPU Page Cache (PCP)</div>
+  对于最常见的 <strong>order-0</strong> 单页分配，buddy 通过 Per-CPU 缓存避免锁争用。每个 CPU 预取一批页缓存本地 → 分配从 CPU 本地取 (<strong>无锁</strong>) → 缓存耗尽时批量从 buddy 补充。这是多核环境 page_alloc 高性能的关键。
+</div>
+
+<!-- ══ Ch3: SLUB ══ -->
+<h2 class="sh">3. SLUB 分配器 — 内核对象缓存</h2>
+<p class="ss">Buddy 之上的一层 · 管理固定大小的内核对象 · kmalloc 的底层引擎 · slab 家族现代实现</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>slab / slub / slob</h4><div class="lbl">三代内核对象分配器</div>
+    <p><strong>slab</strong> (Solaris 起源) — 复杂但功能全，多队列管理开销大<br>
+    <strong>slub</strong> (2007, 当前默认) — 简化设计，无队列，低 CPU 开销<br>
+    <strong>slob</strong> (已移除) — 极简，嵌入式专用<br>
+    SLUB 通过 <code>struct kmem_cache</code> 管理每种大小的对象缓存，底层以<strong>页为单位从 buddy 获取</strong>，按对象大小切分为 slot。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>kmem_cache 机制</h4><div class="lbl">每类对象一个专用缓存</div>
+    <p><code>kmem_cache_create(name, size, ...)</code> — 创建对象缓存<br>
+    <code>kmem_cache_alloc(cachep, flags)</code> — 分配对象<br>
+    <code>kmem_cache_free(cachep, objp)</code> — 释放对象<br>
+    内核预建常见大小的通用缓存 (8B→8KB)，<code>kmalloc()</code> 直接查表使用这些通用 cache，避免逐次创建。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>vmalloc — 虚拟连续</h4><div class="lbl">非物理连续的大块分配</div>
+    <p><code>vmalloc(size)</code> 分配<strong>虚拟地址连续</strong>但物理页可能分散的内存。内部逐个调用 <code>alloc_page()</code> 获取单个物理页，然后修改页表建立连续映射。<br>
+    <strong>缺点</strong>: 需修改页表 + TLB 刷新 → 开销高。仅用于大块分配 (≥ 几 MB) 或需要虚拟连续但物理不连续的场合。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== SLUB 关键数据结构 ===== */</span>
+<span class="kw">struct</span> <span class="ty">kmem_cache</span> {
+    <span class="kw">unsigned int</span>  size;         <span class="cm">// 对象大小 (含对齐)</span>
+    <span class="kw">unsigned int</span>  object_size;  <span class="cm">// 实际对象大小</span>
+    <span class="kw">unsigned int</span>  offset;       <span class="cm">// 空闲指针偏移</span>
+    <span class="kw">struct</span> <span class="ty">kmem_cache_cpu</span>  __percpu *cpu_slab; <span class="cm">// Per-CPU 活跃 slab</span>
+    <span class="kw">struct</span> <span class="ty">kmem_cache_node</span> *node[<span class="ma">MAX_NUMNODES</span>]; <span class="cm">// Per-Node 部分满/满/空链表</span>
+    <span class="kw">const char</span>    *name;         <span class="cm">// cache 名称 (debugfs 可见)</span>
+};
+
+<span class="cm">/* ===== 常用内核分配 API ===== */</span>
+<span class="kw">void</span> *<span class="fn">kmalloc</span>(size, flags)         <span class="cm">// 从通用 cache 分配 (≤8KB, 物理连续)</span>
+<span class="kw">void</span> *<span class="fn">kzalloc</span>(size, flags)         <span class="cm">// kmalloc + 清零</span>
+<span class="kw">void</span> *<span class="fn">vmalloc</span>(size)               <span class="cm">// 虚拟连续，物理可能不连续</span>
+<span class="kw">void</span> *<span class="fn">kvmalloc</span>(size, flags)        <span class="cm">// 智能选择 kmalloc(小) 或 vmalloc(大)</span>
+<span class="kw">unsigned long</span> <span class="fn">get_free_pages</span>(flags, order)  <span class="cm">// 直接从 buddy 分配 2^order 页</span>
+
+<span class="cm">/* ===== 查看 slab 信息 ===== */</span>
+<span class="cm"># cat /proc/slabinfo</span>
+<span class="cm"># slabtop -s c          // 按占用缓存排序</span>
+<span class="cm"># cat /sys/kernel/slab/  // per-cache 详细信息</span></div>
+
+<!-- ══ Ch4: 虚拟内存 ══ -->
+<h2 class="sh">4. 虚拟内存 — VMA · 页表 · MMU</h2>
+<p class="ss">进程视角的地址空间 · vm_area_struct 管理区域 · 页表转换虚拟到物理 · 缺页中断</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>vm_area_struct (VMA)</h4><div class="lbl">进程虚拟地址空间的基础单元</div>
+    <p>每个进程的地址空间由<strong>多个 VMA 组成</strong>，用红黑树 + 链表管理。VMA 描述一段连续的虚拟地址范围 (<code>vm_start → vm_end</code>) 及其属性：权限、映射文件、匿名标志。<br>
+    <code>cat /proc/&lt;PID&gt;/maps</code> — 查看进程的 VMA 列表。<br>
+    VMA 不存储数据 — 数据在 <code>page</code> 中，VMA 只描述<strong>区域属性</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>缺页中断 (Page Fault)</h4><div class="lbl">虚拟内存的核心机制</div>
+    <p>CPU 访问虚拟地址 → MMU 查 TLB → miss → 遍历页表 → PTE 为空 → 触发<strong>缺页异常</strong>。<br>
+    <strong>Minor fault</strong>: 页已在内存 (映射到页缓存)，只需更新页表。<br>
+    <strong>Major fault</strong>: 页不在内存，需从磁盘读取 (swap in 或读文件)。<br>
+    <strong>COW fault</strong>: fork 后写时复制。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== VMA 关键字段 ===== */</span>
+<span class="kw">struct</span> <span class="ty">vm_area_struct</span> {
+    <span class="kw">unsigned long</span>       vm_start;        <span class="cm">// 起始虚拟地址</span>
+    <span class="kw">unsigned long</span>       vm_end;          <span class="cm">// 结束虚拟地址</span>
+    <span class="kw">struct</span> <span class="ty">vm_area_struct</span> *vm_next;     <span class="cm">// 链表 (线性遍历)</span>
+    <span class="kw">struct</span> <span class="ty">mm_struct</span>      *vm_mm;        <span class="cm">// 所属进程的 mm</span>
+    <span class="ty">pgprot_t</span>             vm_page_prot;   <span class="cm">// 页保护位 (r/w/x)</span>
+    <span class="kw">unsigned long</span>       vm_flags;        <span class="cm">// VM_READ | VM_WRITE | VM_EXEC | VM_MAYSHARE...</span>
+    <span class="kw">struct</span> <span class="ty">file</span>           *vm_file;        <span class="cm">// 映射的文件 (文件映射)</span>
+    <span class="kw">unsigned long</span>       vm_pgoff;        <span class="cm">// 文件内偏移 (页单位)</span>
+    <span class="kw">const struct</span> <span class="ty">vm_operations_struct</span> *vm_ops; <span class="cm">// 操作回调 (open/close/fault)</span>
+};
+
+<span class="cm">/* ===== 页表层级 (ARM64 4 级页表) ===== */</span>
+<span class="cm">虚拟地址 (48-bit): | PGD[9] | PUD[9] | PMD[9] | PTE[9] | 页内偏移[12] |</span>
+<span class="cm">                   └── L0 ──┘── L1 ──┘── L2 ──┘── L3 ──┘──  offset ──┘</span></div>
+
+<div class="callout info">
+  <div class="ct">TLB — 页表查找的硬件缓存</div>
+  <strong>Translation Lookaside Buffer</strong> 是 MMU 内部的高速缓存，存储最近使用的虚拟→物理地址映射。TLB 命中 → 零周期延迟；TLB miss → 需遍历 4 级页表 (数十周期)。进程切换时 <strong>ASID</strong> (Address Space ID) 机制避免刷新整个 TLB，提升上下文切换性能。
+</div>
+
+<!-- ══ Ch5: 用户空间内存管理 ══ -->
+<h2 class="sh">5. 用户空间内存管理 — malloc · mmap · 进程布局</h2>
+<p class="ss">从用户空间看内存 — 进程地址空间布局 · brk vs mmap · ptmalloc2 分配器 · arena/bin/chunk 体系</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>进程地址空间布局 (64-bit)</h4><div class="lbl">从低地址到高地址</div>
+    <p><strong>Text (代码)</strong>: 只读可执行指令<br>
+    <strong>Data / BSS</strong>: 全局/静态变量<br>
+    <strong>Heap</strong>: 动态分配，<code>brk()</code> 向上增长<br>
+    <strong>mmap 区域</strong>: 共享库 + 匿名映射，向下增长<br>
+    <strong>Stack</strong>: 局部变量，向下增长<br>
+    <strong>内核空间</strong>: 高地址，用户不可访问<br>
+    64-bit 地址空间巨大 (48-bit = 256TB)，heap 和 mmap 之间几乎无限。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>brk vs mmap — 两种分配路径</h4><div class="lbl">内核向用户空间提供的原始接口</div>
+    <p><strong>brk/sbrk</strong>: 调整 <em>program break</em>，使堆连续向上增长。简单但只能从顶部释放 → 碎片化后内存无法归还 OS。glibc 仅用于小块分配。<br>
+    <strong>mmap/munmap</strong>: 在地址空间任意位置映射页。灵活、即时归还。大块分配 (≥128KB) 直接走 mmap。线程 arena 也通过 mmap 创建。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>延迟分配 — 虚而不实</h4><div class="lbl">虚拟 ≠ 物理</div>
+    <p>malloc 和 mmap 只分配<strong>虚拟地址空间</strong>，不分配物理页。<strong>首次访问时触发缺页中断</strong> → 内核分配物理页并建立映射。这就是为什么 malloc 几乎不会失败，但 OOM 随时可能在后来的写入中爆发。Linux 的<strong>过度承诺 (overcommit)</strong> 策略允许虚拟内存远超物理内存。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>glibc ptmalloc2 — 总览</h4><div class="lbl">基于 dlmalloc 的多线程版本</div>
+    <p>glibc 的 malloc 实现称为 <strong>ptmalloc2</strong>。它在应用和内核之间建立<strong>缓存层</strong>，减少系统调用频率。核心策略：<br>
+    ① 小块 (&lt;128KB) → 从 heap (brk) 分配，free 后缓存到 bin<br>
+    ② 大块 (≥128KB) → 直接 mmap，free 时立刻 munmap<br>
+    ③ 多线程 → 创建多个 arena (每 arena 独立锁)，arena 数 ≤ 8×CPU</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>Arena — 分配区</h4><div class="lbl">解决多线程锁竞争的关键</div>
+    <p><strong>main_arena</strong>: 主线程使用，通过 brk 扩展 (唯一用 brk 的 arena)。<br>
+    <strong>thread_arena</strong>: 当线程争用 main_arena 锁时，glibc 通过 mmap 创建新 arena。每个 arena 独立管理自己的 bin 链表和 top chunk，线程间减少锁竞争。但 arena 过多会导致内存碎片化。</p>
+  </div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Chunk — 内存块单元</h4><div class="lbl">malloc_chunk — 元数据 + 用户数据</div>
+    <p>每次 malloc/free 操作的对象是 <strong>chunk</strong>。chunk 有 16 字节对齐 (64-bit)，最小 32 字节。<br>
+    <strong>已分配 chunk</strong>: [prev_size(复用)] [size|flags] [用户数据…]<br>
+    <strong>空闲 chunk</strong>: [prev_size] [size|flags] [fd] [bk] [fd_nextsize] [bk_nextsize]<br>
+    size 的低 3 位：<strong>P</strong> (前一个 chunk 在用)、<strong>M</strong> (mmap 分配)、<strong>A</strong> (非主 arena)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Bins — 空闲链表体系</h4><div class="lbl">5 类 bins = 128 个链表</div>
+    <p><strong>Fast bins</strong> (10 个): ≤128B，单向 LIFO，<em>不合并</em> — 极速分配<br>
+    <strong>Small bins</strong> (62 个): 32B~1008B，双向 FIFO，精确大小，<em>会合并</em><br>
+    <strong>Large bins</strong> (63 个): ≥1KB，双向 + 跳表，best-fit 降序<br>
+    <strong>Unsorted bin</strong> (1 个): 最近释放的缓存池，分配时扫描并按大小归类<br>
+    <strong>tcache</strong> (76 个, glibc 2.26+): <em>每线程</em>的快速缓存，每链最多 7 个 chunk，<strong>无锁</strong></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Top Chunk & 扩展</h4><div class="lbl">堆顶的万能备胎</div>
+    <p>所有 bin 都无合适 chunk → 从 <strong>top chunk</strong> (arena 最高地址的空闲区) 分割。<br>
+    top chunk 不够 → main_arena 调用 <code>sbrk()</code> 扩展；thread_arena 调用 <code>mmap()</code> 创建新 sub-heap。<br>
+    top chunk 超过 128KB 时空闲部分调用 <code>sbrk(-size)</code> 或 <code>madvise(DONTNEED)</code> 归还 OS。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ glibc malloc() 分配流程 ═══ */</span>
+用户调用 <b>malloc(size)</b>
+  ├── <i>tcache 命中?</i> → 返回 (无锁 — 最快路径)
+  ├── 获取 arena 锁
+  ├── <i>request2size()</i>  — 将用户请求大小转为 chunk 大小 (加元数据 + 对齐)
+  ├── <i>fast bins</i>  — 精确匹配? → 返回
+  ├── <i>small bins</i> — 精确匹配? → 返回
+  ├── <i>malloc_consolidate()</i>  — 合并 fast bins 到 unsorted bin
+  ├── 循环扫描 <i>unsorted bin</i>  (最多 10000 次)
+  │     ├── 精确匹配 → 返回
+  │     └── 按大小归类到 small/large bin
+  ├── <i>large bins</i> — best-fit 查找 → 分割并返回
+  ├── <i>binmap 位图</i> — 查找更大的非空 bin → 分割并返回
+  ├── <i>top chunk</i> — 分割 → 返回
+  └── <i>sysmalloc()</i> — 扩展堆 (brk/mmap) 或直接 mmap (大请求)
+
+<span class="cm">/* ═══ glibc free() 释放流程 ═══ */</span>
+用户调用 <b>free(ptr)</b>
+  ├── NULL 检查
+  ├── <i>IS_MMAPPED?</i> → 直接 munmap() — 大块立即归还 OS
+  ├── <i>tcache 未满?</i> → 放入 tcache (无锁)
+  ├── <i>size ≤ max_fast?</i> → 放入 fast bin (LIFO, 不合并)
+  └── <i>非 fast</i>:
+        ├── 检查前后相邻 chunk 是否空闲 → unlink + 合并
+        ├── 后邻是 top chunk? → 合并进 top chunk
+        └── 否则 → 放入 unsorted bin</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>bin 类型</th><th>数量</th><th>链表</th><th>策略</th><th>合并</th><th>锁</th></tr></thead>
+  <tbody>
+    <tr><td><strong>tcache</strong> (glibc 2.26+)</td><td class="g">76</td><td>单向</td><td>LIFO</td><td class="r">✗</td><td class="g"><strong>无锁</strong></td></tr>
+    <tr><td><strong>Fast bins</strong></td><td>10</td><td>单向</td><td>LIFO</td><td class="r">✗</td><td>arena 锁</td></tr>
+    <tr><td><strong>Unsorted bin</strong></td><td>1</td><td>双向</td><td>FIFO 缓存</td><td class="g">✓</td><td>arena 锁</td></tr>
+    <tr><td><strong>Small bins</strong></td><td>62</td><td>双向</td><td>FIFO 精确大小</td><td class="g">✓</td><td>arena 锁</td></tr>
+    <tr><td><strong>Large bins</strong></td><td>63</td><td>双向+跳表</td><td>best-fit 降序</td><td class="g">✓</td><td>arena 锁</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2" style="margin-top:16px">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>其它用户空间分配器</h4><div class="lbl">ptmalloc2 不是唯一选择</div>
+    <p><strong>jemalloc</strong> (Redis/Rust 默认): Per-CPU arena，积极归还 OS 内存，碎片控制好，支持 profiling。<br>
+    <strong>tcmalloc</strong> (Google): thread-local cache 极致低延迟，Go runtime 默认。<br>
+    <strong>mimalloc</strong> (Microsoft): 极简，free list sharding，嵌入式友好。<br>
+    可通过 <code>LD_PRELOAD=libjemalloc.so</code> 替换 glibc malloc。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>应用层内存诊断工具</h4><div class="lbl">查找泄漏 · 越界 · 碎片</div>
+    <p><code>valgrind --leak-check=full</code> — 内存泄漏检测 (重量级, ~10x 慢)<br>
+    <code>gcc -fsanitize=address</code> (ASan) — 越界/use-after-free (~2x 慢)<br>
+    <code>heaptrack</code> — 堆分配火焰图 + 峰值分析 (GUI)<br>
+    <code>pmap -x &lt;PID&gt;</code> — 查看进程 VMA + RSS 明细<br>
+    <code>malloc_info(0, stdout)</code> — 程序内打印 malloc 统计 (XML)</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 用户空间内存查看命令 ===== */</span>
+<span class="cm"># 进程内存布局 — 每个区域 (VMA) 一行</span>
+cat /proc/$$/maps
+<span class="cm"># 输出示例:</span>
+<span class="cm"># 00400000-0040c000 r-xp ... /bin/cat     ← text (代码)</span>
+<span class="cm"># 0060b000-0060c000 r--p ... /bin/cat     ← data (只读部分)</span>
+<span class="cm"># 0060c000-0060d000 rw-p ... /bin/cat     ← data (读写)</span>
+<span class="cm"># 01a5b000-01a7c000 rw-p ... [heap]       ← 堆</span>
+<span class="cm"># 7f8a12340000-... r-xp ... libc.so       ← 共享库</span>
+<span class="cm"># 7fff5c000000-... rw-p ... [stack]       ← 栈</span>
+
+<span class="cm"># 每个区域的详细内存占用 (RSS / PSS / Swap)</span>
+cat /proc/$$/smaps
+
+<span class="cm"># 进程内存汇总</span>
+cat /proc/$$/status | grep -E <span class="st">'VmRSS|VmSize|VmSwap|VmData|VmStk'</span>
+
+<span class="cm"># 程序内获取 malloc 统计 (无需重启)</span>
+<span class="cm">// C 代码:</span>
+<span class="kw">#include</span> <span class="st">&lt;malloc.h&gt;</span>
+<span class="fn">malloc_info</span>(<span class="nu">0</span>, stdout);  <span class="cm">// 打印 XML 格式的 arena/bins 状态</span>
+<span class="fn">malloc_stats</span>();           <span class="cm">// 打印人类可读统计到 stderr</span></div>
+
+<!-- ══ Ch6: Page Cache ══ -->
+<h2 class="sh">6. Page Cache — 文件数据的缓存</h2>
+<p class="ss">所有文件 I/O 的必经之路 · address_space 管理 · folio 统一单页和大页 · 写回的决策引擎</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>address_space</h4><div class="lbl">每个 inode 一个</div>
+    <p>管理一个文件在内存中的所有缓存页。<code>i_pages</code> (xarray) 将文件偏移映射到 <code>struct folio</code>。<code>a_ops</code> 函数表定义 readpage/writepage/write_begin/write_end 的实现。读取时<strong>先查 xarray → hit 零拷贝 → miss 分配+读磁盘</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>folio — 现代页抽象</h4><div class="lbl">取代 struct page 的复合页</div>
+    <p><code>struct folio</code> (5.16+) 统一了单页和大页的接口。每个 folio 含 1 或 2^n 个 page (透明大页为 512 页 = 2MB)。统一语义：一个 folio = 页缓存的一个连续内存单元，消除了 compound page 管理的混乱。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>脏页与回写</h4><div class="lbl">SetPageDirty → flusher</div>
+    <p>write() 只修改页缓存并标记 <code>SetPageDirty</code>，<strong>不直接写磁盘</strong>。后台 flusher 线程 (<code>[writeback]</code>) 在三种条件下写回：① 脏页超 <code>dirty_background_ratio</code> ② 脏页老化超 <code>dirty_expire_interval</code> ③ 显式 sync/fsync。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== address_space — 页缓存的核心管理对象 ===== */</span>
+<span class="kw">struct</span> <span class="ty">address_space</span> {
+    <span class="kw">struct</span> <span class="ty">inode</span>       *host;       <span class="cm">// 所属 inode</span>
+    <span class="kw">struct</span> <span class="ty">xarray</span>      i_pages;     <span class="cm">// ⭐ folio 索引: 文件偏移 → folio</span>
+    <span class="ty">pgoff_t</span>           writeback_index;
+    <span class="kw">const struct</span> <span class="ty">address_space_operations</span> *a_ops;
+    <span class="kw">unsigned long</span>     nrpages;     <span class="cm">// 缓存页数</span>
+    <span class="kw">unsigned long</span>     nrexceptional;
+};
+
+<span class="cm">/* ===== a_ops — 页缓存与文件系统的桥接 ===== */</span>
+<span class="kw">struct</span> <span class="ty">address_space_operations</span> {
+    <span class="ty">int</span> (*<span class="fn">read_folio</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">folio</span> *);
+    <span class="ty">int</span> (*<span class="fn">writepages</span>)(<span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="kw">struct</span> <span class="ty">writeback_control</span> *);
+    <span class="ty">int</span> (*<span class="fn">write_begin</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="ty">loff_t</span>, <span class="kw">unsigned</span>, <span class="kw">struct</span> <span class="ty">folio</span> **, <span class="ty">void</span> **);
+    <span class="ty">int</span> (*<span class="fn">write_end</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="ty">loff_t</span>, <span class="kw">unsigned</span>, <span class="kw">unsigned</span>, <span class="kw">struct</span> <span class="ty">folio</span> *, <span class="ty">void</span> *);
+};</div>
+
+<!-- ══ Ch6: 内存回收 ══ -->
+<h2 class="sh">7. 内存回收 — kswapd · LRU · 三级递进响应</h2>
+<p class="ss">水位线触发链: kswapd 后台回收 → 直接回收 (阻塞分配进程) → OOM Killer (杀进程)</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#34d399">
+    <h4>水位线 (Watermark)</h4><div class="lbl">三个阈值触发的递进回收</div>
+    <p><strong>pages_high</strong> (150% min): kswapd 停止回收的目标<br>
+    <strong>pages_low</strong> (125% min): kswapd 唤醒的触发线<br>
+    <strong>pages_min</strong> (100%): 紧急 — 仅内核可用，触发直接回收<br>
+    基准值 <code>vm.min_free_kbytes</code> → 自动按内存比例计算。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>LRU 四链表</h4><div class="lbl">Active/Inactive × Anon/File</div>
+    <p><strong>Active(anon)</strong>: 活跃匿名页 → swap<br>
+    <strong>Inactive(anon)</strong>: 非活跃匿名页 → swap<br>
+    <strong>Active(file)</strong>: 活跃文件页 → 回写/丢弃<br>
+    <strong>Inactive(file)</strong>: 非活跃文件页 → 回收<br>
+    访问时 inactive→active 提升；未访问时 aging 降级；回收从 inactive 开始。<br>
+    <strong>MGLRU</strong> (Linux 6.1+): 代际 LRU，按出生代淘汰，大系统回收更精准。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>直接回收 (Direct Reclaim)</h4><div class="lbl">分配者自己被阻塞做回收</div>
+    <p>当 fast path 失败 + kswapd 来不及回收时，<code>__alloc_pages_slowpath()</code> 在<strong>分配进程上下文中同步执行</strong> <code>try_to_free_pages()</code> → 扫描 LRU → 回收页 → 收缩 slab。进程<strong>直接承担回收成本</strong>——这是为什么"内存不足时系统变慢"的根因。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ 内存分配 + 回收完整流程 ═══ */</span>
+<b>alloc_pages()</b>
+  ├── <i>get_page_from_freelist()</i>            <span class="cm">// Fast path — PCP → buddy freelist</span>
+  │     └── success → return page
+  │
+  └── fail → <b>__alloc_pages_slowpath()</b>
+        ├── <i>wake_all_kswapd()</i>              <span class="cm">// ★ 唤醒后台回收 (异步)</span>
+        ├── retry <span class="nu">10</span>-<span class="nu">16</span> 次 (根据 order 和 flags)
+        │     ├── <i>get_page_from_freelist()</i>  <span class="cm">// 检查 kswapd 是否有成果</span>
+        │     ├── <i>__compaction()</i>            <span class="cm">// 尝试压缩内存生成高阶块</span>
+        │     └── <i>try_to_free_pages()</i>       <span class="cm">// ★ 直接回收 (同步 — 阻塞!)</span>
+        │           ├── shrink_caches()
+        │           │     ├── shrink_lruvec()   <span class="cm">// 扫描 LRU 链表</span>
+        │           │     └── shrink_slab()     <span class="cm">// 收缩 slab 缓存</span>
+        │           └── 回收 ≥ 32 页 → 回到 fast path 重试
+        │
+        ├── should_reclaim_retry()?            <span class="cm">// 还有回收空间? → 继续</span>
+        └── <em>out_of_memory()</em>                   <span class="cm">// ★ OOM Killer — 最后手段</span>
+              ├── select_bad_process()         <span class="cm">// 选 RSS 最大的进程</span>
+              ├── oom_kill_process()           <span class="cm">// SIGKILL</span>
+              └── alloc with ALLOC_NO_WATERMARKS// 允许被杀进程用预留内存退出</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>回收类型</th><th>触发条件</th><th>执行上下文</th><th>阻塞?</th><th>严重度</th></tr></thead>
+  <tbody>
+    <tr><td><strong>kswapd 后台</strong></td><td>free &lt; pages_low</td><td>内核线程 <code>[kswapdN]</code></td><td class="g">否</td><td>正常</td></tr>
+    <tr><td><strong>直接回收</strong></td><td>free &lt; pages_min 且分配中</td><td>分配进程自身</td><td class="r">是</td><td>高</td></tr>
+    <tr><td><strong>OOM Killer</strong></td><td>直接回收后仍失败</td><td>全局</td><td>终止进程</td><td>紧急</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>参数</th><th>位置</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>vm.min_free_kbytes</code></td><td><code>/proc/sys/vm/</code></td><td>pages_min 基准值 → 三个水位线由此推算</td></tr>
+    <tr><td><code>vm.swappiness</code></td><td><code>/proc/sys/vm/</code></td><td>文件页 vs 匿名页回收倾向 (0=尽量不 swap, 100=平等)</td></tr>
+    <tr><td><code>vm.vfs_cache_pressure</code></td><td><code>/proc/sys/vm/</code></td><td>dentry/inode 缓存回收激进程度 (默认 100)</td></tr>
+    <tr><td><code>vm.watermark_scale_factor</code></td><td><code>/proc/sys/vm/</code></td><td>水位线缩放因子 (默认 10 → 0.1% of total)</td></tr>
+    <tr><td><code>oom_score_adj</code></td><td><code>/proc/&lt;PID&gt;/</code></td><td>OOM 优先级 (-1000=永不杀, +1000=优先杀)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch7: Swap ══ -->
+<h2 class="sh">8. Swap — 匿名页的二级存储</h2>
+<p class="ss">当 RAM 不足时将匿名页换出到磁盘 · swap in/out · SSD swap 的性能影响</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Swap 生命周期</h4><div class="lbl">匿名页的换出与换入</div>
+    <p>① <strong>换出 (swap out)</strong>: kswapd/直接回收选中 inactive(anon) 页 → 写入 swap 设备 → 释放物理页 → PTE 标记为 swap entry<br>
+    ② <strong>换入 (swap in)</strong>: 进程访问被换出的地址 → 缺页异常 → 识别 PTE 中的 swap entry → 从 swap 设备读回 → 重新放入物理内存。<br>
+    swap 设备可以是<strong>磁盘分区或文件</strong> (<code>swapon /swapfile</code>)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>交换缓存 (Swap Cache)</h4><div class="lbl">避免重复换入/换出</div>
+    <p>被换出的页在 swap 设备和 page cache 之间多了一个<strong>swap cache</strong>。如果进程再次访问 → swap cache hit → 无需从磁盘读取。如果另一个进程同时换入同一页 → swap cache 确保只有一次 I/O。<br>
+    <code>/proc/meminfo</code> 中的 <strong>SwapCached</strong> 即为此。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== Swap 操作 ===== */</span>
+<span class="cm"># 创建 swap 文件</span>
+dd <span class="kw">if</span>=/dev/zero <span class="kw">of</span>=/swapfile bs=<span class="nu">1</span>G count=<span class="nu">4</span>
+mkswap /swapfile
+swapon /swapfile       <span class="cm">// 启用 swap</span>
+swapoff /swapfile      <span class="cm">// 关闭 swap</span>
+
+<span class="cm"># 查看 swap 使用情况</span>
+cat /proc/swaps         <span class="cm">// 所有 swap 设备</span>
+free -h                 <span class="cm">// Swap: total/used/free</span>
+cat /proc/meminfo | grep <span class="st">'Swap\|Shmem'</span>
+
+<span class="cm">/* ===== 内核 swap 路径 ===== */</span>
+<span class="cm">Swap Out: kswapd → shrink_lruvec → try_to_unmap() → pageout() → swap_writepage()</span>
+<span class="cm">Swap In:  page fault → do_swap_page() → lookup_swap_cache() → swap_readpage()</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ swap 的正确认知</div>
+  swap 不是内存不够时的"慢速应急方案"——它是<strong>正常的内存管理策略</strong>。即使有足够 RAM，swap 也有价值：① 换出极少使用的守护进程页面，腾出物理内存给 page cache（提升文件 I/O 性能）② 给 OOM Killer 争取决策时间。完全禁用 swap (<code>swappiness=0</code>) 会让回收器没有匿名页可以回收，在内存紧张时直接触发 OOM。
+</div>
+
+<!-- ══ Ch8: OOM Killer ══ -->
+<h2 class="sh">9. OOM Killer — 最后手段</h2>
+<p class="ss">当所有回收手段都失败时 · 按 badness 评分选受害者 · SIGKILL 结束进程</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>受害进程选择算法</h4><div class="lbl">badness = f(RSS, oom_score_adj, ...)</div>
+    <p><code>select_bad_process()</code> 遍历所有进程计算<strong>badness 分数</strong>。主要因子：<strong>RSS</strong> (实际占用物理内存)、<strong>swap 使用量</strong>、<code>oom_score_adj</code> (用户可调)、<strong>运行时间</strong> (长时间运行有惩罚)、是否有 <code>CAP_SYS_ADMIN</code>。分数最高的进程被选中 → <code>SIGKILL</code>。被杀的进程获得 <code>TIF_MEMDIE</code> 标志，可以使用预留内存完成退出。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>oom_reaper — 异步收割</h4><div class="lbl">防止被杀进程阻塞 OOM 恢复</div>
+    <p>被杀进程可能持有锁而无法快速退出。oom_reaper 内核线程<strong>异步收割</strong>被杀进程的匿名页和页表，立即释放大部分物理内存，让系统尽快恢复。不需要等待进程完全退出。<br>
+    <code>cat /proc/&lt;PID&gt;/oom_score</code> — 查看当前 badness 评分 (越高越危险)。<br>
+    <code>echo -1000 &gt; /proc/&lt;PID&gt;/oom_score_adj</code> — 保护关键进程永不被杀。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== OOM 控制 ===== */</span>
+<span class="cm"># 查看进程的 OOM 评分</span>
+cat /proc/$$/oom_score          <span class="cm">// 当前 badness 分数 (越高越易被杀)</span>
+cat /proc/$$/oom_score_adj      <span class="cm">// 调整值 (-1000 到 1000)</span>
+
+<span class="cm"># 保护进程不被 OOM Kill</span>
+echo -<span class="nu">1000</span> &gt; /proc/`pidof mysqld`/oom_score_adj  <span class="cm">// -1000=永不杀</span>
+echo -<span class="nu">500</span> &gt; /proc/`pidof sshd`/oom_score_adj     <span class="cm">// 降低被杀概率</span>
+
+<span class="cm"># 触发 OOM 测试 (谨慎!)</span>
+echo f &gt; /proc/sysrq-trigger      <span class="cm">// 手动触发 OOM Killer</span>
+
+<span class="cm"># Memory cgroup OOM (不同于全局 OOM)</span>
+<span class="cm">// cgroup v1: echo 1 &gt; /sys/fs/cgroup/memory/&lt;group&gt;/memory.oom_control</span>
+<span class="cm">// cgroup v2: 默认启用，memory.max 超限时触发 cgroup 内 OOM</span></div>
+
+<!-- ══ Ch9: Huge Pages ══ -->
+<h2 class="sh">10. 大页内存 — THP · hugetlbfs</h2>
+<p class="ss">通过增大页尺寸减少 TLB miss — 两种机制：透明大页 (THP) 自动、hugetlbfs 显式预留</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>为什么需要大页？</h4><div class="lbl">TLB miss 的代价</div>
+    <p>4KB 页 × 大工作集 → 大量 TLB 条目 → 高 miss 率 → 性能下降。2MB 大页将覆盖范围扩大 512 倍 → TLB 条目需求减为 1/512。数据库、JVM、DPDK 等大内存应用受益显著。<br>
+    ARM64 支持 4KB / 16KB / 64KB 页 + 2MB / 512MB 大页。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>THP — 透明大页</h4><div class="lbl">内核自动管理，对应用透明</div>
+    <p><strong>khugepaged</strong> 线程后台扫描，将连续的 4KB 页<strong>合并为 2MB 大页</strong>。应用无需修改代码。<br>
+    缺点：分配延迟 (需要连续 2MB 物理块)、内存碎片化时可能失败。<br>
+    <code>/sys/kernel/mm/transparent_hugepage/enabled</code> — <code>always/madvise/never</code></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>hugetlbfs — 显式大页</h4><div class="lbl">应用主动请求的预留大页</div>
+    <p>预留在 <code>/proc/sys/vm/nr_hugepages</code> 中配置，挂载在 <code>/dev/hugepages</code>。应用通过 <code>mmap(MAP_HUGETLB)</code> 使用。优势：<strong>保证可获得</strong> (启动时预留)、无碎片问题。缺点：需应用主动修改代码。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 大页配置与查看 ===== */</span>
+<span class="cm"># THP 状态</span>
+cat /sys/kernel/mm/transparent_hugepage/enabled
+<span class="cm"># always [madvise] never</span>
+
+<span class="cm"># hugetlbfs 预留大页</span>
+echo <span class="nu">1024</span> &gt; /proc/sys/vm/nr_hugepages
+mkdir -p /dev/hugepages
+mount -t hugetlbfs hugetlbfs /dev/hugepages
+
+<span class="cm"># 查看大页使用情况</span>
+cat /proc/meminfo | grep -i huge
+<span class="cm"># AnonHugePages: 524288 kB       ← THP 已分配的匿名大页</span>
+<span class="cm"># HugePages_Total: 1024           ← hugetlbfs 总预留数</span>
+<span class="cm"># HugePages_Free:  1024           ← 可用大页数</span>
+<span class="cm"># Hugepagesize:    2048 kB        ← 大页大小</span></div>
+
+<!-- ══ Ch10: 实用信息 ══ -->
+<h2 class="sh">11. /proc/meminfo 解读 &amp; 调优速查</h2>
+<p class="ss">理解 meminfo 每个字段的含义 · 关键调优参数 · 常见问题诊断</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>字段</th><th>含义</th><th>关键信息</th></tr></thead>
+  <tbody>
+    <tr><td><code>MemTotal</code></td><td>可用物理内存总量</td><td>内核启动后减去保留的内存</td></tr>
+    <tr><td><code>MemFree</code></td><td>完全未使用的物理内存</td><td>空闲页 (不含缓存)</td></tr>
+    <tr><td><code>MemAvailable</code></td><td class="g"><strong>实际可用估计</strong></td><td class="g">= MemFree + 可回收的缓存 — 查看<strong>这个</strong>而非 MemFree</td></tr>
+    <tr><td><code>Buffers</code></td><td>块设备元数据缓存</td><td>inode / dentry / 超级块缓存</td></tr>
+    <tr><td><code>Cached</code></td><td>Page Cache</td><td>文件内容缓存 + tmpfs 数据</td></tr>
+    <tr><td><code>SwapCached</code></td><td>换入后仍在 swap 中的副本</td><td>加速重新换出决策</td></tr>
+    <tr><td><code>AnonPages</code></td><td>匿名页</td><td>堆、栈、mmap(MAP_ANONYMOUS)</td></tr>
+    <tr><td><code>Shmem</code></td><td>tmpfs + 共享匿名内存</td><td>包括所有 tmpfs 挂载 + SysV shmem</td></tr>
+    <tr><td><code>Dirty</code></td><td>脏页 (待回写)</td><td>高值 → I/O 压力</td></tr>
+    <tr><td><code>Writeback</code></td><td>正在回写中的页</td><td>高值 → 磁盘 I/O 瓶颈</td></tr>
+    <tr><td><code>Slab</code></td><td>SLUB/Slab 缓存占用</td><td>包括可回收 (SReclaimable) 和不可回收 (SUnreclaim)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>指标</th><th>命令</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>物理内存概览</td><td><code>free -h</code></td><td>总量/使用/空闲/共享/缓存/可用</td></tr>
+    <tr><td>Zone 级别统计</td><td><code>cat /proc/zoneinfo</code></td><td>每个 zone 的详细水位线、页面数</td></tr>
+    <tr><td>Buddy 分配器状态</td><td><code>cat /proc/buddyinfo</code></td><td>每个 zone 各 order 的空闲块数</td></tr>
+    <tr><td>进程内存详情</td><td><code>cat /proc/&lt;PID&gt;/smaps</code></td><td>每个 VMA 的 RSS/PSS/交换 明细</td></tr>
+    <tr><td>碎片化程度</td><td><code>cat /sys/kernel/debug/extfrag/unusable_index</code></td><td>高阶块获取难度 (越低越好)</td></tr>
+    <tr><td>Slab 缓存</td><td><code>slabtop -s c</code></td><td>按缓存大小排序的动态 slab 信息</td></tr>
+    <tr><td>内存压力事件</td><td><code>cat /proc/vmstat \| grep pgsteal</code></td><td>回收页数 — 持续增长 = 内存压力</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 常用诊断命令 ===== */</span>
+<span class="cm"># 内存使用全貌</span>
+free -h                    <span class="cm">// 人类可读格式</span>
+cat /proc/meminfo          <span class="cm">// 完整内核内存统计</span>
+
+<span class="cm"># 进程内存分析</span>
+top -o %MEM                <span class="cm">// 按内存使用排序</span>
+cat /proc/$$/status | grep -E <span class="st">'VmRSS|VmSize|VmSwap'</span>
+pmap -x $$                 <span class="cm">// 进程的 VMA + RSS 明细</span>
+
+<span class="cm"># 碎片诊断</span>
+cat /proc/buddyinfo         <span class="cm">// order 0~10 的空闲块数量 — 看高阶块是否充足</span>
+cat /proc/pagetypeinfo      <span class="cm">// 每种迁移类型的页数分布</span>
+
+<span class="cm"># 回收压力</span>
+sar -B <span class="nu">1</span>                    <span class="cm">// pgpgin/pgpgout/fault/majflt 每秒统计</span>
+vmstat <span class="nu">1</span>                   <span class="cm">// si/so (swap in/out) — 持续 &gt; 0 = swap 压力</span>
+
+<span class="cm"># OOM 日志</span>
+dmesg | grep -i <span class="st">"Out of memory\|oom-kill\|Killed process"</span></div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>系统越来越慢，free 显示少量 MemFree 但有大量 cached</td><td>正常 — <code>MemAvailable</code> 才是关键指标</td><td>查看 <code>free -h</code> 的 <strong>available</strong> 列</td></tr>
+    <tr><td>OOM Killer 反复触发但 MemFree 不为零</td><td class="r">高阶 (order 2+) 分配失败 — 碎片化严重</td><td><code>cat /proc/buddyinfo</code> — 看 order 0 有大量块但 order 3+ 为零</td></tr>
+    <tr><td>Dirty 页持续高 (GB 级别)</td><td>磁盘 I/O 瓶颈，回写跟不上产生速度</td><td><code>iostat -x 1</code> + 降低 <code>dirty_ratio</code></td></tr>
+    <tr><td>Slab 占用异常增长 (GB 级别)</td><td>dentry/inode 缓存泄漏 (大量小文件)</td><td><code>slabtop -s c</code> 定位泄漏的 cache</td></tr>
+    <tr><td>进程 RSS 稳定增长不释放</td><td>内存泄漏 (应用 bug)</td><td><code>valgrind / heaptrack / ASan</code></td></tr>
+    <tr><td>匿名页居高不下但 swap 未使用</td><td>swappiness 过低</td><td>调整 <code>vm.swappiness</code> 释放 page cache 空间</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 快速参考: 内核参数优化</div>
+  <code>vm.swappiness=1</code> — 尽量不 swap (服务器推荐)  <code>vm.min_free_kbytes=65536</code> — 保留 64MB 紧急内存<br>
+  <code>vm.dirty_ratio=10</code> — 进程写节流阈值 10% <code>vm.vfs_cache_pressure=50</code> — dcache 回收更保守<br>
+  <code>transparent_hugepage=madvise</code> — THP 按需启用 (推荐，避免 always 的延迟问题)
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Memory Management — 系统化知识体系 · 2026-06 · Linux Kernel v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

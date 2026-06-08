@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 进程管理 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:130px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 进程管理</h2>
+  <p class="sec-sub">系统化知识体系 — task_struct · fork/exec · CFS · 信号 · IPC · 同步 · 多进程架构</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>task_struct</strong><br><small>进程描述符</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>fork/exec</strong><br><small>生命周期</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>CFS / RT</strong><br><small>调度器</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>IPC</strong><br><small>进程间通信</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>同步</strong><br><small>锁与并发</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">~2KB</div><div class="l">task_struct 大小</div></div>
+    <div class="stat"><div class="n">O(log N)</div><div class="l">红黑树调度</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">进程状态</div></div>
+    <div class="stat"><div class="n">7+</div><div class="l">IPC 机制</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1 ── -->
+<h2 class="sh">1. 进程本质：task_struct</h2>
+<p class="ss">Linux 内核不区分"进程"和"线程"——统一用 <code>task_struct</code> 表示所有可调度实体。这是理解 Linux 进程模型的起点。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>task_struct 全景</h4>
+    <div class="lbl">include/linux/sched.h — 进程的"身份证"</div>
+    <p><code>task_struct</code> 是内核中<strong>最大、最复杂</strong>的单体结构之一（~2KB），包含进程的所有元信息。通过 <code>current</code> 宏可<strong>零开销</strong>获取当前 CPU 上运行进程的指针（利用内核栈底部固定偏移）。每个 task 占据 <code>THREAD_SIZE</code>（通常 8KB/16KB）的内核栈空间 + 独立的 task_struct。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>进程 vs 线程：clone() 视角</h4>
+    <div class="lbl">唯一的区别 = clone() 的 flag 参数</div>
+    <p>内核看到的所有执行实体都是 <code>task_struct</code>。线程通过 <code>clone(CLONE_VM)</code> 与父 task <strong>共享 mm_struct</strong>（地址空间），进程则各自独立。<code>pthread_create()</code> 底层调用 clone，通过十几个 flag 实现 POSIX 线程语义：</p>
+    <div class="cb"><span class="cm">// pthread_create 底层 ≈ clone 的参数</span>
+<span class="kw">clone</span>(CLONE_VM          <span class="cm">// 共享地址空间 (mm_struct)</span>
+     | CLONE_FS          <span class="cm">// 共享 cwd / umask</span>
+     | CLONE_FILES       <span class="cm">// 共享文件描述符表</span>
+     | CLONE_SIGHAND     <span class="cm">// 共享信号处理表</span>
+     | CLONE_THREAD      <span class="cm">// 放入同一线程组 (TGID 共享)</span>
+     | CLONE_SYSVSEM     <span class="cm">// 共享 SysV 信号量撤销</span>
+     | CLONE_SETTLS      <span class="cm">// 设置线程局部存储</span>
+     | CLONE_PARENT_SETTID
+     | CLONE_CHILD_CLEARTID
+     | SIGCHLD);         <span class="cm">// 退出时向父进程发送信号</span></div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>PID 与命名空间</h4>
+    <div class="lbl">struct pid · upid · pid_namespace</div>
+    <p>一个进程有<strong>多个 PID</strong>——在它所属的每一层 pid_namespace 中各有一个。Docker 容器利用此实现隔离：容器内进程看自己 PID=1，宿主机看到的是不同 PID。内核用 <code>struct pid</code>（而非整数）标识进程，通过 radix tree 管理多层映射。<code>alloc_pid()</code> 分配新 PID，默认上限 32768。</p>
+  </div>
+</div>
+
+<div class="mb" style="margin-top:18px">
+  <div class="r"><span class="a">task_struct</span><span class="b c1">state</span><span class="n">TASK_RUNNING / INTERRUPTIBLE / UNINTERRUPTIBLE / STOPPED / ZOMBIE</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c2">pid / tgid</span><span class="n">线程 PID / 线程组 ID（getpid 返回 tgid）</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c3">mm</span><span class="n">→ mm_struct：地址空间（线程共享）</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c4">fs / files</span><span class="n">→ fs_struct（cwd/umask） / files_struct（fd 表）</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c5">sched_entity</span><span class="n">嵌入的 CFS 调度实体（vruntime / weight / 红黑树节点）</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c1">signal / sighand</span><span class="n">→ signal_struct / sighand_struct：信号处理</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c2">parent / children</span><span class="n">双向链表构建进程树（pstree 可视化）</span></div>
+  <div class="r"><span class="a">task_struct</span><span class="b c3">prio / static_prio</span><span class="n">动态优先级 (0-139) / 静态优先级 (100-139, 对应 nice -20~+19)</span></div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内核线程 (kthread)</h4>
+    <div class="lbl">kthreadd(PID=2) 创建 · mm=NULL · 方括号命名</div>
+    <p>内核线程只在内核态运行，<strong>无用户空间地址</strong>（mm=NULL），借用前一个进程的页表访问内核空间。通过 <code>kthread_create()</code> + <code>wake_up_process()</code> 创建。常见实例：<code>ksoftirqd/N</code>（软中断）、<code>kworker/N:M</code>（工作队列）、<code>writeback</code>（回写脏页）、<code>mmcqd/N</code>（MMC 请求）、<code>migration/N</code>（NUMA 迁移）。ps 中以 <code>[方括号]</code> 标记。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>进程组 · 会话 · 控制终端</h4>
+    <div class="lbl">PGID · SID · Controlling Terminal</div>
+    <p><strong>进程组 (PGID)</strong>：一组进程的集合，用于 shell job control（Ctrl+Z 暂停整个 pipeline）。<code>setpgid()</code> 设置。<br>
+    <strong>会话 (Session)</strong>：若干进程组的集合。<code>setsid()</code> 创建新会话并脱离控制终端——守护进程化的关键步骤。<br>
+    <strong>前台进程组</strong>：会话中唯一能接收终端输入的进程组。Ctrl+C → 向前台进程组发 SIGINT。</p>
+  </div>
+</div>
+
+<!-- ── Ch2 ── -->
+<h2 class="sh">2. 进程生命周期：fork → exec → exit → wait</h2>
+<p class="ss">Linux 通过 <code>fork</code> + <code>exec</code> 的两阶段模型创建新程序——fork 复制资源，exec 替换内容。这是 Unix 设计哲学的核心体现。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>fork() — Copy-On-Write</h4>
+    <div class="lbl">kernel_clone() → copy_process() → dup_task_struct()</div>
+    <p>fork 的内核路径：① <code>dup_task_struct()</code> 分配新 task_struct + 内核栈 ② <code>copy_files()/copy_fs()/copy_sighand()</code> 复制或共享资源（取决于 clone flags）③ <code>copy_mm()</code> 复制 mm_struct，但将<strong>所有用户页表项标记为只读</strong>（COW）④ <code>copy_thread()</code> 在子进程内核栈设置返回值为 0。子进程首次写入时触发缺页异常 → <code>do_wp_page()</code> 分配物理页并复制原始内容。COW 是 fork 性能的基石——没有它，<em>每次 fork 都需复制 GB 级内存</em>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>execve() — ELF 加载</h4>
+    <div class="lbl">sys_execve() → do_execveat_common() → load_elf_binary()</div>
+    <p>exec 的内核路径：① 打开可执行文件，读取 ELF header 验证格式 ② <code>flush_old_exec()</code> 释放旧的地址空间（mm、VMAs、页表）③ <code>load_elf_binary()</code> 解析 ELF 的 Program Headers：LOAD 段映射到内存、INTERP 段加载动态链接器 (ld.so) ④ 如需要，先加载 ld.so 再让它加载实际程序 ⑤ <code>setup_arg_pages()</code> 在栈顶放置 argv/envp/auxv ⑥ <code>START_THREAD()</code> 设置新的指令指针 (ELF entry point 或 ld.so entry)。整个过程本质是<em>用新的内存映像完全替换旧的</em>。</p>
+  </div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#34d399">
+    <h4>clone() 的 flag 矩阵</h4>
+    <div class="lbl">线程 vs 进程 vs 容器的分界线</div>
+    <p><code>CLONE_VM</code>：共享地址空间（线程标志）<br><code>CLONE_FS</code>：共享 cwd/umask<br><code>CLONE_FILES</code>：共享 fd 表<br><code>CLONE_SIGHAND</code>：共享信号处理表<br><code>CLONE_THREAD</code>：放入同一线程组（TGID 共享）<br><code>CLONE_NEWNS/NEWNET/NEWPID...</code>：创建新命名空间（容器隔离）</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>退出：exit → zombie → wait</h4>
+    <div class="lbl">do_exit() → EXIT_ZOMBIE → release_task()</div>
+    <p>进程 exit() 时：① <code>do_exit()</code> 释放 mm、files、fs、sighand 等资源 ② 设置 state=EXIT_ZOMBIE，保留 task_struct（含退出码）③ 向父进程发 SIGCHLD ④ 父进程 <code>waitpid()</code>（或 waitid/wait3/wait4）读取退出码后，<code>release_task()</code> 彻底释放 PID。父进程不 wait → <strong>僵尸累积到 PID 耗尽 → 系统瘫痪</strong>。父进程先死 → 子进程由 init(PID=1) 收养。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>vfork() — 废弃的优化</h4>
+    <div class="lbl">阻塞父进程 + 共享地址空间（无 COW）</div>
+    <p>vfork 会<strong>阻塞父进程直到子进程 exec 或 exit</strong>，且子进程直接操作父进程的地址空间（无 COW 开销）。用于 fork+exec 的极端优化场景。但现代 Linux 用 COW 已消除 fork 的内存开销，vfork 的唯一剩余优势是避免页表复制——而 <code>CLONE_VFORK</code> 配合 CLONE_VM 在裸机场景仍有微小的延迟优势（&lt;10μs）。几乎不再需要手动使用。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>进程状态 (内核态)</th><th>ps 标志</th><th>含义</th><th>何时进入</th><th>何时离开</th></tr></thead>
+  <tbody>
+    <tr><td class="g">TASK_RUNNING</td><td>R</td><td>正在 CPU 上运行，或在运行队列中等待</td><td>被调度器选中 / 被唤醒后入队</td><td>时间片耗尽 / 主动 yield / 被抢占</td></tr>
+    <tr><td>TASK_INTERRUPTIBLE</td><td>S</td><td>可中断睡眠——等待事件（可被信号唤醒）</td><td>read() / select() / sleep() / wait_event_interruptible()</td><td>事件到达 / 信号唤醒（返回 -EINTR）</td></tr>
+    <tr><td style="color:#fbbf24;font-weight:700">TASK_UNINTERRUPTIBLE</td><td style="color:#fbbf24">D</td><td><strong>不可中断睡眠</strong>——等待 I/O 完成</td><td>磁盘 I/O / NFS 访问 / DMA 等待 / mutex_lock()</td><td>I/O 完成（<strong>信号无法唤醒</strong>）</td></tr>
+    <tr><td>TASK_STOPPED</td><td>T</td><td>被暂停</td><td>SIGSTOP / SIGTSTP / SIGTTIN / ptrace 附加</td><td>SIGCONT</td></tr>
+    <tr><td class="r">EXIT_ZOMBIE</td><td class="r">Z</td><td>已退出，task_struct 保留等待父回收</td><td>do_exit() 执行完毕</td><td>父进程 waitpid() → release_task()</td></tr>
+    <tr><td style="color:#a78bfa">EXIT_DEAD</td><td style="color:#a78bfa">X</td><td>已彻底销毁（瞬态，通常不可见）</td><td>release_task() 执行中</td><td>struct 被释放</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 不可中断睡眠 (D 状态) — 排查思路</div>
+  进程陷入 D 状态通常意味着<strong>内核驱动或文件系统 bug</strong>（I/O 永不完成）。排查步骤：① <code>cat /proc/PID/stack</code> 看内核调用栈（定位卡在哪个函数）② <code>dmesg</code> 查是否有 I/O 错误 ③ 检查是否是 NFS 挂载超时（NFS 默认 hard mount 会让进程永久 D）④ 用 <code>echo w > /proc/sysrq-trigger</code> 打印所有 D 状态进程的栈。无法用 kill -9 强制结束 D 状态进程。
+</div>
+
+<!-- ── Ch3 ── -->
+<h2 class="sh">3. 虚拟地址空间：mm_struct · VMA · 页表</h2>
+<p class="ss">每个进程拥有独立的虚拟地址空间——不是平坦的内存块，而是由若干 <code>vm_area_struct</code> 描述的有序区域集合。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>mm_struct</h4>
+    <div class="lbl">进程的"内存身份证"</div>
+    <p><code>mm_struct</code> 聚合了进程地址空间的所有信息：<code>mmap</code>（VMA 红黑树+链表）、<code>pgd</code>（页全局目录根）、<code>start_code/end_code</code>（代码段边界）、<code>start_data/end_data</code>、<code>start_brk/brk</code>（堆）、<code>start_stack</code>、<code>mm_users</code>（引用计数——线程共享）、<code>total_vm</code>。线程的 mm 指向同一 mm_struct。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>vm_area_struct (VMA)</h4>
+    <div class="lbl">描述一段连续的虚拟地址区域</div>
+    <p>每个 VMA 描述一段虚拟内存的<strong>属性</strong>：起始/结束地址、访问权限 (r/w/x)、映射类型（匿名/文件/设备）、vm_ops（缺页/访问/命名）。<code>/proc/PID/maps</code> 的每一行就是一个 VMA。<code>/proc/PID/smaps</code> 额外展示每段的 PSS/USS/Swap 占用。VMA 用<strong>红黑树</strong>（快速查找）和<strong>双向链表</strong>（遍历）双重索引。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>缺页异常 (Page Fault)</h4>
+    <div class="lbl">虚拟内存按需分配的引擎</div>
+    <p>进程访问一个虚拟地址时：MMU 查 TLB → TLB miss → 遍历页表 → 页表项为空或权限不足 → 硬件触发缺页异常 → 内核 <code>do_page_fault()</code> 处理。三类缺页：<strong>Minor</strong>（页已在内存只需建映射——COW/共享库加载）、<strong>Major</strong>（需磁盘 I/O——mmap 文件首次访问 / swap-in）、<strong>Invalid</strong>（真正的非法访问 → SIGSEGV）。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">高地址 (4GB)</span><span class="b c1">内核空间</span><span class="n">1GB(32bit) / 128TB(64bit) — 所有进程共享同一份映射</span></div>
+  <div class="r"><span class="a">↓ 向下增长</span><span class="b c2">栈 (Stack)</span><span class="n">局部变量 · 返回地址 · 每线程 8MB (ulimit -s)</span></div>
+  <div class="r"><span class="a"></span><span class="b c3">mmap 区域</span><span class="n">共享库 .so · 大块 malloc(>128KB) · 文件映射 · 线程栈</span></div>
+  <div class="r"><span class="a">↑ 向上增长</span><span class="b c4">堆 (Heap)</span><span class="n">malloc(<128KB) → brk() 扩展 · ptmalloc/jemalloc 管理</span></div>
+  <div class="r"><span class="a">低地址</span><span class="b c5">BSS · .data · .text</span><span class="n">未初始化全局变量 · 已初始化全局变量 · 只读可执行代码段</span></div>
+</div>
+
+<div class="callout info">
+  <div class="ct">ELF 加载的内核路径 (execve 内部)</div>
+  <div class="chain">sys_execve → do_execveat_common → <b>exec_binprm</b> → <i>search_binary_handler</i> → <b>load_elf_binary</b>
+<i>load_elf_binary</i>:
+  <b>flush_old_exec</b>()        <span class="cm">// 清空旧的地址空间</span>
+  <u>elf_map</u>(text segment)     <span class="cm">// VM_READ | VM_EXEC → 映射 .text（只读共享）</span>
+  <u>elf_map</u>(data segment)     <span class="cm">// VM_READ | VM_WRITE → 映射 .data（COW 私有）</span>
+  <b>set_brk</b>(bss)             <span class="cm">// 匿名映射覆盖 BSS → 零填充</span>
+  <b>load_elf_interp</b>()       <span class="cm">// 加载 ld-linux.so（动态链接器）</span>
+  <b>setup_arg_pages</b>()       <span class="cm">// 在栈顶放置 argc/argv/envp/auxv</span>
+  START_THREAD(elf_entry)  <span class="cm">// 跳转到程序入口（或 ld.so 入口）</span></div>
+</div>
+
+<!-- ── Ch4 ── -->
+<h2 class="sh">4. CFS 完全公平调度器</h2>
+<p class="ss">Linux 2.6.23 引入，替代 O(1) 调度器。核心思想：跟踪每个进程的虚拟运行时间，始终选择"最应得 CPU"的进程。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>CFS 核心机制</h4>
+    <div class="lbl">vruntime · 红黑树 · 动态时间片</div>
+    <p><strong>vruntime</strong> = 实际运行时间 × (NICE_0_LOAD / weight)。权重高的进程 vruntime <strong>增长更慢</strong>——它们"理应"获得更多 CPU。调度器用<strong>红黑树</strong>按 vruntime 排序，每次选择<strong>最左节点</strong>（vruntime 最小）。<br>
+    <strong>动态时间片</strong>：target_latency = sched_latency (默认 6ms) 除以运行队列中的进程数。例如 3 个进程 → 各 2ms；12 个进程 → 各 0.75ms（受 min_granularity=0.75ms 限制不会无限缩小）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>nice 值与权重映射</h4>
+    <div class="lbl">nice -20=权重 88761, nice 0=1024, nice +19=15</div>
+    <p>nice 每降低 1 级 → CPU 份额约增加 10%。权重数组保证相邻 nice 值之间的 CPU 比例精确为 ~1.25×：nice=-20 进程的 CPU 时间是 nice=+19 的<b>~5900 倍</b>。<code>getpriority()/setpriority()</code> 或 <code>nice()</code> 系统调用修改。CFS 不直接存储 nice，而是存储 <code>static_prio</code> (100-139) 并查表转换为 weight。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>EEVDF — Linux 6.6 新调度器</h4>
+    <div class="lbl">Earliest Eligible Virtual Deadline First</div>
+    <p>Linux 6.6 用 EEVDF 替代 CFS 作为默认调度器。核心变化：每个进程在获得 CPU 时分配一个<strong>虚拟截止时间 (virtual deadline)</strong>。调度器选择<strong>截止时间最早</strong>的进程，而非 vruntime 最小。这消除了 CFS 的<strong>滞后延迟问题</strong>——一个进程可能因 vruntime 偏大而被"饿"很久。EEVDF 保证：① 每个进程在延迟容限内获得 CPU ② 更可预测的唤醒延迟（对实时 IPC 友好）。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>负载均衡与 CPU 拓扑</h4>
+    <div class="lbl">SMT → MC → DIE → NUMA 层级</div>
+    <p>调度域按 CPU 拓扑分层：<strong>SMT</strong>（超线程共享核）→ <strong>MC</strong>（同 socket 多核）→ <strong>DIE</strong>（同 socket 多 die）→ <strong>NUMA</strong>（多 socket）。每层有独立的负载均衡逻辑。idle CPU 拉取 (pull)：CPU 空闲时主动从最忙的 CPU 拉任务。busy CPU 推送 (push)：负载过重时推送任务。NUMA 层面的迁移代价最大（跨 socket 访存延迟 ~2×），调度器优先在同 NUMA node 内调度。</p>
+  </div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>实时调度类</h4>
+    <div class="lbl">SCHED_FIFO / SCHED_RR — 优先级 1–99</div>
+    <p><strong>SCHED_FIFO</strong>：无时间片，一直运行直到自愿让出或被更高优先级抢占。<br><strong>SCHED_RR</strong>：同优先级 FIFO 进程间轮转（默认 100ms 时间片）。<br>实时优先级<strong>严格高于</strong>所有 CFS 普通进程——一个死循环的 FIFO 进程会让系统完全卡死（连 SSH 都无法响应）。<em>永远给实时进程设 watchdog</em>。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>SCHED_DEADLINE</h4>
+    <div class="lbl">最早截止时间优先 (EDF) + CBS</div>
+    <p>Linux 3.14 引入的<strong>最硬实时</strong>调度类。每个任务声明：<code>runtime</code>（每周期需要的 CPU 时间）、<code>deadline</code>（必须在此期限内完成）、<code>period</code>（重复周期）。内核做<strong>准入控制</strong>——如果新任务会让总利用率超 100%，拒绝接受。比 SCHED_FIFO 更优：不需要手动分配优先级，内核自动保证所有 deadline 任务按时完成。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>cgroup v2 CPU 控制器</h4>
+    <div class="lbl">cpu.max / cpu.weight — 容器级调度</div>
+    <p><code>cpu.max = "$MAX $PERIOD"</code>：硬限制（如 "200000 1000000" = 每 1 秒最多用 200ms → 20% CPU）。<br><code>cpu.weight</code>：软控制（1-10000），类似 nice 但在 cgroup 级别。<br>配合 <code>cpuset.cpus</code> 实现容器级 CPU 亲和性绑定。Docker <code>--cpus=2.0</code> 底层就是写 cpu.max。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 优先级反转 (Priority Inversion) — 实时经典陷阱</div>
+  场景：低优先级 L 持 mutex → 高优先级 H 等 mutex → 中优先级 M 抢占 L → H 被 M 无限期阻塞。<br>
+  解决：<strong>优先级继承 (PI)</strong>——H 等 L 的锁时，L <strong>临时继承 H 的优先级</strong>，快速完成临界区。<br>
+  Linux futex 原生支持 PI：<code>pthread_mutexattr_setprotocol(&amp;attr, PTHREAD_PRIO_INHERIT);</code><br>
+  内核实现：<code>futex_lock_pi()</code> → <code>rt_mutex</code> 子系统 → 自动调整任务优先级。几乎所有 RT 应用都应启用 PI mutex。
+</div>
+
+<!-- ── Ch5 ── -->
+<h2 class="sh">5. 信号 (Signal) — 异步通知机制</h2>
+<p class="ss">信号是 Unix 最古老的 IPC 机制——用于通知进程"发生了某件事"。简单但不适合传递数据。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>可靠信号 vs 不可靠信号</h4>
+    <div class="lbl">SIGRTMIN (34) ~ SIGRTMAX (64)</div>
+    <p><strong>不可靠信号</strong>（1-31）：传统 Unix 信号。同一信号<strong>多次到达可能合并为一次</strong>（丢失）。不排队，不携带额外数据。<br>
+    <strong>可靠信号</strong>（34-64）：POSIX 实时信号。<strong>排队传递</strong>，每次到达独立入队。可携带一个 int 或指针数据。<code>sigqueue()</code> 发送。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>信号生命周期</h4>
+    <div class="lbl">生成 → 挂起 → 递送 → 处理</div>
+    <p><strong>生成</strong>：kill() / tkill() / tgkill() / 硬件异常 / 终端驱动（Ctrl+C）<br>
+    <strong>挂起</strong>：信号在 task_struct 的 pending 位图中标记<br>
+    <strong>递送</strong>：进程返回用户态时检查 pending → 如不被阻塞，调用 handler<br>
+    <strong>处理</strong>：默认动作 (ignore/terminate/core dump/stop) 或 用户注册的 sigaction handler</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>信号与线程</h4>
+    <div class="lbl">进程信号 vs 线程信号</div>
+    <p><strong>进程信号</strong>（kill）：发送给线程组，<strong>任意一个不阻塞该信号的线程</strong>接收并处理。<br>
+    <strong>线程信号</strong>（tkill/tgkill）：指定线程。<br>
+    SIGSEGV/SIGFPE 等<strong>同步信号</strong>只递送给<strong>触发异常的线程</strong>。<br>
+    多线程程序应<strong>阻塞所有信号在主线程外</strong>，由专用信号处理线程通过 signalfd 统一处理——避免 handler 中的重入问题。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">signalfd — 将信号转为文件描述符（现代做法）</div>
+  <div class="cb"><span class="cm">// 替代 signal handler：用 signalfd 将信号转为可 poll/select 的 fd</span>
+<span class="kw">sigset_t</span> mask;
+<span class="fn">sigemptyset</span>(&amp;mask);
+<span class="fn">sigaddset</span>(&amp;mask, SIGTERM);
+<span class="fn">sigaddset</span>(&amp;mask, SIGINT);
+<span class="fn">sigprocmask</span>(SIG_BLOCK, &amp;mask, NULL);  <span class="cm">// 阻塞这些信号，不让默认 handler 处理</span>
+
+<span class="kw">int</span> sfd = <span class="fn">signalfd</span>(-<span class="nu">1</span>, &amp;mask, SFD_NONBLOCK | SFD_CLOEXEC);
+<span class="cm">// 现在可以在 event loop 中 poll(ssd) 等待信号到来</span>
+<span class="kw">struct</span> signalfd_siginfo fdsi;
+<span class="fn">read</span>(sfd, &amp;fdsi, <span class="kw">sizeof</span>(fdsi));  <span class="cm">// 读取信号信息</span>
+<span class="fn">printf</span>(<span class="st">"收到信号 %d 来自 PID %d\n"</span>, fdsi.ssi_signo, fdsi.ssi_pid);</div>
+</div>
+
+<!-- ── Ch6 ── -->
+<h2 class="sh">6. 进程间通信 (IPC) — 7 种机制</h2>
+<p class="ss">多进程协作的核心基础设施——不同机制在数据量、延迟、持久性、语义上差异巨大</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>IPC 机制</th><th>数据量</th><th>延迟</th><th>亲缘关系要求</th><th>跨进程</th><th>持久性</th><th>关键特性</th></tr></thead>
+  <tbody>
+    <tr><td class="g">管道 (pipe)</td><td>流式, 默认 64KB</td><td class="g">低 (内核拷贝)</td><td>需共同祖先</td><td class="g">✓</td><td>随进程销毁</td><td>半双工、支持 splice 零拷贝</td></tr>
+    <tr><td class="g">FIFO (命名管道)</td><td>同 pipe</td><td class="g">低</td><td class="g">不需要</td><td class="g">✓</td><td>文件系统条目</td><td>任意两进程可用，需 O_RDWR 防阻塞</td></tr>
+    <tr><td>POSIX 消息队列</td><td>有界消息, 默认 10KB</td><td class="y">中</td><td class="g">不需要</td><td class="g">✓</td><td>内核持久 (至 reboot)</td><td>消息有边界、支持优先级、mq_notify 异步</td></tr>
+    <tr><td class="g">共享内存</td><td class="g">不限 (GB 级)</td><td class="g">极低 (零拷贝)</td><td class="g">不需要</td><td class="g">✓</td><td>内核持久</td><td>最快 IPC——memcpy 级性能、需额外同步</td></tr>
+    <tr><td class="y">信号 (signal)</td><td class="r">仅一个 int</td><td class="g">低</td><td>需权限</td><td class="g">✓</td><td>瞬态</td><td>仅通知、不传输数据、可能合并丢失</td></tr>
+    <tr><td class="g">Unix Domain Socket</td><td class="g">流式/数据报</td><td class="g">低 (无协议栈)</td><td class="g">不需要</td><td class="g">✓</td><td>文件系统条目</td><td>可传 fd (SCM_RIGHTS)、获取对端凭证</td></tr>
+    <tr><td>eventfd</td><td>8 字节计数器</td><td class="g">极低</td><td class="g">不需要</td><td class="g">✓</td><td>内核持久</td><td>轻量事件通知——替代 pipe 的最简方案</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>共享内存 — 视频帧 IPC 最佳实践</h4>
+    <div class="lbl">shm_open → ftruncate → mmap → sem_t 同步</div>
+    <p>ISP 进程写入 → <code>sem_post(sem_full)</code> → 编码进程 <code>sem_wait(sem_full)</code> → 读帧编码。延迟 &lt;10μs（仅信号量操作开销）。关键设计：<strong>三缓冲轮转</strong>——ISP 写 Buf1、编码读 Buf0、Buf2 在排队，避免读写冲突。对比 pipe：pipe 每帧 3MB memcpy → ~1ms，共享内存 → &lt;10μs。<strong>零拷贝进阶</strong>：用 <code>memfd_create()</code> + <code>seal</code> 创建不可修改的共享内存区域。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Unix Socket — 传递 fd (SCM_RIGHTS)</h4>
+    <div class="lbl">内核内存传递 · 零协议栈 · 传递文件描述符</div>
+    <p>Unix Domain Socket 的独有能力：通过 <code>SCM_RIGHTS</code> 控制消息在进程间传递 fd。可以传递 DMA-BUF fd——编码器进程将编码后的帧 fd 传给网络进程，网络进程直接 sendmsg 发送，全程零拷贝。<code>SO_PEERCRED</code> 获取对端 PID/UID/GID 做权限检查。D-Bus、systemd、X11/Wayland 都基于 Unix Socket。性能：延迟约 5-15μs（vs TCP 20-50μs on localhost）。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>eventfd — 轻量事件通知</h4>
+    <div class="lbl">比 pipe 更简单、更快的通知机制</div>
+    <p><code>eventfd(initval, EFD_NONBLOCK|EFD_SEMAPHORE)</code> 创建一个 8 字节计数器的 fd。write 增加值，read 读取并清零（或减一，semaphore 模式）。可被 poll/select/epoll 监控。典型用途：用户态中断下半部通知、<strong>替代 pipe 的 event loop 通知</strong>。比 pipe 快：无需分配 ring buffer，单一原子计数器操作。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>Android Binder — 专用 IPC 框架</h4>
+    <div class="lbl">Android 的跨进程通信骨干</div>
+    <p>Binder 是 Android 定制的高性能 IPC：① <strong>身份传递</strong>——内核自动记录调用者的 UID/PID，被调用方无需额外验证 ② <strong>对象引用计数</strong>——自动管理跨进程对象生命周期 ③ <strong>零拷贝传输</strong>（大 buffer） ④ <strong>死亡通知</strong>——一方 crash 时对方自动获知。普通 Linux 系统不需要 Binder，但理解其设计对了解跨进程对象管理有启发意义。</p>
+  </div>
+</div>
+
+<!-- ── Ch7 ── -->
+<h2 class="sh">7. 同步原语：从用户态到内核态</h2>
+<p class="ss">并发编程的正确性取决于对同步原语的深刻理解——不仅是 API 用法，更是底层实现和性能模型</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>pthread_mutex_t → futex</h4>
+    <div class="lbl">用户态 fast path: ~25ns | 内核态 slow path: ~1-50μs</div>
+    <p>无竞争时：pthread_mutex_lock 只是对 futex word 做一次 CAS 原子操作——<strong>不进入内核</strong>（~25ns）。有竞争时：通过 <code>futex(FUTEX_WAIT)</code> 系统调用进入内核睡眠，被唤醒后通过 <code>futex(FUTEX_WAKE)</code> 出队。<strong>futex 是 Linux 同步的基石</strong>——pthread_mutex、sem_t、pthread_cond、pthread_rwlock 全都基于 futex 实现。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>自旋锁 (spinlock)</h4>
+    <div class="lbl">不睡眠 · CPU 空转 · 临界区必须极短</div>
+    <p>用户态 <code>pthread_spinlock_t</code>，内核态 <code>spinlock_t</code>。持锁期间<strong>禁止睡眠/抢占</strong>（内核 spinlock 自动禁用内核抢占）。<br>
+    用户态 spinlock 仅在<strong>临界区 &lt;100ns 且不希望上下文切换开销</strong>时使用。内核 spinlock 是 SMP 并发控制的基础构件——几乎所有内核同步都基于 spinlock + 中断禁用组合。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>RCU — 读端完全无锁</h4>
+    <div class="lbl">Read-Copy-Update — 内核的核心技术</div>
+    <p>RCU 允许<strong>读者在任何时候无锁访问</strong>受保护的数据结构——无需获取锁、无需原子操作、无需内存屏障（在 rcu_dereference 中隐式包含）。写者：<em>拷贝 → 修改副本 → 替换指针 → 等待所有读者离开 (grace period) → 释放旧副本</em>。适用场景：<strong>读极多写极少</strong>（路由表、模块列表、文件系统 dentry cache）。内核用 <code>rcu_read_lock()/rcu_read_unlock()</code> 标记临界区。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>信号量 (sem_t)</h4>
+    <div class="lbl">计数同步 — mutex 是 sem=1 的特例</div>
+    <p>POSIX 信号量支持跨进程（命名信号量 sem_open）和跨线程（匿名信号量 sem_init）。生产者-消费者经典模式：<code>sem_wait(sem_empty);</code> 写数据 <code>sem_post(sem_full);</code> 消费端 <code>sem_wait(sem_full);</code> 读数据 <code>sem_post(sem_empty);</code>。比 condvar 更简洁——无需额外的 mutex 配合，不需要 while 循环检查条件。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>条件变量 (pthread_cond_t)</h4>
+    <div class="lbl">wait + signal — 必须配 mutex</div>
+    <p>condvar 解决"等待某个条件变为真"的问题。两个关键陷阱：① <strong>虚假唤醒</strong>——cond_wait 可能没有 signal 也返回 → <em>必须用 while 而非 if 检查条件</em> ② <strong>丢失唤醒</strong>——条件在 cond_wait 之前已满足，随后 cond_wait 会永久阻塞 → 先检查条件再 wait。pthread_cond_signal() 唤醒一个等待者（通常用于生产者-消费者），pthread_cond_broadcast() 唤醒所有（通常用于状态变更通知）。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 死锁四要素 (Coffman Conditions) —— 破坏任意一个即可预防</div>
+  ① <strong>互斥</strong> — 资源不能共享 ② <strong>持有并等待</strong> — 持 A 等 B<br>
+  ③ <strong>不可抢占</strong> — 资源不能被强制释放 ④ <strong>循环等待</strong> — P1→P2→P3→P1<br>
+  <strong>预防策略</strong>：统一锁获取顺序（破坏④）、<code>pthread_mutex_trylock()</code> + 释放已持锁 + 重试（破坏②）、<code>pthread_mutex_timedlock()</code> 超时放弃。
+</div>
+
+<!-- ── Ch8 ── -->
+<h2 class="sh">8. 进程监控与调试</h2>
+<p class="ss">嵌入式 IPC 产品的进程稳定性是核心质量指标——这些工具和方法是工程师的第二双眼睛</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>ps · top · htop</h4>
+    <div class="lbl">STAT · RSS · PRI · CPU% · 进程树</div>
+    <p><code>ps aux</code>：全量进程快照。关注 STAT 列：R=运行、S=睡眠、D=不可中断、Z=僵尸。<br>
+    <code>top -H -p PID</code>：显示该进程下所有线程的 CPU 使用。<br>
+    <code>ps -eLf</code>：列出所有线程及其 LWP (轻量进程 ID)。<br>
+    <code>ps -eo pid,tid,class,rtprio,ni,comm</code>：查看调度策略和优先级。<br>
+    <code>htop</code>：交互式——F5 树状图、F6 排序、F9 信号、F2 自定义列。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>strace — 系统调用追踪器</h4>
+    <div class="lbl">-p PID · -f 追踪子进程 · -c 统计 · -T 显示耗时</div>
+    <p><code>strace -p PID</code>：实时显示每次 syscall。最快速的"卡在哪"诊断工具。<br>
+    <code>strace -c -p PID</code>：统计各 syscall 调用次数和总耗时。<br>
+    <code>strace -e trace=futex -p PID</code>：仅追踪 futex 调用（锁竞争分析）。<br>
+    <code>strace -f ./myapp</code>：追踪所有子进程。<br>
+    <strong>⚠ strace 会让被追踪进程变慢 10-100%</strong>（ptrace 开销），生产环境慎用。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>perf — 性能剖析器</h4>
+    <div class="lbl">CPU 采样 + PMU 硬件计数器</div>
+    <p><code>perf top</code>：类 top 的实时热点函数视图。<br>
+    <code>perf record -p PID -g -- sleep 10</code>：录制 10 秒采样 + 调用栈。<br>
+    <code>perf report</code>：生成火焰图数据（配合 FlameGraph 脚本）。<br>
+    <code>perf stat -p PID</code>：硬件计数器（IPC/cache-miss/branch-miss）。<br>
+    嵌入式板需交叉编译 perf + 内核开启 <code>CONFIG_PERF_EVENTS</code>。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>/proc 文件系统诊断</h4>
+    <div class="lbl">内核提供的最丰富的进程数据源</div>
+    <p><code>/proc/PID/status</code>：Name/State/VmRSS/VmSize/Threads/SigCgt（信号位图）。<br>
+    <code>/proc/PID/stack</code>：<strong>内核调用栈</strong>——排查 D 状态进程的利器。<br>
+    <code>/proc/PID/maps</code>：VMA 列表（每段地址范围+权限+映射源）。<br>
+    <code>/proc/PID/smaps</code>：<strong>每段详细内存</strong>——RSS/PSS/USS/Swap。<br>
+    <code>/proc/PID/fd/</code>：打开的文件描述符（ls -l 显示指向的目标）。<br>
+    <code>/proc/PID/oom_score</code>：OOM killer 的评分（越高越先被杀）。<br>
+    内存泄漏诊断：<code>watch -n1 grep VmRSS /proc/PID/status</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>coredump 分析</h4>
+    <div class="lbl">gdb + core dump = 事后复现 crash</div>
+    <p><strong>启用</strong>：<code>ulimit -c unlimited</code> + <code>/proc/sys/kernel/core_pattern</code> 设置文件路径。<br>
+    <strong>分析</strong>：<code>gdb /path/to/binary core.dump</code> → <code>bt full</code> 查看崩溃时的完整调用栈、所有局部变量、寄存器。thread apply all bt 查看所有线程栈。<code>info registers</code> 看寄存器状态。<br>
+    <strong>嵌入式注意</strong>：受限存储空间可能无法保存完整 core dump（进程内存多大 core dump 多大）。用 <code>coredump_filter</code> 可以过滤掉匿名大页、共享库等区域减少体积。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>现象</th><th>排查命令</th><th>最可能的原因</th></tr></thead>
+  <tbody>
+    <tr><td>进程 CPU 100%</td><td><code>top -H -p PID</code> → <code>strace -T -p TID</code></td><td>死循环 / spinlock 活锁 / poll 无超时</td></tr>
+    <tr><td>进程无响应 (状态 D)</td><td><code>cat /proc/PID/stack</code></td><td>I/O 永不完成 / NFS hard mount / 驱动 bug</td></tr>
+    <tr><td>内存持续增长</td><td><code>pmap -x PID</code> 看哪段增长</td><td>malloc 不 free / fd 泄漏 / 线程泄漏</td></tr>
+    <tr><td>进程无故退出</td><td><code>dmesg | grep -i oom</code></td><td>OOM killer / SIGSEGV / 未捕获信号</td></tr>
+    <tr><td>线程卡在 futex</td><td><code>strace -e futex -p PID</code></td><td>死锁 / 忘记 unlock / condvar 未 signal</td></tr>
+    <tr><td>系统僵尸进程堆积</td><td><code>ps aux | grep ' Z'</code></td><td>父进程未 waitpid / 父进程自身卡死</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch9 ── -->
+<h2 class="sh">9. 守护进程化与进程管理框架</h2>
+<p class="ss">从手动 daemonize 到 systemd service——理解进程生命周期管理的演进</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>传统 daemonize 六步骤</h4>
+    <div class="lbl">脱离终端 · 脱离会话 · 防止重关联</div>
+    <p>① <code>fork()</code> → 父进程 exit → 子进程成为孤儿由 init 收养<br>
+    ② <code>setsid()</code> → 子进程创建新会话，成为会话首领，<strong>脱离控制终端</strong><br>
+    ③ <code>fork()</code> 第二次 → 孙进程不再是会话首领 → <strong>永远无法重新关联终端</strong><br>
+    ④ <code>chdir("/")</code> → 避免 daemon 占用某个目录导致无法 umount<br>
+    ⑤ <code>umask(0)</code> → 不使用父进程的文件创建掩码<br>
+    ⑥ <code>close(0); close(1); close(2);</code> → 重定向 stdin/stdout/stderr 到 /dev/null 或日志文件</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>systemd service — 现代进程管理</h4>
+    <div class="lbl">.service 文件 · cgroup 资源控制 · 自动重启</div>
+    <p>systemd 让手写 daemonize 逻辑成为历史：<code>Type=simple</code>（前台运行不 fork，推荐）、<code>Type=forking</code>（兼容传统 daemon）、<code>Restart=on-failure</code>（崩溃自动重启）、<code>RestartSec=5s</code>（重启间隔）、<code>StartLimitBurst=3</code>（连续失败 3 次→冷却）。<br>
+    systemd 自动为每个 service 创建 cgroup，可以限制 CPU/Memory/IO——<strong>不需要应用自己处理资源限制</strong>。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">systemd unit 文件示例 — LinkricAI 进程管理</div>
+  <div class="cb"><span class="cm"># /etc/systemd/system/linkricai.service</span>
+[Unit]
+<span class="kw">Description</span>=LinkricAI IPC Camera Service
+<span class="kw">After</span>=network.target
+
+[Service]
+<span class="kw">Type</span>=simple
+<span class="kw">ExecStart</span>=/system/usr/bin/LinkricAI
+<span class="kw">Restart</span>=on-failure
+<span class="kw">RestartSec</span>=5s
+<span class="kw">StartLimitBurst</span>=3
+<span class="kw">StartLimitIntervalSec</span>=30s
+<span class="kw">User</span>=root
+<span class="kw">Nice</span>=-5
+<span class="kw">CPUSchedulingPolicy</span>=fifo
+<span class="kw">CPUSchedulingPriority</span>=80
+<span class="kw">AllowedCPUs</span>=1-3<span class="cm"># 绑定到 CPU1-3, CPU0 留给系统</span>
+<span class="kw">LimitNOFILE</span>=65536
+<span class="kw">LimitRSS</span>=256M<span class="cm"># 硬限制物理内存</span>
+<span class="kw">OOMScoreAdjust</span>=-500<span class="cm"># 降低被 OOM killer 选中的概率</span>
+<span class="kw">WatchdogSec</span>=10s<span class="cm"># systemd 硬件看门狗: 进程需每 5s 调用 sd_notify(WATCHDOG=1)</span>
+
+[Install]
+<span class="kw">WantedBy</span>=multi-user.target</div>
+</div>
+
+<!-- ── Ch10 ── -->
+<h2 class="sh">10. IPC 相机实战：多进程架构设计</h2>
+<p class="ss">用进程隔离构建稳定、可维护的嵌入式产品——从传感器到云端的完整进程拓扑</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>为什么多进程？</h4>
+    <div class="lbl">崩溃隔离 · 内存隔离 · 独立 OTA</div>
+    <p>编码器 crash → 不影响录像。ISP 驱动 crash → 不影响网络。线程 crash → 整个进程死——这是嵌入式产品不可接受的风险。<br>
+    <strong>代价</strong>：IPC 通信开销（共享内存 → 可忽略）、进程启动时间（fork exec 通常 &lt;50ms）、跨进程调试比线程稍复杂。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>推荐进程拓扑</h4>
+    <div class="lbl">从 Sensor 到 Cloud 的进程拆分</div>
+    <p><strong>主控 (LinkricAI)</strong>：SCHED_OTHER，进程树根节点。<br>
+    <strong>ISP 采集</strong>：SCHED_FIFO prio=80，绑定 CPU1 → 共享内存输出 YUV。<br>
+    <strong>编码器</strong>：SCHED_FIFO prio=70 → 环形缓冲输出 H.264。<br>
+    <strong>网络传输</strong>：SCHED_RR prio=60 → RTP/LiveKit 推流。<br>
+    <strong>存储</strong>：SCHED_OTHER nice=-5 → SD 卡写 MP4。<br>
+    <strong>AI 推理</strong>（可选）：SCHED_OTHER nice=+5 → 独立进程。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>优先级分配原则</h4>
+    <div class="lbl">越靠近硬件实时时钟，优先级越高</div>
+    <p><strong>Sensor 采集 &gt; ISP &gt; 编码 &gt; 网络 &gt; 存储 &gt; AI</strong>。<br>
+    CPU 不足时的<strong>优雅降级</strong>：先丢 AI 帧（降低模型推理频率），再降存储帧率（不影响实时预览），最后才丢网络帧。内核线程（IRQ、ksoftirqd、writeback）也必须留足 CPU。<br>
+    <strong>⚠ FIFO 进程必须设软 watchdog</strong>——一个死循环的实时进程会让系统彻底无法响应。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// 多进程架构的 Supervisor 看门狗骨架</span>
+<b>int</b> <i>main</i>() {
+    <i>spawn_child</i>(<span class="st">"isp"</span>,    isp_main,    { .policy=SCHED_FIFO, .prio=<u>80</u>, .cpu=<u>1</u> });
+    <i>spawn_child</i>(<span class="st">"encoder"</span>, encoder_main, { .policy=SCHED_FIFO, .prio=<u>70</u>, .cpu=<u>2</u> });
+    <i>spawn_child</i>(<span class="st">"network"</span>, network_main, { .policy=SCHED_RR,   .prio=<u>60</u>, .cpu=<u>2</u> });
+    <i>spawn_child</i>(<span class="st">"storage"</span>, storage_main, { .policy=SCHED_OTHER,.nice=<u>-5</u> });
+
+    <b>while</b> (<u>1</u>) {
+        <b>int</b> st; <b>pid_t</b> dead = <i>waitpid</i>(-<u>1</u>, &amp;st, <u>0</u>);
+        <b>if</b> (<i>restart_count</i>(dead, <u>5</u>) &gt; <u>3</u>) { <span class="cm">// 5秒内重启超过3次 → 冷却</span>
+            <i>log</i>(<span class="st">"child %d crash-loop, cooling down 30s"</span>, dead);
+            <i>sleep</i>(<u>30</u>); <i>reset_count</i>(dead);
+        }
+        <i>restart_child</i>(dead);
+    }
+}</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 进程管理 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div><!-- /.doc -->
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

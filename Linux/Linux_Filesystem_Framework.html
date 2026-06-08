@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 文件系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; }
+.cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.cg.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3,.cg.c4 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc, #6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; }
+.cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; }
+.cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; }
+.cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; }
+.cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+.st code { font-size: 10px; }
+
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+.fs-tag { display:inline-block; padding:2px 8px; border-radius:5px; font-size:10px;
+  font-weight:700; margin-right:4px; }
+.fs-yes { background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.2); }
+.fs-no  { background:rgba(248,113,113,.08); color:#f87171; border:1px solid rgba(248,113,113,.15); }
+.fs-part{ background:rgba(251,191,36,.1); color:#fbbf24; border:1px solid rgba(251,191,36,.2); }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 文件系统</h2>
+  <p class="sec-sub">系统化知识体系 — VFS · 四大核心对象 · 页缓存 · ext4/XFS/Btrfs · 挂载流程</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>VFS</strong><br><small>虚拟文件系统</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Page Cache</strong><br><small>页缓存层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Block Layer</strong><br><small>块 I/O 层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>Disk</strong><br><small>物理存储</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>VFS 抽象层</h4><div class="sub">统一文件模型</div>
+      <p>Linux 内核的<em>虚拟文件系统切换层</em>，为所有文件系统提供统一的操作接口。无论 ext4、XFS、NFS 还是 procfs，上层应用看到的都是同一套 API。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>四大核心对象</h4><div class="sub">super_block · inode · dentry · file</div>
+      <p>每个对象有对应的 <em>操作函数表</em>：<code>super_operations</code>、<code>inode_operations</code>、<code>dentry_operations</code>、<code>file_operations</code>。多态设计实现"统一接口、多种实现"。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>页缓存</h4><div class="sub">address_space + page cache</div>
+      <p>所有文件 I/O 都经过 <em>页缓存</em>。读命中零拷贝，写延迟分配。回写机制由 <code>flusher</code> 线程异步完成。2024 年 <code>writeback_iter()</code> 重构了回写核心路径。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1: VFS 概述 ── -->
+<h2 class="sh">1. VFS — 虚拟文件系统抽象层</h2>
+<p class="ss">Linux 文件系统的基石 — 面向对象的设计思想，用统一的"四大对象"模型屏蔽底层差异</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>什么是 VFS？</h4>
+    <div class="lbl">Virtual File System Switch</div>
+    <p>VFS 是内核中的一个<strong>抽象层</strong>，位于系统调用接口与具体文件系统实现之间。它定义了通用文件模型，要求每种文件系统将自己的概念映射到这个通用模型中。<em>"统一接口、多种实现"</em>——这正是面向对象设计思想在内核中的体现。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>两组接口</h4>
+    <div class="lbl">上层统一 · 下层多态</div>
+    <p><strong>对上</strong>：提供 <code>open/read/write/close/mmap</code> 等与文件系统无关的通用系统调用。<br>
+    <strong>对下</strong>：定义抽象操作表（函数指针），如 <code>file_operations.read()</code>、<code>inode_operations.create()</code>，每种文件系统各自实现。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>支持的分类</h4>
+    <div class="lbl">三大家族</div>
+    <p><strong>磁盘文件系统</strong>：ext4、XFS、Btrfs、F2FS…<br>
+    <strong>网络文件系统</strong>：NFS、CIFS、Ceph…<br>
+    <strong>伪文件系统</strong>：procfs、sysfs、tmpfs、devtmpfs…<br>
+    查看已注册类型：<code>cat /proc/filesystems</code></p>
+  </div>
+</div>
+
+<details>
+  <summary>VFS 在 I/O 栈中的位置</summary>
+  <div class="cb" style="font-size:10.5px;line-height:1.6;margin:8px 0 0">
+<span class="cm">User Space    open() / read() / write() / close()</span>
+<span class="cm">              │</span>
+<span class="cm">══════════════ VFS Layer ═════════════════════════════════════</span>
+<span class="cm">  sys_read() → file-&gt;f_op-&gt;read()  [通用入口]</span>
+<span class="cm">              │</span>
+<span class="cm">              ├── ext4_read_iter()    [ext4 实现]</span>
+<span class="cm">              ├── xfs_file_read_iter() [XFS 实现]</span>
+<span class="cm">              └── nfs_file_read()      [NFS 实现]</span>
+<span class="cm">              │</span>
+<span class="cm">══════════════ Page Cache ════════════════════════════════════</span>
+<span class="cm">  address_space → a_ops → readpage() / writepage()</span>
+<span class="cm">              │</span>
+<span class="cm">══════════════ Block Layer ═══════════════════════════════════</span>
+<span class="cm">  submit_bio() → blk_mq → device driver</span>
+<span class="cm">              │</span>
+<span class="cm">  Hardware    SSD / HDD / NVMe</span></div>
+</details>
+
+<!-- ── Ch2: 四大核心对象 ── -->
+<h2 class="sh">2. 四大核心对象</h2>
+<p class="ss">super_block · inode · dentry · file — 每个对象都有对应的操作函数表，形成多态架构</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>① super_block — 超级块</h4>
+    <div class="lbl">文件系统实例的全局元信息</div>
+    <p>每次 <code>mount</code> 创建一个 <code>super_block</code>。核心字段：<code>s_type</code>（文件系统类型）、<code>s_op</code>（→ <code>super_operations</code>）、<code>s_root</code>（根 dentry）、<code>s_blocksize</code>（块大小）、<code>s_bdev</code>（块设备）、<code>s_fs_info</code>（私有数据，如 <code>ext4_sb_info</code>）。<br>
+    <strong>关键操作</strong>：<code>alloc_inode</code>、<code>write_inode</code>、<code>put_super</code>（卸载时释放）、<code>sync_fs</code>、<code>statfs</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>② inode — 索引节点</h4>
+    <div class="lbl">文件的"身份证" — 元数据但不含文件名</div>
+    <p>表示一个<strong>文件对象</strong>（普通文件、目录、设备、符号链接…）。核心字段：<code>i_ino</code>（编号）、<code>i_mode</code>（类型+权限）、<code>i_size</code>（大小）、<code>i_op</code>（→ <code>inode_operations</code>）、<code>i_fop</code>（→ <code>file_operations</code>）、<code>i_sb</code>、<code>i_mapping</code>（→ <code>address_space</code> 页缓存）。<br>
+    <strong>inode 不存文件名</strong>——文件名由 dentry 管理，同一 inode 可被多个硬链接引用（<code>i_nlink</code> 计数）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>③ dentry — 目录项</h4>
+    <div class="lbl">文件名 → inode 的映射缓存</div>
+    <p><strong>纯内存结构</strong>，不存储在磁盘上。通过 <code>d_parent</code> 构建目录树，通过 <code>d_inode</code> 关联 inode。被缓存在 <strong>dcache</strong> 中以加速路径查找。<br>
+    <strong>四种状态</strong>：Used（使用中）、Unused（有效但未使用，可回收）、Negative（文件不存在，加速下次查找）、Free。<br>
+    路径 <code>/home/user/f.txt</code> → 4 个 dentry：<code>/</code>、<code>home</code>、<code>user</code>、<code>f.txt</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>④ file — 打开文件描述</h4>
+    <div class="lbl">进程视角的打开文件 — 纯内存对象</div>
+    <p>每次 <code>open()</code> 创建新的 <code>struct file</code>。核心字段：<code>f_path</code>（dentry + vfsmount）、<code>f_inode</code>、<code>f_op</code>（→ <code>file_operations</code>）、<code>f_pos</code>（当前偏移）、<code>f_flags</code>（O_RDONLY/O_WRONLY…）。<br>
+    <code>dup()</code> 可共享同一 file（偏移量同步），多进程打开同一文件各有独立 file（独立偏移）。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>对象</th><th>操作表</th><th>关键字段</th><th>存储位置</th><th>生命周期</th></tr></thead>
+  <tbody>
+    <tr><td><code>super_block</code></td><td><code>super_operations</code></td><td>s_type, s_root, s_bdev, s_fs_info</td><td>磁盘 + 内存</td><td>mount → umount</td></tr>
+    <tr><td><code>inode</code></td><td><code>inode_operations</code></td><td>i_ino, i_mode, i_size, i_mapping</td><td>磁盘 + 内存</td><td>创建 → 删除 (i_nlink=0)</td></tr>
+    <tr><td><code>dentry</code></td><td><code>dentry_operations</code></td><td>d_name, d_inode, d_parent</td><td><strong>纯内存</strong></td><td>路径查找时创建，LRU 回收</td></tr>
+    <tr><td><code>file</code></td><td><code>file_operations</code></td><td>f_path, f_pos, f_flags</td><td><strong>纯内存</strong></td><td>open → close</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">对象关系速记</div>
+  <strong>进程</strong> → fd→<strong>file</strong> → f_path→<strong>dentry</strong> → d_inode→<strong>inode</strong> → i_sb→<strong>super_block</strong><br>
+  每个 file 记录当前偏移 (f_pos)；dentry 记录文件名 (d_name)；inode 记录元数据 (i_mode/size/...)。三者各司其职，通过指针串联。
+</div>
+
+<!-- ── Ch3: 操作函数表详解 ── -->
+<h2 class="sh">3. 操作函数表 — 多态的基石</h2>
+<p class="ss">四种 operations 结构体定义了各文件系统必须实现的接口 — 上层统一调用，下层各自填充</p>
+
+<div class="cb">
+<span class="cm">/* ===== inode_operations — 元数据操作 ===== */</span>
+<span class="kw">struct</span> <span class="ty">inode_operations</span> {
+    <span class="kw">struct</span> <span class="ty">dentry</span> *(*<span class="fn">lookup</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">unsigned int</span>);
+    <span class="ty">int</span> (*<span class="fn">create</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="ty">umode_t</span>, <span class="ty">bool</span>);
+    <span class="ty">int</span> (*<span class="fn">link</span>)(<span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *);
+    <span class="ty">int</span> (*<span class="fn">unlink</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *);
+    <span class="ty">int</span> (*<span class="fn">mkdir</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="ty">umode_t</span>);
+    <span class="ty">int</span> (*<span class="fn">rmdir</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *);
+    <span class="ty">int</span> (*<span class="fn">rename</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">unsigned int</span>);
+    <span class="ty">int</span> (*<span class="fn">symlink</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">const char</span> *);
+    <span class="ty">int</span> (*<span class="fn">setattr</span>)(<span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">struct</span> <span class="ty">iattr</span> *);
+    <span class="ty">int</span> (*<span class="fn">getattr</span>)(<span class="kw">struct</span> <span class="ty">vfsmount</span> *, <span class="kw">struct</span> <span class="ty">dentry</span> *, <span class="kw">struct</span> <span class="ty">kstat</span> *);
+    <span class="ty">int</span> (*<span class="fn">permission</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="ty">int</span>);
+};
+
+<span class="cm">/* ===== file_operations — 数据 I/O 操作 ===== */</span>
+<span class="kw">struct</span> <span class="ty">file_operations</span> {
+    <span class="ty">ssize_t</span> (*<span class="fn">read</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="ty">char __user</span> *, <span class="ty">size_t</span>, <span class="ty">loff_t</span> *);
+    <span class="ty">ssize_t</span> (*<span class="fn">write</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">const char __user</span> *, <span class="ty">size_t</span>, <span class="ty">loff_t</span> *);
+    <span class="ty">ssize_t</span> (*<span class="fn">read_iter</span>)(<span class="kw">struct</span> <span class="ty">kiocb</span> *, <span class="kw">struct</span> <span class="ty">iov_iter</span> *);     <span class="cm">// 现代异步读</span>
+    <span class="ty">ssize_t</span> (*<span class="fn">write_iter</span>)(<span class="kw">struct</span> <span class="ty">kiocb</span> *, <span class="kw">struct</span> <span class="ty">iov_iter</span> *);    <span class="cm">// 现代异步写</span>
+    <span class="ty">int</span>    (*<span class="fn">mmap</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">vm_area_struct</span> *);
+    <span class="ty">int</span>    (*<span class="fn">open</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">file</span> *);
+    <span class="ty">int</span>    (*<span class="fn">release</span>)(<span class="kw">struct</span> <span class="ty">inode</span> *, <span class="kw">struct</span> <span class="ty">file</span> *);
+    <span class="ty">int</span>    (*<span class="fn">fsync</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="ty">loff_t</span>, <span class="ty">loff_t</span>, <span class="ty">int</span>);
+    <span class="ty">loff_t</span> (*<span class="fn">llseek</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="ty">loff_t</span>, <span class="ty">int</span>);
+};
+
+<span class="cm">/* ===== address_space_operations — 页缓存操作 ===== */</span>
+<span class="kw">struct</span> <span class="ty">address_space_operations</span> {
+    <span class="ty">int</span> (*<span class="fn">readpage</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">page</span> *);
+    <span class="ty">int</span> (*<span class="fn">writepage</span>)(<span class="kw">struct</span> <span class="ty">page</span> *, <span class="kw">struct</span> <span class="ty">writeback_control</span> *);
+    <span class="ty">int</span> (*<span class="fn">writepages</span>)(<span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="kw">struct</span> <span class="ty">writeback_control</span> *);
+    <span class="ty">int</span> (*<span class="fn">write_begin</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="ty">loff_t</span>,
+                       <span class="kw">unsigned</span>, <span class="kw">unsigned</span>, <span class="kw">struct</span> <span class="ty">page</span> **, <span class="ty">void</span> **);
+    <span class="ty">int</span> (*<span class="fn">write_end</span>)(<span class="kw">struct</span> <span class="ty">file</span> *, <span class="kw">struct</span> <span class="ty">address_space</span> *, <span class="ty">loff_t</span>,
+                     <span class="kw">unsigned</span>, <span class="kw">unsigned</span>, <span class="kw">struct</span> <span class="ty">page</span> *, <span class="ty">void</span> *);
+    <span class="ty">int</span> (*<span class="fn">direct_IO</span>)(<span class="kw">struct</span> <span class="ty">kiocb</span> *, <span class="kw">struct</span> <span class="ty">iov_iter</span> *);
+};</div>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="ct">设计模式本质</div>
+  VFS 使用的是经典的<strong>面向对象 C 语言实现</strong>：结构体嵌函数指针 = 虚函数表。每个具体文件系统填充自己的函数实现，上层调用时自动派发到对应的实现——这就是 <strong>C 语言实现的多态</strong>。
+</div>
+
+<!-- ── Ch4: read() 调用流程 ── -->
+<h2 class="sh">4. read() 系统调用 — 完整流程追踪</h2>
+<p class="ss">从用户空间 read(fd, buf, 1024) 到磁盘块读取 — 穿越 VFS → Page Cache → 文件系统 → Block Layer</p>
+
+<div class="sg">
+  <div class="st"><b>①</b> VFS: <code>sys_read()</code> → <code>ksys_read()</code><br>通过 fd 查找 <code>struct file</code></div>
+  <div class="st"><b>②</b> VFS: <code>vfs_read()</code><br>权限检查 → 调用 <code>file-&gt;f_op-&gt;read()</code></div>
+  <div class="st"><b>③</b> FS: <code>ext4_read_iter()</code><br>ext4 文件系统读入口</div>
+  <div class="st"><b>④</b> VFS: <code>generic_file_read_iter()</code><br>通用页缓存读 — 查 address_space</div>
+  <div class="st"><b>⑤</b> 页缓存: <code>find_get_page(mapping, idx)</code><br>Hit → 直接 copy_to_user，零拷贝</div>
+  <div class="st"><b>⑥</b> Miss: <code>a_ops-&gt;readpage()</code><br>ext4_readpage → 提交 I/O</div>
+  <div class="st"><b>⑦</b> Block: <code>submit_bio()</code><br>构造 bio，交 blk_mq 派发</div>
+  <div class="st"><b>⑧</b> Driver: 设备驱动<br>DMA 读磁盘 → 中断通知</div>
+  <div class="st"><b>⑨</b> 完成: 页标记 Uptodate<br><code>copy_to_user(buf, page, size)</code></div>
+</div>
+
+<div class="flow-row" style="margin:16px 0">
+  <span class="flow-box">User<br>read(fd)</span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>VFS<br>sys_read</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>f_op-&gt;read<br>ext4_read_iter</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>Page Cache<br>find / miss?</strong></span>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>缓存命中 (Fast Path)</h4><div class="lbl">零磁盘 I/O</div>
+    <p>页已在 <code>address_space.i_pages</code> (xarray) 中 → 直接 <code>copy_to_user()</code>。这是绝大多数读请求的实际路径。页缓存命中率通常在 95%+，是 Linux 高性能文件 I/O 的核心保障。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>缓存未命中 (Slow Path)</h4><div class="lbl">需要磁盘 I/O</div>
+    <p>① 分配新 page → ② 加入 address_space → ③ 调用 <code>a_ops-&gt;readpage()</code> → ④ ext4 计算磁盘块号（通过 extent tree） → ⑤ <code>submit_bio()</code> 提交 bio → ⑥ 块设备驱动执行 DMA → ⑦ 中断通知 I/O 完成 → ⑧ 标记 PageUptodate → ⑨ 拷贝数据给用户。</p>
+  </div>
+</div>
+
+<!-- ── Ch5: Page Cache & Writeback ── -->
+<h2 class="sh">5. Page Cache 与 Writeback</h2>
+<p class="ss">address_space 管理文件缓存页 · folio 取代 page · 2024 年 writeback_iter() 重构</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>address_space</h4><div class="lbl">页缓存的核心管理者</div>
+    <p>每个 inode 有一个 <code>address_space</code>（通过 <code>i_mapping</code> 访问）。核心：<code>i_pages</code> (xarray) 索引文件偏移→页帧、<code>a_ops</code> (address_space_operations)、<code>nrpages</code> (缓存页数)。<strong>一个 address_space = 一个文件的页缓存全部状态。</strong></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>folio — 多页操作单元</h4><div class="lbl">page → folio 演进 (5.16+)</div>
+    <p>传统以 <code>struct page</code> 为粒度在大页时代效率低。<code>struct folio</code> 将多个连续 page 编组管理，支持透明大页 (THP)。现代 I/O 路径（iomap、writeback_iter）已全面 folio 化。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>writeback_iter (NEW)</h4><div class="lbl">2024 年回写路径重构</div>
+    <p>传统 <code>write_cache_pages()</code> 使用回调模式，代码臃肿。新 <code>writeback_iter()</code> 改为直接迭代器模式：<code>while ((folio = writeback_iter(mapping, wbc, folio, &err))) {...}</code>。更简洁、更高效、更易维护。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>回写触发条件</th><th>阈值 / 机制</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><strong>内存压力</strong></td><td><code>dirty_background_ratio</code> (默认 10%)</td><td>脏页超此比例 → flusher 线程异步回写</td></tr>
+    <tr><td><strong>写入节流</strong></td><td><code>dirty_ratio</code> (默认 20%)</td><td>超此比例 → 进程自行回写，阻塞写入</td></tr>
+    <tr><td><strong>脏页老化</strong></td><td><code>dirty_expire_interval</code> (3000ms)</td><td>脏页超过此时间 → flusher 强制回写</td></tr>
+    <tr><td><strong>周期回写</strong></td><td><code>dirty_writeback_interval</code> (500ms)</td><td>flusher 线程定时唤醒检查</td></tr>
+    <tr><td><strong>显式同步</strong></td><td><code>sync() / fsync() / fdatasync()</code></td><td>用户空间或内核显式调用</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">核心思想：Writeback 解耦</div>
+  应用程序 <code>write()</code> 只将数据拷贝到页缓存并标记脏页 <code>SetPageDirty(page)</code>，<strong>不直接写磁盘</strong>。后台 flusher 线程 (<code>[writeback]</code>) 在合适的时机（内存压力、超时、显式 sync）将脏页批量回写。这就是 Linux 高性能写入的秘密——<strong>延迟分配 + 批量回写</strong>。
+</div>
+
+<!-- ── Ch6: Mount 挂载流程 ── -->
+<h2 class="sh">6. 挂载流程 — mount 系统调用全解析</h2>
+<p class="ss">从 mount 命令到 super_block 创建 — 6 步完成文件系统挂载</p>
+
+<div class="sg">
+  <div class="st"><b>①</b> <code>sys_mount()</code> → <code>do_mount()</code><br>复制用户参数到内核空间</div>
+  <div class="st"><b>②</b> 路径解析<br><code>user_path_at(dir_name)</code> → 获取挂载点的 path</div>
+  <div class="st"><b>③</b> 类型查找<br><code>get_fs_type("ext4")</code> 搜索 <code>file_systems</code> 链表</div>
+  <div class="st"><b>④</b> Superblock 创建<br><code>vfs_get_tree() → ext4_mount() → mount_bdev() → ext4_fill_super()</code></div>
+  <div class="st"><b>⑤</b> ext4_fill_super ← 核心<br>读磁盘超级块 → 验证 magic → 读 block group → 创建根 inode → <code>d_make_root()</code></div>
+  <div class="st"><b>⑥</b> 挂载整合<br><code>do_new_mount_fc()</code> → 分配 <code>struct mount</code> → 插入挂载树</div>
+</div>
+
+<div class="cblock" style="margin-top:16px">
+<span class="cm">/* ===== file_system_type — 文件系统类型注册 ===== */</span>
+<span class="kw">struct</span> <span class="ty">file_system_type</span> {
+    <span class="kw">const char</span> *name;                              <span class="cm">// "ext4" / "xfs" / "btrfs" ...</span>
+    <span class="ty">int</span> fs_flags;                                   <span class="cm">// FS_REQUIRES_DEV, FS_USERNS_MOUNT...</span>
+    <span class="kw">struct</span> <span class="ty">dentry</span> *(*<span class="fn">mount</span>)(<span class="kw">struct</span> <span class="ty">file_system_type</span> *, <span class="ty">int</span>,
+                             <span class="kw">const char</span> *, <span class="ty">void</span> *);
+    <span class="ty">void</span> (*<span class="fn">kill_sb</span>)(<span class="kw">struct</span> <span class="ty">super_block</span> *);          <span class="cm">// umount 时释放</span>
+    <span class="kw">struct</span> <span class="ty">module</span> *owner;
+    <span class="kw">struct</span> <span class="ty">file_system_type</span> *next;                <span class="cm">// 全局链表</span>
+};
+
+<span class="cm">/* 注册 / 注销 API */</span>
+<span class="ty">int</span> <span class="fn">register_filesystem</span>(<span class="kw">struct</span> <span class="ty">file_system_type</span> *fs);
+<span class="ty">int</span> <span class="fn">unregister_filesystem</span>(<span class="kw">struct</span> <span class="ty">file_system_type</span> *fs);
+
+<span class="cm">/* 关键数据结构: struct mount (包装 vfsmount) */</span>
+<span class="kw">struct</span> <span class="ty">mount</span> {
+    <span class="kw">struct</span> <span class="ty">hlist_node</span>   mnt_hash;        <span class="cm">// 全局 hash 表链接</span>
+    <span class="kw">struct</span> <span class="ty">mount</span>         *mnt_parent;      <span class="cm">// 父挂载</span>
+    <span class="kw">struct</span> <span class="ty">dentry</span>        *mnt_mountpoint;  <span class="cm">// 挂载点 dentry</span>
+    <span class="kw">struct</span> <span class="ty">vfsmount</span>      mnt;              <span class="cm">// 内嵌 vfsmount</span>
+    <span class="kw">struct</span> <span class="ty">list_head</span>     mnt_mounts;       <span class="cm">// 子挂载链表</span>
+    <span class="kw">struct</span> <span class="ty">list_head</span>     mnt_child;        <span class="cm">// 父挂载子链表中的条目</span>
+    <span class="kw">const char</span>         *mnt_devname;      <span class="cm">// 设备名 (如 /dev/sda1)</span>
+};</div>
+
+<!-- ── Ch7: 文件系统对比 ── -->
+<h2 class="sh">7. 主流文件系统对比</h2>
+<p class="ss">ext4 · XFS · Btrfs · F2FS — 四大本地文件系统的特性、适用场景与抉择</p>
+
+<div class="ptbl" style="margin-top:18px">
+  <table>
+  <thead><tr><th>特性</th><th>ext4</th><th>XFS</th><th>Btrfs</th><th>F2FS</th></tr></thead>
+  <tbody>
+    <tr><td>诞生年份</td><td>2008</td><td>1994 (Linux: 2001)</td><td>2007</td><td>2013</td></tr>
+    <tr><td>最大文件大小</td><td>16 TB</td><td class="g">8 EB</td><td class="g">16 EB</td><td>~4 GB (默认)</td></tr>
+    <tr><td>最大文件系统大小</td><td>1 EB</td><td class="g">8 EB</td><td class="g">16 EB</td><td>16 TB</td></tr>
+    <tr><td>日志 / 一致性</td><td>JBD2 (可配)</td><td>元数据日志</td><td class="g"><strong>CoW</strong></td><td>日志结构 (LFS)</td></tr>
+    <tr><td>快照</td><td class="r">✗</td><td class="r">✗</td><td class="g"><strong>✓</strong></td><td class="r">✗</td></tr>
+    <tr><td>压缩</td><td class="r">✗</td><td class="r">✗</td><td class="g"><strong>✓ (zstd/lzo/zlib)</strong></td><td class="y">✓</td></tr>
+    <tr><td>校验和 (数据)</td><td class="r">✗ (仅元数据)</td><td class="r">✗ (仅元数据)</td><td class="g"><strong>✓ 数据+元数据</strong></td><td class="r">✗ (仅元数据)</td></tr>
+    <tr><td>内置 RAID</td><td class="r">✗</td><td class="r">✗</td><td class="g"><strong>✓</strong></td><td class="r">✗</td></tr>
+    <tr><td>在线扩容</td><td class="g">✓</td><td class="g">✓</td><td class="g">✓</td><td class="g">✓</td></tr>
+    <tr><td>在线缩容</td><td class="y">✓ (离线)</td><td class="r">✗ <strong>不支持</strong></td><td class="g">✓</td><td class="r">✗</td></tr>
+    <tr><td>SSD 优化</td><td>基础 TRIM</td><td>良好 TRIM</td><td>自动检测+优化</td><td class="g"><strong>原生 NAND 设计</strong></td></tr>
+    <tr><td>典型适用</td><td>通用 / 稳定 / 兼容</td><td>大文件 / 高并发 / DB</td><td>快照 / 回滚 / NAS</td><td>NVMe / eMMC / 嵌入式</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>ext4 — 稳定之王</h4><div class="lbl">最广泛使用的 Linux 文件系统</div>
+    <p><strong>优势</strong>：极端稳定，经二十年验证，fsck 可靠，默认几乎所有发行版。<br>
+    <strong>弱点</strong>：缺 CoW 高级特性，无快照。<br>
+    <strong>选择场景</strong>：通用桌面/服务器、启动分区、不想为文件系统操心的场景。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>XFS — 性能之王</h4><div class="lbl">RHEL 默认，高性能并行 I/O</div>
+    <p><strong>优势</strong>：分配组 (AG) 实现极致并发，大文件/高吞吐场景无出其右。在线扩容。<br>
+    <strong>弱点</strong>：<strong>不能缩容</strong>，历史断电风险（已改善）。<br>
+    <strong>选择场景</strong>：数据库服务器、大文件存储、高并发写入、HPC、媒体处理。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Btrfs — 特性之王</h4><div class="lbl">CoW 文件系统的 Linux 旗舰</div>
+    <p><strong>优势</strong>：快照、子卷、压缩、数据校验和、内置 RAID、send/receive 备份。<br>
+    <strong>弱点</strong>：CoW 带来性能开销，内核 &lt;5.4 不稳定，RAID 5/6 仍有风险。<br>
+    <strong>选择场景</strong>：NAS、需要快照回滚、数据完整性优先、openSUSE snapper 集成。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>F2FS — 闪存专家</h4><div class="lbl">原生 NAND Flash 设计</div>
+    <p><strong>优势</strong>：冷热数据分离、多头日志减少写放大、延长 SSD 寿命。安卓默认。<br>
+    <strong>弱点</strong>：fsck 弱（突然断电有风险）、文件系统容量小。<br>
+    <strong>选择场景</strong>：NVMe SSD / eMMC / SD 卡、安卓设备、编译密集型开发环境。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">选型速决：一句话决策</div>
+  <strong>不想操心 → ext4</strong> &nbsp;|&nbsp; <strong>追求性能 → XFS</strong> &nbsp;|&nbsp; <strong>需要快照/回滚 → Btrfs</strong> &nbsp;|&nbsp; <strong>纯闪存设备 → F2FS</strong>
+</div>
+
+<!-- ── Ch8: ext4 内部设计 ── -->
+<h2 class="sh">8. ext4 内部设计</h2>
+<p class="ss">Extent Tree · JBD2 日志 · 延迟分配 · 块组布局 — 最经典文件系统的实现要点</p>
+
+<div class="cb">
+<span class="cm">/* ===== ext4 磁盘布局 ===== */</span>
+<span class="cm">+-----------+------------+-------------+-----------------+</span>
+<span class="cm">| Superblock| Group Desc | Inode Table | Data Blocks     |</span>
+<span class="cm">|  (Block 0)|   Table    |             | (Extent-mapped) |</span>
+<span class="cm">+-----------+------------+-------------+-----------------+</span>
+
+<span class="cm">/* ===== Extent — ext4 的核心块映射结构 ===== */</span>
+<span class="kw">struct</span> <span class="ty">ext4_extent_header</span> {               <span class="cm">// Extent 树头 (inode 或 extent block 中)</span>
+    <span class="ty">__le16</span>  eh_magic;                       <span class="cm">// 魔数 0xF30A</span>
+    <span class="ty">__le16</span>  eh_entries;                     <span class="cm">// 条目数</span>
+    <span class="ty">__le16</span>  eh_max;                         <span class="cm">// 最大条目数</span>
+    <span class="ty">__le16</span>  eh_depth;                       <span class="cm">// 树深度 (0=叶子)</span>
+};
+
+<span class="kw">struct</span> <span class="ty">ext4_extent</span> {                       <span class="cm">// 叶子节点 — 一段连续物理块</span>
+    <span class="ty">__le32</span>  ee_block;                        <span class="cm">// 起始逻辑块号</span>
+    <span class="ty">__le16</span>  ee_len;                          <span class="cm">// 块数 (≤32768)</span>
+    <span class="ty">__le16</span>  ee_start_hi;                     <span class="cm">// 物理块号高 16 位</span>
+    <span class="ty">__le32</span>  ee_start_lo;                     <span class="cm">// 物理块号低 32 位 → 支持 48-bit 块地址</span>
+};
+
+<span class="cm">/* Extent 示例: 逻辑块 0-99 → 物理块 5000-5099 (一个 Extent 描述 100 个连续块) */</span></div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Extent 树 vs 间接块</h4><div class="lbl">ext4 vs ext3 的关键差异</div>
+    <p>ext3 用<strong>间接块</strong>：inode → 间接块 → 双重间接块 → 三重间接块，大文件需要多次 I/O 才能找到数据块。<br>
+    ext4 用 <strong>Extent 树</strong>：<code>{逻辑起始, 块数, 物理起始}</code> 直接描述连续区间。一个 extent 可映射 128MB (4K×32768)，大幅减少元数据开销和查找延迟。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>JBD2 日志</h4><div class="lbl">Journal Block Device 2</div>
+    <p>ext4 使用 JBD2 实现<strong>写前日志 (Write-Ahead Logging)</strong>。三种模式：<br>
+    <code>data=journal</code> — 数据+元数据全日志（最安全最慢）<br>
+    <code>data=ordered</code> — 数据先写、元数据后日志（<strong>默认，推荐</strong>）<br>
+    <code>data=writeback</code> — 仅元数据日志（快但有风险）</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>延迟分配 (Delayed Allocation)</h4><div class="lbl">减少碎片的关键技术</div>
+    <p><code>write()</code> 时 <strong>不立即分配磁盘块</strong>，只缓存在页缓存中。等到 writeback 时才一次性分配。好处：写多个小块时，内核能看到全部数据量，可以分配<strong>连片的大 Extent</strong>，大幅减少文件碎片。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>灵活块组 (Flex BG)</h4><div class="lbl">大容量优化的布局策略</div>
+    <p>传统 ext 文件系统每个块组独立管理 inode 位图和块位图。Flex BG 将<strong>多个块组绑定在一起</strong>，共享 inode 和块空间，减少位图元数据开销，对大容量 (TB 级) 文件系统特别有效。</p>
+  </div>
+</div>
+
+<!-- ── Ch9: 调试与诊断工具 ── -->
+<h2 class="sh">9. 调试与诊断</h2>
+<p class="ss">fsck · debugfs · xfs_repair · proc/sysfs · 常见问题诊断速查</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>文件系统检查</h4><div class="lbl">fsck / e2fsck / xfs_repair</div>
+    <p><code>fsck -f /dev/sda1</code> — 通用前端<br>
+    <code>e2fsck -f /dev/sda1</code> — ext4 专用<br>
+    <code>xfs_repair /dev/sda1</code> — XFS 专用<br>
+    <code>btrfs check /dev/sda1</code> — Btrfs 专用<br>
+    <strong>注意</strong>：必须 umount 后操作！</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ext4 调试</h4><div class="lbl">debugfs / tune2fs / dumpe2fs</div>
+    <p><code>debugfs /dev/sda1</code> — 交互式检查<br>
+    <code>dumpe2fs -h /dev/sda1</code> — 超级块+块组摘要<br>
+    <code>tune2fs -l /dev/sda1</code> — 文件系统参数<br>
+    <code>e2image -r /dev/sda1 meta.img</code> — 元数据镜像（线上诊断）</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>proc / sysfs</h4><div class="lbl">运行时信息 + 调优</div>
+    <p><code>cat /proc/filesystems</code> — 已注册类型<br>
+    <code>cat /proc/mounts</code> — 当前挂载表<br>
+    <code>/proc/sys/vm/dirty_*</code> — 回写阈值<br>
+    <code>cat /proc/self/mountinfo</code> — 详细挂载信息（含 mount ID）</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>工具</th><th>适用文件系统</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>fsck</code></td><td>通用 (分发到具体 xxxfsck)</td><td>文件系统一致性检查与修复</td></tr>
+    <tr><td><code>debugfs</code></td><td>ext2/ext3/ext4</td><td>交互式查看/修改 inode、块位图、超级块</td></tr>
+    <tr><td><code>dumpe2fs</code></td><td>ext2/ext3/ext4</td><td>打印超级块、块组描述符摘要</td></tr>
+    <tr><td><code>tune2fs</code></td><td>ext2/ext3/ext4</td><td>调整文件系统参数（标签、保留块、mount count…）</td></tr>
+    <tr><td><code>xfs_repair</code> / <code>xfs_db</code></td><td>XFS</td><td>修复 XFS / 调试 XFS 元数据</td></tr>
+    <tr><td><code>btrfs check</code> / <code>btrfs scrub</code></td><td>Btrfs</td><td>检查 Btrfs / 在线数据校验和修复</td></tr>
+    <tr><td><code>iostat -x 1</code></td><td>通用</td><td>监控块设备 I/O 统计 (await, util, r/s, w/s)</td></tr>
+    <tr><td><code>filefrag</code></td><td>通用</td><td>报告文件碎片情况</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:12px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>文件系统只读挂载</td><td>检测到不一致 / 日志错误</td><td><code>dmesg | grep EXT4-fs</code></td></tr>
+    <tr><td>磁盘空间满但 df 显示有余</td><td>inode 耗尽</td><td><code>df -i</code>（查 inode 使用率）</td></tr>
+    <tr><td>删除大文件后空间未释放</td><td>进程仍持有文件句柄</td><td><code>lsof | grep deleted</code></td></tr>
+    <tr><td>写入速度突然骤降</td><td>脏页达 dirty_ratio 触发节流</td><td><code>cat /proc/meminfo | grep Dirty</code></td></tr>
+    <tr><td>mount 失败 "unknown filesystem"</td><td>驱动未加载</td><td><code>modprobe ext4</code> 或检查内核配置</td></tr>
+    <tr><td>大量 D 状态进程卡在 I/O</td><td>存储设备响应慢 / 故障</td><td><code>iostat -x 1</code> 看 await 指标</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Filesystem Framework — 系统化知识体系 · 2026-06 · Linux Kernel v5.x / v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

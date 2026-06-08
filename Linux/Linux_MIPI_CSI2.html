@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIPI 图像接口协议与 Linux 驱动 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain u { color:#fbbf24; text-decoration:none; } .chain em { color:#f87171; font-style:normal; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,38px);font-weight:900">MIPI 图像接口协议</h2>
+  <p class="sec-sub">系统化知识体系 — CSI-2 协议栈 · D-PHY / C-PHY 物理层 · Linux V4L2 驱动 · Device Tree 绑定</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>CMOS Sensor</strong><br><small>图像传感器</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>MIPI D/C-PHY</strong><br><small>物理层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>CSI-2 RX</strong><br><small>协议解析</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>ISP / DMA</strong><br><small>处理·传输</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>User Space</strong><br><small>/dev/videoX</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>MIPI CSI-2 协议</h4><div class="sub">Camera Serial Interface 2</div>
+      <p>MIPI 联盟定义的<em>图像传感器与主机处理器</em> 之间的串行接口标准。五层架构 (PHY→Lane→LLP→Pixel→App)，支持 RAW/RGB/YUV 多种像素格式，<strong>虚拟通道</strong> 多数据流复用。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>D-PHY / C-PHY</h4><div class="sub">两种物理层实现</div>
+      <p><em>D-PHY</em>: 差分信号 + 独立时钟，1-4 lane，最高 9 Gbps/lane。<br><em>C-PHY</em>: 三线编码 + 嵌入时钟，~2.28 bits/symbol，更低 EMI。CSI-2 v4.1 支持 D-PHY v3.5 嵌入式时钟。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Linux V4L2 框架</h4><div class="sub">Video4Linux2 + Media Controller</div>
+      <p><em>v4l2_subdev</em> 管理 Sensor/CSI/ISP 子设备。<em>Media Controller</em> 通过 entity→link→pad 描述数据流拓扑。videobuf2 提供 DMA 缓冲区管理，支持 mmap/DMABUF/USERPTR。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: MIPI 协议体系 ══ -->
+<h2 class="sh">1. MIPI 协议体系 — CSI-2 五层架构</h2>
+<p class="ss">PHY 层 → Lane Management 层 → Low Level Protocol 层 → Pixel/Byte 转换层 → Application 层</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>层级</th><th>名称</th><th>功能</th><th>关键概念</th></tr></thead>
+  <tbody>
+    <tr><td><strong>L1</strong></td><td><strong>PHY 层</strong></td><td>电气特性、信号编码、SoT/EoT 边界</td><td>D-PHY (差分+时钟) · C-PHY (三线编码+嵌入时钟)</td></tr>
+    <tr><td><strong>L2</strong></td><td><strong>Lane Management 层</strong></td><td>多 lane 字节合并、De-skew 去斜校准</td><td>1~8 data lane (D-PHY) · 1~3 trio (C-PHY)</td></tr>
+    <tr><td><strong>L3</strong></td><td><strong>LLP (低级协议) 层</strong></td><td>包边界检测、包头解析、ECC/CRC 校验</td><td>短包 (FS/FE/LS/LE) · 长包 (像素数据)</td></tr>
+    <tr><td><strong>L4</strong></td><td><strong>Pixel/Byte 转换层</strong></td><td>字节 → 像素格式解包</td><td>RAW8/10/12/14/16/20 · RGB565/888 · YUV420/422</td></tr>
+    <tr><td><strong>L5</strong></td><td><strong>Application 层</strong></td><td>ISP 处理、DMA 传输、用户空间消费</td><td>V4L2 /dev/videoX · GStreamer · OpenCV</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">CCI — Camera Control Interface</div>
+  CSI-2 是<strong>数据通道</strong> — 传输像素数据。传感器配置 (分辨率/帧率/曝光/增益) 通过独立的<strong>控制通道</strong> CCI 完成，<strong>通常基于 I2C 或 I3C 两线接口</strong>。CCI 与 CSI-2 数据通道并行工作。
+</div>
+
+<!-- ══ Ch2: D-PHY & C-PHY ══ -->
+<h2 class="sh">2. D-PHY vs C-PHY — 物理层深度对比</h2>
+<p class="ss">D-PHY: 差分信号 + 独立时钟 · C-PHY: 三线三元编码 + 嵌入时钟 · 2024 D-PHY v3.5 新增嵌入式时钟</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>D-PHY — 差分信号 + 源同步时钟</h4><div class="lbl">1 Clock lane + 1~8 Data lane</div>
+    <p><strong>HS (高速) 模式</strong>: 低压差分信号 (LVDS-like), 200mV 摆幅, 80Mbps~9Gbps/lane。DDR 双沿采样。<br>
+    <strong>LP (低功耗) 模式</strong>: 单端 LVCMOS, 1.2V 摆幅, ≤10Mbps。用于控制命令和空闲。<br>
+    <strong>模式切换序列</strong>: LP-11 → LP-01 → LP-00 → HS-Enable<br>
+    <strong>2024 v3.5</strong>: 新增 <strong>ECM 嵌入式时钟</strong> (128b/132b 编码) — 无需独立时钟 lane! + ALP 替代低功耗模式 + 非线性 DFE 均衡。v4.0 目标 16Gbps/lane。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>C-PHY — 三线三元编码 + 嵌入时钟</h4><div class="lbl">1~3 Trio (每 Trio 3 线, 无独立时钟)</div>
+    <p><strong>工作原理</strong>: 三线电压差 (A-B, B-C, C-A) 产生 6 种状态 (+x,-x,+y,-y,+z,-z)。每符号 ~<strong>2.28 bits</strong> (7 符号→16 bits)。<br>
+    <strong>优势</strong>: 带宽效率 ~2.28× D-PHY · 每 lane 少 1 根线 · EMI 低 ~10dB (谐波能量分散)。<br>
+    <strong>速率</strong>: 6 Gsps trio → ~13.7Gbps 净数据率。CDR 时钟数据恢复。模式切换延迟低于 D-PHY。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>特性</th><th>D-PHY</th><th>C-PHY</th></tr></thead>
+  <tbody>
+    <tr><td>每 Lane 线数</td><td>4 (1 CLK + 1 data pair×2)</td><td class="g"><strong>3 (无独立时钟)</strong></td></tr>
+    <tr><td>时钟方式</td><td>源同步差分时钟</td><td class="g"><strong>嵌入时钟 (CDR 恢复)</strong></td></tr>
+    <tr><td>编码效率</td><td>1 bit/symbol</td><td class="g"><strong>~2.28 bits/symbol</strong></td></tr>
+    <tr><td>HS 信号</td><td>低压差分 ~200mV</td><td>三线三元编码 ~200mV</td></tr>
+    <tr><td>LP 信号</td><td>单端 1.2V, ≤10Mbps</td><td>类似双模, 切换延迟更低</td></tr>
+    <tr><td>最大速率/lane</td><td>~9 Gbps (v3.0)</td><td class="g"><strong>~13.7 Gbps (6 Gsps)</strong></td></tr>
+    <tr><td>EMI</td><td>较高 (离散时钟谐波)</td><td class="g"><strong>低 ~10dB (谐波分散)</strong></td></tr>
+    <tr><td>2024 最新版</td><td>v3.5 (ECM 嵌入式时钟)</td><td>C-PHY v2.1</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ D-PHY HS 模式进入序列 ═══ */</span>
+<span class="cm">  Idle (LP-11)</span>
+<span class="cm">      │</span>
+<span class="cm">      ▼  LP-01      (1.2V 单端: CLK+, CLK-)</span>
+<span class="cm">      ▼  LP-00      (进入 HS 请求)</span>
+<span class="cm">      ▼  HS-Enable  (~200mV 差分开始)</span>
+<span class="cm">      │</span>
+<span class="cm">  HS Burst  (SoT → 数据负载 → EoT)</span>
+<span class="cm">      │</span>
+<span class="cm">      ▼  LP-11      (回到空闲)</span>
+
+<span class="cm">/* ═══ C-PHY 三线编码 — 6 种线状态 ═══ */</span>
+<span class="cm">  三线电压: A=3/4V, B=1/2V, C=1/4V</span>
+<span class="cm">  A-B=+¼V (+x)   B-A=-¼V (-x)</span>
+<span class="cm">  B-C=+¼V (+y)   C-B=-¼V (-y)</span>
+<span class="cm">  C-A=+¼V (+z)   A-C=-¼V (-z)</span>
+<span class="cm">  7 符号 编码为 16 bits → 每符号 16/7 ≈ 2.28 bits</span></div>
+
+<!-- ══ Ch3: CSI-2 数据包 ══ -->
+<h2 class="sh">3. CSI-2 数据包 — 短包 · 长包 · 像素格式 · 虚拟通道</h2>
+<p class="ss">短包传输帧/行同步 · 长包传输像素数据 · VC 实现多流复用 · ECC/CRC 保证可靠性</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>短包 (Short Packet) — 4 字节</h4><div class="lbl">Data ID + Word Count + ECC</div>
+    <p><strong>FS</strong> (0x00): 帧起始 · <strong>FE</strong> (0x01): 帧结束<br>
+    <strong>LS</strong> (0x02): 行起始 · <strong>LE</strong> (0x03): 行结束<br>
+    每个短包携带 <strong>16-bit 帧号或行号</strong>。Data ID 的 bit[7:6] 编码 <strong>虚拟通道 (VC 0~3)</strong>，bit[5:0] 为数据类型。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>长包 (Long Packet) — 像素数据</h4><div class="lbl">Header (4B) + Payload (0~65535B) + Footer (2B CRC)</div>
+    <p><strong>Header</strong>: Data ID + Word Count (16-bit) + ECC (8-bit)<br>
+    <strong>Payload</strong>: 像素数据 (Word Count 字节)<br>
+    <strong>Footer</strong>: 16-bit CRC 校验和<br>
+    RAW10/12/14 等非字节对齐格式通过<strong>字节打包</strong>传输 (如 5 个 RAW10 像素 = 50 bits → 7 字节)。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>像素格式</th><th>Data Type</th><th>每像素 bits</th><th>像素格式</th><th>Data Type</th><th>每像素 bits</th></tr></thead>
+  <tbody>
+    <tr><td>RGB444</td><td>0x20</td><td>12</td><td>RAW8</td><td>0x2A</td><td>8</td></tr>
+    <tr><td>RGB555</td><td>0x21</td><td>15</td><td>RAW10</td><td>0x2B</td><td>10</td></tr>
+    <tr><td>RGB565</td><td>0x22</td><td>16</td><td>RAW12</td><td>0x2C</td><td>12</td></tr>
+    <tr><td>RGB888</td><td>0x24</td><td>24</td><td>RAW14</td><td>0x2D</td><td>14</td></tr>
+    <tr><td>YUV422-8b</td><td>0x1E</td><td>16</td><td>RAW16</td><td>0x2E</td><td>16</td></tr>
+    <tr><td>YUV422-10b</td><td>0x1F</td><td>20</td><td>RAW20</td><td>0x2F</td><td>20</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">虚拟通道 (Virtual Channel) — 多数据流复用</div>
+  <strong>D-PHY</strong>: 最多 16 个 VC (v2.0+) · <strong>C-PHY</strong>: 最多 32 个 VC。多个相机通过<strong>时分复用 (TDM)</strong> 共享一个 CSI PHY 接口，硬件聚合器按 VC ID 区分不同相机数据流。单 CSI 解码器可同时解码所有 VC 的数据包 → 每 VC 在用户空间对应独立的 /dev/videoX。
+</div>
+
+<!-- ══ Ch4: 版本演进 ══ -->
+<h2 class="sh">4. CSI-2 版本演进 — 2005~2025</h2>
+<p class="ss">从 RAW8 到 RAW28 · 从 VC 4 个到 32 个 · 从 D-PHY only 到 A-PHY 长距离 · AI 增强 · D-PHY ECM</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>版本</th><th>年份</th><th>关键更新</th></tr></thead>
+  <tbody>
+    <tr><td><strong>v1.0</strong></td><td>2005</td><td>初始发布 — D-PHY 支持, RAW8/10/12, RGB/YUV, 4 VC</td></tr>
+    <tr><td><strong>v2.0</strong></td><td>2017</td><td>RAW16/20, VC→32, LRTE, DPCM 压缩, 数据加扰, 支持 C-PHY v1.0</td></tr>
+    <tr><td><strong>v3.0</strong></td><td>2019</td><td>RAW24, USL (统一串行链路), SROI (智能感兴趣区域), EoTp, C-PHY v2.0</td></tr>
+    <tr><td class="g"><strong>v4.0</strong></td><td class="g">2022</td><td class="g">AOSC (始终在线哨兵通道), MPC (多像素压缩), RAW28, I3C 传输</td></tr>
+    <tr><td class="g"><strong>v4.1</strong></td><td class="g">2024</td><td class="g"><strong>AI 增强</strong> (更低符号速率/通道数实现同等带宽), C-PHY v3.0 对齐, I3C HDR 模式 AOSC</td></tr>
+    <tr><td><strong>v4.2</strong></td><td>2025</td><td>事件传感器标准化, MPC 伪代码更新, D-PHY ECM v3.5 正式支持</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch5: Linux V4L2 ══ -->
+<h2 class="sh">5. Linux V4L2 + Media Controller — MIPI 摄像头驱动架构</h2>
+<p class="ss">Sensor (I2C subdev) → CSI RX (Platform) → ISP → DMA → /dev/videoX — 完整驱动栈</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>v4l2_subdev — 子设备模型</h4><div class="lbl">Sensor / CSI / ISP 统一为 subdev</div>
+    <p>每种硬件组件 (Sensor, CSI RX, ISP, DMA) 注册为独立的 <code>v4l2_subdev</code>。每个 subdev 有一组 <code>v4l2_subdev_ops</code> (core/video/pad)。<strong>V4L2 Async 框架</strong>: Sensor (I2C) 和 CSI (Platform) driver 各自独立 probe，通过 <code>v4l2_async_notifier</code> 等待全部就绪后完成绑定。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Media Controller — 拓扑管理</h4><div class="lbl">media_entity → pad → link 描述 pipeline</div>
+    <p><strong>entity</strong>: 每个 subdev 是图中的一个节点。<br>
+    <strong>pad</strong>: 节点的输入/输出端口 (Sink/Source)。<br>
+    <strong>link</strong>: 两个 pad 之间的有向数据流连接。<br>
+    用户空间通过 <code>/dev/mediaX</code> 接口配置 pipeline (media-ctl 工具)。<br>
+    <strong>拓扑示例</strong>: [Sensor]→source pad==[CSI]=sink pad==[ISP]==source pad→[Capture]</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>videobuf2 — DMA 缓冲区</h4><div class="lbl">mmap · DMABUF · USERPTR</div>
+    <p>CSI 控制器通过 DMA 将解析后的像素写入 vb2 缓冲区。一帧完成后 IRQ handler → <code>vb2_buffer_done(VB2_BUF_STATE_DONE)</code>。<br>
+    用户空间通过 <code>ioctl(VIDIOC_DQBUF)</code> 获取填充好的帧数据。<br>
+    三种内存模式: <strong>mmap</strong> (内核分配, 零拷贝) · <strong>DMABUF</strong> (跨设备共享) · <strong>USERPTR</strong> (用户分配)。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ MIPI 摄像头 — 从 Sensor 到用户空间 ═══ */</span>
+<b>Camera Sensor</b> (CMOS → MIPI D-PHY 输出)
+  │  I2C/I3C 控制: v4l2_subdev_ops.video.s_stream(1)
+  │  格式配置: v4l2_subdev_ops.pad.set_fmt() → 设置 RAW10, 1920×1080, 4-lane
+  ▼
+<b>CSI-2 RX Controller</b> (D-PHY 接收 → LLP 解析 → Pixel/Byte 解包)
+  │  DMA 传输: 像素写入 vb2 缓冲区
+  ▼
+<b>DDR Buffer</b> (videobuf2 queue — mmap 映射)
+  │  帧完成 IRQ → vb2_buffer_done()
+  ▼
+<b>V4L2 Video Device</b> (/dev/video0)
+  │  ioctl(VIDIOC_DQBUF) → 获取帧数据
+  ▼
+<b>User Space</b> (GStreamer / OpenCV / libcamera → 显示/编码/分析)</div>
+
+<div class="callout info">
+  <div class="ct">libcamera — 现代 Linux 相机框架</div>
+  libcamera 是 Linux 基金会托管的<strong>新一代相机用户空间栈</strong>，替代传统的 V4L2 直连方式。它直接操作 Media Controller 拓扑，管理整个 pipeline 的配置、buffer 分配和流控制，屏蔽了不同 SoC (i.MX/Rockchip/RPi/Starfive) 的平台差异。2024 年已成为嵌入式 Linux 相机开发的首选。
+</div>
+
+<!-- ══ Ch6: Device Tree ══ -->
+<h2 class="sh">6. Device Tree 绑定 — Sensor · CSI · Endpoint 互联</h2>
+<p class="ss">port/endpoint + remote-endpoint 描述硬件连接 · data-lanes/clock-lanes 指定物理通道 · link-frequencies 时钟协商</p>
+
+<div class="cb">
+<span class="cm">/* ===== Sensor 节点 — 以 Sony IMX219 为例 ===== */</span>
+&amp;i2c1 {
+    imx219: sensor@<span class="nu">10</span> {
+        compatible = <span class="st">"sony,imx219"</span>;              <span class="cm">// 驱动匹配字符串</span>
+        reg = &lt;<span class="nu">0x10</span>&gt;;                               <span class="cm">// I2C 地址</span>
+
+        clocks = &lt;&amp;clk_core MCLK_DIV&gt;;           <span class="cm">// 主时钟源</span>
+        clock-names = <span class="st">"xclk"</span>;
+        assigned-clock-rates = &lt;<span class="nu">24000000</span>&gt;;       <span class="cm">// 24MHz MCLK</span>
+
+        reset-gpios = &lt;&amp;gpio1 <span class="nu">15</span> GPIO_ACTIVE_LOW&gt;; <span class="cm">// 复位引脚</span>
+        vana-supply  = &lt;&amp;vaux3&gt;;                 <span class="cm">// 模拟电源</span>
+        vdig-supply  = &lt;&amp;vdd1v2&gt;;                <span class="cm">// 数字电源</span>
+
+        port {                                     <span class="cm">// MIPI CSI-2 数据输出端口</span>
+            imx219_out: endpoint {
+                remote-endpoint = &lt;&amp;csi_in&gt;;      <span class="cm">// ★ 连接到 CSI 控制器</span>
+                clock-lanes = &lt;<span class="nu">0</span>&gt;;               <span class="cm">// Clock lane 编号 = 0</span>
+                data-lanes = &lt;<span class="nu">1 2</span>&gt;;             <span class="cm">// 使用 Data Lane 1 和 2</span>
+                link-frequencies = /bits/ <span class="nu">64</span> &lt;<span class="nu">456000000</span>&gt;;
+            };
+        };
+    };
+};
+
+<span class="cm">/* ===== CSI-2 控制器节点 ===== */</span>
+&amp;csi {
+    ports {
+        <span class="kw">#address-cells</span> = &lt;<span class="nu">1</span>&gt;; <span class="kw">#size-cells</span> = &lt;<span class="nu">0</span>&gt;;
+
+        port@<span class="nu">0</span> {                              <span class="cm">// 输入 — 连接 Sensor</span>
+            reg = &lt;<span class="nu">0</span>&gt;;
+            csi_in: endpoint {
+                remote-endpoint = &lt;&amp;imx219_out&gt;;
+                bus-type = &lt;<span class="nu">4</span>&gt;;              <span class="cm">// V4L2_FWNODE_BUS_TYPE_CSI2_DPHY</span>
+                data-lanes = &lt;<span class="nu">1 2</span>&gt;;
+            };
+        };
+        port@<span class="nu">1</span> {                              <span class="cm">// 输出 — 连接 ISP</span>
+            reg = &lt;<span class="nu">1</span>&gt;;
+            csi_out: endpoint {
+                remote-endpoint = &lt;&amp;isp_in&gt;;
+            };
+        };
+    };
+};</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>属性</th><th>说明</th><th>示例值</th></tr></thead>
+  <tbody>
+    <tr><td><code>compatible</code></td><td>驱动匹配字符串</td><td><code>"sony,imx219"</code></td></tr>
+    <tr><td><code>reg</code></td><td>I2C 设备地址</td><td><code>&lt;0x10&gt;</code></td></tr>
+    <tr><td><code>clock-lanes</code></td><td>时钟通道编号</td><td><code>&lt;0&gt;</code></td></tr>
+    <tr><td><code>data-lanes</code></td><td>数据通道列表</td><td><code>&lt;1 2 3 4&gt;</code></td></tr>
+    <tr><td><code>link-frequencies</code></td><td>MIPI 链路频率 (Hz)</td><td>/bits/ 64 &lt;456000000&gt;</td></tr>
+    <tr><td><code>bus-type</code></td><td>总线类型</td><td>4=CSI-2 D-PHY, 5=CSI-2 C-PHY</td></tr>
+    <tr><td><code>remote-endpoint</code></td><td>连接对方 endpoint 的 phandle</td><td>&lt;&amp;csi_in&gt;</td></tr>
+    <tr><td><code>rotation</code></td><td>传感器安装旋转角度</td><td>0/90/180/270</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch7: 调试 ══ -->
+<h2 class="sh">7. 调试与工具</h2>
+<p class="ss">media-ctl 拓扑管理 · v4l2-ctl 格式/流控制 · 常见问题诊断</p>
+
+<div class="cb">
+<span class="cm">/* ===== 内核源码关键路径 ===== */</span>
+<span class="cm">drivers/media/v4l2-core/          ← V4L2 核心框架</span>
+<span class="cm">drivers/media/mc/                 ← Media Controller 核心</span>
+<span class="cm">drivers/media/common/videobuf2/   ← videobuf2 DMA 缓冲区管理</span>
+<span class="cm">drivers/media/i2c/                ← Sensor 驱动 (imx219.c, gc05a2.c...)</span>
+<span class="cm">drivers/media/platform/           ← CSI/ISP 平台驱动</span>
+<span class="cm">include/media/v4l2-subdev.h       ← subdev 操作集定义</span>
+<span class="cm">include/media/media-entity.h      ← entity/link/pad 数据结构</span>
+
+<span class="cm">/* ===== 用户空间工具 ===== */</span>
+<span class="cm"># 查看 Media Controller 拓扑</span>
+media-ctl -p -d /dev/media0
+<span class="cm"># 列出所有 entity/link/pad — 确认 pipeline 连接正确</span>
+
+<span class="cm"># 配置 Sensor 格式</span>
+media-ctl -d /dev/media0 --set-v4l2 <span class="st">'"imx219":0[fmt:SRGGB10_1X10/1920x1080]'</span>
+
+<span class="cm"># 查看 V4L2 设备能力</span>
+v4l2-ctl --list-devices
+v4l2-ctl -d /dev/video0 --list-formats-ext
+
+<span class="cm"># 抓取一帧 (RAW10 → 文件)</span>
+v4l2-ctl -d /dev/video0 --set-fmt-video width=<span class="nu">1920</span>,height=<span class="nu">1080</span> \
+  --stream-mmap --stream-count=<span class="nu">1</span> --stream-to=frame.raw</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>Sensor probe 失败 (-EPROBE_DEFER)</td><td>时钟/regulator/GPIO 尚未就绪</td><td>dmesg 查 defer 日志；确认 clock/rst 配置</td></tr>
+    <tr><td>Media entity 链路缺失</td><td>remote-endpoint phandle 拼写错误</td><td><code>media-ctl -p</code> 查看拓扑</td></tr>
+    <tr><td>MIPI 数据无法接收 (超时)</td><td>lane 数/时钟频率不匹配</td><td>示波器测 D-PHY lane；检查 link-frequencies</td></tr>
+    <tr><td>图像花屏 / 彩条错位</td><td>RAW 格式/位深配置错误</td><td>确认 Sensor 输出格式与 CSI 配置一致</td></tr>
+    <tr><td>帧率远低于预期</td><td>MIPI 时钟过低 / lane 数不足</td><td>检查 link-frequencies + data-lanes 配置</td></tr>
+    <tr><td>vb2 缓冲区耗尽</td><td>用户空间处理速度慢于传感器帧率</td><td>增加缓冲区数量或降低帧率</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  MIPI Camera Interface &amp; Linux V4L2 — 系统化知识体系 · 2026-06 · CSI-2 v4.2 · D-PHY v3.5
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

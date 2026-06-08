@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音视频编解码知识体系 — 从入门到实践</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+/* Page-specific overrides — only what immersive_dark_style.css doesn't provide */
+
+/* ===== Enhanced Table Rendering ===== */
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0}
+.ptbl thead th{
+  background:linear-gradient(180deg, rgba(108,99,255,.12), rgba(108,99,255,.04));
+  color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);
+  position:sticky;top:0;white-space:nowrap;
+}
+.ptbl tbody td{
+  padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;
+  border-bottom:1px solid rgba(255,255,255,.03);
+}
+.ptbl tbody tr:first-child td{padding-top:14px}
+.ptbl tbody tr:last-child td{border-bottom:none;padding-bottom:14px}
+.ptbl tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td code{font-size:11px;background:rgba(108,99,255,.08);padding:2px 7px;border-radius:4px}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0;white-space:nowrap}
+
+/* Color-coded cell overrides */
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+.slider-row{display:flex;align-items:center;gap:12px;margin:14px auto;justify-content:center;flex-wrap:wrap;width:100%;max-width:960px}
+.slider-row label{font-size:12px;color:#8888aa;font-weight:600}
+.slider-row input[type=range]{width:180px;accent-color:#6c63ff;height:4px}
+.slider-row .sl-v{font-size:13px;font-weight:700;color:#a78bfa;min-width:32px;text-align:center}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin:8px 0 0;font-size:11px;width:100%;max-width:960px}
+.legend .ld{display:flex;align-items:center;gap:5px;color:#8888aa}
+.legend .ls{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- S1: Hero -->
+<!-- ============================================================ -->
+<div class="sec" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:3s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:4s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(32px,5.5vw,48px);font-weight:900">音视频编解码知识体系</h2>
+  <p class="sec-sub" id="s1s">从像素到码流，从 H.264 到 WebRTC——系统化掌握多媒体开发核心技术</p>
+
+  <div class="cv-wrap" id="heroWrap" style="height:340px;margin-top:20px">
+    <canvas id="heroCanvas"></canvas>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2: 基础概念 -->
+<!-- ============================================================ -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" id="s2t">基础概念</h2>
+  <p class="sec-sub" id="s2s">理解音视频的三大维度：时间（采样率/帧率）、空间（分辨率/色深）、数据量（码率）</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>采样率 / 帧率</h4>
+      <div class="sub">时间维度的精度</div>
+      <p>音频：<em>44.1kHz</em> CD、<em>48kHz</em> 视频/专业、<em>16kHz</em> 语音<br>视频：<em>24fps</em> 电影、<em>30fps</em> TV、<em>60fps</em> 游戏<br>奈奎斯特定理：采样率 ≥ 2×信号最高频率</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>分辨率 / 色深</h4>
+      <div class="sub">空间维度的精细度</div>
+      <p>视频：<em>1080p</em>、<em>4K</em><br>像素格式：<em>YUV420</em> 最常用、<em>NV12</em> 硬编、<em>RGB24</em> 显示<br>色深：<em>8bit</em> SDR、<em>10bit</em> HDR</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>码率</h4>
+      <div class="sub">数据量控制的核心</div>
+      <p><em>CBR</em> 恒定码率：网络友好，画质波动<br><em>VBR</em> 可变码率：画质稳定，码率波动<br><em>CRF</em> 恒定质量：x264/x265 首选，18-28 常用</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:20px">
+    <table>
+    <thead>
+      <tr><th>分辨率</th><th>像素尺寸</th><th>总像素</th><th>常见帧率</th><th>像素格式</th><th>色深</th><th>典型场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>480p (SD)</td><td>720×480</td><td>~345K</td><td>24/30 fps</td><td>YUV420</td><td>8 bit</td><td>DVD、监控</td></tr>
+      <tr><td>720p (HD)</td><td>1280×720</td><td>~0.9M</td><td>30/60 fps</td><td>YUV420 / NV12</td><td>8 bit</td><td>网络视频、低带宽</td></tr>
+      <tr><td class="g">1080p (FHD)</td><td class="g">1920×1080</td><td class="g">~2.1M</td><td class="g">24/30/60 fps</td><td class="g">YUV420 / NV12</td><td>8/10 bit</td><td class="g">主流高清、蓝光</td></tr>
+      <tr><td>1440p (2K/QHD)</td><td>2560×1440</td><td>~3.7M</td><td>30/60/144 fps</td><td>YUV420 / P010</td><td>8/10 bit</td><td>游戏、高端显示器</td></tr>
+      <tr><td>2160p (4K UHD)</td><td>3840×2160</td><td>~8.3M</td><td>24/30/60 fps</td><td>YUV420 / NV12 / P010</td><td>10 bit (HDR)</td><td>超高清、HDR、流媒体</td></tr>
+      <tr><td>4320p (8K UHD)</td><td>7680×4320</td><td>~33.2M</td><td>24/30/60 fps</td><td>YUV420 / P010</td><td>10/12 bit</td><td>未来标准、数字影院</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:0">
+    <table>
+    <thead>
+      <tr><th>像素格式</th><th>Y 采样</th><th>U 采样</th><th>V 采样</th><th>每像素比特数</th><th>常用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td style="color:#a78bfa;font-weight:600">YUV420 (I420/YV12)</td><td>W×H</td><td>W/2×H/2</td><td>W/2×H/2</td><td>12 bpp</td><td>编解码标准格式、FFmpeg 默认</td></tr>
+      <tr><td>YUV422 (NV16/I422)</td><td>W×H</td><td>W/2×H</td><td>W/2×H</td><td>16 bpp</td><td>专业视频编辑、广播</td></tr>
+      <tr><td>YUV444</td><td>W×H</td><td>W×H</td><td>W×H</td><td>24 bpp</td><td>无损/高质量中间格式</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">NV12</td><td>W×H</td><td colspan="2" style="text-align:center">UV 交错 W/2×H/2</td><td>12 bpp</td><td>硬件编解码 (VAAPI/V4L2/MediaCodec)</td></tr>
+      <tr><td style="color:#a78bfa;font-weight:600">RGB24</td><td colspan="3" style="text-align:center">R/G/B 各 W×H</td><td>24 bpp</td><td>显示渲染、截图、图像处理</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p style="font-size:13px;color:#b0b0d0;line-height:1.8;margin:14px auto 8px;text-align:left;max-width:960px;width:100%">
+    <strong style="color:#e0e0ff">量化 (Quantization)</strong> 是将采样到的连续幅度值映射到有限个离散值的过程。量化精度由<strong style="color:#e0e0ff">比特深度 (Bit Depth)</strong> 决定——位深越高，可区分的色阶越多，渐变过渡越平滑。
+  </p>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:0">
+    <table>
+    <thead>
+      <tr><th>比特深度</th><th>量化级数</th><th>典型应用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>8 bit</td><td>256 级 (2⁸)</td><td>图像每个色彩通道、SDR 视频、JPEG</td></tr>
+      <tr><td class="g">10 bit</td><td class="g">1024 级 (2¹⁰)</td><td class="g">HDR 视频 (HDR10/HLG)、专业摄影</td></tr>
+      <tr><td>12 bit</td><td>4096 级 (2¹²)</td><td>高端后期制作、数字中间片、Dolby Vision</td></tr>
+      <tr><td>16 bit</td><td>65536 级 (2¹⁶)</td><td>无损音频 (CD 音质)、专业混音母带</td></tr>
+      <tr><td style="color:#fbbf24;font-weight:600">24 bit</td><td style="color:#fbbf24;font-weight:600">1677 万级 (2²⁴)</td><td>录音室母带、Hi-Res 音频、医学影像</td></tr>
+    </tbody>
+    </table>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:0">
+    <table>
+    <thead>
+    </thead>
+    <tbody>
+      <tr><td>8 bit</td><td>256 级 (0–255)</td><td>~3.1 MB/帧</td><td>—</td><td>H.264 8bit / H.265 Main</td><td>SDR 视频、网络流媒体</td></tr>
+      <tr><td class="g">10 bit</td><td class="g">1024 级 (0–1023)</td><td class="g">~3.9 MB/帧</td><td class="g">编码效率 ↑5-10%</td><td class="g">H.264 Hi10P / H.265 Main10</td><td class="g">HDR、专业制作、色带消除</td></tr>
+      <tr><td>12 bit</td><td>4096 级 (0–4095)</td><td>~4.7 MB/帧</td><td>编码效率 ↑8-12%</td><td>H.265 RangeExt / AV1</td><td>数字影院、调色母版</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:0">
+    <table>
+    <thead>
+      <tr><th>量化精度</th><th>TV Range (Limited)</th><th>Full Range</th><th>色带/Banding</th><th>编码收益</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>8 bit</strong></td><td>Y:16–235, CbCr:16–240</td><td>0–255 (JPEG/屏幕)</td><td class="r">渐变天空/暗场可见色带</td><td>基准（100% 码率）</td></tr>
+      <tr><td style="color:#34d399;font-weight:600"><strong>10 bit</strong></td><td>Y:64–940, CbCr:64–960</td><td>0–1023 (HDR 制作)</td><td class="g">色带显著减少，暗部更干净</td><td>比 8bit 省 5-10% 码率*</td></tr>
+      <tr><td><strong>12 bit</strong></td><td>Y:256–3760, CbCr:256–3840</td><td>0–4095 (调色中间片)</td><td class="g">几乎完全消除色带</td><td>比 8bit 省 8-12% 码率*</td></tr>
+    </tbody>
+  </table>
+    <p style="font-size:10px;color:#555;margin-top:4px">* 同画质下：高位深预测更精确 → 残差更小 → 熵编码后码率更低。这是 10bit 编码即使目标为 8bit 显示也有收益的原因。</p>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:16px">
+    <div class="ct">YUV 为什么比 RGB 更适合视频编码？</div>
+    YUV 将亮度（Y）与色度（UV）分离。人眼对亮度敏感但对色度不敏感，所以可以对 UV 分量<strong>下采样（4:2:0）</strong>，在几乎不损失感知画质的情况下将数据量直接减半——这是视频压缩的第一道"免费午餐"。
+  </div>
+
+  <div class="cv-wrap" id="yuvWrap" style="height:280px;margin-top:20px">
+    <canvas id="yuvCanvas"></canvas>
+  </div>
+  <div class="ctrls">
+    <button class="cbtn act" onclick="setYuvMode('444')">4:4:4</button>
+    <button class="cbtn" onclick="setYuvMode('422')">4:2:2</button>
+    <button class="cbtn" onclick="setYuvMode('420')">4:2:0</button>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S3: GOP 与帧类型 -->
+<!-- ============================================================ -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" id="s3t">GOP 与帧类型</h2>
+  <p class="sec-sub" id="s3s">I帧是锚点，P帧靠预测，B帧压得最小——三者的编排决定了压缩效率与随机访问能力的平衡</p>
+
+  <div class="cv-wrap" id="gopWrap" style="height:320px">
+    <canvas id="gopCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>I 帧 — 帧内编码帧</h4>
+      <div class="sub">关键帧 / IDR 帧</div>
+      <p>只使用本帧内像素预测，<em>不依赖任何其他帧</em>。压缩比最低（~7:1），但可作为随机访问点。<strong>IDR 帧</strong>是特殊的 I 帧，会清空参考帧缓冲。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>P 帧 — 前向预测帧</h4>
+      <div class="sub">Predicted Frame</div>
+      <p>参考<em>前一个 I 或 P 帧</em>进行帧间预测。压缩比中等（~20:1），实时编码常用。只有<strong>与参考帧不同的部分</strong>才需要编码。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>B 帧 — 双向预测帧</h4>
+      <div class="sub">Bi-predictive Frame</div>
+      <p>同时参考<em>前向和后向</em>帧预测。压缩比最高（~50:1），但引入编码延迟。<strong>不被其他帧参考</strong>，丢 B 帧不会扩散错误。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;width:100%;margin-top:16px">
+    <div class="ct">PTS vs DTS — 解码序与显示序的分离</div>
+    PTS（Presentation Time Stamp）= 该帧何时<strong>显示</strong>；DTS（Decode Time Stamp）= 该帧何时<strong>解码</strong>。<br>
+    含 B 帧时：解码序 <code>I₀ P₃ B₁ B₂</code> → 显示序 <code>I₀ B₁ B₂ P₃</code>。只有无 B 帧时 PTS = DTS。
+  </div>
+
+  <details style="max-width:960px;width:100%;margin-top:12px">
+    <summary>GOP 大小如何影响画质与延迟？</summary>
+    <div>
+      <strong>短 GOP（GOP=15~30）</strong>：I 帧频繁 → 容错性好、seek 快，但压缩效率低。适合实时通信。<br>
+      <strong>长 GOP（GOP=60~300）</strong>：I 帧稀疏 → 压缩效率高，但 seek 慢、丢 I 帧则灾难。适合离线编码/点播。<br>
+      <strong>全 I 帧（GOP=1）</strong>：编辑友好但码率极高。用于视频编辑中间格式（ProRes/DNxHD）。
+    </div>
+  </details>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: 视频编解码标准演进 -->
+<!-- ============================================================ -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" id="s4t">视频编解码标准演进</h2>
+  <p class="sec-sub" id="s4s">从 MPEG 到 VVC，每代压缩效率翻倍——但起点永远是 H.264</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box">MPEG-2 · 1995</span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.35);background:rgba(108,99,255,.08)"><strong>H.264/AVC · 2003</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">H.265/HEVC · 2013</span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">AV1 · 2018</span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">VVC/H.266 · 2020</span>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%">
+    <table>
+    <thead>
+      <tr><th>特性</th><th>H.264</th><th>H.265</th><th>AV1</th><th>VVC</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>最大块尺寸</td><td>16×16 (MB)</td><td class="g">64×64 (CTU)</td><td class="g">128×128 (SB)</td><td class="g">128×128 (CTU)</td></tr>
+      <tr><td>帧内预测模式</td><td>9 (4×4)</td><td class="g">35</td><td class="g">56+</td><td class="g">67</td></tr>
+      <tr><td>运动矢量精度</td><td>1/4 像素</td><td class="g">1/4 像素</td><td class="g">1/8 像素</td><td class="g">1/16 像素</td></tr>
+      <tr><td>变换</td><td>DCT 4×4/8×8</td><td class="g">DCT/DST 4-32</td><td class="g">DCT/ADST/Flip</td><td class="g">MTS + LFNST</td></tr>
+      <tr><td>环路滤波</td><td>去块滤波</td><td class="g">去块 + SAO</td><td class="g">去块+CDEF+LR</td><td class="g">去块+SAO+ALF</td></tr>
+      <tr><td>比 H.264 省码率</td><td>—</td><td class="g">~50%</td><td class="g">~60%</td><td class="g">~70%</td></tr>
+      <tr><td>编码复杂度</td><td>1×</td><td class="y">2-3×</td><td class="r">10-50×</td><td class="r">10-100×</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">为什么必须从 H.264 学起？</div>
+    H.264 是<strong>所有现代编码器的基石</strong>——H.265/AV1/VVC 的概念都可追溯到 H.264（块划分→更大块，预测→更多方向，滤波→更多层次）。<br>
+    并且 H.264 <strong>专利友好</strong>（Cisco 开源 OpenH264）、<strong>硬件编解码全面普及</strong>、<strong>参考资料最丰富</strong>（x264 源码 + Richardson 的书）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5: H.264 编码器架构总览 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" id="s5t">H.264 编码器架构总览</h2>
+  <p class="sec-sub" id="s5s">编码器由<strong>前向编码通路</strong>（预测→变换→量化→熵编码）和<strong>反馈重建通路</strong>（反量化→反变换→去块滤波→参考帧缓冲）组成闭环。编码器内嵌解码器副本是理解视频压缩的关键。</p>
+
+  <div class="cv-wrap" id="encWrap" style="height:380px">
+    <canvas id="encCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>VCL — 视频编码层</h4>
+      <div class="sub">Video Coding Layer · 压缩的核心</div>
+      <p>负责实际的压缩工作：预测、变换、量化、熵编码。输出 <strong>Slice 数据</strong>，即编码后的宏块流。VCL 与网络无关，只关心如何高效压缩视频。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>NAL — 网络抽象层</h4>
+      <div class="sub">Network Abstraction Layer · 打包与传输</div>
+      <p>将 VCL 输出的数据封装成 <strong>NAL Unit</strong>，添加头部（nal_unit_type, nal_ref_idc）。适配不同传输场景：<em>RTP 包化</em>实时流、<em>字节流</em>文件、<em>MP4</em>容器。</p>
+    </div>
+  </div>
+
+  <div class="callout success" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">编码器设计精髓：反馈环路中的解码器副本</div>
+    编码器<strong>必须知道解码器能看到什么重建帧</strong>，才能保证后续预测的一致性。如果两侧参考帧不同，就会产生<strong>漂移（Drift）</strong>，画质快速恶化。这就是为什么 x264 源码中同时存在 encode 和 decode 路径。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S6: H.264 帧内预测 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" id="s6t">H.264 帧内预测</h2>
+  <p class="sec-sub" id="s6s">利用当前帧内已编码的相邻像素预测当前块——消除<strong>空间冗余</strong>。H.264 支持 4×4（9种方向模式）、8×8（9种）、16×16（4种）三种粒度</p>
+
+  <div class="cv-wrap" id="intraWrap" style="height:380px">
+    <canvas id="intraCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>4×4 亮度块 · 9 种方向</h4>
+      <div class="sub">最精细预测粒度</div>
+      <p>0:垂直 ↓, 1:水平 →, 2:DC, 3:左下对角, 4:右下对角, 5:右垂直偏, 6:下水平偏, 7:左垂直偏, 8:上水平偏。<br>每种模式从<strong>相邻已编码像素</strong>沿特定方向外推。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>16×16 亮度块 · 4 种</h4>
+      <div class="sub">平坦区域粗粒度</div>
+      <p>0:垂直, 1:水平, 2:DC, 3:Plane(平面)。<br>Plane 模式对<strong>渐变区域</strong>效果最好，在水平和垂直方向同时平滑过渡。大面积天空/墙壁常用。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>8×8 色度块</h4>
+      <div class="sub">与16×16亮度共用4模式</div>
+      <p>色度 UV 使用与 16×16 亮度相同的 4 种模式，块尺寸为 8×8。YUV420 下色度分辨率只有亮度 1/4，8×8 色度对应 16×16 亮度宏块。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>预测类型</th><th>块尺寸</th><th>模式数量</th><th>适用场景</th><th>编码效率</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>I4MB (Intra 4×4)</td><td>4×4 亮度</td><td class="g">9 种方向</td><td>纹理复杂区域、细节丰富</td><td>高（逐块最优）</td></tr>
+      <tr><td>I8MB (Intra 8×8)</td><td>8×8 亮度</td><td class="g">9 种方向</td><td>中等纹理、过渡区域</td><td>中（High Profile）</td></tr>
+      <tr><td>I16MB (Intra 16×16)</td><td>16×16 亮度</td><td>4 种（V/H/DC/Plane）</td><td>平坦区域、天空、墙壁</td><td>低（粗粒度）</td></tr>
+      <tr><td>色度 Intra</td><td>8×8 色度</td><td>4 种（同 I16MB）</td><td>色度分量（U/V）</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">帧内预测的本质：空间邻居的智能拷贝</div>
+    编码器遍历所有可用预测模式，选择<strong>SATD（Hadamard 变换后绝对差和）最小的模式</strong>作为最优模式。预测越准 → 残差越小 → 量化后越接近零 → 码率越低。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S7: H.264 帧间预测 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" id="s7t">H.264 帧间预测</h2>
+  <p class="sec-sub" id="s7s">在参考帧中搜索与当前块最相似的区域——利用<strong>时间冗余</strong>。运动估计是编码器最耗时的模块（占 60-80% 编码时间）</p>
+
+  <div class="cv-wrap" id="interWrap" style="height:340px">
+    <canvas id="interCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>树状运动补偿 · 可变块大小</h4>
+      <div class="sub">16×16 → 4×4 灵活划分</div>
+      <p>一个 16×16 宏块可划分为：<em>1×16×16</em> · <em>2×16×8</em> · <em>2×8×16</em> · <em>4×8×8</em>。每个 8×8 子块还可分：<em>1×8×8</em> · <em>2×8×4</em> · <em>2×4×8</em> · <em>4×4×4</em>。平坦区域用大块，复杂运动用小块——<strong>码率与精度平衡</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>亚像素运动估计 · 1/4 像素精度</h4>
+      <div class="sub">亮度：6-tap Wiener 滤波器</div>
+      <p><strong>1/2 像素</strong>：6 抽头滤波 (1, -5, 20, 20, -5, 1)/32<br><strong>1/4 像素</strong>：相邻半像素点线性平均<br>色度：1/8 像素精度，双线性插值。<br>亚像素精度使压缩效率提升 15-20%。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:14px">
+    <table>
+    <thead>
+      <tr><th>帧类型</th><th>参考方向</th><th>典型压缩比</th><th>编码延迟</th><th>应用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>I 帧</td><td>无（帧内）</td><td>~7:1</td><td class="g">0（即时）</td><td>随机访问点</td></tr>
+      <tr><td>P 帧</td><td>前向 1 帧</td><td>~20:1</td><td class="g">0</td><td>实时/低延迟</td></tr>
+      <tr><td>B 帧（参考）</td><td>前向+后向</td><td>~50:1</td><td class="y">1-2 帧</td><td>离线编码</td></tr>
+      <tr><td>B 帧（非参考）</td><td>前向+后向</td><td>~60:1</td><td class="y">1-2 帧</td><td>最大压缩</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;width:100%;margin-top:12px">
+    <div class="ct">运动估计的搜索范围是双刃剑</div>
+    更大搜索范围（如 ±64 像素）→ 更好匹配 → 更低码率，但搜索时间与范围平方成正比。<br>x264 默认 <code>merange=16</code>，H.265 可用 64。快速运动场景需更大范围。<br>加速技术：钻石搜索、六边形搜索、TZ Search——核心思想是先粗搜再精搜。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S8: H.264 变换与量化 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s8">
+  <h2 class="sec-title" id="s8t">H.264 变换与量化</h2>
+  <p class="sec-sub" id="s8s">将空间域残差变换到频域，再通过量化丢弃人眼不敏感的高频分量——<strong>编码器唯一的有损环节</strong>。QP 每增加 6，量化步长翻倍，码率约减半</p>
+
+  <div class="cv-wrap" id="dctWrap" style="height:350px">
+    <canvas id="dctCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>整数 DCT 变换</h4>
+      <div class="sub">用加法+移位替代浮点乘法</div>
+      <p>H.264 使用<strong>整数 DCT</strong>（非浮点），矩阵元素都是整数，变换仅需加减和移位。<br>正向变换：<code>Y = H·X·Hᵀ</code>，H 为 4×4 整数变换矩阵。<br><em>DC 系数 = 均值，AC 系数 = 细节</em>。<br>16×16 模式下 DC 系数会再做 Hadamard 变换以进一步去冗余。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>量化 — QP 控制一切</h4>
+      <div class="sub">QP 0-51，每+6则Qstep翻倍</div>
+      <p>量化公式：<code>Z_ij = round(Y_ij / Qstep)</code>，其中 Qstep 由 QP 查表决定。<br>H.264 支持<strong>自适应量化</strong>：不同宏块可用不同 QP（ΔQP=±2），在画质和码率间做局部平衡。<br>详见下方 QP-Qstep 完整对照表。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>QP</th><th>Qstep</th><th>画质描述</th><th>典型码率 (1080p@30fps)</th><th>应用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="g">0</td><td>0.625</td><td>数学无损</td><td>极高（>50 Mbps）</td><td>中间编辑格式</td></tr>
+      <tr><td class="g">10</td><td>1.25</td><td>视觉无损</td><td>~20 Mbps</td><td>母版存档</td></tr>
+      <tr><td class="g">18</td><td>2.5</td><td>视觉无损边界</td><td>~8 Mbps</td><td>高质量分发</td></tr>
+      <tr><td class="g">22</td><td>4.0</td><td>优秀画质</td><td>~4 Mbps</td><td>高清点播</td></tr>
+      <tr><td class="y">25</td><td>5.0</td><td>良好画质</td><td>~2.5 Mbps</td><td>通用默认 CRF</td></tr>
+      <tr><td class="y">28</td><td>8.0</td><td>可接受画质</td><td>~1.5 Mbps</td><td>移动端/节省带宽</td></tr>
+      <tr><td class="y">32</td><td>12.8</td><td>轻微块效应</td><td>~800 Kbps</td><td>低码率场景</td></tr>
+      <tr><td class="r">38</td><td>25.6</td><td>明显块效应</td><td>~350 Kbps</td><td>监控存储</td></tr>
+      <tr><td class="r">45</td><td>51.2</td><td>严重失真</td><td>~150 Kbps</td><td>极限压缩</td></tr>
+      <tr><td class="r">51</td><td>102.4</td><td>几乎不可辨识</td><td>~50 Kbps</td><td>仅参考帧/测试</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="slider-row" style="margin-top:16px">
+    <label>QP =</label><span class="sl-v" id="qpVal">25</span>
+    <input type="range" min="0" max="51" value="25" id="qpSlider" oninput="updateQP(this.value)">
+  </div>
+  <div class="legend">
+    <span class="ld"><span class="ls" style="background:#34d399"></span>保留</span>
+    <span class="ld"><span class="ls" style="background:#fbbf24"></span>部分保留</span>
+    <span class="ld"><span class="ls" style="background:#f87171"></span>归零（损失）</span>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S9: H.264 熵编码 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s9">
+  <h2 class="sec-title" id="s9t">H.264 熵编码</h2>
+  <p class="sec-sub" id="s9s">将量化后的系数和语法元素压缩为最终二进制码流——利用统计冗余做<strong>无损压缩</strong>。H.264 支持 CAVLC（变长编码）和 CABAC（算术编码）两种方案</p>
+
+  <div class="cv-wrap" id="entWrap" style="height:300px">
+    <canvas id="entCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>CAVLC · 变长编码</h4>
+      <div class="sub">Baseline Profile 支持</div>
+      <p>基于 Huffman 编码的上下文自适应方案。用查表方式编码，速度快。<br>利用已编码相邻块的非零系数数量<strong>自适应选择 VLC 码表</strong>。<br>典型节省：比固定码表省 5-10%。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>CABAC · 算术编码</h4>
+      <div class="sub">Main/High Profile 支持</div>
+      <p>三阶段流水线：<strong>① 二值化</strong>→<strong>② 上下文建模</strong>（364 个概率模型）→<strong>③ 二进制算术编码</strong>。<br>编码后更新概率供下个 bin 使用。<br>比 CAVLC 节省 <em>9-14%</em> 码率，但计算复杂度高 ~40%。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>NAL 类型</th><th>nal_unit_type</th><th>分类</th><th>内容</th><th>作用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td style="color:#fbbf24;font-weight:600">SPS</td><td>7</td><td>非 VCL</td><td>Profile/Level、分辨率、帧率限制</td><td>序列级配置，解码器初始化必需</td></tr>
+      <tr><td style="color:#fbbf24;font-weight:600">PPS</td><td>8</td><td>非 VCL</td><td>熵编码模式、Slice 分组、量化参数</td><td>图像级配置，可多帧共用</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">IDR</td><td>5</td><td>VCL</td><td>I 帧，清空参考帧缓冲</td><td>随机访问起点，seek 必须命中</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">Non-IDR I</td><td>1</td><td>VCL</td><td>I 帧，不清空参考缓冲</td><td>开放 GOP 中的普通 I 帧</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">P Slice</td><td>1</td><td>VCL</td><td>前向预测编码数据</td><td>实时编码的主力帧类型</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">B Slice</td><td>1</td><td>VCL</td><td>双向预测编码数据</td><td>最高压缩比，引入编码延迟</td></tr>
+      <tr><td style="color:#fbbf24;font-weight:600">SEI</td><td>6</td><td>非 VCL</td><td>时间码、缓冲周期、HDR 元数据</td><td>补充信息，不影响解码</td></tr>
+      <tr><td style="color:#fbbf24;font-weight:600">AUD</td><td>9</td><td>非 VCL</td><td>访问单元分隔符</td><td>标识一帧的边界</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">NAL Unit — H.264 码流的数据单元</div>
+    每个 NAL Unit 以起始码 <code>00 00 00 01</code> 或 <code>00 00 01</code> 开头（Annex B 格式），或 4 字节长度前缀（AVCC/MP4 格式）。<br>
+    <strong>SPS</strong>（序列参数集）定义 Profile/Level、分辨率；<strong>PPS</strong>（图像参数集）定义熵编码模式、Slice 分组；<strong>IDR</strong> 是随机访问起点；<strong>SEI</strong> 携带补充信息。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S10: H.264 环路滤波 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s10">
+  <h2 class="sec-title" id="s10t">H.264 环路滤波</h2>
+  <p class="sec-sub" id="s10s">对重建帧的块边界进行平滑——<strong>环路内</strong>的滤波，消除方块效应的同时提升后续预测的参考帧质量</p>
+
+  <div class="cv-wrap" id="deblockWrap" style="height:300px">
+    <canvas id="deblockCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>方块效应的成因</h4>
+      <div class="sub">分块编码的副作用</div>
+      <p>① 变换/量化是<strong>块级独立</strong>的 → 相邻块量化误差不同 → 边界不连续<br>② 运动补偿使用<strong>不同参考块</strong> → 边界像素来源不同<br>③ 低码率下高频大量归零 → 差异更明显</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>边界强度 Bs · 0~4</h4>
+      <div class="sub">决定滤波强度</div>
+      <p>滤波强度由<strong>边界强度 Bs</strong>（0~4）决定，同时受阈值 α（块间）和 β（块内）约束。<br>Bs 越大 → 滤波越强 → 边界越平滑，但过强会模糊真实细节。<br>完整判定逻辑见下方 Bs 对照表。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>滤波决策与裁剪</h4>
+      <div class="sub">只滤真边界，不过度平滑</div>
+      <p>先判断是否为<strong>伪边界</strong>（阈值 α/β 检查）。Bs=4 用最强 5 抽头滤波，Bs=1-3 用标准 4 抽头。<br><strong>Clip 操作</strong>设上下限，防止过度滤波导致真实细节丢失。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:18px">
+    <table>
+    <thead>
+      <tr><th>Bs 值</th><th>适用条件</th><th>滤波强度</th><th>抽头数</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="r">4</td><td>帧内编码块边界</td><td>最强</td><td>5 抽头</td><td>帧内块边界差异通常最大，需要最强滤波</td></tr>
+      <tr><td class="y">3</td><td>帧间 + 非零变换系数（大残差）</td><td>强</td><td>4 抽头</td><td>残差大说明两个块差异大，边界明显</td></tr>
+      <tr><td class="y">2</td><td>帧间 + 有变换系数（有残差）</td><td>中</td><td>4 抽头</td><td>有残差但较小，适度降低块效应</td></tr>
+      <tr><td style="color:#60a5fa;font-weight:600">1</td><td>帧间 + 无残差 + 不同参考帧/MV</td><td>弱</td><td>4 抽头</td><td>虽无残差但参考来源不同，轻微滤波</td></tr>
+      <tr><td class="g">0</td><td>同参考帧 + 相同运动矢量</td><td>跳过</td><td>—</td><td>两个块来源一致，无块效应，不滤波</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">环路滤波 ≠ 后处理滤波</div>
+    关键区别：环路滤波作用于<strong>参考帧缓冲之前</strong>——滤波后的帧会作为<strong>后续帧的参考</strong>。更好的去块效果不仅改善当前帧画质，还能<strong>提升后续所有帧的预测精度</strong>。<br>
+    后处理滤波（如 FFmpeg 的 <code>pp</code> 滤镜）只改善播放显示效果，不影响编码效率。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S11: 音频编解码 -->
+<!-- ============================================================ -->
+<div class="sec" id="s11">
+  <h2 class="sec-title" id="s11t">音频编解码</h2>
+  <p class="sec-sub" id="s11s">从无损 PCM 到有损 AAC，再到最适合实时通信的 Opus——音频压缩的核心是利用人耳的感知特性</p>
+
+  <div class="flow-row" style="margin:20px 0">
+    <span class="flow-box">PCM<br><span style="font-size:10px;color:#777">无损·原始</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3)">AAC-LC<br><span style="font-size:10px;color:#777">有损·通用</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">HE-AAC<br><span style="font-size:10px;color:#777">低码率增强</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3)">Opus<br><span style="font-size:10px;color:#777">实时·VoIP</span></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:16px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>PCM · 脉冲编码调制</h4>
+      <div class="sub">数字音频的基础</div>
+      <p>采样率 × 位深 × 声道 = 原始码率<br><em>CD: 44100×16×2=1411kbps</em><br>无压缩，每个采样点独立存储。<br>S16LE/S24LE/S32LE 最常见格式。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>AAC · 高级音频编码</h4>
+      <div class="sub">MP4 标配，128kbps≈CD</div>
+      <p><strong>核心工具</strong>：心理声学模型（掩蔽阈值）、MDCT 变换、TNS（时域噪声整形）、SBR（频带复制）。<br><strong>AAC-LC</strong>：128-192kbps 最常用<br><strong>HE-AACv2</strong>：32-64kbps 低码率</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Opus · WebRTC 首选</h4>
+      <div class="sub">6-510kbps 全场景</div>
+      <p><strong>SILK</strong>（语音 6-32kbps）+ <strong>CELT</strong>（音乐 32-510kbps）混合架构。<br>延迟 5-65ms 可配，<strong>自适应码率</strong>，丢包隐藏（PLC）。<br><em>WebRTC 强制要求支持 Opus。</em></p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:18px">
+    <table>
+    <thead>
+      <tr><th>编码格式</th><th>典型码率</th><th>采样率</th><th>延迟</th><th>应用场景</th><th>特性</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>PCM</td><td>1411 kbps (CD)</td><td>44.1/48 kHz</td><td class="g">0 ms</td><td>原始采集、混音</td><td>无损，每采样独立</td></tr>
+      <tr><td>AAC-LC</td><td>128-192 kbps</td><td>8-96 kHz</td><td class="g">20-40 ms</td><td>MP4 视频、音乐分发</td><td>心理声学 + MDCT + TNS</td></tr>
+      <tr><td>HE-AAC</td><td>48-64 kbps</td><td>22-48 kHz</td><td class="y">40-80 ms</td><td>流媒体音乐、数字广播</td><td>AAC-LC + SBR 频带复制</td></tr>
+      <tr><td>HE-AACv2</td><td>24-32 kbps</td><td>22-48 kHz</td><td class="y">60-100 ms</td><td>极低码率流媒体</td><td>HE-AAC + PS 参数立体声</td></tr>
+      <tr><td>MP3</td><td>128-320 kbps</td><td>8-48 kHz</td><td class="g">20-40 ms</td><td>老旧兼容场景</td><td>已被 AAC 取代，专利过期</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">Opus</td><td style="color:#34d399;font-weight:600">6-510 kbps</td><td>8-48 kHz</td><td class="g">5-65 ms</td><td>WebRTC、VoIP、游戏语音</td><td>SILK+CELT 混合，自适应</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">心理声学模型：音频压缩的"免费午餐"</div>
+    人耳存在<strong>听觉掩蔽效应</strong>：强音会掩盖同时（频率掩蔽）或前后（时间掩蔽）出现的弱音。<br>
+    心理声学模型计算出各频段的<strong>掩蔽阈值</strong>——低于阈值的信号即使不编码也不被察觉，实现 10:1 以上的压缩比。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S12: 容器格式与流媒体协议 -->
+<!-- ============================================================ -->
+<div class="sec" id="s12">
+  <h2 class="sec-title" id="s12t">容器格式与流媒体协议</h2>
+  <p class="sec-sub" id="s12s">容器管存储，协议管传输——理解三层分离（像素层→编码层→容器层）是诊断音视频问题的前提</p>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>MP4 · ISO BMFF</h4>
+      <div class="sub">最通用的容器格式</div>
+      <p>基于 Box/Atom 树结构：<code>ftyp → moov → mdat</code><br>moov 含所有索引信息（stbl六表），mdat 含实际音视频数据。<br><em>FastStart</em>：moov 前置实现流式播放。<br><em>fMP4</em>：分片 MP4，每个分片独立可解码。DASH/HLS/LiveKit 推流的基础。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>MKV / FLV / TS</h4>
+      <div class="sub">不同场景的选择</div>
+      <p><strong>MKV</strong>：开源，支持几乎所有编码，WebM 是其子集<br><strong>FLV</strong>：RTMP 直播常用，Header+Body+Tag<br><strong>TS (MPEG-TS)</strong>：固定 188 字节包，广播/HLS 切片，抗丢包能力强</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:18px">
+    <table>
+    <thead>
+      <tr><th>格式</th><th>扩展名</th><th>结构</th><th>支持编码</th><th>典型场景</th><th>特色</th></tr>
+    </thead>
+    <tbody>
+      <tr><td style="color:#a78bfa;font-weight:600">MP4</td><td>.mp4 / .m4a</td><td>Box/Atom 树</td><td>H.264/H.265/AV1/AAC</td><td>通用存储、Web 分发</td><td>FastStart/fMP4 流式</td></tr>
+      <tr><td>MKV</td><td>.mkv / .webm</td><td>EBML (类 XML)</td><td>几乎所有编码</td><td>开源生态、WebM</td><td>支持附件/章节/菜单</td></tr>
+      <tr><td>FLV</td><td>.flv</td><td>Header+Tag 流</td><td>H.264/AAC/SPEEX</td><td>RTMP 直播</td><td>简单高效，RTMP 标准</td></tr>
+      <tr><td>TS</td><td>.ts</td><td>188字节定长包</td><td>H.264/H.265/MP2</td><td>广播、HLS 切片</td><td>抗丢包、纠错、多节目</td></tr>
+      <tr><td>AVI</td><td>.avi</td><td>RIFF 块</td><td>多种（老旧）</td><td>Windows 遗留</td><td>无索引时 seek 极慢</td></tr>
+      <tr><td style="color:#34d399;font-weight:600">fMP4</td><td>.m4s (分段)</td><td>moof+mdat 段</td><td>H.264/H.265/AV1</td><td>DASH/HLS/LiveKit</td><td>每段独立可解码，低延迟</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="flow-row" style="margin:20px 0">
+    <span class="flow-box">RTMP<br><span style="font-size:10px;color:#777">TCP·秒级</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">HLS<br><span style="font-size:10px;color:#777">HTTP·CDN友好</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box">DASH<br><span style="font-size:10px;color:#777">自适应·多码率</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3)">WebRTC<br><span style="font-size:10px;color:#777">UDP·亚秒</span></span>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">分层诊断——画质问题出在哪一层？</div>
+    <strong>编码层</strong>：花屏/马赛克（参考帧错误）、色块（QP过高）、拖影（运动估计问题）<br>
+    <strong>容器层</strong>：无法打开（moov 缺失）、音画不同步（时间戳错乱）、seek 失败（stss 缺失）<br>
+    <strong>传输层</strong>：卡顿/缓冲（带宽不足）、黑屏（丢关键帧）、断连（信令超时）
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S13: FFmpeg 实战 -->
+<!-- ============================================================ -->
+<div class="sec" id="s13">
+  <h2 class="sec-title" id="s13t">FFmpeg 实战</h2>
+  <p class="sec-sub" id="s13s">命令行是理解编解码最快速的工具——从信息查询到码流分析，从格式转换到参数调优</p>
+
+  <div class="cblock" style="max-width:960px;width:100%;margin-top:20px">
+<span class="cm"># 1. 查看视频完整信息</span>
+ffprobe -show_streams -show_format input.mp4
+
+<span class="cm"># 2. 提取裸 YUV 流（用于分析单帧）</span>
+ffmpeg -i input.mp4 -c:v rawvideo -pix_fmt yuv420p output.yuv
+
+<span class="cm"># 3. 查看每一帧的类型 (I/P/B)</span>
+ffprobe -show_frames -select_streams v input.mp4 | grep pict_type
+
+<span class="cm"># 4. 分析 H.264 码流头部信息</span>
+ffmpeg -i input.mp4 -c:v copy -bsf:v trace_headers -f null - 2&gt;&amp;1 | head -100
+
+<span class="cm"># 5. 显示每一帧的编码信息（QP、帧大小等）</span>
+ffprobe -show_frames -select_streams v -of compact input.mp4
+  </div>
+
+  <div class="ptbl" style="max-width:960px;width:100%">
+    <table>
+    <thead>
+      <tr><th>场景</th><th>命令</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>转码 H.264→H.265</td><td><code>ffmpeg -i in.mp4 -c:v libx265 -crf 28 out.mp4</code></td></tr>
+      <tr><td>调整 GOP 大小</td><td><code>ffmpeg -i in.mp4 -c:v libx264 -g 30 -keyint_min 30 out.mp4</code></td></tr>
+      <tr><td>CBR 码率控制</td><td><code>ffmpeg -i in.mp4 -c:v libx264 -b:v 2M -maxrate 2M -bufsize 4M out.mp4</code></td></tr>
+      <tr><td>提取关键帧</td><td><code>ffmpeg -i in.mp4 -vf "select=eq(pict_type\,I)" -vsync vfr frames_%03d.png</code></td></tr>
+      <tr><td>FastStart 优化</td><td><code>ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4</code></td></tr>
+      <tr><td>无损裁剪</td><td><code>ffmpeg -ss 10 -i in.mp4 -t 5 -c copy clip.mp4</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">FFmpeg 学习建议</div>
+    先用 <code>ffprobe</code> 看信息，再用 <code>ffmpeg -c copy</code> 做无损操作（秒级完成），最后才加编码参数触发完整编解码（需数分钟）。<br>
+    关键意识：<strong>-c copy 直接拷贝码流不编解码</strong>，改变 GOP/码率/编码格式才会触发重编码。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S14: API 编程入门 -->
+<!-- ============================================================ -->
+<div class="sec" id="s14">
+  <h2 class="sec-title" id="s14t">API 编程入门</h2>
+  <p class="sec-sub" id="s14s">FFmpeg C API 提供了解码器的完整控制权——理解 AVPacket（压缩包）和 AVFrame（解码帧）之间的异步流转是入门关键</p>
+
+  <div class="cv-wrap" id="apiWrap" style="height:200px">
+    <canvas id="apiCanvas"></canvas>
+  </div>
+
+  <div class="cblock" style="max-width:960px;width:100%;margin-top:16px">
+<span class="cm">// FFmpeg 解码最小流程（伪代码）</span>
+<span class="kw">// 1. 打开输入文件</span>
+avformat_open_input(&amp;fmt_ctx, "input.mp4", NULL, NULL);
+avformat_find_stream_info(fmt_ctx, NULL);
+
+<span class="kw">// 2. 找到视频流 &amp; 打开解码器</span>
+<span class="kw">int</span> v_idx = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, &amp;codec, 0);
+AVCodecContext *c_ctx = avcodec_alloc_context3(codec);
+avcodec_parameters_to_context(c_ctx, fmt_ctx->streams[v_idx]->codecpar);
+avcodec_open2(c_ctx, codec, NULL);
+
+<span class="kw">// 3. 解码循环（send/receive 异步模型）</span>
+AVPacket *pkt = av_packet_alloc();
+AVFrame *frame = av_frame_alloc();
+<span class="kw">while</span> (av_read_frame(fmt_ctx, pkt) >= 0) {
+    avcodec_send_packet(c_ctx, pkt);       <span class="cm">// 送入压缩包</span>
+    <span class="kw">while</span> (avcodec_receive_frame(c_ctx, frame) >= 0) {
+        <span class="cm">// frame->data[0/1/2] = Y/U/V 平面数据</span>
+        sws_scale(sws, frame->data, frame->linesize, 0, c_ctx->height,
+                  rgb->data, rgb->linesize);  <span class="cm">// YUV→RGB 转换</span>
+        <span class="cm">// 渲染或保存 frame</span>
+    }
+    av_packet_unref(pkt);
+}
+  </div>
+
+  <div class="callout success" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">send/receive 模型的本质</div>
+    FFmpeg 的解码 API 采用<strong>异步推送模型</strong>：<code>send_packet</code> 和 <code>receive_frame</code> 是独立的——一个 packet 可能产生 0 或多个 frame（B 帧重排序），一个 frame 可能消耗多个 packet。<br>
+    这反映了编解码器内部的缓冲和重排序机制，不是简单的"输入一个包 → 输出一个帧"。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S15: 学习资源 + 路线 -->
+<!-- ============================================================ -->
+<div class="sec" id="s15">
+  <h2 class="sec-title" id="s15t">学习资源与路线</h2>
+  <p class="sec-sub" id="s15s">从概念到精通——一条经过验证的音视频开发学习路径</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>必读书籍</h4>
+      <div class="sub">循序渐进的阶梯</div>
+      <p><strong>入门</strong>：《FFmpeg从入门到精通》刘歧<br><strong>H.264</strong>：《H.264 and MPEG-4 Video Compression》Richardson<br><strong>设计</strong>：《Video Codec Design》Richardson<br><strong>FFmpeg</strong>：《FFmpeg Basics》Korbel<br><strong>WebRTC</strong>：《WebRTC权威指南》</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>开源代码阅读</h4>
+      <div class="sub">代码是最好的老师</div>
+      <p><strong>x264</strong>：最简洁高效的 H.264 编码器<br><strong>FFmpeg</strong>：libavcodec/h264dec.c 解码实现<br><strong>libaom</strong>：Google AV1 编解码器<br><strong>libvpx</strong>：Google VP8/VP9 编解码器<br><strong>Bento4</strong>：MP4 容器解析库</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>标准文档</h4>
+      <div class="sub">查询细节的最终权威</div>
+      <p><strong>H.264</strong>：ITU-T H.264 / ISO 14496-10<br><strong>H.265</strong>：ITU-T H.265 / ISO 23008-2<br><strong>MP4</strong>：ISO 14496-12/14/15<br><strong>AAC</strong>：ISO 13818-7<br>建议先看博客理解概念，再看标准验证细节</p>
+    </div>
+  </div>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.4)">理解概念<br><span style="font-size:10px;color:#777">1-2 周</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.4)">FFmpeg CLI<br><span style="font-size:10px;color:#777">1 周</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.4)">API 编程<br><span style="font-size:10px;color:#777">2 周</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.4)">读编码器源码<br><span style="font-size:10px;color:#777">持续</span></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.4)">项目实战<br><span style="font-size:10px;color:#777">结合业务</span></span>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
+    <div class="ct">结合 VisonT/LinkricAI 项目实战</div>
+    你的项目覆盖了音视频栈的核心环节：<br>
+    <strong>MP4 封装</strong> → 深入 Bento4 库理解 Box 结构和 stbl 索引机制<br>
+    <strong>摄像头采集</strong> → 理解 V4L2 + ISP 管线 + Bayer → YUV 转换<br>
+    <strong>WebRTC 推流</strong> → 深入 SDP 协商 + DTLS-SRTP + NACK/FEC 弱网对抗<br>
+    <strong>建议</strong>：带着项目中的实际问题去读标准/源码，效率远比通读文档高。
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- JavaScript: Canvas Drawings & Interactions -->
+<!-- ============================================================ -->
+<script>
+// ===== IntersectionObserver: Scroll Reveal =====
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('vis'); obs.unobserve(e.target); }
+  });
+}, { threshold: 0.12 });
+document.querySelectorAll('.sec-title, .sec-sub, .cv-wrap, .g-card, .gap-card').forEach(el => obs.observe(el));
+
+// Auto-reveal hero
+setTimeout(() => { document.getElementById('s1t')?.classList.add('vis'); }, 80);
+setTimeout(() => { document.getElementById('s1s')?.classList.add('vis'); }, 180);
+
+// ===== S1: Hero Canvas — Architecture Overview =====
+function drawHero() {
+  const cv = document.getElementById('heroCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const boxes = [
+    { x: 0.06, y: 0.12, w: 0.16, h: 0.18, label: '摄像头采集', sub: 'YUV420', color: '#f472b6' },
+    { x: 0.27, y: 0.12, w: 0.16, h: 0.18, label: '原始视频', sub: '未压缩', color: '#fbbf24' },
+    { x: 0.50, y: 0.08, w: 0.22, h: 0.28, label: 'H.264 编码器', sub: '预测·变换·量化·熵', color: '#6c63ff' },
+    { x: 0.78, y: 0.12, w: 0.16, h: 0.18, label: '码流输出', sub: 'NAL Units / MP4', color: '#34d399' },
+    { x: 0.06, y: 0.55, w: 0.16, h: 0.18, label: '音频采集', sub: 'PCM S16LE', color: '#f472b6' },
+    { x: 0.27, y: 0.55, w: 0.16, h: 0.18, label: '原始音频', sub: '未压缩', color: '#fbbf24' },
+    { x: 0.50, y: 0.58, w: 0.22, h: 0.12, label: 'AAC 编码器', sub: 'MDCT·心理声学', color: '#60a5fa' },
+    { x: 0.78, y: 0.55, w: 0.16, h: 0.18, label: '封装复用', sub: 'MP4/MKV 容器', color: '#f59e0b' },
+  ];
+
+  boxes.forEach(b => {
+    const bx = b.x * W, by = b.y * H, bw = b.w * W, bh = b.h * H;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = b.color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    const lines = b.label.split('\n');
+    lines.forEach((l, i) => ctx.fillText(l, bx + bw/2, by + bh/2.2 + i*14 - (lines.length-1)*7));
+    ctx.fillStyle = '#7777aa'; ctx.font = '9px sans-serif';
+    ctx.fillText(b.sub, bx + bw/2, by + bh - 12);
+  });
+
+  // Arrows
+  ctx.strokeStyle = 'rgba(108,99,255,0.3)'; ctx.lineWidth = 1.5;
+  [[0.22,0.21,0.27,0.21],[0.43,0.20,0.50,0.20],[0.72,0.21,0.78,0.21],
+   [0.22,0.64,0.27,0.64],[0.43,0.64,0.50,0.64],[0.72,0.61,0.78,0.61]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1*W, y1*H); ctx.lineTo(x2*W, y2*H); ctx.stroke();
+    const ang = Math.atan2(y2*H-y1*H, x2*W-x1*W);
+    ctx.fillStyle = 'rgba(108,99,255,0.4)'; ctx.beginPath();
+    ctx.moveTo(x2*W, y2*H);
+    ctx.lineTo(x2*W - 7*Math.cos(ang-0.5), y2*H - 7*Math.sin(ang-0.5));
+    ctx.lineTo(x2*W - 7*Math.cos(ang+0.5), y2*H - 7*Math.sin(ang+0.5));
+    ctx.fill();
+  });
+}
+
+// ===== S2: YUV Sampling Visualization =====
+let yuvMode = '420';
+function setYuvMode(m) { yuvMode = m; document.querySelectorAll('#s2 .cbtn').forEach(b => b.classList.remove('act')); event.target.classList.add('act'); drawYUV(); }
+function drawYUV() {
+  const cv = document.getElementById('yuvCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const ox = 30, oy = 30, cell = 18, rows = 8, cols = 12;
+
+  // Y plane (always full)
+  ctx.fillStyle = '#8888aa'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Y (亮度) — 全分辨率', ox, oy - 10);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = 100 + Math.floor(Math.random() * 110);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(ox + c*(cell+2), oy + r*(cell+2), cell, cell);
+    }
+  }
+
+  const uy = oy + rows*(cell+2) + 24;
+  let sCols = cols, sRows = rows;
+  if (yuvMode === '422') sCols = cols/2;
+  else if (yuvMode === '420') { sCols = cols/2; sRows = rows/2; }
+  const sCell = yuvMode === '444' ? cell : cell*2 + 2;
+  const sGap = yuvMode === '444' ? 2 : 4;
+
+  // U
+  ctx.fillStyle = '#60a5fa';
+  ctx.fillText(`U (色度蓝) — ${yuvMode==='444'?'全分辨率':yuvMode==='422'?'水平1/2':'水平1/2 垂直1/2'}`, ox, uy - 8);
+  for (let r = 0; r < sRows; r++)
+    for (let c = 0; c < sCols; c++) {
+      ctx.fillStyle = 'rgba(96,165,250,0.7)';
+      ctx.fillRect(ox + c*(sCell+sGap), uy + r*(sCell+sGap), sCell, sCell);
+    }
+
+  // V
+  const vx = ox + 250;
+  ctx.fillStyle = '#f472b6';
+  ctx.fillText('V (色度红)', vx, uy - 8);
+  for (let r = 0; r < sRows; r++)
+    for (let c = 0; c < sCols; c++) {
+      ctx.fillStyle = 'rgba(244,114,182,0.7)';
+      ctx.fillRect(vx + c*(sCell+sGap), uy + r*(sCell+sGap), sCell, sCell);
+    }
+
+  const yPx = rows*cols, uvPx = sRows*sCols*2;
+  const ratio = ((yPx+uvPx)/(yPx*3)*100).toFixed(0);
+  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`数据量 = ${yPx+uvPx} vs 全分辨率${yPx*3} = ${ratio}%`, ox, uy + sRows*(sCell+sGap) + 22);
+}
+
+// ===== S3: GOP Canvas =====
+function drawGOP() {
+  const cv = document.getElementById('gopCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const frames = [
+    { type: 'I', color: '#f87171', refs: [] },  { type: 'B', color: '#38bdf8', refs: [0,3] },
+    { type: 'B', color: '#38bdf8', refs: [0,3] }, { type: 'P', color: '#fbbf24', refs: [0] },
+    { type: 'B', color: '#38bdf8', refs: [3,6] }, { type: 'B', color: '#38bdf8', refs: [3,6] },
+    { type: 'P', color: '#fbbf24', refs: [3] },   { type: 'B', color: '#38bdf8', refs: [6,9] },
+    { type: 'B', color: '#38bdf8', refs: [6,9] }, { type: 'I', color: '#f87171', refs: [] }
+  ];
+  const fx = 30, fy = 40, fw = 58, fh = 34, gap = 8;
+
+  // Reference arcs
+  frames.forEach((f, i) => {
+    f.refs.forEach(r => {
+      const x1 = fx + i*(fw+gap) + fw/2, x2 = fx + r*(fw+gap) + fw/2;
+      const y1 = fy + fh, y2 = fy + fh;
+      const midY = fy + fh + 25 + Math.abs(i-r)*7;
+      ctx.strokeStyle = f.color.replace(')', ',0.2)').replace('rgb', 'rgba'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo((x1+x2)/2, midY, x2, y2); ctx.stroke();
+    });
+  });
+
+  // Frame boxes
+  frames.forEach((f, i) => {
+    const x = fx + i*(fw+gap), y = fy;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = f.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x, y, fw, fh, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = f.color; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(f.type, x + fw/2, y + fh/2 + 5);
+    ctx.fillStyle = '#8888aa'; ctx.font = '10px sans-serif'; ctx.fillText(i, x + fw/2, y + fh + 14);
+  });
+
+  ctx.fillStyle = '#7777aa'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('显示序: I₀ B₁ B₂ P₃ B₄ B₅ P₆ B₇ B₈ I₉', fx, fy + fh + 80);
+  ctx.fillText('解码序: I₀ P₃ B₁ B₂ P₆ B₄ B₅ I₉ B₇ B₈', fx, fy + fh + 98);
+  ctx.fillStyle = '#6c63ff';
+  ctx.fillText('含B帧时PTS≠DTS — 解码序与显示序不同', fx, fy + fh + 120);
+}
+
+// ===== S5: H.264 Encoder Architecture =====
+function drawEncoder() {
+  const cv = document.getElementById('encCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const fwd = [
+    { x: 0.03, y: 0.06, w: 0.12, h: 0.15, label: '输入\nYUV', color: '#888' },
+    { x: 0.18, y: 0.04, w: 0.14, h: 0.19, label: '帧内/帧间\n预测选择', color: '#a78bfa' },
+    { x: 0.35, y: 0.08, w: 0.10, h: 0.12, label: '残差', color: '#f59e0b' },
+    { x: 0.48, y: 0.04, w: 0.12, h: 0.19, label: '变换\nDCT + Q', color: '#fbbf24', hl: true },
+    { x: 0.63, y: 0.06, w: 0.13, h: 0.15, label: '熵编码\nCABAC', color: '#34d399' },
+    { x: 0.80, y: 0.06, w: 0.12, h: 0.15, label: '输出\n码流', color: '#888' },
+  ];
+  const fb = [
+    { x: 0.48, y: 0.42, w: 0.12, h: 0.14, label: '反量化\n反变换', color: '#fbbf24' },
+    { x: 0.35, y: 0.44, w: 0.10, h: 0.10, label: '重建帧', color: '#f59e0b' },
+    { x: 0.18, y: 0.42, w: 0.14, h: 0.14, label: '去块\n滤波', color: '#f472b6' },
+    { x: 0.03, y: 0.42, w: 0.12, h: 0.14, label: '参考帧\n缓冲', color: '#38bdf8' },
+  ];
+
+  const drawBox = (b) => {
+    const bx = b.x*W, by = b.y*H, bw = b.w*W, bh = b.h*H;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = b.hl ? '#34d399' : b.color; ctx.lineWidth = b.hl ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    const lines = b.label.split('\n');
+    lines.forEach((l, i) => ctx.fillText(l, bx + bw/2, by + bh/2.2 + i*14 - (lines.length-1)*7));
+  };
+  fwd.forEach(drawBox); fb.forEach(drawBox);
+
+  // Forward arrows
+  ctx.strokeStyle = 'rgba(200,200,220,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < fwd.length-1; i++) {
+    ctx.beginPath();
+    ctx.moveTo((fwd[i].x+fwd[i].w)*W, (fwd[i].y+fwd[i].h/2)*H);
+    ctx.lineTo(fwd[i+1].x*W, (fwd[i+1].y+fwd[i+1].h/2)*H);
+    ctx.stroke();
+  }
+  // Feedback arrows
+  ctx.strokeStyle = 'rgba(245,158,11,0.3)'; ctx.setLineDash([5,5]);
+  ctx.beginPath(); ctx.moveTo((fwd[3].x+fwd[3].w/2)*W, (fwd[3].y+fwd[3].h)*H);
+  ctx.lineTo((fb[0].x+fb[0].w/2)*W, fb[0].y*H); ctx.stroke();
+  for (let i = 0; i < fb.length-1; i++) {
+    ctx.beginPath();
+    ctx.moveTo((fb[i].x+fb[i].w)*W, (fb[i].y+fb[i].h/2)*H);
+    ctx.lineTo(fb[i+1].x*W, (fb[i+1].y+fb[i+1].h/2)*H);
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo((fb[3].x+fb[3].w/2)*W, fb[3].y*H);
+  ctx.lineTo((fwd[1].x+fwd[1].w/2)*W, (fwd[1].y+fwd[1].h)*H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#6c63ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('★ 量化 = 唯一有损环节', (fwd[3].x+fwd[3].w/2)*W, (fwd[3].y+fwd[3].h)*H + 20);
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'italic 11px sans-serif';
+  ctx.fillText('← 反馈重建通路（解码器副本）', 0.45*W, 0.38*H);
+}
+
+// ===== S6: Intra Prediction =====
+function drawIntra() {
+  const cv = document.getElementById('intraCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const cx = W*0.12, cy = H*0.18, cell = 42;
+
+  // Grid with reference pixels
+  for (let r = 0; r < 5; r++)
+    for (let c = 0; c < 5; c++) {
+      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.rect(cx + c*cell, cy + r*cell, cell, cell); ctx.fill(); ctx.stroke();
+    }
+
+  // Reference pixels (top row + left col)
+  ctx.fillStyle = '#34d399';
+  for (let c = 1; c < 5; c++) ctx.fillRect(cx + c*cell + 2, cy + 2, cell-4, cell-4);
+  for (let r = 1; r < 5; r++) ctx.fillRect(cx + 2, cy + r*cell + 2, cell-4, cell-4);
+  ctx.fillStyle = '#6ee7b7';
+  ctx.fillRect(cx + 2, cy + 2, cell-4, cell-4);
+
+  // Prediction arrows (vertical mode)
+  ctx.strokeStyle = 'rgba(108,99,255,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  for (let c = 1; c < 5; c++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + c*cell + cell/2, cy + cell);
+    ctx.lineTo(cx + c*cell + cell/2, cy + 4*cell);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#34d399'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('参考像素 (已编码)', cx + 2.5*cell, cy - 14);
+
+  // 9 mode labels
+  const modes = ['0:垂直 ↓','1:水平 →','2:DC(均值)','3:左下对角↘','4:右下对角↙','5:右偏垂直','6:下偏水平','7:左偏垂直','8:上偏水平'];
+  ctx.textAlign = 'left';
+  modes.forEach((m, i) => {
+    ctx.fillStyle = i === 0 ? '#6c63ff' : '#7777aa';
+    ctx.font = `${i===0?'bold ':''}12px sans-serif`;
+    ctx.fillText(m, cx + 5*cell + 30, cy + i*20 + 18);
+  });
+
+  // Plane mode demo
+  const px = cx + 5*cell + 180, py = cy;
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Plane 模式', px + 50, py - 12);
+  const grd = ctx.createLinearGradient(px, py, px+100, py+80);
+  grd.addColorStop(0, '#2a2a4a'); grd.addColorStop(0.5, '#4a4a7a'); grd.addColorStop(1, '#6a6aaa');
+  ctx.fillStyle = grd; ctx.fillRect(px, py, 100, 80);
+  ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1; ctx.strokeRect(px, py, 100, 80);
+  ctx.fillStyle = '#ccccee'; ctx.font = '10px sans-serif';
+  ctx.fillText('水平+垂直', px+50, py+33); ctx.fillText('同时渐变', px+50, py+50);
+}
+
+// ===== S7: Motion Estimation =====
+function drawInter() {
+  const cv = document.getElementById('interCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Reference frame
+  const rx = 24, ry = 28, rw = 280, rh = 210;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+  ctx.fillRect(rx, ry, rw, rh); ctx.strokeRect(rx, ry, rw, rh);
+  ctx.fillStyle = '#8888aa'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('参考帧 (Reference Frame)', rx + rw/2, ry - 8);
+
+  // Fake content
+  for (let i = 0; i < 25; i++) {
+    const x = rx + 18 + Math.random()*(rw-36), y = ry + 28 + Math.random()*(rh-48);
+    ctx.fillStyle = `rgba(${90+Math.random()*110},${90+Math.random()*110},${170+Math.random()*70},0.25)`;
+    ctx.fillRect(x, y, 5+Math.random()*10, 5+Math.random()*10);
+  }
+
+  // Current block
+  const cbx = rx + 165, cby = ry + 85, cbw = 38, cbh = 38;
+  ctx.strokeStyle = '#6c63ff'; ctx.lineWidth = 2;
+  ctx.strokeRect(cbx, cby, cbw, cbh);
+  ctx.fillStyle = 'rgba(108,99,255,0.1)'; ctx.fillRect(cbx, cby, cbw, cbh);
+
+  // Search window
+  ctx.strokeStyle = 'rgba(245,158,11,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+  ctx.strokeRect(cbx-50, cby-40, cbw+100, cbh+80); ctx.setLineDash([]);
+  ctx.fillStyle = '#fbbf24'; ctx.font = '10px sans-serif';
+  ctx.fillText('搜索窗口 (±N)', cbx + cbw/2, cby - 46);
+
+  // MV arrow
+  ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cbx+cbw/2, cby+cbh/2); ctx.lineTo(cbx-22+cbw/2, cby-15+cbh/2); ctx.stroke();
+  ctx.fillStyle = '#34d399'; ctx.beginPath();
+  ctx.moveTo(cbx-22+cbw/2, cby-15+cbh/2);
+  ctx.lineTo(cbx-22+cbw/2+7, cby-15+cbh/2-4);
+  ctx.lineTo(cbx-22+cbw/2+7, cby-15+cbh/2+4); ctx.fill();
+  ctx.fillStyle = '#34d399'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`MV=(-22,-15)`, cbx+cbw/2-30, cby-10);
+
+  // Block partition tree on right
+  const tx = rx + rw + 45, ty = ry;
+  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('可变块划分', tx, ty);
+  [[['16×16', tx, ty+22, 88, 64, '#a78bfa']],
+   [['16×8', tx, ty+94, 88, 30, '#60a5fa'],['16×8', tx, ty+126, 88, 30, '#60a5fa']],
+   [['8×16', tx+96, ty+94, 42, 62, '#38bdf8'],['8×16', tx+140, ty+94, 42, 62, '#38bdf8']]].flat().forEach(([l,xP,yP,wP,hP,c]) => {
+    ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.strokeRect(xP, yP, wP, hP);
+    ctx.fillStyle = c; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(l, xP+wP/2, yP+hP/2+3);
+  });
+}
+
+// ===== S8: DCT & Quantization =====
+let qpVal = 25;
+function updateQP(v) { qpVal = parseInt(v); document.getElementById('qpVal').textContent = qpVal; drawDCT(); }
+function drawDCT() {
+  const cv = document.getElementById('dctCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const N = 4, csz = 33, gap = 18, sx = 38, sy = 38;
+  const dct = [[380,-45,12,-5],[-38,22,-8,3],[15,-10,5,-2],[-6,3,-2,1]];
+  const qstep = Math.pow(2, (qpVal - 4) / 6);
+  const quant = dct.map(r => r.map(v => Math.round(v/qstep)));
+  const deq = quant.map(r => r.map(v => v*qstep));
+
+  const drawMat = (data, x, y, title, maxV, cs) => {
+    ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(title, x + N*csz/2, y - 8);
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const v = data[r][c], av = Math.abs(v);
+        const i = Math.min(1, av/(maxV*1.2));
+        let clr;
+        if (v === 0) clr = 'rgba(0,0,0,0.2)';
+        else if (cs === 'green') clr = `rgba(52,${Math.floor(60+i*155)},153,${0.3+i*0.5})`;
+        else if (cs === 'yellow') clr = `rgba(251,${Math.floor(80+i*140)},36,${0.3+i*0.5})`;
+        else clr = `rgba(168,${Math.floor(120-i*60)},${Math.floor(250-i*80)},${0.3+i*0.5})`;
+        ctx.fillStyle = clr;
+        ctx.fillRect(x + c*csz, y + r*csz, csz-2, csz-2);
+        ctx.fillStyle = v === 0 ? '#444' : '#e0e0e0'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(v, x + c*csz + csz/2, y + r*csz + csz/2 + 4);
+      }
+  };
+
+  drawMat(dct, sx, sy, 'DCT系数', 380, 'purple');
+  drawMat(quant, sx + N*csz + gap, sy, `量化后(QP=${qpVal})`, 380, 'green');
+
+  const nnz = quant.flat().filter(v => v !== 0).length;
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  const qx = sx + N*csz + gap;
+  ctx.fillText(`非零系数:${nnz}/16 · 压缩≈${((1-nnz/16)*100).toFixed(0)}%`, qx + N*csz/2, sy + N*csz + 26);
+
+  const dqx = sx + 2*(N*csz + gap);
+  drawMat(deq, dqx, sy, '反量化后(有损)', 380, 'yellow');
+
+  // Loss markers
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (dct[r][c] !== deq[r][c]) {
+        ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2;
+        ctx.strokeRect(dqx + c*csz, sy + r*csz, csz-2, csz-2);
+      }
+  ctx.fillStyle = '#f87171'; ctx.font = 'italic 11px sans-serif';
+  ctx.fillText('红框 = 不可逆损失', dqx + N*csz/2, sy + N*csz + 26);
+}
+
+// ===== S9: Entropy Coding =====
+function drawEntropy() {
+  const cv = document.getElementById('entCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const steps = [
+    { x: 0.04, y: 0.35, w: 0.15, h: 0.22, label: '语法元素', sub: '(系数/MV/模式)', color: '#888' },
+    { x: 0.23, y: 0.35, w: 0.15, h: 0.22, label: '二值化', sub: '→二进制串', color: '#a78bfa' },
+    { x: 0.42, y: 0.35, w: 0.16, h: 0.22, label: '上下文建模', sub: '364个ctx', color: '#fbbf24' },
+    { x: 0.62, y: 0.35, w: 0.16, h: 0.22, label: '算术编码', sub: '概率区间细分', color: '#34d399' },
+    { x: 0.82, y: 0.35, w: 0.14, h: 0.22, label: '二进制码流', sub: '输出', color: '#888' },
+  ];
+
+  steps.forEach(s => {
+    const bx = s.x*W, by = s.y*H, bw = s.w*W, bh = s.h*H;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+    const lines = s.label.split('\n');
+    lines.forEach((l, i) => ctx.fillText(l, bx+bw/2, by+bh/2.1 + i*16 - (lines.length-1)*8));
+    ctx.fillStyle = '#7777aa'; ctx.font = '10px sans-serif';
+    ctx.fillText(s.sub, bx+bw/2, by+bh-14);
+  });
+
+  ctx.strokeStyle = 'rgba(200,200,220,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < steps.length-1; i++) {
+    ctx.beginPath();
+    ctx.moveTo((steps[i].x+steps[i].w)*W, (steps[i].y+steps[i].h/2)*H);
+    ctx.lineTo(steps[i+1].x*W, (steps[i+1].y+steps[i+1].h/2)*H);
+    ctx.stroke();
+  }
+
+  // Probability feedback
+  const cpx = (steps[2].x+steps[2].w/2)*W, cpy = steps[2].y*H - 10;
+  ctx.strokeStyle = 'rgba(52,211,153,0.3)'; ctx.setLineDash([5,5]);
+  ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(cpx, cpy - 26); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#34d399'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('概率更新', cpx, cpy - 32);
+
+  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('CABAC 三阶段编码流水线', W/2, 26);
+}
+
+// ===== S10: Deblocking Filter =====
+function drawDeblock() {
+  const cv = document.getElementById('deblockCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const bx = 30, by = 40, bsz = 48;
+  // Before: blocky
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 2; c++) {
+      const v = 55 + Math.floor(Math.random()*40) + (r===1?35:0);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(bx + c*bsz, by + r*bsz, bsz, bsz);
+    }
+  ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(bx, by+bsz); ctx.lineTo(bx+2*bsz, by+bsz); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#f87171'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('滤波前 · 明显块边界', bx+bsz, by+2*bsz+22);
+
+  ctx.fillStyle = '#6c63ff'; ctx.font = '20px sans-serif';
+  ctx.fillText('→', bx+2*bsz+28, by+bsz+4);
+
+  // After: smooth
+  const ax = bx+2*bsz+70;
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 2; c++) {
+      const v = 88 + (r===1?3:-3);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(ax + c*bsz, by + r*bsz, bsz, bsz);
+    }
+  for (let i = 0; i < 5; i++) {
+    const v = 86 + i;
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(ax, by+bsz-2+i, 2*bsz, 1);
+  }
+  ctx.fillStyle = '#34d399';
+  ctx.fillText('滤波后 · 平滑过渡', ax+bsz, by+2*bsz+22);
+
+  // Bs rules on right
+  const tx = ax + 2*bsz + 50, ty = by;
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('边界强度 Bs', tx, ty);
+  [['Bs=4','帧内编码边界','#f87171'],['Bs=3','帧间+大残差','#fbbf24'],['Bs=2','帧间+有残差','#fbbf24'],['Bs=1','不同参考帧/MV','#60a5fa'],['Bs=0','同参考帧+同MV','#666']].forEach(([l,d,c],i) => {
+    ctx.fillStyle = c; ctx.font = 'bold 11px monospace';
+    ctx.fillText(l, tx, ty+22+i*20);
+    ctx.fillStyle = '#8888aa'; ctx.font = '11px sans-serif';
+    ctx.fillText(d, tx+48, ty+22+i*20);
+  });
+}
+
+// ===== S14: API Pipeline =====
+function drawAPI() {
+  const cv = document.getElementById('apiCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const steps = [
+    { x: 0.02, y: 0.3, w: 0.12, h: 0.35, label: 'avformat\n_open_input', color: '#a78bfa' },
+    { x: 0.17, y: 0.3, w: 0.12, h: 0.35, label: 'avcodec\n_find_decoder', color: '#a78bfa' },
+    { x: 0.32, y: 0.3, w: 0.10, h: 0.35, label: 'av_read\n_frame', color: '#fbbf24' },
+    { x: 0.45, y: 0.3, w: 0.13, h: 0.35, label: 'avcodec\nsend_packet', color: '#f59e0b' },
+    { x: 0.61, y: 0.3, w: 0.13, h: 0.35, label: 'avcodec\nreceive_frame', color: '#34d399' },
+    { x: 0.77, y: 0.3, w: 0.10, h: 0.35, label: 'sws\n_scale', color: '#38bdf8' },
+    { x: 0.90, y: 0.3, w: 0.08, h: 0.35, label: '显示\n/保存', color: '#888' },
+  ];
+
+  steps.forEach(s => {
+    const bx = s.x*W, by = s.y*H, bw = s.w*W, bh = s.h*H;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+    s.label.split('\n').forEach((l, i) => ctx.fillText(l, bx+bw/2, by+bh/2.2 + i*14 - 5));
+  });
+
+  ctx.strokeStyle = 'rgba(200,200,220,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < steps.length-1; i++) {
+    ctx.beginPath();
+    ctx.moveTo((steps[i].x+steps[i].w)*W, (steps[i].y+steps[i].h/2)*H);
+    ctx.lineTo(steps[i+1].x*W, (steps[i+1].y+steps[i+1].h/2)*H);
+    ctx.stroke();
+  }
+
+  // Data type labels
+  ctx.fillStyle = '#fbbf24'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('AVPacket', 0.37*W, 0.78*H);
+  ctx.fillText('→', 0.46*W, 0.78*H);
+  ctx.fillStyle = '#34d399';
+  ctx.fillText('AVFrame', 0.58*W, 0.78*H);
+  ctx.fillText('→', 0.74*W, 0.78*H);
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillText('RGB', 0.82*W, 0.78*H);
+}
+
+// ===== Initialize All =====
+function drawAll() {
+  drawHero(); drawYUV(); drawGOP(); drawEncoder(); drawIntra();
+  drawInter(); drawDCT(); drawEntropy(); drawDeblock(); drawAPI();
+}
+
+// Observe canvas wrappers — draw when visible
+const cvObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) drawAll(); });
+}, { threshold: 0.05 });
+document.querySelectorAll('.cv-wrap').forEach(w => cvObs.observe(w));
+
+window.addEventListener('load', drawAll);
+window.addEventListener('resize', drawAll);
+
+// Scroll hint
+document.querySelector('#s1 .scroll-hint')?.addEventListener('click', () => {
+  document.querySelector('#s2')?.scrollIntoView({ behavior: 'smooth' });
+});
+</script>
+
+</body>
+</html>

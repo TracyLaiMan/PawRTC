@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流媒体协议全景 — RTSP · RTMP · HLS · DASH · WebRTC</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}
+.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.canvas-wrap canvas{width:100%;height:100%;display:block}
+
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}
+.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}
+.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+/* Protocol timeline */
+.timeline{max-width:900px;width:100%;margin:20px auto;position:relative}
+.tl-line{position:absolute;left:50%;top:0;bottom:0;width:2px;background:rgba(108,99,255,.15);transform:translateX(-50%)}
+.tl-item{display:flex;align-items:flex-start;margin:16px 0;position:relative;opacity:0;transform:translateY(20px);transition:all .6s}
+.tl-item.vis{opacity:1;transform:translateY(0)}
+.tl-item:nth-child(odd){flex-direction:row}.tl-item:nth-child(even){flex-direction:row-reverse}
+.tl-dot{width:14px;height:14px;border-radius:50%;position:absolute;left:50%;top:20px;transform:translate(-50%,-50%);z-index:2;border:2px solid rgba(8,6,22,.8)}
+.tl-card{width:42%;padding:16px 20px;border-radius:12px;border:1px solid rgba(255,255,255,.06);transition:all .3s}
+.tl-card:hover{border-color:var(--tc,#6c63ff);background:rgba(255,255,255,.03)}
+.tl-card h4{font-size:14px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.tl-card .tl-year{font-size:10px;color:var(--tc,#6c63ff);font-weight:700}
+.tl-card p{font-size:11.5px;color:#8888aa;line-height:1.6;margin-top:6px}
+@media(max-width:700px){.tl-line{left:20px}.tl-dot{left:20px}.tl-item,.tl-item:nth-child(even){flex-direction:row}
+.tl-card{width:calc(100% - 50px);margin-left:40px}}
+
+/* Section title colors */
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s8 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">RTSP</a><span class="sep"></span>
+  <a href="#s3">RTMP</a><span class="sep"></span>
+  <a href="#s4">HLS</a><span class="sep"></span>
+  <a href="#s5">DASH</a><span class="sep"></span>
+  <a href="#s6">WebRTC</a><span class="sep"></span>
+  <a href="#s7">对比</a><span class="sep"></span>
+  <a href="#s8">选型</a>
+</nav>
+
+<!-- ===== S1: Hero ===== -->
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">流媒体协议全景</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">从传统安防 RTSP 到毫秒级 WebRTC，从直播 RTMP 到自适应 HLS/DASH——理解每种协议的<strong>设计哲学、延迟特性和最佳场景</strong></p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">RTSP</span><span class="flow-arr">·</span>
+    <span class="flow-box" style="color:#f87171">RTMP</span><span class="flow-arr">·</span>
+    <span class="flow-box" style="color:#34d399">HLS</span><span class="flow-arr">·</span>
+    <span class="flow-box" style="color:#a78bfa">MPEG-DASH</span><span class="flow-arr">·</span>
+    <span class="flow-box" style="color:#f472b6">WebRTC</span><span class="flow-arr">·</span>
+    <span class="flow-box" style="color:#38bdf8">SRT</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">1996</div><div class="l">RTSP 诞生</div></div>
+    <div class="stat"><div class="n">2009</div><div class="l">HLS 发布</div></div>
+    <div class="stat"><div class="n">2011</div><div class="l">WebRTC 开源</div></div>
+    <div class="stat"><div class="n">&lt;100ms</div><div class="l">WebRTC 延迟</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S2: RTSP ===== -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">RTSP — 实时流协议</h2>
+  <p class="sec-sub" id="s2s">Real Time Streaming Protocol，1996 年由 RealNetworks/Netscape/Columbia 大学联合提出，RFC 2326。安防监控行业的<strong>事实标准</strong></p>
+
+  <div class="canvas-wrap" data-reveal style="height:320px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>协议本质</h4>
+      <div class="sub">信令 + 媒体分离 — TCP 控制 + UDP/RTP 传输</div>
+      <p>RTSP 是一个<strong>会话控制协议</strong>，类似于"网络遥控器"——负责控制媒体的播放/暂停/停止/seek，但<strong>不传输媒体数据本身</strong>。媒体数据通过独立的 RTP/RTCP 通道传输（通常是 UDP）。默认端口 554。支持 TCP 和 UDP 两种传输模式：UDP 低延迟但可能被防火墙拦截；TCP 穿透性好但延迟略高。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>核心方法</h4>
+      <div class="sub">OPTIONS · DESCRIBE · SETUP · PLAY · TEARDOWN</div>
+      <p><strong>OPTIONS</strong>：查询服务器支持的方法。<strong>DESCRIBE</strong>：获取媒体描述（SDP）。<strong>SETUP</strong>：协商传输参数（RTP/RTCP 端口、传输模式）。<strong>PLAY</strong>：开始/恢复播放（可指定 Range 实现 Seek）。<strong>PAUSE</strong>：暂停。<strong>TEARDOWN</strong>：结束会话释放资源。<strong>GET_PARAMETER / SET_PARAMETER</strong>：扩展方法，厂商常用于 PTZ 控制等。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>优势</h4>
+      <div class="sub">安防行业无处不在</div>
+      <p>• <strong>兼容性极强</strong>——几乎所有 IPC/NVR/VMS 都支持<br>• <strong>会话控制完善</strong>——PLAY/PAUSE/SEEK/PTZ<br>• <strong>延迟可控</strong>——UDP 模式下 200-500ms<br>• <strong>标准化 SDP</strong>——媒体参数协商清晰<br>• <strong>ONVIF 标配</strong>——安防互操作性基础</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>劣势</h4>
+      <div class="sub">非为互联网设计</div>
+      <p>• <strong>NAT 穿透困难</strong>——UDP/RTP 多端口映射复杂<br>• <strong>无原生自适应码率</strong>——需扩展实现<br>• <strong>文本协议</strong>——解析效率低于二进制协议<br>• <strong>无内置加密</strong>——需 RTSPS (TLS 隧道)<br>• <strong>防火墙不友好</strong>——多端口动态分配</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>典型场景</h4>
+      <div class="sub">IPC · NVR · VMS</div>
+      <p>• IPC 相机直连预览（局域网）<br>• NVR 取流录像<br>• VMS 平台接入（通过 ONVIF）<br>• 第三方 AI 盒子取流分析<br>• 不适合：公网低延迟直播、浏览器播放（需插件）</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">RTSP 交互流程（典型 IPC 取流）</div>
+    <div class="cblock" style="margin-top:0">Client                              IPC Server
+  │                                      │
+  │── OPTIONS rtsp://10.31.3.144:554 ──→│  <span class="cm">查询能力</span>
+  │←── 200 OK (Public: DESCRIBE,SETUP..)─│
+  │                                      │
+  │── DESCRIBE rtsp://..../stream1 ────→│  <span class="cm">请求媒体描述</span>
+  │←── 200 OK (SDP: H.264+AAC, RTP) ────│
+  │                                      │
+  │── SETUP (video, RTP/AVP/UDP) ──────→│  <span class="cm">协商视频传输通道</span>
+  │←── 200 OK (client_port,server_port) ─│
+  │── SETUP (audio, RTP/AVP/UDP) ──────→│  <span class="cm">协商音频传输通道</span>
+  │←── 200 OK ──────────────────────────│
+  │                                      │
+  │── PLAY (Range: npt=0-) ────────────→│  <span class="cm">开始播放</span>
+  │←── 200 OK ──────────────────────────│
+  │                                      │
+  │←══ RTP Stream (Video+Audio) ════════│  <span class="cm">媒体数据传输</span>
+  │                                      │
+  │── TEARDOWN ────────────────────────→│  <span class="cm">结束会话</span></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S3: RTMP ===== -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">RTMP — 实时消息传递协议</h2>
+  <p class="sec-sub" id="s3s">Real Time Messaging Protocol，Adobe 2002 年推出。直播行业的<strong>推流标配</strong>，至今仍是 OBS/FFmpeg 的默认输出格式</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>协议本质</h4>
+      <div class="sub">TCP 长连接 + 二进制分块 + 多路复用</div>
+      <p>RTMP 基于 TCP（端口 1935），建立<strong>持久连接</strong>后将音视频数据拆分为 Chunk 传输。单个连接可<strong>多路复用</strong>多个逻辑流（视频/音频/数据/控制）。变体：<strong>RTMPS</strong>（TLS 加密）、<strong>RTMPE</strong>（Adobe 私有加密）、<strong>RTMPT</strong>（HTTP 隧道穿透防火墙）、<strong>RTMFP</strong>（UDP 变体，Flash P2P）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>握手与连接</h4>
+      <div class="sub">三次握手 + 简单握手 + 复杂握手</div>
+      <p>TCP 三次握手后，RTMP 有自己的<strong>应用层握手</strong>：C0/C1/C2（客户端）和 S0/S1/S2（服务端）共 6 个包交换协议版本、时间戳、随机数。Flash Player 时代还有<strong>复杂握手</strong>（加密验证）。握手完成后进入<strong>Connect → CreateStream → Publish/Play</strong> 流程。推流端 Publish，拉流端 Play。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>优势</h4>
+      <div class="sub">直播推流的不二之选</div>
+      <p>• <strong>延迟低</strong>——TCP 模式下 1-3 秒<br>• <strong>生态成熟</strong>——OBS/FFmpeg/nginx-rtmp 全支持<br>• <strong>推流稳定</strong>——TCP 可靠传输保证不丢帧<br>• <strong>多路复用</strong>——单连接传输音视频<br>• <strong>CDN 支持</strong>——各 CDN 均有 RTMP 接入点</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>劣势</h4>
+      <div class="sub">Flash 已死，浏览器不支持</div>
+      <p>• <strong>浏览器端已死</strong>——Flash EOL 2020，H5 无法直接播放<br>• <strong>TCP 队头阻塞</strong>——丢包重传导致延迟抖动<br>• <strong>无自适应码率</strong>——需扩展或转 HLS/DASH<br>• <strong>专利风险</strong>——Adobe 曾收许可费<br>• <strong>不适合弱网</strong>——TCP 在 4G/WiFi 高丢包场景表现差</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>典型推拉流架构</h4>
+      <div class="sub">RTMP 推 → 服务端转码 → HLS/FLV 拉</div>
+      <p>现代直播架构：OBS/FFmpeg → <strong>RTMP 推流</strong>到 nginx-rtmp/SRS → 服务端<strong>实时转封装</strong>为 HLS/HTTP-FLV/WebRTC → 播放端通过这些协议<strong>拉流</strong>。RTMP 的角色已从"端到端协议"演变为"推流接入协议"——第一公里用 RTMP，最后一公里用 HLS/WebRTC。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ RTMP 在 IPC 场景的定位</div>
+    安防 IPC 几乎不使用 RTMP——RTSP 是行业标准。RTMP 更适合<strong>直播推流</strong>场景（主播推流到 CDN）。IPC 偶尔用 RTMP 推流到 YouTube Live/阿里云直播等云平台做<strong>公网直播</strong>，但不用于本地监控。如果 IPC 需要公网低延迟推流，WebRTC 是比 RTMP 更好的选择（延迟 0.1s vs 1-3s，且浏览器原生支持）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S4: HLS ===== -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">HLS — HTTP Live Streaming</h2>
+  <p class="sec-sub" id="s4s">Apple 2009 年推出，基于 HTTP 的自适应码率流媒体协议。浏览器/移动端的<strong>通用播放标准</strong></p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#34d399">
+    <div class="stage-num" style="background:#34d399">HLS</div>
+    <div class="stage-body">
+      <h4>核心原理：切片 + 索引</h4>
+      <div class="en">m3u8 播放列表 → .ts 分片文件 → 自适应码率切换</div>
+      <p>HLS 将整个视频流切分为<strong>小的 .ts（MPEG-TS）文件片段</strong>（通常 2-10 秒），通过 HTTP Server 分发。客户端周期性下载 .m3u8 播放列表（索引文件），按序下载并播放 ts 分片。<strong>自适应码率</strong>：服务端提供多档码率的 m3u8（如 360p/720p/1080p），客户端根据网络带宽<strong>动态切换</strong>码率——带宽下降时自动切到低码率，恢复后切回高码率。这是 HLS 最核心的竞争力。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>优势</h4>
+      <div class="sub">互联网最兼容的流媒体协议</div>
+      <p>• <strong>通用性第一</strong>——所有浏览器/手机/机顶盒原生支持<br>• <strong>CDN 友好</strong>——标准 HTTP，走 CDN 缓存零成本<br>• <strong>防火墙友好</strong>——HTTPS 443 端口，无穿透问题<br>• <strong>自适应码率</strong>——ABR 是多客户端场景的刚需<br>• <strong>DRM 支持</strong>——FairPlay/AES-128 加密</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>劣势</h4>
+      <div class="sub">延迟是硬伤</div>
+      <p>• <strong>高延迟</strong>——典型 10-30 秒（3 个分片 × 6 秒/片）<br>• <strong>低延迟 HLS (LL-HLS)</strong>——分片 2 秒 + 部分分片，延迟 ~3-5s<br>• <strong>存储碎片</strong>——大量 .ts 小文件（HLS fMP4 改善）<br>• <strong>不适合双向通信</strong>——纯拉流，无对讲/信令能力<br>• <strong>不适合实时监控</strong>——10s+ 延迟在安防场景不可接受</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:8px">
+    <div class="ct">m3u8 播放列表结构</div>
+    <div class="cblock" style="margin-top:0"><span class="cm"># master.m3u8 — 多码率索引</span>
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360
+360p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720
+720p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+1080p.m3u8
+
+<span class="cm"># 720p.m3u8 — 单码率的播放列表</span>
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+#EXTINF:6.000,
+720p_00001.ts
+#EXTINF:6.000,
+720p_00002.ts
+#EXTINF:5.500,
+720p_00003.ts
+#EXT-X-ENDLIST</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S5: DASH ===== -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">MPEG-DASH — 国际标准自适应流媒体</h2>
+  <p class="sec-sub" id="s5s">Dynamic Adaptive Streaming over HTTP，ISO/IEC 23009-1。与 HLS 类似但<strong>更开放、更灵活</strong></p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>与 HLS 的本质区别</h4>
+      <div class="sub">编解码无关 · 容器无关 · DRM 无关</div>
+      <p>DASH 是<strong>纯标准</strong>（ISO），不绑定任何厂商。HLS 绑定 Apple 生态（FairPlay DRM、ts 容器）。DASH 支持任意编解码（H.264/H.265/AV1/VVC）、任意容器（fMP4/WebM/MPEG-TS）、任意 DRM（Widevine/PlayReady/Marlin）。<strong>MPD 文件</strong>（Media Presentation Description）是 XML 格式的清单，替代 m3u8。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>技术特点</h4>
+      <div class="sub">更精细的自适应 · 更低的延迟</div>
+      <p>• <strong>Period 分段</strong>——不同时段可用不同码率组合（如广告段独立）<br>• <strong>AdaptationSet</strong>——同内容不同编码/码率的集合<br>• <strong>Representation</strong>——具体的码率/分辨率版本<br>• <strong>SegmentTemplate</strong>——用 URL 模板替代逐个列举分片<br>• <strong>低延迟 DASH (LL-DASH)</strong>——Chunked CMAF + HTTP/1.1 chunked transfer → ~2-3s 延迟</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>HLS vs DASH 选型</h4>
+      <div class="sub">市场份额 vs 标准纯粹性</div>
+      <p>• <strong>移动端</strong>→ HLS（iOS/Android 原生优先）<br>• <strong>桌面/机顶盒</strong>→ DASH（更开放）<br>• <strong>混合方案</strong>→ 服务端同时输出 HLS+DASH<br>• <strong>IPC 场景</strong>→ 两个都不适合（延迟太高）<br>• <strong>趋势</strong>→ CMAF 统一容器，HLS 和 DASH 指向同一套 fMP4 文件</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">CMAF — 统一 HLS 和 DASH 的桥梁</div>
+    Common Media Application Format (CMAF) 定义了一套<strong>HLS 和 DASH 都能直接引用的 fMP4 分片格式</strong>。编码器输出一套 CMAF 分片 → 同时生成 .m3u8 和 .mpd 索引 → HLS 播放器和 DASH 播放器都能播放。<strong>一套存储、两份索引、零额外成本支持两个协议</strong>。Apple 从 HLS 也开始支持 fMP4（替代 ts），推动 CMAF 成为实际统一标准。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S6: WebRTC ===== -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">WebRTC — 超低延迟实时通信</h2>
+  <p class="sec-sub" id="s6s">Google 2011 年开源，W3C/IETF 标准。浏览器原生支持，<strong>亚秒级延迟</strong>——IPC 实时监控的未来</p>
+
+  <div class="canvas-wrap" data-reveal style="height:340px">
+    <canvas id="c2"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>协议栈全景</h4>
+      <div class="sub">ICE · DTLS · SRTP · SCTP — 四层安全实时传输</div>
+      <p>WebRTC 不是一个协议，而是一套<strong>协议集合</strong>：<strong>ICE</strong>（NAT 穿透，STUN+TURN）→ <strong>DTLS</strong>（密钥交换+身份认证）→ <strong>SRTP</strong>（加密媒体传输）+ <strong>SCTP</strong>（可靠数据通道）。信令层未标准化（可用 WebSocket/MQTT/SIP）。P2P 模式下媒体数据<strong>不经过服务器</strong>直接在对等端之间传输；SFU 模式下经过选择性转发单元中转。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>延迟优势分析</h4>
+      <div class="sub">为什么 WebRTC 能做到 &lt;100ms？</div>
+      <p>① <strong>UDP 传输</strong>——无 TCP 队头阻塞，丢包用 NACK/PLC/FEC 恢复而非重传等待<br>② <strong>无分片缓冲</strong>——编码帧立即 RTP 分包发送，不等下一帧<br>③ <strong>Jitter Buffer 自适应</strong>——初始缓冲极小（15-30ms），根据网络逐步扩展<br>④ <strong>硬件编解码</strong>——H.264 硬编 2-5ms，VP8/VP9 软编也很快<br>⑤ <strong>P2P/SFU 直连</strong>——不经过 CDN 缓存层。端到端延迟典型值 30-150ms（LAN）、50-300ms（WAN）。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>IPC 场景优势</h4>
+      <div class="sub">实时监控 · 双向对讲 · 浏览器播放</div>
+      <p>• <strong>延迟碾压</strong>——100ms vs RTSP 500ms vs HLS 10s<br>• <strong>浏览器原生</strong>——无需插件，H5 video 直接播放<br>• <strong>双向对讲</strong>——DataChannel 或音频上行天然支持<br>• <strong>自适应码率</strong>——Simulcast/SVC 多客户端适配<br>• <strong>安全内置</strong>——DTLS+SRTP 端到端加密</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>IPC 场景挑战</h4>
+      <div class="sub">信令 · NAT · SFU · 多路预览</div>
+      <p>• <strong>信令服务依赖</strong>——需要额外的信令服务器建立连接<br>• <strong>NAT 穿透不确定性</strong>——对称 NAT 需 TURN 中继<br>• <strong>SFU 成本</strong>——多客户端时需 SFU（如 LiveKit/Janus）<br>• <strong>多路预览</strong>——同时预览 16 路需要 16 个 PeerConnection<br>• <strong>录像存储</strong>——WebRTC 管传不管存，需额外实现</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>LiveKit 方案</h4>
+      <div class="sub">开源 SFU，简化 WebRTC 部署</div>
+      <p>LiveKit 封装了 WebRTC 的复杂性：<strong>信令</strong>（WebSocket+JWT）、<strong>SFU</strong>（media server）、<strong>录制</strong>（Egress 转 MP4）、<strong>多房间管理</strong>。IPC 集成路径：嵌入式 SDK（LinkricAI）→ LiveKit Cloud/Self-Host → Web/App SDK 播放。这是当前 IPC 实时监控的最佳 WebRTC 实践。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S7: Comparison ===== -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">五大协议全面对比</h2>
+  <p class="sec-sub" id="s7s">从延迟、穿透性、浏览器支持、生态成熟度、实现复杂度五个维度横向对比</p>
+
+  <div class="ptbl" style="margin-top:24px">
+    <table>
+    <thead>
+      <tr><th>维度</th><th>RTSP</th><th>RTMP</th><th>HLS</th><th>MPEG-DASH</th><th>WebRTC</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>诞生年份</strong></td><td>1996</td><td>2002</td><td>2009</td><td>2012</td><td class="g">2011</td></tr>
+      <tr><td><strong>传输层</strong></td><td>TCP+UDP/RTP</td><td>TCP</td><td>HTTP/TCP</td><td>HTTP/TCP</td><td class="g">UDP (SRTP)</td></tr>
+      <tr><td class="g"><strong>典型延迟</strong></td><td>200-500ms</td><td>1-3s</td><td class="r">10-30s (LL: 3-5s)</td><td class="r">10-30s (LL: 2-3s)</td><td class="g">30-150ms</td></tr>
+      <tr><td><strong>NAT 穿透</strong></td><td class="r">困难</td><td class="y">一般 (TCP)</td><td class="g">优秀 (HTTP)</td><td class="g">优秀 (HTTP)</td><td class="g">完善 (ICE)</td></tr>
+      <tr><td><strong>浏览器播放</strong></td><td class="r">不支持</td><td class="r">不支持</td><td class="g">原生支持</td><td class="g">支持 (MSE)</td><td class="g">原生支持</td></tr>
+      <tr><td class="g"><strong>自适应码率</strong></td><td class="r">扩展实现</td><td class="r">不支持</td><td class="g">原生 ABR</td><td class="g">原生 ABR</td><td class="g">Simulcast/SVC</td></tr>
+      <tr><td><strong>双向通信</strong></td><td class="y">扩展 (RTP)</td><td class="y">支持 (Data)</td><td class="r">不支持</td><td class="r">不支持</td><td class="g">原生 (DataChannel)</td></tr>
+      <tr><td><strong>内置加密</strong></td><td class="y">RTSPS (TLS)</td><td class="y">RTMPS (TLS)</td><td class="g">HTTPS+AES</td><td class="g">HTTPS+DRM</td><td class="g">DTLS+SRTP</td></tr>
+      <tr><td><strong>CDN 友好度</strong></td><td class="r">差</td><td class="y">一般</td><td class="g">极好</td><td class="g">极好</td><td class="r">差 (需 SFU)</td></tr>
+      <tr><td><strong>嵌入式实现</strong></td><td class="g">简单 (live555)</td><td class="y">中等</td><td class="r">复杂 (HTTP Server+m3u8)</td><td class="r">复杂</td><td class="y">中等-复杂</td></tr>
+      <tr><td><strong>行业标准</strong></td><td class="g">ONVIF Profile S/G/T</td><td>Adobe 私有</td><td>Apple 主导, RFC 8216</td><td>ISO/IEC 23009-1</td><td class="g">W3C + IETF</td></tr>
+      <tr><td><strong>多路预览适合度</strong></td><td class="g">极好 (单播/组播)</td><td class="y">一般</td><td class="r">差 (每路需转封装)</td><td class="r">差</td><td class="y">中等 (PeerConnection×N)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 一个常见的误区：把延迟和吞吐混淆</div>
+    <strong>低延迟 ≠ 高吞吐。</strong> HLS/DASH 的吞吐极高（CDN 边缘缓存可支撑百万并发），但延迟也很高（10s+）。WebRTC 延迟极低（100ms）但无法 CDN 大规模分发（SFU 成本高）。RTSP 居中。选型时要问：<strong>场景是"一对多广播"还是"一对一实时交互"？</strong>前者选 HLS/DASH，后者选 WebRTC。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S8: Selection Guide ===== -->
+<div class="sec s8" id="s8">
+  <h2 class="sec-title" id="s8t">IPC 流媒体协议选型指南</h2>
+  <p class="sec-sub" id="s8s">没有万能协议——不同场景的最优选型策略</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>局域网 IPC 直连预览</h4>
+      <div class="sub">→ RTSP (UDP) — 不二之选</div>
+      <p>局域网延迟可控（&lt;500ms），NAT 不是问题，ONVIF 兼容。实现简单——嵌入式 live555 或 GStreamer rtsp-server 几小时就能跑起来。VLC/FFplay 直接播放 rtsp:// URL。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>NVR 多路取流录像</h4>
+      <div class="sub">→ RTSP (TCP) — 可靠性优先</div>
+      <p>NVR 同时取 16-64 路 IPC 的流。TCP 模式比 UDP 更可靠（不丢包），略微增加的延迟（+100ms）不影响录像。海康/大华/ONVIF 全部基于 RTSP。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>App/浏览器远程实时预览</h4>
+      <div class="sub">→ WebRTC — 体验最优</div>
+      <p>公网延迟敏感。App 和浏览器原生支持 WebRTC（无需插件）。LiveKit SDK 封装后集成成本可接受。配合 TURN 服务器保证 99% 穿透成功率。延迟 &lt;300ms 可流畅对讲。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>公网直播/分享</h4>
+      <div class="sub">→ RTMP 推流 + HLS 拉流</div>
+      <p>IPC 作为 RTMP 推流端（FFmpeg 软推或硬件编码直接输出 RTMP），推送到阿里云/腾讯云直播 CDN。App 端通过 HLS/FLV 拉流。支持千万级并发。延迟 3-5s 在直播场景可接受。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>AI 盒子第三方取流</h4>
+      <div class="sub">→ RTSP — 兼容性第一</div>
+      <p>AI 分析盒子需要从各品牌 IPC 取流做检测。RTSP 是唯一所有品牌都支持的通用协议。即使 IPC 内部用私有协议，也一定会暴露 RTSP 接口给第三方。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>录像回放 Seek</h4>
+      <div class="sub">→ RTSP (Range/Scale) 或私有协议</div>
+      <p>RTSP PLAY 支持 Range 头指定时间段（如 npt=20240601T120000Z-20240601T121000Z），支持 Scale 实现快进/慢放。但实际工程中很多厂商用<strong>私有 HTTP 协议</strong>回放录像（更灵活的时间轴拖动、事件标记）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#6c63ff">
+    <div class="stage-num" style="background:#6c63ff">★</div>
+    <div class="stage-body">
+      <h4>IPC 产品推荐协议策略：双协议栈</h4>
+      <div class="en">RTSP（存量兼容）+ WebRTC（增量体验）— 一个都不能少</div>
+      <p><strong>主协议 RTSP</strong>：支持 ONVIF 认证，兼容所有 NVR/VMS/AI 盒子，覆盖存量市场和行业集成需求。UDP 模式保证预览延迟 &lt;500ms。<br>
+      <strong>增强协议 WebRTC</strong>：通过 LiveKit SDK 提供超低延迟（&lt;200ms）体验，支持浏览器无插件播放、双向对讲、Simulcast 多客户端。覆盖移动 App 和 Web 端的实时预览需求。<br>
+      <strong>辅助协议 HLS</strong>（可选）：用于公网直播分享场景——IPC → RTMP 推流 → CDN 转 HLS → 多人同时观看。延迟敏感场景不用 HLS。<br>
+      <strong>不推荐</strong>：单一 RTSP（浏览器无法播放）、单一 WebRTC（存量 NVR 无法接入）、单一 RTMP（延迟 vs 穿透性不如 WebRTC）。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  流媒体协议全景 · RTSP · RTMP · HLS · DASH · WebRTC &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="livekit_protocols_learn.html">WebRTC 协议栈详解 →</a>
+</footer>
+
+<script>
+// ===== Scroll Reveal =====
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap, .tl-item').forEach(el => obs.observe(el));
+
+// ===== Top Nav =====
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});
+  });
+});
+
+// ===== Canvas 1: RTSP Sequence Diagram =====
+(function() {
+  const c = document.getElementById('c1');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=320;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawLifeline(x, y1, y2, color, label) {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.2; ctx.lineWidth = 2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.7;
+    ctx.font = 'bold 13px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y1-10);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMsg(x1, y, x2, label, color) {
+    const progress = 0.3 + Math.sin(t*2 + y*0.1)*0.15;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    const ang = x2>x1 ? 0 : Math.PI;
+    ctx.beginPath(); ctx.moveTo(x2, y);
+    ctx.lineTo(x2-8*Math.cos(ang-0.4), y-8*Math.sin(ang-0.4));
+    ctx.lineTo(x2-8*Math.cos(ang+0.4), y-8*Math.sin(ang+0.4));
+    ctx.fill();
+    const dx = x1+(x2-x1)*progress;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath(); ctx.arc(dx, y, 3, 0, Math.PI*2); ctx.fill();
+    if(label) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.font = 'bold 10px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      const mx = (x1+x2)/2;
+      ctx.fillText(label, mx, y-10);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBox(x, y, w, h, label, color) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.1;
+    ctx.beginPath(); ctx.roundRect(x-w/2, y-h/2, w, h, 8); ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.3; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.8;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y+4);
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+    const cx=W/2, lx=W*0.2, rx=W*0.8, ty=40;
+
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('RTSP 协议架构：信令面 (TCP:554) + 媒体面 (UDP/RTP)', cx, 20);
+
+    drawLifeline(lx, ty, 290, '#38bdf8', 'Client');
+    drawLifeline(rx, ty, 290, '#fbbf24', 'IPC Server');
+
+    // RTSP messages
+    drawMsg(lx, 70, rx, 'OPTIONS', '#38bdf8');
+    drawMsg(rx, 85, lx, '200 OK', '#8888aa');
+    drawMsg(lx, 105, rx, 'DESCRIBE', '#38bdf8');
+    drawMsg(rx, 120, lx, 'SDP', '#8888aa');
+    drawMsg(lx, 140, rx, 'SETUP (video+audio)', '#38bdf8');
+    drawMsg(rx, 155, lx, '200 OK (ports)', '#8888aa');
+    drawMsg(lx, 175, rx, 'PLAY', '#38bdf8');
+    drawMsg(rx, 190, lx, '200 OK', '#8888aa');
+
+    // RTP stream
+    ctx.strokeStyle = '#34d399';
+    ctx.globalAlpha = 0.3; ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    for(let y=215; y<=240; y+=8) {
+      const xx = rx + Math.sin(t*5 + y)*8;
+      ctx.beginPath(); ctx.moveTo(xx, y); ctx.lineTo(lx, y+2); ctx.stroke();
+    }
+    ctx.fillStyle = '#34d399';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🎬 RTP 媒体流 (UDP 单向)', (lx+rx)/2, 232);
+    ctx.fillText('信令面 (TCP:554) — 会话控制', (lx+rx)/2, 275);
+    ctx.fillText('媒体面 (UDP:动态端口) — 音视频数据', (lx+rx)/2, 295);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ===== Canvas 2: WebRTC Protocol Stack =====
+(function() {
+  const c = document.getElementById('c2');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=340;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawLayer(y, h, label, color, subLabels) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.08;
+    ctx.beginPath();
+    ctx.roundRect(30, y, W-160, h, 8);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.25; ctx.lineWidth = 1.5; ctx.stroke();
+
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, 48, y + h/2 + 5);
+
+    if(subLabels) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.5;
+      ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'left';
+      subLabels.forEach((s, i) => {
+        ctx.fillText(s, W-120, y + 18 + i*16);
+      });
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('WebRTC 协议栈：四层安全实时传输架构', W/2, 22);
+
+    drawLayer(44, 50, 'ICE — NAT 穿透层', '#38bdf8', ['STUN (RFC 5389)', 'TURN (RFC 5766)', '候选地址收集']);
+    drawLayer(104, 50, 'DTLS — 安全握手层', '#a78bfa', ['密钥交换 (ECDHE)', '证书验证 (ECDSA)', 'SRTP 密钥派生']);
+    drawLayer(164, 50, 'SRTP + SCTP — 媒体/数据层', '#f472b6', ['SRTP: 加密音视频', 'SCTP: 可靠数据通道', 'RTCP: 拥塞控制']);
+    drawLayer(224, 50, 'RTP/RTCP — 媒体传输层', '#34d399', ['RTP: 实时传输 (RFC 3550)', 'NACK/PLI/FIR/FEC', 'Jitter Buffer']);
+
+    // Bottom: Codec
+    drawLayer(284, 40, 'Codec — 编解码层', '#fbbf24', ['H.264 / VP8 / VP9 / AV1', 'Opus / G.711 / AAC']);
+
+    // Latency indicator on right
+    ctx.fillStyle = '#f472b6';
+    ctx.globalAlpha = 0.5;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('端到端延迟', W-20, 40);
+    ctx.fillText('30~150ms (LAN)', W-20, 56);
+    ctx.fillText('50~300ms (WAN)', W-20, 72);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

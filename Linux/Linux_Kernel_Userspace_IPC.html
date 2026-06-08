@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 内核与应用层通信机制 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain u { color:#fbbf24; text-decoration:none; } .chain em { color:#f87171; font-style:normal; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,42px);font-weight:900">Linux 内核与用户空间通信</h2>
+  <p class="sec-sub">系统化知识体系 — Netlink · Uevent · sysfs · procfs · ioctl · mmap · 信号 · relayfs · 决策指南</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>Netlink</strong><br><small>双向·组播·异步</small></span>
+    <span class="flow-arr">┊</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Uevent</strong><br><small>热插拔·设备事件</small></span>
+    <span class="flow-arr">┊</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>sysfs/procfs</strong><br><small>虚拟文件系统</small></span>
+    <span class="flow-arr">┊</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>ioctl/mmap</strong><br><small>设备控制·零拷贝</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>基于 Socket</h4><div class="sub">Netlink — 内核级网络协议</div>
+      <p><em>AF_NETLINK</em> 是专门为内核通信设计的协议族。支持<strong>双向消息</strong>、<strong>多播组</strong>、<strong>异步通知</strong>。路由、Netfilter、udev、SELinux、audit 全部基于 netlink。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>基于文件系统</h4><div class="sub">sysfs · procfs · debugfs</div>
+      <p>利用 VFS 将内核数据<strong>映射为文件</strong>。用户空间通过标准 read/write 交互。<em>sysfs</em> (设备模型) · <em>procfs</em> (进程/内核信息) · <em>debugfs</em> (调试)。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>基于系统调用</h4><div class="sub">ioctl · read/write · mmap · signal</div>
+      <p>通过设备文件 + 系统调用传递数据。<em>ioctl</em> 传递结构化控制命令 · <em>mmap</em> 实现零拷贝共享内存 · <em>signal</em> 实现轻量异步通知。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 总览 ══ -->
+<h2 class="sh">1. 通信机制全景</h2>
+<p class="ss">一张表看清所有内核↔用户通信机制 — 方向 · 带宽 · ABI 稳定性 · 适用场景</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>机制</th><th>方向</th><th>带宽</th><th>数据格式</th><th>ABI 稳定</th><th>内核发起</th><th>最佳场景</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Netlink</strong></td><td>↔ 双向</td><td class="g">中~高</td><td>二进制 TLV</td><td class="g">✓</td><td class="g">✓ (多播)</td><td>通用内核↔用户消息</td></tr>
+    <tr><td><strong>Uevent</strong></td><td>K→U</td><td>低</td><td>KEY=VALUE 文本</td><td class="g">✓</td><td class="g">✓</td><td>设备热插拔事件</td></tr>
+    <tr><td><strong>sysfs</strong></td><td>↔ 双向</td><td>低 (1值/文件)</td><td>文本</td><td class="g">✓</td><td class="r">✗</td><td>设备/驱动属性</td></tr>
+    <tr><td><strong>procfs</strong></td><td>↔ 双向</td><td>低 (1页/次)</td><td>文本</td><td class="y">部分</td><td class="r">✗</td><td>进程/内核统计</td></tr>
+    <tr><td><strong>debugfs</strong></td><td>↔ 双向</td><td>不限</td><td>任意</td><td class="r">✗</td><td class="r">✗</td><td>内核开发调试</td></tr>
+    <tr><td><strong>ioctl</strong></td><td>↔ 双向</td><td>低~中</td><td>二进制结构体</td><td class="y">半稳定</td><td class="r">✗</td><td>设备控制命令</td></tr>
+    <tr><td><strong>mmap</strong></td><td>↔ 双向</td><td class="g">极高 (零拷贝)</td><td>原始内存</td><td class="r">驱动特定</td><td class="r">✗</td><td>大缓冲区共享</td></tr>
+    <tr><td><strong>Signal</strong></td><td>K→U</td><td class="r">1 bit</td><td>仅事件通知</td><td class="g">✓</td><td class="g">✓ (SIGIO)</td><td>轻量异步通知</td></tr>
+    <tr><td><strong>relayfs</strong></td><td>K→U</td><td class="g">极高 (~GB/s)</td><td>原始字节流</td><td class="r">✗</td><td class="g">✓</td><td>海量内核追踪</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch2: Netlink ══ -->
+<h2 class="sh">2. Netlink — 内核级 Socket 通信</h2>
+<p class="ss">AF_NETLINK 协议族 · 双向消息 · 多播组 · 异步通知 — 最通用的内核↔用户通信方式</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Netlink 核心特性</h4><div class="lbl">AF_NETLINK — 为内核设计的 Socket</div>
+    <p><strong>双向通信</strong>: 内核可向用户发消息，用户可向内核发消息。<br>
+    <strong>组播 (Multicast)</strong>: 内核向一个多播组发消息 → 所有加入该组的用户进程同时收到。这是 udev 工作的基础。<br>
+    <strong>异步通知</strong>: 内核主动发起，无需用户轮询。<br>
+    <strong>序列号 + 端口号</strong>: 每条消息有 seq/pid 字段，请求-应答配对。<br>
+    <strong>标准协议族</strong>: <code>NETLINK_ROUTE</code> (路由), <code>NETLINK_KOBJECT_UEVENT</code> (udev), <code>NETLINK_AUDIT</code> (审计), <code>NETLINK_SELINUX</code>...</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>消息格式 — TLV 编码</h4><div class="lbl">nlmsghdr + nla_attr 属性</div>
+    <p>Netlink 消息由 <code>nlmsghdr</code> 头 + 若干 <strong>TLV 属性</strong> 组成。TLV = Type-Length-Value: 每个属性有 16-bit 类型、16-bit 长度、可变长度数据。<br>
+    <strong>对齐</strong>: 每个属性 4 字节对齐。<br>
+    <strong>嵌套</strong>: 属性可以包含子属性 (nla_nest_start / nla_nest_end)。<br>
+    <strong>内核端 API</strong>: <code>nla_put_u32() / nla_put_string() / nla_get_u32()</code> 等宏简化构造与解析。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== Netlink 用户空间 — libnl 标准 API ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/netlink.h&gt;</span>
+
+<span class="cm">// 1. 创建 netlink socket</span>
+<span class="ty">int</span> fd = <span class="fn">socket</span>(<span class="ma">AF_NETLINK</span>, SOCK_RAW, <span class="ma">NETLINK_GENERIC</span>);
+
+<span class="cm">// 2. 绑定本地地址 (pid = 自己的 PID, groups = 订阅的多播组)</span>
+<span class="kw">struct</span> <span class="ty">sockaddr_nl</span> addr = {
+    <span class="op">.nl_family</span> = AF_NETLINK,
+    <span class="op">.nl_pid</span>    = getpid(),
+    <span class="op">.nl_groups</span> = <span class="nu">1</span>           <span class="cm">// 多播组 bitmask</span>
+};
+<span class="fn">bind</span>(fd, (<span class="kw">struct</span> <span class="ty">sockaddr</span>*)&amp;addr, <span class="kw">sizeof</span>(addr));
+
+<span class="cm">// 3. 构造消息 (nlmsghdr + TLV 属性)</span>
+<span class="kw">struct</span> <span class="ty">msghdr</span> msg = {...};  <span class="cm">// sendmsg/recvmsg 发送/接收</span>
+<span class="fn">sendmsg</span>(fd, &amp;msg, <span class="nu">0</span>);
+<span class="fn">recvmsg</span>(fd, &amp;msg, <span class="nu">0</span>);
+
+<span class="cm">// 4. 或使用 libnl 高级库</span>
+<span class="kw">struct</span> <span class="ty">nl_sock</span> *sk = <span class="fn">nl_socket_alloc</span>();
+<span class="fn">nl_connect</span>(sk, NETLINK_GENERIC);
+<span class="fn">nl_socket_add_membership</span>(sk, GROUP_ID);  <span class="cm">// 加入多播</span></div>
+
+<div class="chain">
+<span class="cm">/* ═══ 内核端 Netlink — 创建套接字并发送广播 ═══ */</span>
+<span class="cm">// 1. 创建内核 netlink socket</span>
+<b>netlink_kernel_create</b>()
+  ├── net = &amp;init_net                           <span class="cm">// 网络命名空间</span>
+  ├── unit = NETLINK_MYPROTO                    <span class="cm">// 协议编号 (&lt; MAX_LINKS=32)</span>
+  └── cfg = {                                   <span class="cm">// netlink_kernel_cfg 配置</span>
+         .groups = <span class="nu">2</span>,                            <span class="cm">// 多播组数量</span>
+         .input  = my_recv_cb,                  <span class="cm">// ← 处理用户→内核消息的回调</span>
+      }
+
+<span class="cm">// 2. 内核→用户 — 单播发送</span>
+<span class="fn">nlmsg_unicast</span>(sk, skb, pid);           <span class="cm">// 发给特定 PID 的进程</span>
+
+<span class="cm">// 3. 内核→用户 — 多播/广播发送 (⭐ 最常用)</span>
+<span class="fn">nlmsg_multicast</span>(sk, skb, <span class="nu">0</span>, group_id, <span class="ma">GFP_KERNEL</span>);
+<span class="cm">// 所有订阅了 group_id 的用户进程同时收到</span>
+
+<span class="cm">// 4. 构造消息 — TLV 属性封装</span>
+<span class="kw">struct</span> <span class="ty">sk_buff</span> *skb = <span class="fn">nlmsg_new</span>(size, <span class="ma">GFP_KERNEL</span>);
+<span class="kw">void</span> *hdr = <span class="fn">genlmsg_put</span>(skb, <span class="nu">0</span>, <span class="nu">0</span>, &amp;family, <span class="nu">0</span>, CMD_XXX);
+<span class="fn">nla_put_u32</span>(skb, ATTR_VALUE, val);          <span class="cm">// 添加 u32 属性</span>
+<span class="fn">nla_put_string</span>(skb, ATTR_NAME, <span class="st">"hello"</span>);    <span class="cm">// 添加字符串属性</span>
+<span class="kw">void</span> *nest = <span class="fn">nla_nest_start</span>(skb, ATTR_NESTED);<span class="cm">// 嵌套属性开始</span>
+<span class="fn">nla_nest_end</span>(skb, nest);                     <span class="cm">// 嵌套属性结束</span>
+<span class="fn">genlmsg_end</span>(skb, hdr);                       <span class="cm">// 完成消息封装</span></div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>标准 Netlink 协议</th><th>用途</th><th>谁在用</th></tr></thead>
+  <tbody>
+    <tr><td><code>NETLINK_ROUTE</code> (0)</td><td>路由表、网络接口、IP 地址、邻居表</td><td>iproute2 (ip/link/addr/route 命令)</td></tr>
+    <tr><td><code>NETLINK_KOBJECT_UEVENT</code> (15)</td><td>内核事件通知 (热插拔)</td><td>udev / systemd-udevd</td></tr>
+    <tr><td><code>NETLINK_AUDIT</code> (9)</td><td>安全审计日志</td><td>auditd</td></tr>
+    <tr><td><code>NETLINK_SELINUX</code> (7)</td><td>SELinux 策略通知</td><td>setroubleshootd</td></tr>
+    <tr><td><code>NETLINK_NFLOG</code> (12)</td><td>Netfilter 日志 (代替 syslog)</td><td>ulogd / nflog 消费者</td></tr>
+    <tr><td><code>NETLINK_GENERIC</code> (16)</td><td>通用协议 — 动态注册子协议族</td><td>内核模块自定义协议</td></tr>
+    <tr><td><code>NETLINK_CONNECTOR</code> (11)</td><td>进程 fork/exit 事件通知</td><td>procmon / 进程监控</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">Generic Netlink — 动态注册子协议</div>
+  <code>NETLINK_GENERIC</code> (协议 16) 允许内核模块<strong>动态注册子协议族</strong>，无需在内核头文件中预留全局唯一的协议编号。通过 <code>genl_register_family()</code> 注册，用户空间通过 family name 字符串查找。这是写内核模块 Netlink 通信的<strong>推荐方式</strong>—避免协议编号冲突。
+</div>
+
+<!-- ══ Ch3: Uevent ══ -->
+<h2 class="sh">3. Uevent — 热插拔与设备事件通知</h2>
+<p class="ss">kobject_uevent → Netlink 广播 → udev 接收 → 设备节点创建/规则匹配/固件加载</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>uevent 是什么？</h4><div class="lbl">kobject 的事件广播</div>
+    <p><strong>uevent</strong> = user event。内核设备模型中每当 kobject 状态变化 (<em>device_add / device_del / driver 绑定 / 属性变更</em>) 时，通过 <code>kobject_uevent()</code> 发送一个 KEY=VALUE 文本格式的事件通知到用户空间。<strong>底层走 Netlink NETLINK_KOBJECT_UEVENT 协议</strong> 广播。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>udev 如何处理 uevent</h4><div class="lbl">systemd-udevd 的完整流程</div>
+    <p>① udevd 启动时监听 netlink socket<br>
+    ② 收到 uevent → 解析 ACTION/DEVPATH/SUBSYSTEM...<br>
+    ③ <strong>读取 sysfs</strong>: 根据 DEVPATH 找到 /sys/devices/.../ 下的设备属性文件<br>
+    ④ <strong>匹配规则</strong>: 遍历 /etc/udev/rules.d/*.rules，匹配 ACTION/SUBSYSTEM/ATTR{...} 条件<br>
+    ⑤ 执行动作: 创建/dev 节点、设权限、创建 symlink、加载固件、重命名网卡</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>uevent 消息示例</h4><div class="lbl">KEY=VALUE 文本格式</div>
+    <p>ACTION=add<br>DEVPATH=/devices/pci0000:00/0000:00:14.0/usb1/1-1<br>SUBSYSTEM=usb<br>PRODUCT=1234/5678/100<br>TYPE=0/0/0<br>SEQNUM=2048<br>MAJOR=189<br>MINOR=3<br>DEVNAME=bus/usb/001/004<br>每条 uevent ≤ 2048 字节 (UINT_MAX of buffer)</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 内核端触发 uevent ===== */</span>
+<span class="cm">// 最简单的 uevent (发送到用户空间)</span>
+<span class="fn">kobject_uevent</span>(&amp;dev-&gt;kobj, <span class="ma">KOBJ_ADD</span>);     <span class="cm">// 设备添加</span>
+<span class="fn">kobject_uevent</span>(&amp;dev-&gt;kobj, <span class="ma">KOBJ_REMOVE</span>);  <span class="cm">// 设备移除</span>
+<span class="fn">kobject_uevent</span>(&amp;dev-&gt;kobj, <span class="ma">KOBJ_CHANGE</span>);  <span class="cm">// 状态变更</span>
+
+<span class="cm">// 带环境变量的 uevent</span>
+<span class="kw">char</span> *envp[] = { <span class="st">"MY_KEY=my_value"</span>, <span class="ma">NULL</span> };
+<span class="fn">kobject_uevent_env</span>(&amp;dev-&gt;kobj, <span class="ma">KOBJ_ONLINE</span>, envp);
+
+<span class="cm">// device_add() 内部自动触发 KOBJ_ADD</span>
+<span class="cm">// device_del() 内部自动触发 KOBJ_REMOVE</span>
+
+<span class="cm">/* ===== 用户空间监听 uevent (shell) ===== */</span>
+<span class="cm"># udevadm — 最便捷的方式</span>
+udevadm monitor                         <span class="cm">// 实时打印所有 uevent</span>
+udevadm monitor --kernel --property      <span class="cm">// 显示完整环境变量</span>
+<span class="cm"># 输出示例:</span>
+<span class="cm"># KERNEL[1234.567] add /devices/platform/leds/leds/my_led (platform)</span>
+<span class="cm"># ACTION=add</span>
+<span class="cm"># DEVPATH=/devices/platform/leds/leds/my_led</span>
+<span class="cm"># SUBSYSTEM=leds</span>
+
+<span class="cm"># 或直接用 netlink 工具监听</span>
+udevadm trigger                         <span class="cm">// 重放所有设备冷插拔事件</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ uevent vs sysfs — 互补关系</div>
+  uevent 只携带<strong>最基本的设备标识信息</strong> (ACTION/DEVPATH/SUBSYSTEM...)，不携带设备的详细属性。udev 收到 uevent 后需要<strong>再去 sysfs 读取</strong>设备属性文件来完成规则匹配。两者是<strong>协作关系</strong>而非替代关系：netlink uevent = 事件通知通道，sysfs = 属性数据通道。
+</div>
+
+<!-- ══ Ch4: 虚拟文件系统 ══ -->
+<h2 class="sh">4. sysfs · procfs · debugfs — 虚拟文件系统三剑客</h2>
+<p class="ss">将内核数据映射为文件 — 用户空间通过标准 read/write 操作与内核交互</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>sysfs — 设备模型</h4><div class="lbl">/sys · kobject 一对一映射</div>
+    <p><strong>设计哲学</strong>: 一个文件一个值 → machine-parsable。<br>
+    <strong>创建</strong>: <code>DEVICE_ATTR_RO/RW/WO()</code> 宏 + <code>sysfs_create_group()</code><br>
+    <strong>show/store</strong>: 读时 show 回调生成文本输出，写时 store 解析文本输入。<br>
+    <strong>ABI 稳定</strong>: 用户空间工具 (udev/lsusb/lspci) 依赖 sysfs 格式。<br>
+    <strong>位置</strong>: /sys/class/ /sys/bus/ /sys/devices/ /sys/kernel/</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>procfs — 进程与内核信息</h4><div class="lbl">/proc · seq_file 接口</div>
+    <p><strong>关键 API</strong>: <code>proc_create()</code> + <code>seq_file</code> (解决 >PAGE_SIZE 输出问题)。<br>
+    <strong>seq_file</strong>: start→next→stop→show 迭代器模式，内核自动管理页缓冲区。<br>
+    <strong>/proc/sys/</strong>: sysctl 参数 (kernel.hostname 等)。<br>
+    <strong>新驱动不推荐 procfs</strong> — 应优先选择 sysfs (设备相关) 或 debugfs (调试)。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>debugfs — 调试接口</h4><div class="lbl">/sys/kernel/debug · 非稳定ABI</div>
+    <p><strong>极简 API</strong>: <code>debugfs_create_u32/bool/file/dir()</code> 一行创建。<br>
+    <strong>无格式限制</strong>: 可 dump 任意数据，不受"一个文件一个值"约束。<br>
+    <strong>无 ABI 保证</strong>: 接口可随时变化 — <strong>不可用于生产</strong>。<br>
+    <strong>可完全禁用</strong>: <code>CONFIG_DEBUG_FS=n</code> 生产内核不包含 debugfs。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== sysfs 属性创建模板 ===== */</span>
+<span class="kw">static</span> <span class="ty">ssize_t</span> <span class="fn">my_show</span>(<span class="kw">struct</span> <span class="ty">device</span> *dev, <span class="kw">struct</span> <span class="ty">device_attribute</span> *attr, <span class="kw">char</span> *buf) {
+    <span class="kw">return</span> <span class="fn">sysfs_emit</span>(buf, <span class="st">"%d</span><span class="st">\n</span><span class="st">"</span>, my_val);          <span class="cm">// ★ 使用 sysfs_emit 代替 sprintf</span>
+}
+<span class="kw">static</span> <span class="ty">ssize_t</span> <span class="fn">my_store</span>(<span class="kw">struct</span> <span class="ty">device</span> *dev, <span class="kw">struct</span> <span class="ty">device_attribute</span> *attr,
+                        <span class="kw">const char</span> *buf, <span class="ty">size_t</span> count) {
+    <span class="fn">kstrtoint</span>(buf, <span class="nu">10</span>, &amp;my_val);                      <span class="cm">// ★ 安全解析</span>
+    <span class="kw">return</span> count;
+}
+<span class="kw">static</span> <span class="ma">DEVICE_ATTR_RW</span>(my);                            <span class="cm">// 生成 dev_attr_my</span>
+
+<span class="cm">// probe 中创建:  sysfs_create_group() 或 device_create_file()</span>
+
+<span class="cm">/* ===== debugfs 快速创建 ===== */</span>
+<span class="kw">static struct</span> <span class="ty">dentry</span> *my_debug_dir;
+my_debug_dir = <span class="fn">debugfs_create_dir</span>(<span class="st">"mydrv"</span>, <span class="ma">NULL</span>);         <span class="cm">// 目录</span>
+<span class="fn">debugfs_create_u32</span>(<span class="st">"counter"</span>, <span class="nu">0644</span>, my_debug_dir, &amp;my_cnt); <span class="cm">// 读写 u32</span>
+<span class="fn">debugfs_create_bool</span>(<span class="st">"enable"</span>, <span class="nu">0644</span>, my_debug_dir, &amp;my_en); <span class="cm">// 读写 bool</span>
+<span class="cm">// remove 中:  debugfs_remove_recursive(my_debug_dir);</span></div>
+
+<!-- ══ Ch5: ioctl · mmap · Signal ══ -->
+<h2 class="sh">5. ioctl · mmap · Signal — 设备驱动的三件武器</h2>
+<p class="ss">二进制控制命令 · 零拷贝共享内存 · 轻量异步通知 — 设备驱动的基础通信方式</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>ioctl — 设备控制命令</h4><div class="lbl">通过设备文件 fd 传递结构体</div>
+    <p><strong>命令编码</strong>: <code>_IO/_IOR/_IOW/_IOWR</code> 宏将方向/魔数/序号/大小编码为 32-bit cmd。<br>
+    <strong>内核实现</strong>: <code>file_operations.unlocked_ioctl</code> 回调，用 <code>copy_from_user/copy_to_user</code> 安全传输。<br>
+    <strong>优点</strong>: 单入口点处理大量命令；传递任意结构体。<br>
+    <strong>缺点</strong>: 需编译 C 程序调用、非脚本友好、ABI 需维护兼容性。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>mmap — 零拷贝共享内存</h4><div class="lbl">内核内存直接映射到用户地址空间</div>
+    <p><strong>内核实现</strong>: <code>file_operations.mmap</code> → <code>remap_pfn_range()</code> 映射物理页到用户 VMA。<br>
+    <strong>零拷贝</strong>: 用户直接读写内核缓冲区，无需 copy_from/to_user → 极致带宽。<br>
+    <strong>同步</strong>: 需要额外的通知机制 (poll/signal/netlink) 告知用户数据就绪。<br>
+    <strong>安全</strong>: 必须确认映射范围不泄露敏感内核内存。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Signal (FASYNC/SIGIO)</h4><div class="lbl">1 bit 异步通知</div>
+    <p><strong>FASYNC 机制</strong>: 用户 <code>fcntl(fd, F_SETFL, FASYNC)</code> → 内核驱动调用 <code>kill_fasync()</code> → 用户进程收到 <strong>SIGIO</strong> → 然后主动 read。信号本身<strong>不携带数据</strong>，只告诉用户"有新数据可读"。<br>
+    <strong>适用</strong>: 串口数据到达、输入事件等 I/O 通知。不推荐作为复杂通信的唯一手段。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== ioctl 内核端模板 ===== */</span>
+<span class="kw">static long</span> <span class="fn">my_ioctl</span>(<span class="kw">struct</span> <span class="ty">file</span> *filp, <span class="kw">unsigned int</span> cmd, <span class="kw">unsigned long</span> arg)
+{
+    <span class="kw">struct</span> <span class="ty">my_data</span> data;
+
+    <span class="kw">switch</span> (cmd) {
+    <span class="kw">case</span> <span class="ma">MY_IOC_GET</span>:                          <span class="cm">// _IOR(MY_MAGIC, 1, struct my_data)</span>
+        <span class="cm">/* 填充 data 结构体 */</span>
+        <span class="kw">if</span> (<span class="fn">copy_to_user</span>((<span class="kw">void</span> __user *)arg, &amp;data, <span class="kw">sizeof</span>(data)))
+            <span class="kw">return</span> -<span class="ma">EFAULT</span>;
+        <span class="kw">break</span>;
+
+    <span class="kw">case</span> <span class="ma">MY_IOC_SET</span>:                          <span class="cm">// _IOW(MY_MAGIC, 2, struct my_data)</span>
+        <span class="kw">if</span> (<span class="fn">copy_from_user</span>(&amp;data, (<span class="kw">void</span> __user *)arg, <span class="kw">sizeof</span>(data)))
+            <span class="kw">return</span> -<span class="ma">EFAULT</span>;
+        <span class="cm">/* 使用 data */</span>
+        <span class="kw">break</span>;
+    }
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="cm">/* ===== mmap — 内核缓冲区映射到用户空间 ===== */</span>
+<span class="kw">static int</span> <span class="fn">my_mmap</span>(<span class="kw">struct</span> <span class="ty">file</span> *filp, <span class="kw">struct</span> <span class="ty">vm_area_struct</span> *vma)
+{
+    <span class="kw">unsigned long</span> pfn = <span class="fn">virt_to_phys</span>(my_buf) &gt;&gt; <span class="ma">PAGE_SHIFT</span>;
+    <span class="kw">return</span> <span class="fn">remap_pfn_range</span>(vma, vma-&gt;vm_start, pfn,
+                           <span class="fn">vma_size</span>(vma), vma-&gt;vm_page_prot);
+}
+
+<span class="cm">/* ===== FASYNC — 异步 I/O 通知 ===== */</span>
+<span class="kw">static</span> <span class="kw">struct</span> <span class="ty">fasync_struct</span> *my_fasync;  <span class="cm">// 保存通知队列</span>
+
+<span class="kw">static int</span> <span class="fn">my_fasync_cb</span>(<span class="ty">int</span> fd, <span class="kw">struct</span> <span class="ty">file</span> *filp, <span class="ty">int</span> mode) {
+    <span class="kw">return</span> <span class="fn">fasync_helper</span>(fd, filp, mode, &amp;my_fasync);
+}
+
+<span class="cm">// 数据就绪时 — 中断上下文或内核线程中调用:</span>
+<span class="fn">kill_fasync</span>(&amp;my_fasync, SIGIO, POLL_IN);   <span class="cm">// → 用户进程收到 SIGIO</span></div>
+
+<!-- ══ Ch6: relayfs ══ -->
+<h2 class="sh">6. relayfs — 海量内核追踪的高速通道</h2>
+<p class="ss">Per-CPU 无锁环形缓冲区 · mmap 零拷贝读取 · 适用于 kprobes / LTTng / 内核追踪</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>relay 通道架构</h4><div class="lbl">Per-CPU 环形缓冲 + 子缓冲区</div>
+    <p>每个 CPU 一个独立的<strong>环形缓冲区</strong>，划分为多个<strong>子缓冲区</strong>。内核写入时<strong>无锁</strong> (每 CPU 独立写)，消费者通过 <strong>mmap()</strong> 零拷贝读取。<br>
+    <strong>两种模式</strong>: <em>No-overwrite</em> (满则丢弃 — 适合调试) · <em>Overwrite</em> (飞行记录仪 — 保留最新数据)。<br>
+    <strong>通知</strong>: 子缓冲写满时通过 poll() 通知用户空间。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>创建与使用</h4><div class="lbl">挂载在 debugfs 上的通道</div>
+    <p><strong>内核端</strong>: <code>relay_open("mychan", parent_dir, subbuf_size, n_subbufs, &amp;cb, NULL)</code> → <code>relay_write(chan, data, len)</code><br>
+    <strong>用户端</strong>: 打开 <code>/sys/kernel/debug/mychan</code> → <code>mmap()</code> 映射环形缓冲 → 直接读数据，或 <code>poll()</code> 等待子缓冲就绪通知。<br>
+    <strong>适用</strong>: kprobes 追踪、LTTng、内核模块高性能日志输出。吞吐量可达 <strong>GB/s 级别</strong>。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ relay 架构示意图 ═══ */</span>
+<span class="cm">                    ┌─────────┐  ┌─────────┐  ┌─────────┐</span>
+<span class="cm">                    │ CPU 0   │  │ CPU 1   │  │ CPU N   │</span>
+<span class="cm">                    │ 无锁写  │  │ 无锁写  │  │ 无锁写  │</span>
+<span class="cm">                    └────┬────┘  └────┬────┘  └────┬────┘</span>
+<span class="cm">                         │            │            │</span>
+<span class="cm">                    ┌────▼────┐  ┌───▼─────┐  ┌───▼─────┐</span>
+<span class="cm">                    │环形缓冲 │  │环形缓冲  │  │环形缓冲  │</span>
+<span class="cm">  /debug/mychan      │SB0 SB1..│  │SB0 SB1.. │  │SB0 SB1.. │</span>
+<span class="cm">  ◄──────────────────┴────▲────┘  └────▲─────┘  └────▲─────┘</span>
+<span class="cm">  User Space               │            │            │</span>
+<span class="cm">  mmap() ───────────────> 读环形缓冲区 — 零拷贝</span></div>
+
+<!-- ══ Ch7: 选型指南 ══ -->
+<h2 class="sh">7. 选型决策指南</h2>
+<p class="ss">根据场景选择最合适的通信机制 — 一句话决策 + 详细对比</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:38%">你的需求</th><th>推荐机制</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td>设备发现/热插拔通知</td><td class="g"><strong>uevent → udev</strong></td><td>内核自动触发，udev 自动处理，零额外代码</td></tr>
+    <tr><td>通用内核↔用户双向消息</td><td class="g"><strong>Netlink (Generic)</strong></td><td>支持组播、异步、TLV 结构化数据、ABI 稳定</td></tr>
+    <tr><td>设备属性查询/配置</td><td class="g"><strong>sysfs</strong></td><td>一个文件一个值，标准位置，脚本友好</td></tr>
+    <tr><td>进程信息/内核统计导出</td><td class="g"><strong>procfs + seq_file</strong></td><td>成熟稳定，工具链广泛支持</td></tr>
+    <tr><td>设备控制 (多条命令)</td><td class="g"><strong>ioctl</strong></td><td>单入口点处理多个命令，传递任意结构</td></tr>
+    <tr><td>大缓冲区共享 (视频/抓包)</td><td class="g"><strong>mmap</strong></td><td>零拷贝，直接访问内核缓冲区</td></tr>
+    <tr><td>I/O 事件异步通知</td><td class="y"><strong>Signal (SIGIO)</strong> 或 <code>poll</code></td><td>轻量 — 1 bit 通知"有新数据"，然后主动 read</td></tr>
+    <tr><td>海量追踪日志 (kprobes)</td><td class="g"><strong>relayfs</strong></td><td>Per-CPU 无锁环形缓冲 + mmap 零拷贝，GB/s 级吞吐</td></tr>
+    <tr><td>开发调试/临时接口</td><td class="g"><strong>debugfs</strong></td><td>API 极简，格式自由，无 ABI 包袱</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 最佳实践组合</div>
+  <strong>现代驱动推荐组合</strong>: sysfs (设备属性) + uevent (热插拔通知) + Netlink (复杂消息) + debugfs (调试)<br>
+  <strong>高性能数据通道</strong>: mmap (大缓冲区) + poll/SIGIO (数据就绪通知)<br>
+  <strong>内核追踪</strong>: relayfs + debugfs 挂载点<br>
+  <strong>网络子系统</strong>: Netlink RTNETLINK (ip/link/addr/route 命令) + genl (自定义协议)
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Kernel ↔ Userspace Communication — 系统化知识体系 · 2026-06 · Linux Kernel v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>嵌入式 Linux 启动全流程 — 从 Boot ROM 到文件系统挂载</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+
+/* chain flow — vertical call chain with indentation */
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10.5px; line-height:1.65; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; }
+.chain i { color:#34d399; font-style:normal; }
+.chain u { color:#fbbf24; text-decoration:none; }
+.chain em { color:#f87171; font-style:normal; }
+
+/* memory bar visualization */
+.membar { margin:14px 0; font-size:11px; color:#b0b0d0; line-height:1.8; }
+.membar .mb-row { display:flex; align-items:center; margin:2px 0; font-family:"JetBrains Mono","Fira Code",monospace; }
+.membar .mb-addr { width:120px; flex-shrink:0; color:#555577; font-size:10.5px; }
+.membar .mb-bar { height:22px; border-radius:4px; display:flex; align-items:center; padding:0 10px; font-size:10.5px; font-weight:600; margin:0 8px; min-width:80px; }
+.membar .mb-note { flex:1; color:#666; font-size:10px; }
+.membar .mb-c1 { background:rgba(108,99,255,.15); color:#a78bfa; }
+.membar .mb-c2 { background:rgba(52,211,153,.12); color:#34d399; }
+.membar .mb-c3 { background:rgba(251,191,36,.1); color:#fbbf24; }
+.membar .mb-c4 { background:rgba(248,113,113,.1); color:#f87171; }
+.membar .mb-c5 { background:rgba(56,189,248,.12); color:#38bdf8; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,42px);font-weight:900">嵌入式 Linux 启动全流程</h2>
+  <p class="sec-sub">从 Boot ROM 上电复位到 /sbin/init 执行 — 完整链路深度解析</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>Boot ROM</strong><br><small>片上掩膜ROM</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>SPL</strong><br><small>辅助加载器</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>ATF</strong><br><small>ARM可信固件</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>U-Boot</strong><br><small>引导加载程序</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>Linux</strong><br><small>内核</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>init</strong><br><small>PID 1</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>硬件启动阶段</h4><div class="sub">Boot ROM → TPL/SPL</div>
+      <p>SoC 上电后 <em>Boot ROM</em> 从指定介质加载 SPL 到内部 SRAM。SPL 初始化 DDR、时钟树、引脚复用，加载 ATF 和 U-Boot 到 DRAM。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>引导加载阶段</h4><div class="sub">ATF → U-Boot → Kernel</div>
+      <p>ATF 设置 EL3 安全世界后，U-Boot 在 DRAM 中完整初始化设备驱动，从存储介质加载 <em>内核 Image + DTB</em>，设置启动参数后跳转到内核入口。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>内核启动阶段</h4><div class="sub">head.S → start_kernel → init</div>
+      <p>内核解压 → 架构初始化 → 挂载 <em>rootfs</em> → <code>do_initcalls()</code> 驱动初始化 → 解包 initramfs → 挂载真实根文件系统 → <code>run_init_process("/sbin/init")</code>。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══════ Ch1: 总览 ══════ -->
+<h2 class="sh">1. 启动全景图</h2>
+<p class="ss">从 SoC 上电到登陆提示符 — 7 个阶段的完整链路一览</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>#</th><th>阶段</th><th>代码位置</th><th>运行介质</th><th>CPU 特权</th><th>体积</th><th>耗时</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><strong>Boot ROM</strong></td><td>MaskROM (片上)</td><td>不可改</td><td>EL3</td><td>32~128KB</td><td>~1ms</td></tr>
+    <tr><td>2*</td><td><strong>TPL</strong></td><td>存储介质 → SRAM</td><td>SRAM</td><td>EL3</td><td>7~30KB</td><td>~5ms</td></tr>
+    <tr><td>3</td><td><strong>SPL</strong></td><td>存储介质 → SRAM/DRAM</td><td>SRAM/DRAM</td><td>EL3</td><td>32~256KB</td><td>~50ms</td></tr>
+    <tr><td>4*</td><td><strong>ATF (BL31)</strong></td><td>SPL 加载到 DRAM</td><td>DRAM</td><td>EL3</td><td>~512KB</td><td>~50ms</td></tr>
+    <tr><td>5</td><td><strong>U-Boot (BL33)</strong></td><td>SPL 加载到 DRAM</td><td>DRAM</td><td>EL2</td><td>~2MB</td><td>~200ms</td></tr>
+    <tr><td>6</td><td><strong>Linux Kernel</strong></td><td>U-Boot 加载到 DRAM</td><td>DRAM</td><td>EL1</td><td>~30MB</td><td>~500ms</td></tr>
+    <tr><td>7</td><td><strong>Userspace init</strong></td><td>根文件系统</td><td>DRAM</td><td>EL0</td><td>不限</td><td>~2s</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c3" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>为什么需要多阶段？</h4><div class="lbl">硬件约束驱动的架构设计</div>
+    <p>① <strong>SRAM 极小</strong>(32KB~512KB) — 无法容纳完整 U-Boot<br>
+    ② <strong>DRAM 未初始化</strong> — 上电时 DDR 控制器处于复位状态<br>
+    ③ <strong>安全需求</strong> — TrustZone/安全启动要求逐级验证<br>
+    ④ <strong>介质灵活</strong> — 支持 MMC / SPI NOR / NAND / UART</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>异常级别 (EL) 变化</h4><div class="lbl">从最高特权到最低特权</div>
+    <p><strong>EL3</strong>: Boot ROM / ATF — 安全监控器<br>
+    <strong>EL2</strong>: U-Boot — 虚拟化环境<br>
+    <strong>EL1</strong>: Linux 内核<br>
+    <strong>EL0</strong>: 用户空间进程<br>
+    每阶段向下转移时<strong>降低 EL</strong>，确保下层无法访问上层资源。* 标项为可选阶段。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>时间线 (RK3399 典型值)</h4><div class="lbl">上电~2.5s 到登录提示符</div>
+    <p><strong>0ms</strong>: 上电复位<br>
+    <strong>~5ms</strong>: TPL DDR 初始化完成<br>
+    <strong>~50ms</strong>: SPL 加载 ATF+U-Boot<br>
+    <strong>~150ms</strong>: ATF 安全世界设置<br>
+    <strong>~350ms</strong>: U-Boot 驱动初始化<br>
+    <strong>~850ms</strong>: Linux 内核启动<br>
+    <strong>~2.5s</strong>: systemd → login 提示符</p>
+  </div>
+</div>
+
+<!-- ══════ Ch2: Boot ROM ══════ -->
+<h2 class="sh">2. Stage 1 — Boot ROM (BL1)</h2>
+<p class="ss">片内掩膜 ROM 中的第一行代码 · 不可修改 · 确定启动介质 · 加载 SPL 到内部 SRAM</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>硬件特性</h4><div class="lbl">SoC 厂商硬编码 — 用户不可修改</div>
+    <p>Boot ROM 是芯片制造时<strong>烧死在掩膜 ROM</strong> 中的代码。容量 32KB~128KB，<strong>上电复位向量直接指向 ROM 起始地址</strong>。因为不可修改，它是<strong>安全启动信任根</strong> (Root of Trust) 的天然锚点。支持镜像签名验证的 SoC 在此阶段完成首次校验。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>核心执行流程 — 5 步</h4><div class="lbl">从复位向量到加载 SPL</div>
+    <p>① <strong>最小 CPU 初始化</strong> — 设置栈指针、关闭看门狗<br>
+    ② <strong>读取启动模式引脚</strong> — SYSBOOT / BOOT_MODE 确定设备顺序<br>
+    ③ <strong>遍历启动设备</strong> — 按顺序查找有效镜像 (MMC→SPI→UART→USB)<br>
+    ④ <strong>验证镜像头</strong> — 魔数 + 校验和 + 镜像大小<br>
+    ⑤ <strong>拷贝到 SRAM</strong> — DMA 加载 → 跳转到 SPL 入口地址</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>SoC 系列</th><th>SRAM</th><th>启动设备顺序</th><th>特殊机制</th></tr></thead>
+  <tbody>
+    <tr><td>TI AM335x (BeagleBone)</td><td>128KB</td><td>MMC0 → SPI0 → UART0 → USB0</td><td>SPL 称为 MLO，需放在 FAT 分区首文件</td></tr>
+    <tr><td>Rockchip RK3399</td><td>~200KB</td><td>SPI NOR → eMMC → SD Card</td><td>需要 TPL — SRAM 仍不够容纳完整 SPL</td></tr>
+    <tr><td>NXP i.MX6</td><td>128KB</td><td>eFUSE 配置 / GPIO 引脚</td><td><strong>DCD 表</strong>在镜像头中预设 DDR 参数</td></tr>
+    <tr><td>Allwinner H3</td><td class="r">32KB</td><td>SD → NAND → SPI → USB FEL</td><td>SRAM 极小 — SPL 必须 &lt; 32KB</td></tr>
+    <tr><td>Xilinx Zynq-7000</td><td>256KB</td><td>SD → QSPI → NAND → JTAG</td><td>支持 NOR Flash XIP 原地执行</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">厂商镜像头部协议</div>
+  <strong>TI GPHeader</strong>: 8 字节 (大小 + 入口地址) · <strong>Rockchip RKHeader</strong>: 含加载地址 + SHA256 哈希 · <strong>i.MX IVT</strong>: Image Vector Table 含多级指针。Boot ROM 据此确定镜像的<strong>加载地址</strong>、<strong>验证完整性</strong>、<strong>跳转入口</strong>。
+</div>
+
+<!-- ══════ Ch3: TPL ══════ -->
+<h2 class="sh">3. Stage 2* — TPL (Tertiary Program Loader)</h2>
+<p class="ss">当 SRAM 太小时引入的极简阶段 · 通常只做一件事：初始化 DRAM · TPL = 可选 (*)</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>为什么需要 TPL？</h4><div class="lbl">SRAM 不足 — 必须拆分职责</div>
+    <p>SPL 体积 (驱动 + FAT/ext4 解析 + FIT 解析...) 超过 SRAM 容量时，分离出独立的 <strong>DDR 初始化阶段</strong>。TPL 仅做：配置 PLL → 校准 DDR PHY → 设置 DDR 控制器时序 → <strong>return 回 Boot ROM</strong>。ROM 随后从存储介质重新加载完整 SPL 到<strong>已就绪的 DRAM</strong> 中。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>极限约束</h4><div class="lbl">无 global_data · 无 BSS · 无栈</div>
+    <p>TPL 运行在极简环境中：所有变量必须是局部或寄存器变量、不能使用 printf（依赖 GPIO+示波器调试）、典型体积<strong>7KB~30KB</strong>。完成后<strong>必须 return</strong> 回 Boot ROM，不能直接跳 SPL。需要 TPL 的平台: <strong>Rockchip RK3399</strong>、部分 <strong>NXP i.MX8</strong> 变体。不需要的: TI AM335x、i.MX6、Zynq。</p>
+  </div>
+</div>
+
+<!-- ══════ Ch4: SPL ══════ -->
+<h2 class="sh">4. Stage 3 — SPL (Secondary Program Loader)</h2>
+<p class="ss">最关键的中间引导 · 初始化时钟/引脚/存储 · 加载 FIT 镜像 (ATF+U-Boot+DTB) 到 DRAM</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>初始化序列</h4><div class="lbl">board_init_f → 条件重定位 → board_init_r</div>
+    <p><code>board_init_f()</code>: 时钟树 → 引脚复用 (pinmux) → 串口 → DDR 初始化 (若 TPL 未做)。<br>
+    <code>board_init_r()</code>: 存储设备 init (MMC/SPI/NAND) → 解析 FIT → 分别放置 ATF / U-Boot / DTB 到指定 DRAM 地址 → 跳转。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>FIT Image 加载</h4><div class="lbl">Flattened Image Tree 统一打包</div>
+    <p>FIT 将多组件<strong>打包为一个文件</strong>: ATF (firmware) + OP-TEE (loadables) + U-Boot (standalone) + DTB (fdt)。每个组件有独立的 <code>load</code> 和 <code>entry</code> 地址。SPL 解析 FIT 结构后<strong>按地址分别放置</strong>到 DRAM。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>SPL 大小约束</h4><div class="lbl">由 SRAM 容量决定上限</div>
+    <p><strong>Allwinner H3</strong>: &lt;32KB (仅 32KB SRAM)<br>
+    <strong>TI AM335x</strong>: &lt;128KB (MLO)<br>
+    <strong>Rockchip</strong>: 可达 ~256KB (DRAM 已就绪)<br>
+    减小体积: <code>tiny-printf</code> + 禁用非必要驱动 + <code>-Os</code> + LTO。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="kw">void</span> <span class="fn">board_init_r</span>(<span class="kw">struct</span> <span class="ty">spl_image_info</span> *img, <span class="ty">ulong</span> dummy)
+{
+    <span class="cm">/* 1. 确定启动设备顺序 */</span>
+    <span class="kw">struct</span> <span class="ty">spl_boot_device</span> bootdev = <span class="fn">board_boot_order</span>();
+
+    <span class="cm">/* 2. 遍历启动设备加载 FIT */</span>
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="nu">0</span>; bootdev[i] != BOOT_DEVICE_NONE; i++)
+        <span class="fn">spl_mmc_load_image</span>(bootdev[i]);
+
+    <span class="cm">/* 3. 解析 FIT → 放置各组件到 DRAM */</span>
+    <span class="fn">spl_load_simple_fit</span>(&amp;img, &amp;load_info, <span class="nu">0</span>, header);
+    <span class="cm">//   FIT 内部: firmware=ATF  loadables=U-Boot  fdt=DTB</span>
+
+    <span class="cm">/* 4. 跳转到 ATF (BL31) — ATF 后将回跳到 U-Boot */</span>
+    <span class="fn">jump_to_image_no_args</span>(&amp;img);
+}</div>
+
+<div class="callout info">
+  <div class="ct">SPL 重定位</div>
+  <code>board_init_f()</code> 在 SRAM 中运行。DDR 初始化后，SPL 可选择将自己<strong>重定位到 DRAM 高地址</strong> (<code>CONFIG_SPL_STACK_R</code>) 获得更大的栈和堆。但多数平台 SPL 不重定位——SRAM 中直接执行完 <code>board_init_r()</code> 然后跳走。
+</div>
+
+<!-- ══════ Ch5: ATF ══════ -->
+<h2 class="sh">5. Stage 4* — ARM Trusted Firmware (ATF / BL31)</h2>
+<p class="ss">ARMv8-A TrustZone 安全世界守门人 · 运行于 EL3 · OP-TEE (BL32) 可选 · ATF = 可选 (*)</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>五大核心职责</h4><div class="lbl">运行在 EL3 — 最高异常级别</div>
+    <p>① <strong>异常级别配置</strong>: 初始化 EL3/EL2/EL1 的 CPU 上下文<br>
+    ② <strong>SMC 处理</strong>: 处理来自 Normal World 的安全监控调用<br>
+    ③ <strong>PSCI 电源管理</strong>: CPU hotplug、suspend/resume、系统关机重启<br>
+    ④ <strong>安全世界初始化</strong>: 可选加载 BL32 (OP-TEE 可信执行环境)<br>
+    ⑤ <strong>世界切换</strong>: ERET 退出到 Normal World U-Boot (EL2)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ATF 多阶段模型</h4><div class="lbl">与 U-Boot SPL 的集成映射</div>
+    <p><strong>BL1</strong> = Boot ROM (SoC 厂商)<br>
+    <strong>BL2</strong> = SPL (负责加载 BL31/32/33)<br>
+    <strong>BL31</strong> = ATF 运行时固件 (Secure Monitor)<br>
+    <strong>BL32</strong> = OP-TEE (可选 — 可信执行环境 OS)<br>
+    <strong>BL33</strong> = U-Boot / EDK2 (Normal World)<br>
+    SPL 在 U-Boot 集成模型中充当了 ATF 的 BL2 角色。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ATF → U-Boot 交接: 通过 ERET 指令从 EL3 降至 EL2 */</span>
+<span class="kw">void</span> <span class="fn">bl31_main</span>(<span class="kw">void</span>)
+{
+    <span class="fn">cm_prepare_el3_exit</span>(NON_SECURE);    <span class="cm">// 准备退出到 Normal World</span>
+    <span class="fn">cm_el2_sysregs_context_save</span>();      <span class="cm">// 保存 EL2 系统寄存器上下文</span>
+    <span class="fn">cm_set_next_eret_context</span>(NON_SECURE);<span class="cm">// 设置 ELR_EL2=U-Boot入口, SPSR_EL2=AArch64 EL2</span>
+    <span class="kw">return</span>;  <span class="cm">// 控制流到达异常处理框架 → ERET → 跳转到 U-Boot</span>
+}</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 什么平台需要 ATF？</div>
+  <strong>需要</strong>: 所有 ARMv8-A 64-bit (RK3399, i.MX8, BCM2711…) — TrustZone 安全启动必需。<br>
+  <strong>不需要</strong>: ARMv7-A 32-bit (AM335x, i.MX6, Allwinner H3…) — SPL 直接跳 U-Boot。<br>
+  <strong>OP-TEE</strong>: 仅 DRM / 安全支付 / 可信密钥存储等场景需要，多数嵌入式设备不配置。
+</div>
+
+<!-- ══════ Ch6: U-Boot ══════ -->
+<h2 class="sh">6. Stage 5 — U-Boot Proper (BL33)</h2>
+<p class="ss">完整引导加载程序 · 三段式初始化 · 加载内核+DTB · 传递 FDT /chosen 参数给内核</p>
+
+<div class="sg">
+  <div class="st"><b>①</b> <strong>board_init_f()</strong><br>在 DRAM 低地址运行<br>Early DM / console / DRAM 检测<br>→ 计算重定位目标地址</div>
+  <div class="st"><b>②</b> <strong>重定位</strong><br>relocate_code() 拷贝 .text/.data<br>到 DRAM 高地址<br>修复 .rel.dyn 重定位表<br>更新 GOT → 跳转到新地址</div>
+  <div class="st"><b>③</b> <strong>board_init_r()</strong><br>BSS 可用 / 栈在 DRAM<br>initr_malloc → initr_mmc<br>→ initr_env → initr_net<br>→ main_loop()</div>
+  <div class="st"><b>④</b> <strong>main_loop()</strong><br>bootdelay 倒计时<br>无按键 → autoboot_command<br>→ distro_bootcmd<br>→ 遍历 boot_targets</div>
+  <div class="st"><b>⑤</b> <strong>加载内核</strong><br>从 ext4/FAT 读 Image.gz<br>→ 读 DTB<br>→ 可选 initramfs<br>→ 设置 /chosen bootargs</div>
+  <div class="st"><b>⑥</b> <strong>跳转内核</strong><br>bootm / booti / bootz<br>→ 清理缓存 / 禁用 MMU<br>→ x0=DTB 物理地址<br>→ 跳转内核入口</div>
+</div>
+
+<div class="cb" style="margin-top:16px">
+<span class="cm">/* ===== U-Boot 环境变量 — 控制自动启动 ===== */</span>
+<span class="kw">bootcmd</span>=run distro_bootcmd          <span class="cm">// autoboot 执行此命令</span>
+<span class="kw">boot_targets</span>=mmc1 mmc0 usb0 pxe dhcp <span class="cm">// 启动设备顺序</span>
+<span class="kw">bootdelay</span>=<span class="nu">2</span>                          <span class="cm">// 启动前等待秒数 (按键中断进入 CLI)</span>
+
+<span class="kw">kernel_addr_r</span>=<span class="nu">0x02080000</span>           <span class="cm">// 内核加载地址</span>
+<span class="kw">fdt_addr_r</span>=<span class="nu">0x01F00000</span>              <span class="cm">// Device Tree 加载地址</span>
+<span class="kw">ramdisk_addr_r</span>=<span class="nu">0x06000000</span>          <span class="cm">// initramfs 加载地址</span>
+
+<span class="cm">/* ===== 手动启动示例 (调试用) ===== */</span>
+<span class="cm">U-Boot> fatload mmc 0:1 ${kernel_addr_r} Image.gz</span>
+<span class="cm">U-Boot> fatload mmc 0:1 ${fdt_addr_r} myboard.dtb</span>
+<span class="cm">U-Boot> setenv bootargs console=ttyS0,115200 root=/dev/mmcblk0p2 rootwait</span>
+<span class="cm">U-Boot> booti ${kernel_addr_r} - ${fdt_addr_r}</span></div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>命令</th><th>内核格式</th><th>适用平台</th></tr></thead>
+  <tbody>
+    <tr><td><code>bootm &lt;addr&gt;</code></td><td>Legacy uImage (64B 头)</td><td>老式 ARM32 平台</td></tr>
+    <tr><td class="g"><code>booti &lt;addr&gt;</code></td><td class="g"><strong>ARM64 Image / Image.gz</strong></td><td class="g">现代 ARM64 推荐</td></tr>
+    <tr><td><code>bootz &lt;addr&gt;</code></td><td>ARM32 zImage (自解压)</td><td>ARM32 平台</td></tr>
+    <tr><td><code>bootefi &lt;addr&gt;</code></td><td>UEFI Image</td><td>UEFI 标准启动</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">U-Boot → 内核的参数传递</div>
+  <strong>寄存器</strong>: <code>x0</code> (ARM64) = DTB 的<strong>物理地址</strong>。<br>
+  <strong>/chosen 节点</strong>: <code>bootargs</code> (内核命令行)、<code>linux,initrd-start/end</code> (initramfs 位置)、<code>stdout-path</code> (早期串口)。<br>
+  <strong>ATAGS (已废弃)</strong>: ARM32 老式 ATAG 链表。现代内核统一使用 FDT。
+</div>
+
+<!-- ══════ Ch7: 内核启动 ══════ -->
+<h2 class="sh">7. Linux 内核启动 — 从 head.S 到 PID 1</h2>
+<p class="ss">汇编入口 → start_kernel → rest_init 三线程 → kernel_init PID1 → do_initcalls 七级驱动初始化</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Phase A: 汇编入口</h4><div class="lbl">arch/arm64/kernel/head.S</div>
+    <p>① 保存 U-Boot 传来的 FDT 指针<br>
+    ② 检查 CPU 是否支持当前内核<br>
+    ③ <strong>创建初始页表</strong> (identity mapping + kernel mapping)<br>
+    ④ 启用 MMU → 切换到虚拟地址<br>
+    ⑤ 清零 BSS → 设栈 → 跳转到 <code>start_kernel()</code></p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Phase B: start_kernel</h4><div class="lbl">init/main.c — 内核 C 代码入口</div>
+    <p>① <code>setup_arch()</code> — 解析 FDT + 架构初始化<br>
+    ② <code>sched_init()</code> — 调度器<br>
+    ③ <code>vfs_caches_init() → mnt_init() → <em>init_mount_tree()</em></code> ★ 挂载初始 rootfs<br>
+    ④ <code>mem_init()</code> — buddy allocator 就绪<br>
+    ⑤ <code>rest_init()</code> — 创建 PID 1 &amp; PID 2</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Phase C: kernel_init (PID 1)</h4><div class="lbl">内核线程 → 用户进程转换点</div>
+    <p>① <code>do_basic_setup() → <em>do_initcalls()</em></code> ★ 所有驱动初始化<br>
+    ② <code>populate_rootfs()</code> — 解包 initramfs<br>
+    ③ <code>prepare_namespace()</code> — 挂载真实根<br>
+    ④ <code>init_post() → run_init_process("/sbin/init")</code> ★ exec 到用户空间</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ 内核启动关键调用链 ═══ */</span>
+
+<b>head.S</b> (_stext)                                <span class="cm">// 汇编入口 — 页表创建 → 启用MMU</span>
+  └── <b>start_kernel()</b>                           <span class="cm">// init/main.c — PID 0 (idle)</span>
+        ├── setup_arch(&amp;command_line)         <span class="cm">// 解析 FDT → 提取 bootargs</span>
+        ├── sched_init()                      <span class="cm">// 初始化调度器</span>
+        ├── <i>vfs_caches_init()</i>
+        │     └── mnt_init()
+        │           ├── init_rootfs()         <span class="cm">// 注册 rootfs 文件系统类型</span>
+        │           └── <em>init_mount_tree()</em>     ★ <span class="cm">挂载初始 rootfs (空)</span>
+        ├── mem_init()                        <span class="cm">// buddy allocator 就绪</span>
+        └── <b>rest_init()</b>
+              ├── kernel_thread(kernel_init)   <span class="cm">// → PID 1</span>
+              ├── kernel_thread(kthreadd)      <span class="cm">// → PID 2</span>
+              └── cpu_idle()                   <span class="cm">// → PID 0 进入空闲循环</span>
+
+<b>kernel_init()</b> [PID 1]
+  ├── <i>do_basic_setup()</i>
+  │     ├── driver_init()                    <span class="cm">// 设备模型初始化</span>
+  │     └── <em>do_initcalls()</em>                 ★ <span class="cm">遍历 __initcall 段 (7 级)</span>
+  │           ├── [1] core_initcall           <span class="cm">// 最早 — 架构核心</span>
+  │           ├── [2] postcore_initcall
+  │           ├── [3] arch_initcall           <span class="cm">// 平台级设备</span>
+  │           ├── [4] subsys_initcall         <span class="cm">// i2c, spi 子系统</span>
+  │           ├── [5] fs_initcall             <span class="cm">// ext4 等文件系统</span>
+  │           ├── [6] device_initcall         <span class="cm">// module_init() 映射到此</span>
+  │           └── [7] late_initcall           <span class="cm">// 最晚 — 依赖全部就绪</span>
+  ├── <i>populate_rootfs()</i>                    ★ <span class="cm">解包 initramfs CPIO 到 rootfs</span>
+  ├── prepare_namespace()                    ★ <span class="cm">挂载真实根文件系统</span>
+  └── <b>init_post()</b>
+        ├── free_initmem()                    <span class="cm">// 释放 __init 段 (回收到 buddy)</span>
+        ├── run_init_process("/sbin/init")    ★ <span class="cm">尝试 #1 — systemd / SysV init</span>
+        ├── run_init_process("/etc/init")     <span class="cm">// 后备 #2</span>
+        ├── run_init_process("/bin/init")     <span class="cm">// 后备 #3</span>
+        ├── run_init_process("/bin/sh")       <span class="cm">// 后备 #4 — 恢复 shell</span>
+        └── panic("No init found")            <span class="cm">// 全部失败 → 内核 panic</span></div>
+
+<!-- ══════ Ch8: 文件系统挂载 ══════ -->
+<h2 class="sh">8. 文件系统挂载 — 三次关键挂载</h2>
+<p class="ss">start_kernel 中的初始 rootfs → initramfs CPIO 解包 → prepare_namespace 的 pivot_root</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>① 初始 rootfs (极早期)</h4><div class="lbl">start_kernel → vfs_caches_init</div>
+    <p>在<strong>任何驱动初始化之前</strong>，<code>mnt_init() → init_mount_tree()</code> 挂载一个<strong>空的 ramfs</strong> 作为 "/"。确保 VFS 始终可用 — 所有后续操作都假设根已存在。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>② initramfs 解包</h4><div class="lbl">kernel_init → populate_rootfs</div>
+    <p>将编译链接进内核的 CPIO 存档 (<code>usr/initramfs_data.cpio</code>)<strong>直接解包到已有的 rootfs</strong>。若存在 <code>/init</code>，内核直接执行它作为早期用户空间 init。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>③ 真实根文件系统</h4><div class="lbl">kernel_init → prepare_namespace</div>
+    <p>根据 <code>root=/dev/mmcblk0p2</code> 挂载真实根 (ext4/SquashFS/NFS…)。成功后 <code>sys_mount(MS_MOVE)</code> 覆盖旧 rootfs → <code>sys_chroot(".")</code> → <code>run_init_process("/sbin/init")</code>。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 挂载流程伪代码 ===== */</span>
+
+<span class="cm">// 1. start_kernel() — 最早 rootfs</span>
+<span class="fn">vfs_caches_init</span>() → <span class="fn">mnt_init</span>()
+  ├── <span class="fn">init_rootfs</span>()                  <span class="cm">// register_filesystem(&amp;rootfs_fs_type)</span>
+  └── <span class="fn">init_mount_tree</span>()
+        └── <span class="fn">do_new_mount</span>(rootfs, <span class="st">"/"</span>, <span class="st">"rootfs"</span>, ...)  ★  "/" 诞生
+
+<span class="cm">// 2. kernel_init() — initramfs 解包</span>
+<span class="fn">populate_rootfs</span>()
+  ├── <span class="kw">if</span> (内置 initramfs) → <span class="fn">unpack_to_rootfs</span>(__initramfs_start, size)
+  └── <span class="kw">if</span> (initrd)        → <span class="fn">initrd_load</span>()
+
+<span class="cm">// 3. kernel_init() — 真实根挂载</span>
+<span class="kw">if</span> (<span class="fn">init_eaccess</span>(ramdisk_execute_command)) <span class="cm">// /init 存在?</span>
+    <span class="fn">run_init_process</span>(ramdisk_execute_command) <span class="cm">// → 早期用户空间 init</span>
+
+<span class="fn">prepare_namespace</span>()
+  ├── <span class="fn">wait_for_device_probe</span>()          <span class="cm">// 等存储驱动就绪</span>
+  ├── <span class="fn">mount_root</span>()
+  │     └── <span class="fn">do_mount_root</span>(root=, ...)    <span class="cm">// 根据 root= 参数挂载</span>
+  └── pivot_root → <span class="fn">sys_chroot</span>(<span class="st">"."</span>)
+
+<span class="cm">/* ===== 根文件系统相关内核参数 ===== */</span>
+<span class="kw">root</span>=/dev/mmcblk0p2       <span class="cm">// eMMC/SD 分区</span>
+<span class="kw">root</span>=/dev/nfs              <span class="cm">// NFS 网络根</span>
+<span class="kw">root</span>=PARTUUID=xxxx         <span class="cm">// 按分区 UUID 查找</span>
+<span class="kw">rootfstype</span>=ext4            <span class="cm">// 文件系统类型 (可省略，自动检测)</span>
+<span class="kw">rootwait</span>                   <span class="cm">// ⭐ 等待设备出现 — 最重要!</span>
+<span class="kw">rootdelay</span>=<span class="nu">3</span>               <span class="cm">// 延迟 N 秒后挂载</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ rootwait — 最常见启动失败的根因</div>
+  没有 <code>rootwait</code> 时，内核可能在<strong>存储驱动还未完成异步探测</strong>时尝试挂载根 → <strong>"VFS: Unable to mount root fs on unknown-block" panic</strong>。MMC 驱动通常是 device_initcall (级别 6)，而根挂载时机早于异步探测完成。<code>rootwait</code> 让内核无限等待直到设备节点出现。
+</div>
+
+<!-- ══════ Ch9: init ══════ -->
+<h2 class="sh">9. 第一个用户空间进程 (PID 1)</h2>
+<p class="ss">kernel_init → run_init_process → systemd / BusyBox init — 完整用户空间系统的诞生</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>systemd (现代 Linux)</h4><div class="lbl">/sbin/init → systemd</div>
+    <p>① <code>default.target</code> 解析<br>② <code>sysinit.target</code> — 挂载 /proc /sys /dev<br>③ <code>local-fs.target</code> — /etc/fstab 文件系统<br>④ <code>network.target</code> — DHCP / 静态 IP<br>⑤ <code>multi-user.target</code> — sshd, crond…<br>⑥ <code>graphical.target</code> — 显示管理器<br><strong>并行启动</strong>: 按依赖关系并行，远超 SysV init。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>BusyBox init (嵌入式)</h4><div class="lbl">/init → busybox init</div>
+    <p>① 读取 <code>/etc/inittab</code><br>② <code>::sysinit:/etc/init.d/rcS</code> — 系统初始化<br>③ 挂载虚拟 fs: mont /proc /sys /tmp<br>④ 启动 getty: <code>/sbin/getty -L ttyS0 115200</code><br>⑤ 执行 <code>/etc/profile</code> — 用户环境<br>适合资源受限嵌入式 — 镜像可小至 ~2MB。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== BusyBox /etc/inittab 典型配置 ===== */</span>
+<span class="kw">::sysinit</span>:/etc/init.d/rcS              <span class="cm">// 系统启动脚本</span>
+<span class="kw">::respawn</span>:-/bin/sh                     <span class="cm">// 串口控制台 — respawn 自动重启</span>
+<span class="kw">ttyS0::respawn</span>:/sbin/getty -L ttyS0 <span class="nu">115200</span> vt100
+<span class="kw">::shutdown</span>:/etc/init.d/rcK             <span class="cm">// 关机脚本</span>
+<span class="kw">::restart</span>:/sbin/init                   <span class="cm">// 重启 init</span></div>
+
+<!-- ══════ Ch10: 内存布局演进 ══════ -->
+<h2 class="sh">10. 内存布局演进全景</h2>
+<p class="ss">从 SRAM 中的第一个字节到 DRAM 中完整内核 — 各阶段在物理内存中的位置变化</p>
+
+<div class="membar">
+  <p style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:10px">阶段 A: SRAM 中的 SPL (Boot ROM 加载后)</p>
+  <div class="mb-row"><span class="mb-addr">SRAM top</span><span class="mb-bar mb-c1" style="width:280px">SPL Stack ↓</span></div>
+  <div class="mb-row"><span class="mb-addr"></span><span class="mb-bar mb-c2" style="width:180px">SPL .data + .bss</span></div>
+  <div class="mb-row"><span class="mb-addr"></span><span class="mb-bar mb-c3" style="width:240px">SPL .text + .rodata</span></div>
+  <div class="mb-row"><span class="mb-addr">SRAM base</span><span class="mb-bar mb-c4" style="width:100px">ROM 保留</span></div>
+
+  <p style="font-size:13px;font-weight:700;color:#34d399;margin:18px 0 10px">阶段 B: DRAM 布局 (SPL 加载 ATF + U-Boot + DTB 后)</p>
+  <div class="mb-row"><span class="mb-addr" style="font-size:11px;color:#d0d0e0">DRAM top</span><span class="mb-bar mb-c1" style="width:240px">U-Boot 重定位后 + Stack</span></div>
+  <div class="mb-row"><span class="mb-addr">0x0600_0000</span><span class="mb-bar mb-c2" style="width:160px">Initramfs (可选)</span><span class="mb-note">8MB CPIO 归档</span></div>
+  <div class="mb-row"><span class="mb-addr">0x0208_0000</span><span class="mb-bar mb-c3" style="width:200px">Kernel Image (解压后)</span><span class="mb-note">~30MB</span></div>
+  <div class="mb-row"><span class="mb-addr">0x01F0_0000</span><span class="mb-bar mb-c4" style="width:100px">FDT (DTB)</span><span class="mb-note">~64KB</span></div>
+  <div class="mb-row"><span class="mb-addr">0x0020_0000</span><span class="mb-bar mb-c5" style="width:180px">U-Boot (预重定位)</span><span class="mb-note">~2MB</span></div>
+  <div class="mb-row"><span class="mb-addr">0x0004_0000</span><span class="mb-bar mb-c2" style="width:140px">ATF (BL31)</span><span class="mb-note">~512KB</span></div>
+  <div class="mb-row"><span class="mb-addr">0x0000_0000</span><span class="mb-bar mb-c1" style="width:100px">SPL</span><span class="mb-note">~256KB</span></div>
+
+  <p style="font-size:13px;font-weight:700;color:#fbbf24;margin:18px 0 10px">阶段 C: 内核接管后 — U-Boot/ATF 占用的低地址被释放</p>
+  <div class="mb-row"><span class="mb-addr">DRAM top</span><span class="mb-bar mb-c4" style="width:280px">Buddy Allocator 管理区 → 用户空间进程</span></div>
+  <div class="mb-row"><span class="mb-addr">内核基址</span><span class="mb-bar mb-c3" style="width:220px">内核 .text + .rodata + .data + .bss</span><span class="mb-note">~16MB</span></div>
+</div>
+
+<!-- ══════ Ch11: 调试 ══════ -->
+<h2 class="sh">11. 调试与诊断</h2>
+<p class="ss">各阶段调试方法 · 常见启动失败速查 · 最有用的内核启动参数</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Boot ROM / SPL</h4><div class="lbl">无控制台 — 依赖硬件</div>
+    <p><strong>GPIO 翻转 + 示波器</strong>: 在代码关键点翻转 GPIO，测量时间定位卡点<br>
+    <strong>UART 早期输出</strong>: SPL 初始化串口后可 debug 打印<br>
+    <strong>JTAG/SWD</strong>: 硬件调试器单步执行<br>
+    <strong>SYSBOOT 引脚</strong>: 用万用表确认电平</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>U-Boot</h4><div class="lbl">有 CLI — 最灵活</div>
+    <p><code>mmc dev/list/part</code> — 存储设备<br>
+    <code>ext4ls mmc 0:2 /boot</code> — 列文件<br>
+    <code>printenv/setenv/saveenv</code> — 环境变量<br>
+    <code>fatload + booti</code> — 手动启动<br>
+    按任意键中断 autoboot 进入 CLI</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内核</h4><div class="lbl">内核参数 + 早期打印</div>
+    <p><code>earlycon</code> — 最早串口输出<br>
+    <code>initcall_debug</code> — 打印每个 initcall<br>
+    <code>ignore_loglevel</code> — 显示所有日志<br>
+    <code>init=/bin/sh</code> — 恢复 shell<br>
+    <code>rootdelay=5</code> — 额外等待时间</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断方法</th></tr></thead>
+  <tbody>
+    <tr><td>上电完全无输出</td><td>电源/晶振/复位异常<br>SYSBOOT 引脚错误</td><td>示波器测 Vcore+晶振；万用表确认启动引脚</td></tr>
+    <tr><td>SPL 打印后卡住</td><td>DDR 初始化失败<br>时序参数不匹配</td><td>GPIO+示波器定位卡在哪个函数</td></tr>
+    <tr><td>U-Boot 找不到内核</td><td>启动设备顺序错<br>FS 类型不支持</td><td><code>mmc part</code> + <code>ext4ls</code> 确认文件存在</td></tr>
+    <tr><td>"VFS: Unable to mount root fs"</td><td class="r">缺 rootwait<br>root= 参数错误</td><td>加 <code>rootwait rootdelay=3</code>；确认分区号</td></tr>
+    <tr><td>内核 panic (驱动相关)</td><td>DTB compatible 不匹配<br>关键驱动缺失</td><td>检查 DTB 节点；<code>dmesg | grep -i error</code></td></tr>
+    <tr><td>"No init found" panic</td><td>根 FS 缺 /sbin/init<br>动态链接器路径错</td><td>加 <code>init=/bin/sh</code> 进入恢复 shell</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb" style="margin-top:14px">
+<span class="cm">/* ===== 最有用的内核启动参数 ===== */</span>
+<span class="kw">console</span>=ttyS0,115200          <span class="cm">// 指定控制台</span>
+<span class="kw">earlycon</span>                      <span class="cm">// 最早串口输出 (head.S 阶段)</span>
+<span class="kw">earlyprintk</span>                   <span class="cm">// 早期 printk (ARM32)</span>
+<span class="kw">ignore_loglevel</span>              <span class="cm">// 输出所有 KERN_DEBUG</span>
+<span class="kw">initcall_debug</span>               <span class="cm">// "calling initcall XXX... returned 0 after N usecs"</span>
+<span class="kw">root</span>=/dev/mmcblk0p2           <span class="cm">// 根 FS 设备 (必需)</span>
+<span class="kw">rootwait</span>                      <span class="cm">// ⭐ 等待根设备出现 (极其重要!)</span>
+<span class="kw">rootdelay</span>=<span class="nu">3</span>                  <span class="cm">// 延迟 N 秒后挂载</span>
+<span class="kw">rdinit</span>=/bin/sh                <span class="cm">// initramfs 替代 init</span>
+<span class="kw">init</span>=/bin/sh                  <span class="cm">// 真实根 FS 替代 init (恢复 shell)</span></div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>关键文件</th><th>内容</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>/proc/cmdline</code></td><td>内核命令行参数</td><td>确认 bootloader 传递了什么</td></tr>
+    <tr><td><code>/proc/device-tree/</code></td><td>DTB 展开为目录</td><td>验证 DTB 内容是否正确</td></tr>
+    <tr><td><code>dmesg</code></td><td>内核日志缓冲区</td><td>回顾从 head.S 到现在的完整日志</td></tr>
+    <tr><td><code>/sys/kernel/debug/bootgraph</code></td><td>启动时序图数据</td><td><code>tools/bootgraph.pl</code> → SVG 时间线</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Embedded Linux Boot Process — 系统化知识体系 · 2026-06 · ARMv7-A / ARMv8-A · U-Boot 2024+
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

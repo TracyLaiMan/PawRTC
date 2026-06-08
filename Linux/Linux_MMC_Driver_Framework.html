@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux MMC 驱动框架 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+/* ── document layout ── */
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+
+/* ── section heading ── */
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+/* ── code block ── */
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; }
+.cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; }
+.cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; }
+.cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+
+/* ── card grid ── */
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; }
+.cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.cg.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3,.cg.c4 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc, #6c63ff); background: rgba(255,255,255,.04); transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc, #6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; }
+.cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+
+/* ── pin grid ── */
+.ping { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 16px 0; }
+@media(max-width:700px){ .ping { grid-template-columns: 1fr 1fr 1fr; } }
+.pn { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px; padding: 14px 10px; text-align: center; transition: all .3s; }
+.pn:hover { border-color: rgba(108,99,255,.2); background: rgba(108,99,255,.04); }
+.pn .sg { font-size: 16px; font-weight: 800; color: #a78bfa; margin-bottom: 3px; }
+.pn .dr { font-size: 10px; color: #fbbf24; margin-bottom: 4px; }
+.pn .de { font-size: 10.5px; color: #8888aa; line-height: 1.5; }
+
+/* ── step grid ── */
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+.st code { font-size: 10px; }
+
+/* ── hr ── */
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+/* ── hero fullscreen (keep sec for intro only) ── */
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux MMC 驱动框架</h2>
+  <p class="sec-sub">系统化知识体系 — 从三层架构到 HS400 高速模式</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>Card 层</strong><br><small>mmc_block.ko</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Core 层</strong><br><small>mmc_core.ko</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Host 层</strong><br><small>平台驱动</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>MMC / eMMC</h4><div class="sub">JEDEC JESD84 标准</div>
+      <p>嵌入式多媒体卡标准。<em>eMMC</em> 将控制器+NAND Flash 封装一体，手机/平板/IoT 标配存储。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>SD / SDIO</h4><div class="sub">SD Association 规范</div>
+      <p>从 MMC 演进。SD 用于可插拔卡；<em>SDIO</em> 复用总线连接 WiFi/蓝牙/GPS 等 I/O 外设。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>内核位置</h4><div class="sub">drivers/mmc/</div>
+      <p><code>card/</code> <code>core/</code> <code>host/</code> 三个子目录对应三层。<code>CONFIG_MMC</code> 子系统开关，<code>CONFIG_MMC_BLOCK</code> 块设备。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1: 三层架构 ── -->
+<h2 class="sh">1. 三层架构模型</h2>
+<p class="ss">经典分层设计 — 每一层职责清晰、接口明确、独立编译为内核模块</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Card 层</h4>
+    <div class="lbl">drivers/mmc/card/ → mmc_block.ko</div>
+    <p>将存储抽象为标准块设备 <code>/dev/mmcblkX</code>。<code>"mmcqd"</code> 线程取 block request 构造 <code>mmc_request</code> 向下派发。管理 <em>RPMB</em>、<em>Boot</em>、<em>GP</em> 特殊分区。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Core 层</h4>
+    <div class="lbl">drivers/mmc/core/ → mmc_core.ko</div>
+    <p>子系统中枢：卡生命周期（<code>mmc_rescan → mmc_init_card</code>）、协议抽象（MMC/SD/SDIO 各有 <code>mmc_bus_ops</code>）、请求派发（<code>mmc_wait_for_req → host-&gt;ops-&gt;request</code>）、公共工具（<code>mmc_of_parse</code> 解析 DT）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Host 层</h4>
+    <div class="lbl">drivers/mmc/host/ → 平台驱动</div>
+    <p>SoC 硬件适配层，实现 <code>struct mmc_host_ops</code>。常见 IP：<em>SDHCI</em>（Intel/Qualcomm/NVIDIA）、<em>DesignWare MMC</em>（Rockchip/STM32）、<em>Freescale eSDHC</em>（i.MX）、<em>Allwinner SUNXI</em>。</p>
+  </div>
+</div>
+
+<details style="margin-top:14px">
+  <summary>源码目录结构</summary>
+  <div class="cb" style="font-size:10.5px;line-height:1.6;margin:8px 0 0">
+<span class="cm">drivers/mmc/
+├── card/              ← Card 层 (mmc_block.ko)
+│   ├── block.c            块设备驱动入口 (mmc_blk_probe / mmc_queue_thread)
+│   ├── queue.c            请求队列管理
+│   └── sdio_uart.c        SDIO UART
+├── core/              ← Core 层 (mmc_core.ko)
+│   ├── core.c             mmc_rescan / mmc_start_request
+│   ├── host.c             mmc_alloc_host / mmc_add_host
+│   ├── bus.c              mmc_bus_type 总线抽象
+│   ├── mmc.c / sd.c / sdio.c   协议实现 (mmc_init_card)
+│   ├── mmc_ops.c          命令封装 (mmc_wait_for_req)
+│   ├── slot-gpio.c        GPIO 卡检测 / 写保护
+│   ├── debugfs.c          /sys/kernel/debug/mmcX/
+│   └── quirks.h           硬件缺陷表
+├── host/              ← Host 层 (平台驱动)
+│   ├── sdhci.c / sdhci-pltfm.c   SDHCI 标准框架
+│   ├── dw_mmc*.c                 DesignWare MMC (Rockchip/STM32)
+│   ├── sdhci-of-esdhc.c          Freescale eSDHC (i.MX)
+│   └── ...
+└── Kconfig / Makefile</span></div>
+</details>
+
+<!-- ── Ch2: 核心数据结构 ── -->
+<h2 class="sh">2. 核心数据结构</h2>
+<p class="ss">mmc_host · mmc_card · mmc_ios · mmc_host_ops — 子系统围绕这四个结构体运转</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>mmc_host</h4>
+    <div class="lbl">include/linux/mmc/host.h</div>
+    <p>子系统的根对象。<code>f_min/f_max</code> 时钟范围、<code>caps/caps2</code> 能力位、<code>ops</code> 操作回调、<code>ios</code> 总线状态、<code>card</code> 已挂载卡指针。<br>
+    分配 → 注册：<code>mmc_alloc_host(extra, dev)</code> → <code>mmc_add_host(host)</code> → 首次 <code>mmc_rescan()</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>mmc_card</h4>
+    <div class="lbl">include/linux/mmc/card.h</div>
+    <p>描述已检测的物理卡。<code>raw_cid[4]/raw_csd[4]</code> 原始寄存器 + 解码后的 <code>cid/csd</code>。eMMC 额外含 <code>ext_csd</code> (512B)。type: <code>MMC_TYPE_MMC / _SD / _SDIO</code>。<br>
+    <code>mmc_alloc_card() → mmc_add_card()</code> → 触发 <code>mmc_blk_probe()</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>mmc_ios</h4>
+    <div class="lbl">I/O 总线电气 &amp; 时序状态</div>
+    <p>Core 通过 <code>host-&gt;ops-&gt;set_ios(host, &amp;ios)</code> 通知 Host 更新硬件。<br>
+    <code>clock</code>: 当前频率 &nbsp; <code>power_mode</code>: OFF→UP→ON<br>
+    <code>bus_width</code>: 1/4/8 &nbsp; <code>timing</code>: LEGACY→HS→HS200→HS400<br>
+    <code>signal_voltage</code>: 3.3V/1.8V &nbsp; <code>drv_type</code>: Type-0~4</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>mmc_host_ops</h4>
+    <div class="lbl">Host 必须实现的回调集</div>
+    <p><strong>必选</strong> — <code>request</code> (I/O 事务)、<code>set_ios</code> (总线配置)<br>
+    <strong>高速</strong> — <code>execute_tuning</code>、<code>start_signal_voltage_switch</code><br>
+    <strong>DMA</strong> — <code>pre_req / post_req</code> (提前映射/延迟解映射)<br>
+    <strong>常用</strong> — <code>get_cd</code>、<code>get_ro</code>、<code>card_busy</code>、<code>hw_reset</code></p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>常用 Capabilities</th><th>含义</th><th>常用 Capabilities</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><code>MMC_CAP_4_BIT_DATA</code></td><td>4 位总线</td><td><code>MMC_CAP_8_BIT_DATA</code></td><td>8 位总线</td></tr>
+    <tr><td><code>MMC_CAP_MMC_HIGHSPEED</code></td><td>MMC HS 52MHz</td><td><code>MMC_CAP_SD_HIGHSPEED</code></td><td>SD HS 50MHz</td></tr>
+    <tr><td><code>MMC_CAP_NONREMOVABLE</code></td><td>不可插拔 (eMMC)</td><td><code>MMC_CAP_NEEDS_POLL</code></td><td>轮询卡检测</td></tr>
+    <tr><td class="g"><code>MMC_CAP2_HS200_1_8V_SDR</code></td><td class="g">HS200 (200MB/s)</td><td style="color:#a78bfa;font-weight:600"><code>MMC_CAP2_HS400_1_8V</code></td><td style="color:#a78bfa;font-weight:600">HS400 (400MB/s)</td></tr>
+    <tr><td><code>MMC_CAP2_NO_SD</code></td><td>跳过 SD 探测</td><td><code>MMC_CAP2_NO_MMC</code></td><td>跳过 MMC 探测</td></tr>
+  </tbody>
+  </table>
+</div>
+
+
+<!-- ── Ch3: mmc_request 体系 ── -->
+<h2 class="sh">3. mmc_request — 总线事务描述</h2>
+<p class="ss">mmc_request · mmc_command · mmc_data — 一次总线事务的完整描述 + 数据流转路径</p>
+
+<div class="cb">
+<span class="kw">struct</span> <span class="ty">mmc_request</span> {                        <span class="cm">/* 一次事务 */</span>
+    <span class="kw">struct</span> <span class="ty">mmc_command</span>  *cmd;                <span class="cm">// 主命令</span>
+    <span class="kw">struct</span> <span class="ty">mmc_data</span>     *data;               <span class="cm">// 数据 (可为 NULL)</span>
+    <span class="kw">struct</span> <span class="ty">mmc_command</span>  *stop;               <span class="cm">// 停止命令 (多块 CMD12)</span>
+    <span class="kw">struct</span> <span class="ty">completion</span>   completion;          <span class="cm">// Host 完成后 signal</span>
+    <span class="ty">void</span> (*<span class="fn">done</span>)(<span class="kw">struct</span> <span class="ty">mmc_request</span> *);    <span class="cm">// Host 完成回调 → 通知 Core</span>
+};
+
+<span class="kw">struct</span> <span class="ty">mmc_command</span> {
+    <span class="ty">u32</span>   opcode;                            <span class="cm">// CMD0=GO_IDLE, CMD17=READ, CMD18=READ_MULTI</span>
+    <span class="ty">u32</span>   arg;                               <span class="cm">// 命令参数</span>
+    <span class="ty">u32</span>   resp[<span class="nu">4</span>];                           <span class="cm">// 响应 (最多 136bit R2)</span>
+    <span class="kw">unsigned int</span> flags;                      <span class="cm">// MMC_RSP_R1 / R1B / R2 / R3 / R6 / R7</span>
+    <span class="ty">int</span>   error;                             <span class="cm">// 0=成功, -ETIMEDOUT, -EILSEQ...</span>
+    <span class="kw">unsigned int</span> retries;                    <span class="cm">// 最大重试 — Core 自动重试</span>
+};
+
+<span class="kw">struct</span> <span class="ty">mmc_data</span> {
+    <span class="ty">unsigned int</span> timeout_ns;                 <span class="cm">// 超时 (ns)</span>
+    <span class="ty">unsigned int</span> blksz;                     <span class="cm">// 块大小 (通常 512)</span>
+    <span class="ty">unsigned int</span> blocks;                    <span class="cm">// 块数</span>
+    <span class="ty">unsigned int</span> flags;                     <span class="cm">// MMC_DATA_READ / MMC_DATA_WRITE</span>
+    <span class="kw">struct</span> <span class="ty">sg_table</span>   *sg;                 <span class="cm">// ⭐ Scatter-Gather 表</span>
+    <span class="ty">unsigned int</span> bytes_xfered;               <span class="cm">// 实际传输字节</span>
+    <span class="ty">int</span>   error;                             <span class="cm">// 数据错误码</span>
+};</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>响应</th><th>flags 宏</th><th>位宽</th><th>典型命令</th><th>响应</th><th>flags 宏</th><th>位宽</th><th>典型命令</th></tr></thead>
+  <tbody>
+    <tr><td>R1</td><td><code>R1</code> (PRESENT|CRC|OPCODE)</td><td>48</td><td>CMD17,24</td><td>R3</td><td><code>R3</code> (PRESENT)</td><td>48</td><td>CMD1,58</td></tr>
+    <tr><td>R1b</td><td><code>R1B</code> (R1+BUSY)</td><td>48</td><td>CMD7,12</td><td>R6</td><td><code>R6</code> (PRESENT|CRC|OPCODE)</td><td>48</td><td>CMD3</td></tr>
+    <tr><td>R2</td><td><code>R2</code> (PRESENT|136|CRC)</td><td>136</td><td>CMD2,9</td><td>R7</td><td><code>R7</code> (PRESENT|CRC|OPCODE)</td><td>48</td><td>CMD8</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">读多块请求 (CMD18) 组装示例</div>
+  <code>mrq = { .cmd={CMD18, addr, R1|CRC|ADTC}, .data={512, 8, READ, &lt;scatterlist&gt;}, .stop={CMD12, R1B|CRC|AC} }</code>
+</div>
+
+<div class="flow-row" style="margin:20px 0">
+  <span class="flow-box">User read()</span> <span class="flow-arr">→</span>
+  <span class="flow-box">VFS / Page Cache</span> <span class="flow-arr">→</span>
+  <span class="flow-box">Block Layer<br>blk_mq scheduler</span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>Card<br>"mmcqd" → mrq</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>Core<br>mmc_wait_for_req</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>Host<br>request() → IRQ</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box">Hardware</span>
+</div>
+
+
+<!-- ── Ch4: 卡检测与初始化 ── -->
+<h2 class="sh">4. 卡检测与初始化</h2>
+<p class="ss">mmc_rescan → 三种协议探测 → mmc_init_card 九步 — 从无卡到就绪</p>
+
+<div class="flow-row" style="margin:16px 0">
+  <span class="flow-box">GPIO 中断<br>或轮询</span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.35);background:rgba(108,99,255,.08)"><strong>mmc_rescan()</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box">power_up<br>CMD0 idle</span> <span class="flow-arr">→</span>
+  <span class="flow-box">CMD8<br>电压检测</span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.06)"><strong>协议探测</strong></span>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>① SDIO 探测</h4><div class="lbl">mmc_attach_sdio()</div>
+    <p><code>CMD5</code> (IO_SEND_OP_COND) → 若响应则初始化 SDIO。典型设备：WiFi/蓝牙模块。需 DT 配 <code>keep-power-in-suspend</code>。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>② SD 探测</h4><div class="lbl">mmc_attach_sd()</div>
+    <p><code>CMD55+ACMD41</code> 上电 → <code>CMD2</code> CID → <code>CMD3</code> RCA → <code>CMD9</code> CSD → 读 SCR → 切换高速模式。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>③ MMC 探测</h4><div class="lbl">mmc_attach_mmc()</div>
+    <p><code>CMD1</code> 循环等 busy → <code>CMD2</code> CID → <code>CMD3</code> RCA → <code>mmc_init_card()</code> 读 CSD+EXT_CSD。</p>
+  </div>
+</div>
+
+<div class="ping">
+  <div class="pn"><div class="sg">CLK</div><div class="dr">Host→Card</div><div class="de">时钟信号<br>速率动态调节</div></div>
+  <div class="pn"><div class="sg">CMD</div><div class="dr">↔ 双向</div><div class="de">命令/响应<br>OD 或 PP 模式</div></div>
+  <div class="pn"><div class="sg">DAT0~3</div><div class="dr">↔ 双向</div><div class="de">数据线<br>默认 1-bit</div></div>
+  <div class="pn"><div class="sg">DAT4~7</div><div class="dr">↔ 双向</div><div class="de">扩展数据线<br>eMMC 8-bit</div></div>
+  <div class="pn"><div class="sg">DS</div><div class="dr">Card→Host</div><div class="de">数据选通<br>HS400 读数据</div></div>
+  <div class="pn"><div class="sg">RST_n</div><div class="dr">Host→Card</div><div class="de">硬件复位<br>eMMC 可选</div></div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ eMMC 上电时序</div>
+  <strong>RST_n</strong> 释放后需 ≥ <strong>74 个时钟周期</strong>。初始化通信 <strong>≤ 400 kHz 低速</strong>。电压切换 (3.3V → 1.8V) 必须先 <code>CMD6 SWITCH</code> 协商确认。
+</div>
+
+<details>
+  <summary>mmc_init_card() — eMMC 初始化 9 步</summary>
+  <div class="sg" style="margin-top:8px">
+    <div class="st"><b>①</b> CMD9 SEND_CSD → 容量/频率/版本</div>
+    <div class="st"><b>②</b> CMD7 SELECT → Transfer 态</div>
+    <div class="st"><b>③</b> CMD8 SEND_EXT_CSD → 512B</div>
+    <div class="st"><b>④</b> CMD6 → HS_TIMING=0x01 → 52MHz</div>
+    <div class="st"><b>⑤</b> CMD6 → BUS_WIDTH → 4/8-bit</div>
+    <div class="st"><b>⑥</b> HS200：1.8V→0x02→200MHz→Tune</div>
+    <div class="st"><b>⑦</b> HS400：0x01→≤52M→DDR8→0x03</div>
+    <div class="st"><b>⑧</b> 容量 = SEC_COUNT × 512</div>
+    <div class="st"><b>⑨</b> mmc_add_card → mmc_blk_probe</div>
+  </div>
+</details>
+
+
+<!-- ── Ch5: 速度模式 ── -->
+<h2 class="sh">5. 总线速度模式</h2>
+<p class="ss">从 Legacy 26 MB/s 到 HS400 400 MB/s — eMMC 速度等级演进全景</p>
+
+<div class="ptbl" style="margin-top:18px">
+  <table>
+  <thead><tr><th>模式</th><th>速率</th><th>电压</th><th>总线</th><th>时钟</th><th>带宽×8</th><th>引入</th></tr></thead>
+  <tbody>
+    <tr><td>Backwards Compatibility</td><td>SDR</td><td>3.3/1.8V</td><td>1,4,8</td><td>≤26 MHz</td><td>26 MB/s</td><td>MMC 4.0</td></tr>
+    <tr><td>High Speed SDR</td><td>SDR</td><td>3.3/1.8V</td><td>4,8</td><td>≤52 MHz</td><td>52 MB/s</td><td>MMC 4.1</td></tr>
+    <tr><td>High Speed DDR (DDR52)</td><td>DDR</td><td>3.3/1.8V</td><td>4,8</td><td>≤52 MHz</td><td>104 MB/s</td><td>MMC 4.3</td></tr>
+    <tr style="border-left:3px solid #6c63ff"><td class="g"><strong>HS200</strong></td><td class="g">SDR</td><td class="g">1.8V</td><td class="g">4,8</td><td class="g">≤200 MHz</td><td class="g"><strong>200 MB/s</strong></td><td class="g">eMMC 4.5</td></tr>
+    <tr style="border-left:3px solid #10b981"><td style="color:#34d399;font-weight:700"><strong>HS400</strong></td><td style="color:#34d399">DDR</td><td style="color:#34d399">1.8V</td><td style="color:#34d399">8</td><td style="color:#34d399">≤200 MHz</td><td style="color:#34d399"><strong>400 MB/s</strong></td><td style="color:#34d399">eMMC 5.0</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#6c63ff">
+    <h4>HS200 (eMMC 4.5+)</h4>
+    <div class="lbl">SDR 200 MHz → 200 MB/s</div>
+    <p>必须 <strong>1.8V</strong>。需要 <em>Tuning</em>：Host 通过 <code>CMD21</code> 发送已知数据块，校准内部采样点补偿信号往返延迟。写入源同步，读取需调谐。驱动强度 Type-0~3。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>HS400 (eMMC 5.0+)</h4>
+    <div class="lbl">DDR 200 MHz → 400 MB/s</div>
+    <p>必须 <strong>8-bit + 1.8V</strong>。新增 <em>Data Strobe (DS)</em>：设备读取时生成 DS 信号，Host 利用其边沿可靠捕获 DDR 数据。须先完成 HS200 调谐。额外 <em>Type-4</em> 驱动 (40Ω)。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>驱动</th><th>阻抗</th><th>相对</th><th>说明</th><th>驱动</th><th>阻抗</th><th>相对</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>Type-0</td><td>50Ω</td><td>×1.0</td><td>默认，必选</td><td>Type-2</td><td>66Ω</td><td>×0.75</td><td>最弱 200MHz</td></tr>
+    <tr><td>Type-1</td><td>33Ω</td><td>×1.5</td><td>强驱动长走线</td><td>Type-3</td><td>100Ω</td><td>×0.5</td><td>低 EMI/噪声</td></tr>
+    <tr><td colspan="4"></td><td style="color:#fbbf24;font-weight:600">Type-4</td><td style="color:#fbbf24">40Ω</td><td style="color:#fbbf24">×1.2</td><td style="color:#fbbf24"><strong>HS400 专用</strong></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ HS400 切换顺序</div>
+  <strong>HS200(Tuning) → 先 HS_TIMING=0x01 → <em>再</em>降频≤52M → DDR 8-bit → HS_TIMING=0x03</strong><br>
+  HS200 可跑低速，但 High Speed <strong>不能</strong>超 52MHz。先降频再切时序 → 非法状态 → 命令失败。
+</div>
+
+
+<!-- ── Ch6: Host 驱动开发 ── -->
+<h2 class="sh">6. Host 驱动开发</h2>
+<p class="ss">request 回调 — 中断处理 — 状态机 — probe 最小模板</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>request — 事务入口</h4>
+    <div class="lbl">host-&gt;ops-&gt;request(host, mrq)</div>
+    <p>① <code>get_cd()</code> 检查卡存在 → 失败则 <code>-ENOMEDIUM</code><br>
+    ② 控制器忙 → <code>list_add_tail</code> 排队<br>
+    ③ 有数据 → <code>dma_map_sg()</code> + 写 BLKSZ/BLKCNT 寄存器<br>
+    ④ 根据 <code>cmd-&gt;flags</code> 配置响应类型 → 写 CMD/ARG → 启动。后续在中断中异步完成。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>中断处理 — 异步完成</h4>
+    <div class="lbl">CMD_DONE → DATA_DONE → STOP → done()</div>
+    <p><strong>CMD_DONE</strong>: 读 RSP0~3，超时→<code>-ETIMEDOUT</code>，CRC→<code>-EILSEQ</code><br>
+    <strong>DATA_DONE</strong>: <code>dma_unmap_sg()</code>，统计 <code>bytes_xfered</code><br>
+    <strong>STOP</strong>: 多块传完发 CMD12<br>
+    最后 <code>mmc_request_done(host-&gt;mmc, mrq)</code> → 出队下一个。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== request 回调 — 核心骨架 ===== */</span>
+<span class="kw">static void</span> <span class="fn">xxx_mmc_request</span>(<span class="kw">struct</span> <span class="ty">mmc_host</span> *mmc, <span class="kw">struct</span> <span class="ty">mmc_request</span> *mrq)
+{
+    <span class="kw">struct</span> <span class="ty">xxx_mmc_host</span> *host = <span class="fn">mmc_priv</span>(mmc);
+
+    <span class="kw">if</span> (!<span class="fn">xxx_mmc_get_cd</span>(mmc)) {                    <span class="cm">// 卡拔出 → 立即失败</span>
+        mrq-&gt;cmd-&gt;error = -<span class="ma">ENOMEDIUM</span>;
+        <span class="fn">mmc_request_done</span>(mmc, mrq); <span class="kw">return</span>;
+    }
+
+    <span class="fn">spin_lock</span>(&amp;host-&gt;lock);
+    <span class="kw">if</span> (host-&gt;state != STATE_IDLE) {               <span class="cm">// 忙 → 排队等待</span>
+        <span class="fn">list_add_tail</span>(&amp;mrq-&gt;node, &amp;host-&gt;queue);
+        <span class="fn">spin_unlock</span>(&amp;host-&gt;lock); <span class="kw">return</span>;
+    }
+    host-&gt;mrq = mrq; host-&gt;state = STATE_SENDING_CMD;
+    <span class="fn">spin_unlock</span>(&amp;host-&gt;lock);
+
+    <span class="kw">if</span> (mrq-&gt;data)                                   <span class="cm">// DMA 准备</span>
+        <span class="fn">xxx_mmc_setup_data</span>(host, mrq-&gt;data);
+
+    <span class="fn">xxx_mmc_prepare_cmd</span>(host, mrq-&gt;cmd);           <span class="cm">// 写 CMD/ARG/响应类型</span>
+    <span class="fn">xxx_mmc_start_cmd</span>(host);                       <span class="cm">// 启动 → 使能 IRQ</span>
+}
+
+<span class="cm">/* ===== 中断处理 ===== */</span>
+<span class="kw">static</span> <span class="ty">irqreturn_t</span> <span class="fn">xxx_mmc_irq</span>(<span class="ty">int</span> irq, <span class="kw">void</span> *devid)
+{
+    <span class="kw">struct</span> <span class="ty">xxx_mmc_host</span> *host = devid;
+    <span class="ty">u32</span> st = <span class="fn">readl</span>(host-&gt;base + MMC_STATUS);
+    <span class="kw">struct</span> <span class="ty">mmc_command</span> *cmd = host-&gt;mrq-&gt;cmd;
+    <span class="kw">struct</span> <span class="ty">mmc_data</span> *data = host-&gt;mrq-&gt;data;
+
+    <span class="kw">if</span> (st &amp; CMD_DONE) {                             <span class="cm">// 命令完成</span>
+        <span class="kw">for</span> (<span class="ty">int</span> i = <span class="nu">0</span>; i &lt; <span class="nu">4</span>; i++) cmd-&gt;resp[i] = <span class="fn">readl</span>(host-&gt;base + RSP + i*<span class="nu">4</span>);
+        <span class="kw">if</span> (st &amp; CMD_TIMEOUT) cmd-&gt;error = -<span class="ma">ETIMEDOUT</span>;
+        <span class="kw">else if</span> (st &amp; CMD_CRC_ERR) cmd-&gt;error = -<span class="ma">EILSEQ</span>;
+        <span class="kw">if</span> (data &amp;&amp; !cmd-&gt;error) <span class="kw">return</span> IRQ_HANDLED;  <span class="cm">// 等 DATA_DONE</span>
+        <span class="kw">goto</span> finish;
+    }
+
+    <span class="kw">if</span> (st &amp; DATA_DONE) {                           <span class="cm">// 数据传输完成</span>
+        <span class="fn">dma_unmap_sg</span>(...);
+        data-&gt;bytes_xfered = data-&gt;blocks * data-&gt;blksz;
+        <span class="kw">if</span> (st &amp; DATA_TIMEOUT) data-&gt;error = -<span class="ma">ETIMEDOUT</span>;
+        <span class="kw">else if</span> (st &amp; DATA_CRC_ERR) data-&gt;error = -<span class="ma">EILSEQ</span>;
+        <span class="kw">if</span> (host-&gt;mrq-&gt;stop &amp;&amp; !data-&gt;error) {        <span class="cm">// 多块 → STOP</span>
+            <span class="fn">xxx_mmc_send_stop</span>(host, host-&gt;mrq-&gt;stop);
+            <span class="kw">return</span> IRQ_HANDLED;
+        }
+        <span class="kw">goto</span> finish;
+    }
+
+<span class="kw">finish:</span>
+    host-&gt;state = STATE_IDLE;
+    <span class="fn">mmc_request_done</span>(host-&gt;mmc, host-&gt;mrq);       <span class="cm">// 通知 Core</span>
+    <span class="fn">xxx_mmc_process_next</span>(host);                    <span class="cm">// 出队</span>
+    <span class="kw">return</span> IRQ_HANDLED;
+}</div>
+
+<div class="flow-row" style="margin:16px 0">
+  <span class="flow-box">IDLE</span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>SENDING_CMD</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box">CMD_DONE</span> <span class="flow-arr">→</span>
+  <span class="flow-box">有数据? <strong>XFER</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box">DATA_DONE</span> <span class="flow-arr">→</span>
+  <span class="flow-box">多块? <strong>STOP</strong></span> <span class="flow-arr">→</span>
+  <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.35)"><strong>done()</strong></span>
+</div>
+
+<details>
+  <summary>最小 probe / remove 模板</summary>
+  <div class="cb" style="font-size:10.5px;line-height:1.65;margin:8px 0 0">
+<span class="kw">static int</span> <span class="fn">xxx_mmc_probe</span>(<span class="kw">struct</span> <span class="ty">platform_device</span> *pdev) {
+    <span class="kw">struct</span> <span class="ty">xxx_mmc_host</span> *host;  <span class="kw">struct</span> <span class="ty">mmc_host</span> *mmc;
+
+    mmc = <span class="fn">mmc_alloc_host</span>(<span class="kw">sizeof</span>(*host), &amp;pdev-&gt;dev);         <span class="cm">// ① 分配</span>
+    <span class="kw">if</span> (!mmc) <span class="kw">return</span> -<span class="ma">ENOMEM</span>;
+    host = <span class="fn">mmc_priv</span>(mmc);  host-&gt;mmc = mmc;
+
+    host-&gt;base = <span class="fn">devm_platform_ioremap_resource</span>(pdev, <span class="nu">0</span>);      <span class="cm">// ② 资源</span>
+    host-&gt;irq  = <span class="fn">platform_get_irq</span>(pdev, <span class="nu">0</span>);
+    host-&gt;clk  = <span class="fn">devm_clk_get</span>(&amp;pdev-&gt;dev, <span class="st">"mmc"</span>);
+
+    mmc-&gt;ops       = &amp;xxx_mmc_ops;                              <span class="cm">// ③ 属性</span>
+    mmc-&gt;f_min     = <span class="nu">400000</span>;  mmc-&gt;f_max = <span class="nu">50000000</span>;
+    mmc-&gt;ocr_avail = <span class="ma">MMC_VDD_32_33</span> | <span class="ma">MMC_VDD_33_34</span>;
+    mmc-&gt;caps      = <span class="ma">MMC_CAP_4_BIT_DATA</span> | <span class="ma">MMC_CAP_8_BIT_DATA</span> | <span class="ma">MMC_CAP_MMC_HIGHSPEED</span>;
+    mmc-&gt;max_segs  = <span class="nu">64</span>;  mmc-&gt;max_seg_size = <span class="nu">65536</span>;
+
+    <span class="fn">mmc_of_parse</span>(mmc);                                        <span class="cm">// ④ DT</span>
+    <span class="fn">devm_request_irq</span>(&amp;pdev-&gt;dev, host-&gt;irq, xxx_mmc_irq, <span class="nu">0</span>,       <span class="cm">// ⑤ IRQ</span>
+                       <span class="fn">mmc_hostname</span>(mmc), host);
+    <span class="fn">mmc_add_host</span>(mmc);                                        <span class="cm">// ⑥ 注册</span>
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+<span class="kw">static int</span> <span class="fn">xxx_mmc_remove</span>(<span class="kw">struct</span> <span class="ty">platform_device</span> *pdev) {
+    <span class="kw">struct</span> <span class="ty">xxx_mmc_host</span> *host = <span class="fn">platform_get_drvdata</span>(pdev);
+    <span class="fn">mmc_remove_host</span>(host-&gt;mmc);  <span class="fn">mmc_free_host</span>(host-&gt;mmc);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}</div>
+</details>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="ct">SDHCI 标准框架 — 优先基于它开发</div>
+  <strong>SD Host Controller Interface</strong> (SDA 标准寄存器接口)。内核 <code>sdhci.c</code> 提供完整 <code>mmc_host_ops</code>，平台只需通过 <code>sdhci_ops</code> 覆盖 <code>set_clock / reset / set_uhs_signaling</code> 等 SoC 特定回调。不兼容 SDHCI 的控制器（如 DesignWare MMC）才需从零实现。
+</div>
+
+
+<!-- ── Ch7: Device Tree + 电源管理 ── -->
+<h2 class="sh">7. Device Tree 绑定 &amp; 电源管理</h2>
+<p class="ss">mmc_of_parse() 解析通用属性 → caps/caps2 · Suspend/Resume · 电压切换</p>
+
+<div class="cb">
+<span class="cm">/* ===== eMMC 控制器 ===== */</span>
+&amp;sdhci {
+    bus-width = &lt;<span class="nu">8</span>&gt;;
+    mmc-hs200-<span class="nu">1</span>_<span class="nu">8</span>v;                          <span class="cm">// → MMC_CAP2_HS200_1_8V_SDR</span>
+    mmc-hs400-<span class="nu">1</span>_<span class="nu">8</span>v;                          <span class="cm">// → MMC_CAP2_HS400_1_8V</span>
+    non-removable;                         <span class="cm">// → MMC_CAP_NONREMOVABLE</span>
+    disable-wp;
+    max-frequency = &lt;<span class="nu">200000000</span>&gt;;
+    vmmc-supply = &lt;&amp;vcc_3v3&gt;;             <span class="cm">// 主电源 (NAND 阵列)</span>
+    vqmmc-supply = &lt;&amp;vcc_1v8&gt;;            <span class="cm">// IO 电压 (可切 1.8V)</span>
+};
+
+<span class="cm">/* ===== SD 卡槽 ===== */</span>
+&amp;sdmmc {
+    bus-width = &lt;<span class="nu">4</span>&gt;;
+    cd-gpios = &lt;&amp;gpio0 <span class="nu">7</span> GPIO_ACTIVE_LOW&gt;;   <span class="cm">// 卡检测 GPIO</span>
+    cap-sd-highspeed;                       <span class="cm">// SD HS 50MHz</span>
+    sd-uhs-sdr104;                         <span class="cm">// UHS-I 104 MB/s</span>
+    vmmc-supply = &lt;&amp;vcc_sd&gt;;
+};
+
+<span class="cm">/* ===== SDIO WiFi ===== */</span>
+&amp;sdio {
+    bus-width = &lt;<span class="nu">4</span>&gt;;  non-removable;
+    keep-power-in-suspend;                 <span class="cm">// 休眠不断电 → WoWLAN</span>
+    wakeup-source;                         <span class="cm">// SDIO IRQ 可唤醒系统</span>
+    vmmc-supply = &lt;&amp;vcc_wifi&gt;;
+};
+
+<span class="cm">/* ===== 别名 — 稳定设备名 ===== */</span>
+aliases { mmc0 = &amp;sdhci;  mmc1 = &amp;sdmmc;  mmc2 = &amp;sdio; };</div>
+
+<div class="cg c3" style="margin-top:20px">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Suspend / Resume</h4><div class="lbl">系统休眠处理</div>
+    <p><strong>eMMC</strong>: Flush → CMD5 SLEEP → 可选断电 → Resume 发 CMD5 AWAKE<br>
+    <strong>SD 卡</strong>: mmc_remove_card → 断电 → 重新枚举<br>
+    <strong>SDIO+WiFi</strong>: 保持供电，仅挂起功能驱动，支持 WoWLAN。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>电压切换</h4><div class="lbl">3.3V ↔ 1.8V</div>
+    <p>HS200/400 要求 <strong>1.8V</strong>。流程：CMD6 通知卡 → <code>regulator_set_voltage(vqmmc, 1.8V)</code> → 等 5ms → CMD13 验证。失败则回退低速。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Runtime PM</h4><div class="lbl">空闲自动 gating</div>
+    <p>Host 实现 <code>runtime_suspend/resume</code>，Core 在空闲超 <em>autosuspend_delay</em> 后自动关时钟+断电。I/O 到达时自动恢复。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>属性</th><th>类型</th><th>说明</th><th>属性</th><th>类型</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>bus-width</code></td><td>&lt;1,4,8&gt;</td><td>数据线宽度</td><td><code>max-frequency</code></td><td>&lt;Hz&gt;</td><td>最大时钟</td></tr>
+    <tr><td><code>non-removable</code></td><td>flag</td><td>eMMC/SDIO 必设</td><td><code>cd-gpios</code></td><td>GPIO</td><td>卡检测引脚</td></tr>
+    <tr><td class="g"><code>mmc-hs200-1_8v</code></td><td class="g">flag</td><td class="g">HS200 200MB/s</td><td class="g"><code>mmc-hs400-1_8v</code></td><td class="g">flag</td><td class="g">HS400 400MB/s</td></tr>
+    <tr><td><code>no-1-8-v</code></td><td>flag</td><td>不支持 1.8V</td><td><code>keep-power-in-suspend</code></td><td>flag</td><td>休眠不断电</td></tr>
+    <tr><td><code>vmmc-supply</code></td><td>phandle</td><td>主电源</td><td><code>vqmmc-supply</code></td><td>phandle</td><td>IO 电压</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">mmc_of_parse() 注意事项</div>
+  该函数会<strong>覆盖</strong> host-&gt;caps/caps2 中与 DT 对应的位。请在 <code>mmc_of_parse()</code> <strong>之前</strong> 设代码默认值，<strong>之后</strong> 设 DT 无法表达的 SoC 私有限制。别名序号通过 <code>of_alias_get_id(np, "mmc")</code> 获取。
+</div>
+
+
+<!-- ── Ch8: 调试诊断 ── -->
+<h2 class="sh">8. 调试诊断</h2>
+<p class="ss">DebugFS · Dynamic Debug · ftrace · mmc-utils · 常见问题速查</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>DebugFS</h4><div class="lbl">/sys/kernel/debug/mmcX/ios</div>
+    <p>查看当前总线状态：<code>clock / vdd / bus_mode / power_mode / bus_width / timing / signal_voltage</code>。第一手诊断数据源。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Dynamic Debug</h4><div class="lbl">运行时 pr_debug 开关</div>
+    <p><code>echo "file drivers/mmc/* +p" &gt; control</code><br>可限定到文件或函数，无需重编译内核。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ftrace tracepoint</h4><div class="lbl">CONFIG_MMC_TRACING=y</div>
+    <p><code>echo 1 &gt; events/mmc/enable</code><br>追踪每条 CMD：opcode、arg、flags、blksz、blocks、响应字。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm"># ===== 查看当前总线状态 =====</span>
+# cat /sys/kernel/debug/mmc0/ios
+<span class="cm">clock:          200000000 Hz       vdd:           7 (2.7~2.8V)</span>
+<span class="cm">bus mode:       2 (push-pull)      power mode:    2 (on)</span>
+<span class="cm">bus width:      3 (8 bits)         timing spec:   6 (mmc HS400)</span>
+<span class="cm">signal voltage: 1 (1.80V)          driver type:   0 (type B)</span>
+
+<span class="cm"># ===== 动态调试 + ftrace =====</span>
+echo <span class="st">"file drivers/mmc/* +p"</span> &gt; /sys/kernel/debug/dynamic_debug/control
+echo <span class="nu">1</span> &gt; /sys/kernel/debug/tracing/events/mmc/enable
+cat /sys/kernel/debug/tracing/trace
+<span class="cm"># mmc0: starting CMD18 arg 00001200 flags 000000b5</span>
+<span class="cm"># mmc0:     blksz 512 blocks 8 tsac 1000 ms</span></div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断方法</th></tr></thead>
+  <tbody>
+    <tr><td>卡未检测到</td><td>cd-gpios 极性 / 缺 non-removable / 电压</td><td><code>cat ios</code> 查 power_mode</td></tr>
+    <tr><td>超时 (-ETIMEDOUT)</td><td>时钟配置 / 信号完整性 / 中断丢失</td><td>查 max-frequency 和分频器</td></tr>
+    <tr><td>CRC 错误 (-EILSEQ)</td><td>总线宽度不匹配 / 电压不对 / 走线长</td><td>降级 1-bit / 降频 / 示波器</td></tr>
+    <tr><td>eMMC 未枚举</td><td>上电时序 / RST_n 未拉高</td><td>示波器检查复位+上电波形</td></tr>
+    <tr><td>HS200/400 切换失败</td><td>vqmmc 不支持 1.8V / Tuning 失败</td><td>查 vqmmc-supply regulator</td></tr>
+    <tr><td>设备名不稳定</td><td>缺 aliases / probe 顺序不固定</td><td>DT 加 <code>aliases { mmc0 = &sdhci; }</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success" style="margin-top:16px">
+  <div class="ct">🔧 mmc-utils — 用户空间诊断利器</div>
+  <code>mmc extcsd read /dev/mmcblk0</code> — 完整 EXT_CSD <code>mmc status get /dev/mmcblk0</code> — CMD13 状态<br>
+  <code>mmc writeprotect get /dev/mmcblk0</code> — 写保护 <code>mmc bkops enable 1 /dev/mmcblk0</code> — 后台操作<br>
+  <code>mmc cache enable /dev/mmcblk0</code> — eMMC 缓存 (显著提升随机写性能)
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux MMC Driver Framework — 系统化知识体系 · 2026-06 · Linux Kernel v5.x / v6.x
+</p>
+
+</div><!-- /doc -->
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd,.pn').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

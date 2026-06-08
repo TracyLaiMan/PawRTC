@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux USB 子系统与 Gadget 框架 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:150px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux USB 子系统 & Gadget 框架</h2>
+  <p class="sec-sub">系统化知识体系 — 总线拓扑 · 描述符 · Host 驱动栈 · Gadget/UDC · UVC · ADB · ConfigFS · IPC 实战</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Host 模式</strong><br><small>OHCI/EHCI/xHCI</small></span>
+    <span class="flow-arr">⇄</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>USB Core</strong><br><small>usbcore · 枚举 · 描述符</small></span>
+    <span class="flow-arr">⇄</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Gadget 模式</strong><br><small>UDC · ConfigFS · Function</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">Host + Gadget</div><div class="l">双角色框架</div></div>
+    <div class="stat"><div class="n">ConfigFS</div><div class="l">gadget 配置接口</div></div>
+    <div class="stat"><div class="n">UVC · ADB · HID</div><div class="l">常用 Gadget 功能</div></div>
+    <div class="stat"><div class="n">USB3.0+</div><div class="l">5Gbps+ 带宽</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: USB 总线基础 ═══ -->
+<h2 class="sh">1. USB 总线基础：拓扑 · 描述符 · 端点 · 传输类型</h2>
+<p class="ss">理解 USB 协议核心概念是看懂整个驱动栈的前提——主机侧和设备侧共用这些基础。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>总线拓扑</h4>
+    <div class="lbl">树形结构 — 一个 Host · 最多 127 设备 · 最多 7 层 Hub</div>
+    <p>USB 总线是<strong>严格的星型拓</strong>：一个 USB Host（根 Hub）通过 Hub 级联扩展。<strong>Host 是唯一的通信发起者</strong>——设备不能主动发送数据，只能响应 Host 的请求（IN token 或 OUT token）。即使用了中断端点，也是 Host 周期性轮询。这与网络（对等通信）有本质区别。USB OTG（On-The-Go）允许设备在 Host 和 Device 角色间切换。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>设备描述符体系</h4>
+    <div class="lbl">设备→配置→接口→端点 — 四级描述符树</div>
+    <p>每个 USB 设备有一组<strong>层级化的描述符</strong>向 Host 宣告自己的能力：<br>
+    <strong>设备描述符</strong>：VID/PID、设备类、制造商/产品字符串。<br>
+    <strong>配置描述符</strong>：供电需求、接口数量——设备可有多个配置（如低功耗 vs 高性能模式）。<br>
+    <strong>接口描述符</strong>：一组端点集合，代表一个<strong>逻辑功能</strong>（如 UVC 的 VideoControl + VideoStreaming 接口）。<br>
+    <strong>端点描述符</strong>：端点号、方向(IN/OUT)、传输类型、最大包大小。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>端点 (Endpoint)</h4>
+    <div class="lbl">通信的终点 — 由地址+方向唯一标识</div>
+    <p>端点是 USB 通信的<strong>基本单元</strong>。每个端点有：端点号（1-15，EP0 为默认控制端点保留）、方向（IN=设备→Host，OUT=Host→设备）、传输类型、最大包大小。端点 0 是<strong>唯一的双向控制端点</strong>，用于枚举和配置。端点存在于设备端——Host 端与之通信时使用<strong>管道 (Pipe)</strong>——管道是 Host 端对设备端点的逻辑关联。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>四种传输类型</h4>
+    <div class="lbl">Control · Bulk · Interrupt · Isochronous</div>
+    <p><strong>控制传输 (Control)</strong>：EP0 专用。可靠、有 CRC 校验、有重试。用于枚举（获取描述符、设置地址、选择配置）和类特定控制请求。最大包大小：FS 8/16/32/64B、HS 64B。<br>
+    <strong>批量传输 (Bulk)</strong>：可靠、有 CRC 校验和重试、<strong>但不保证延迟</strong>——利用总线空闲带宽，低优先级。USB2.0 最大 512B/包，USB3.0 最大 1024B/包。适合大块数据：UVC 视频流、Mass Storage、ADB。Burst 模式在 USB3.0 中可连续多包。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>（续）</h4>
+    <div class="lbl">中断传输 · 等时传输 — 定时 vs 可靠性</div>
+    <p><strong>中断传输 (Interrupt)</strong>：Host <strong>周期性轮询</strong>（间隔在端点描述符中定义，1-255ms 或 125μs-4s）。可靠——有 CRC 和重试。HID 设备（键盘/鼠标）的核心传输方式。最大包：LS 8B、FS 64B、HS 1024B。<br>
+    <strong>等时传输 (Isochronous)</strong>：<strong>固定带宽保证</strong>（预约总线时间），但<strong>无 CRC 校验、无重试</strong>——丢了就丢了。适合实时流：USB 音频（耳机/麦克风）、UVC 摄像头的<strong>视频流端点几乎都是等时</strong>。HS 最大 1024B/包、每个微帧(125μs)可传输 3 个包 → 24MB/s。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>传输类型</th><th>可靠性</th><th>延迟保证</th><th>带宽分配</th><th>典型包大小 (HS)</th><th>应用场景</th></tr></thead>
+  <tbody>
+    <tr><td class="g">控制 (Control)</td><td class="g">✓ CRC + 重试</td><td>无保证</td><td>预留 10% 帧/微帧</td><td>64B</td><td>枚举、固件升级、类命令</td></tr>
+    <tr><td class="g">批量 (Bulk)</td><td class="g">✓ CRC + 重试</td><td>无（用尽剩余带宽）</td><td>无预留（用空闲的）</td><td>512B</td><td>UVC 流、ADB、Mass Storage</td></tr>
+    <tr><td class="g">中断 (Interrupt)</td><td class="g">✓ CRC + 重试</td><td class="y">有（周期轮询）</td><td>预留周期带宽</td><td>1024B</td><td>HID (键盘/鼠标)、状态上报</td></tr>
+    <tr><td class="y">等时 (Isochronous)</td><td class="r">✗ 无 CRC/重试</td><td class="g">严格保证</td><td>预约固定带宽</td><td>1024B×3</td><td>USB 音频、UVC 摄像头、实时视频</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">USB 枚举流程 — 从插上到可用的 7 个步骤</div>
+  <div class="chain"><span class="cm">① 物理连接</span>  Hub 检测到 D+/D- 上拉 → 报告 Host → Host 复位该端口
+<span class="cm">② GET_DESCRIPTOR(Device)</span>  EP0 控制传输 → 获取前 8 字节设备描述符 → 读取 wMaxPacketSize0
+<span class="cm">③ SET_ADDRESS</span>  Host 分配唯一的 7-bit 地址 → 此后设备在新地址上通信
+<span class="cm">④ GET_DESCRIPTOR(Device, full)</span>  读取完整的 18 字节设备描述符（VID/PID/配置数等）
+<span class="cm">⑤ GET_DESCRIPTOR(Config)</span>  读取配置描述符 + 所有接口 + 端点描述符（可能多次，总长度可达几百字节）
+<span class="cm">⑥ SET_CONFIGURATION</span>  Host 选择一个配置 → 设备激活各接口的端点
+<span class="cm">⑦ 驱动匹配</span>  Host 遍历已注册的 USB 驱动，根据 VID/PID/类/子类/协议匹配 → probe</div>
+</div>
+
+<!-- ═══ Ch2: Host 侧驱动栈 ═══ -->
+<h2 class="sh">2. Host 侧驱动栈：XHCI · USB Core · Device Driver</h2>
+<p class="ss">当 IPC 相机作为 USB Host（读取 U 盘、连接 4G 模块）时的驱动架构</p>
+
+<div class="mb">
+  <div class="r"><span class="a">应用层</span><span class="b c4">/dev/videoX · /dev/sdX</span><span class="n">V4L2 应用 / mount / 文件读写</span></div>
+  <div class="r"><span class="a">USB 设备驱动</span><span class="b c3">uvcvideo · usb-storage · option</span><span class="n">与特定 USB 设备的协议交互（UVC / BBB / AT commands）</span></div>
+  <div class="r"><span class="a">USB Core</span><span class="b c2">usbcore.ko (drivers/usb/core/)</span><span class="n">设备管理 · 描述符解析 · 驱动匹配 · urb 分配 · 电源管理</span></div>
+  <div class="r"><span class="a">USB 主机控制器驱动</span><span class="b c1">xhci-hcd / ehci-hcd / ohci-hcd</span><span class="n">硬件寄存器操作 · 传输调度 · DMA 配置 · 中断处理</span></div>
+  <div class="r"><span class="a">硬件</span><span class="b c5">XHCI / EHCI / OHCI 控制器</span><span class="n">SoC 内置 USB Host IP → PHY → USB 连接器</span></div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>XHCI (USB 3.0+)</h4>
+    <div class="lbl">eXtensible Host Controller Interface</div>
+    <p>USB 3.x 的<strong>唯一标准</strong>，也向下兼容 USB 2.0/1.1。驱动：<code>xhci-hcd</code>。支持 SuperSpeed (5Gbps) / SuperSpeed+ (10Gbps/20Gbps)。关键特性：① 原生 Stream 支持（UAS 协议必需）② 多端口并行处理 ③ 更高效的 TD (Transfer Descriptor) 链——减少 CPU 中断频率。现代 SoC 几乎全部用 XHCI。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>EHCI (USB 2.0)</h4>
+    <div class="lbl">Enhanced Host Controller Interface</div>
+    <p>USB 2.0 High-Speed (480Mbps) 标准。驱动 <code>ehci-hcd</code>。通过<strong>同伴控制器 (Companion Controller)</strong> 机制将 FS/LS 设备路由到 OHCI/UHCI。周期性调度（Periodic Schedule）+ 异步调度（Asynchronous Schedule）双链表。在 XHCI 普及后逐渐被替代，但大量现有 IPC SoC 仍使用 EHCI+OHCI 组合。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>URB (USB Request Block)</h4>
+    <div class="lbl">内核中 USB 通信的基本单元</div>
+    <p>USB 设备驱动<strong>不直接操作硬件寄存器</strong>——通过 <strong>URB</strong>（USB Request Block）向 USB Core 提交 I/O 请求。URB 包含：端点地址、传输类型、数据 buffer、完成回调函数。生命周期：<code>usb_alloc_urb() → usb_fill_*_urb() → usb_submit_urb() → completion callback → usb_free_urb()</code>。异步模型：submit 后立即返回→传输完成时回调通知。也支持同步等待（<code>usb_control_msg()</code> 等封装函数）。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:0">
+  <div class="ct">UVC 驱动 (uvcvideo) — USB 视频类设备驱动实例</div>
+  <code>drivers/media/usb/uvc/</code> 是 Host 侧 UVC 驱动的<strong>完整实现</strong>——当 USB 摄像头插入 Host 时，该驱动通过 USB Core 枚举设备、解析 UVC 特定描述符（VC 接口 + VS 接口）、注册 V4L2 video_device 暴露为 <code>/dev/videoX</code>。支持 H.264/MJPEG/YUV 多种格式、通过 UVC 扩展单元（XU）控制 PTZ/OSD。视频数据通过等时或批量端点以 URB 方式接收。
+</div>
+
+<!-- ═══ Ch3: Gadget 框架总览 ═══ -->
+<h2 class="sh">3. Gadget 框架：让 Linux 设备变成 USB 外设</h2>
+<p class="ss">Gadget 是 Linux 的<strong>独特能力</strong>——让嵌入式设备在 USB 总线上扮演 Device 角色（U 盘模式、USB 摄像头、ADB 调试、虚拟网卡）。IPC 相机的核心竞争力。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f472b6">
+    <h4>Gadget 框架三层架构</h4>
+    <div class="lbl">UDC 驱动 → Gadget API → Function 驱动</div>
+    <p><strong>UDC 层 (Controller Driver)</strong>：SoC 的 USB Device 控制器硬件驱动。实现 <code>struct usb_gadget_ops</code>（处理 EP0 控制请求、配置端点、启动/停止传输）。常见驱动：<code>dwc3</code>（DesignWare USB3.0）、<code>musb</code>（Mentor Graphics）、<code>dwc2</code>（DesignWare USB2.0 OTG）。<br>
+    <strong>Gadget API 层</strong>：Core 层，提供 <code>usb_gadget</code>、<code>usb_ep</code>、<code>usb_request</code> 抽象——Function 驱动通过这套 API 与 UDC 交互。<br>
+    <strong>Function 层</strong>：具体的 USB 功能实现（UVC/UAC/HID/Mass Storage/ADB/RNDIS/NCM）。每个 Function 实现一组端点+类特定请求处理。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>ConfigFS — 用户态组合 Gadget</h4>
+    <div class="lbl">/sys/kernel/config/usb_gadget/ — 无需重编译内核</div>
+    <p>Linux 3.x 引入的 <strong>ConfigFS</strong> 是配置 Gadget 的<strong>现代标准方式</strong>——完全在用户态通过<strong>文件系统操作</strong>组合 Function，无需修改内核代码。<br>
+    操作流程：<code>mkdir /sys/kernel/config/usb_gadget/g1</code> → 写入 VID/PID/序列号等属性 → <code>mkdir functions/uvc.0</code> 创建 UVC 功能 → <code>mkdir functions/ffs.adb</code> 创建 ADB（FunctionFS 方式）→ <code>ln -s</code> 将 Function 链接到配置 → <code>echo "UDC name" > UDC</code> 激活。<br>
+    <strong>优势</strong>：灵活组合（UVC+ADB+HID 三合一）、无需重编译、脚本化部署。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// ConfigFS 配置一个复合 USB 设备（UVC + ADB + HID）</span>
+<span class="cm">// 1. 创建 gadget 实例</span>
+<b>cd</b> /sys/kernel/config/usb_gadget/
+<b>mkdir</b> g1  <span class="kw">&&</span>  <b>cd</b> g1
+
+<span class="cm">// 2. 设置设备级描述符</span>
+<b>echo</b> <span class="nu">0x1d6b</span>  <span class="kw">&gt;</span> idVendor       <span class="cm">// Linux Foundation VID</span>
+<b>echo</b> <span class="nu">0x0104</span>  <span class="kw">&gt;</span> idProduct
+<b>echo</b> <span class="nu">0x0100</span>  <span class="kw">&gt;</span> bcdDevice       <span class="cm">// 设备版本 1.0</span>
+<b>echo</b> <span class="nu">0x0200</span>  <span class="kw">&gt;</span> bcdUSB          <span class="cm">// USB 2.0</span>
+
+<span class="cm">// 3. 设置字符串描述符</span>
+<b>mkdir</b> strings/0x409     <span class="cm">// 英文 (en-US)</span>
+<b>echo</b> <span class="st">"IPC Camera Inc."</span>  <span class="kw">&gt;</span> strings/0x409/manufacturer
+<b>echo</b> <span class="st">"IPC-CAM-001"</span>      <span class="kw">&gt;</span> strings/0x409/product
+<b>echo</b> <span class="st">"ABC123456"</span>        <span class="kw">&gt;</span> strings/0x409/serialnumber
+
+<span class="cm">// 4. 创建配置和 Functions</span>
+<b>mkdir</b> configs/c.1
+<b>mkdir</b> configs/c.1/strings/0x409
+<b>echo</b> <span class="st">"UVC+ADB+HID"</span> <span class="kw">&gt;</span> configs/c.1/strings/0x409/configuration
+
+<b>mkdir</b> functions/uvc.0            <span class="cm">// UVC 摄像头功能</span>
+<b>mkdir</b> functions/ffs.adb           <span class="cm">// ADB (通过 FunctionFS)</span>
+<b>mkdir</b> functions/hid.usb0          <span class="cm">// HID 按键（复位/抓图）</span>
+<b>echo</b> <span class="nu">1</span> <span class="kw">&gt;</span> functions/hid.usb0/protocol
+<b>echo</b> <span class="nu">8</span> <span class="kw">&gt;</span> functions/hid.usb0/report_length
+
+<span class="cm">// 5. 将 Functions 链接到配置</span>
+<b>ln -s</b> functions/uvc.0   configs/c.1/
+<b>ln -s</b> functions/ffs.adb  configs/c.1/
+<b>ln -s</b> functions/hid.usb0 configs/c.1/
+
+<span class="cm">// 6. 激活：绑定 UDC 控制器</span>
+<b>echo</b> <span class="st">"38100000.dwc3"</span> <span class="kw">&gt;</span> UDC   <span class="cm">// 开始枚举！</span></div>
+
+<!-- ═══ Ch4: UVC Gadget ═══ -->
+<h2 class="sh">4. UVC Gadget — USB 摄像头功能</h2>
+<p class="ss">将 IPC 相机变为标准 USB 摄像头——插入电脑直接识别为 Camera，无需驱动安装，无需网络配置。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>UVC Gadget 的架构</h4>
+    <div class="lbl">内核 UVC Function + 用户态 V4L2 Source</div>
+    <p>UVC Gadget 由两部分组成：<strong>内核态</strong>：<code>drivers/usb/gadget/function/f_uvc.c</code>——处理 USB 枚举、UVC 类特定请求（VS_PROBE_COMMIT、VS_COMMIT_CONTROL）、管理视频流的等时/批量端点。通过 <code>/dev/uvc-gadget</code> 字符设备与用户态交互。<br>
+    <strong>用户态</strong>：一个守护进程从 V4L2 设备（ISP 输出 /dev/videoX）读取视频帧，写入 <code>/dev/uvc-gadget</code> → 内核通过 USB 等时端点发送给 Host。这就是<strong>整个数据路径</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>UVC 描述符结构</h4>
+    <div class="lbl">VC 接口 (控制) + VS 接口 (流) — 两个接口</div>
+    <p><strong>VideoControl (VC) 接口</strong>：用于协商和控制——处理 VS_PROBE_CONTROL（Host 询问支持哪种格式/分辨率/帧率）和 VS_COMMIT_CONTROL（Host 确认选择）。端点 0 上的类特定请求。<br>
+    <strong>VideoStreaming (VS) 接口</strong>：实际视频数据传输——一个等时或批量 IN 端点。每个微帧(125μs)传输多个包。支持多种格式：<strong>Uncompressed (YUYV/NV12/MJPEG)</strong> 和 <strong>Frame-Based (H.264/H.265)</strong>。后者允许传输编码后的帧——大幅降低 USB 带宽需求。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>H.264 编码流 over UVC</h4>
+    <div class="lbl">Frame-Based Payload — 关键能力</div>
+    <p>UVC 1.1+ 支持 <strong>Frame-Based Payload</strong>——视频流端点传输的是<strong>编码后的 H.264/H.265 码流</strong>而非原始 YUV。Payload Header 标记每帧边界。这对 IPC 相机至关重要：1080p YUV @30fps 需要 ~1.5Gbps USB 带宽——USB2.0 HS (480Mbps) 无法承载。但 H.264 编码后 ~2-4Mbps → 轻松走 USB2.0 Bulk 端点。Host 侧的 UVC 驱动自动识别 Frame-Based 格式并通过 V4L2 的 <code>V4L2_PIX_FMT_H264</code> 输出给上层。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ UVC Gadget 的关键配置参数</div>
+  <strong>等时 vs 批量</strong>：等时端点固定带宽但无重试——适合没有缓存压力的实时场景；批量端点利用空闲带宽、有 CRC 重试——H.264 编码流推荐用批量（可靠性优先）。<br>
+  <strong>dwMaxPayloadTransferSize</strong>：HS 等时最大 3072B（3×1024），USB3.0 最大 16KB。<br>
+  <strong>dwMaxVideoFrameBufSize</strong>：VS_PROBE_CONTROL 返回的最大帧缓冲大小——必须大于实际编码帧的最大尺寸。<br>
+  <strong>bEndpointAddress</strong>：等时 IN 端点使用 0x81 这种方向位为 1 的地址。
+</div>
+
+<!-- ═══ Ch5: FunctionFS & ADB ═══ -->
+<h2 class="sh">5. FunctionFS (FFS) 与 ADB Gadget</h2>
+<p class="ss">FunctionFS 将 USB Function 的<strong>全部协议逻辑移到用户态</strong>——内核只负责端点数据传输，用户态处理 USB 控制请求和协议。ADB 是 FFS 的最佳实践范例。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>FunctionFS (FFS) 原理</h4>
+    <div class="lbl">/dev/usb-ffs/ — 用户态 USB Function 框架</div>
+    <p>FFS 允许用户态程序<strong>完整实现一个 USB Function</strong>而不写任何内核代码。用户态通过 <code>/dev/usb-ffs/XXX/ep0</code> 接收<strong>原始 USB 控制请求</strong>（setup packet + data stage），通过 <code>/dev/usb-ffs/XXX/ep1</code>（批量 IN）、<code>/dev/usb-ffs/XXX/ep2</code>（批量 OUT）收发端点数据。用户态程序可以是任何语言——Python、C、Go 均可。<br>
+    <strong>工作流</strong>：① mkdir functions/ffs.adb → 创建 /dev/usb-ffs/adb/ 目录 ② 用户态程序打开 ep0 → 内核认为 Function 就绪 → 向 Host 宣告该 Interface ③ 用户态循环 read ep0（等待 Host 的 USB 控制请求）→ 处理 → write ep0 应答 ④ 同时 read/write 批量端点进行数据传输。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ADB (Android Debug Bridge)</h4>
+    <div class="lbl">adb daemon → FunctionFS → USB Gadget → Host adb client</div>
+    <p>ADB over USB 使用<strong>两个批量端点</strong>（IN+OUT）进行全双工通信。协议简单：<code>AUTH</code>（RSA 签名认证）→ <code>CNXN</code>（连接，交换版本+系统标识）→ <code>OPEN</code>（打开服务，如 shell:、sync:、framebuffer:）→ <code>WRTE/OKAY/CLSE</code>（数据传输和关闭）。<br>
+    ADB 守护进程（adbd）打开 FFS ep0+两个批量端点，实现完整的 ADB 协议栈。Android 设备出厂就支持，嵌入式 Linux 同样可以——只需启动 adbd 并使用 ConfigFS 配置 ffs.adb 即可。对于 IPC 相机：<strong>ADB over USB = 工厂调试、固件烧录、logcat 抓日志的最便捷通道</strong>。</p>
+  </div>
+</div>
+
+<details style="margin-top:14px">
+  <summary>ADB 协议交互流程（简化版）</summary>
+  <div class="chain"><span class="cm">// Host(adb client) ←──USB BULK──→ Device(adbd via FFS)</span>
+
+<span class="cm">Phase 1: 认证</span>
+<b>Host</b>   → AUTH(TOKEN, <i>random_bytes</i>)      → Device
+<b>Device</b> → AUTH(SIGNATURE, <i>rsa_sign(token)</i>) → Host
+<b>Host</b>   → AUTH(RSAPUBLICKEY, <i>public_key</i>)   → Device  <span class="cm">// 首次连接时</span>
+
+<span class="cm">Phase 2: 连接</span>
+<b>Host</b>   → CNXN(<span class="nu">0x01000000</span>, <span class="nu">4096</span>, <span class="st">"host::"</span>)    → Device
+<b>Device</b> → CNXN(<span class="nu">0x01000000</span>, <span class="nu">4096</span>, <span class="st">"device::"</span>) → Host
+
+<span class="cm">Phase 3: 服务 (例如 adb shell)</span>
+<b>Host</b>   → OPEN(<span class="nu">0</span>, <span class="st">"shell:ls /data"</span>)           → Device
+<b>Device</b> → OKAY(<span class="nu">0</span>, <span class="nu">1</span>)                            → Host     <span class="cm">// local_id=0, remote_id=1</span>
+<b>Device</b> → WRTE(<span class="nu">1</span>, <span class="nu">0</span>, <span class="st">"file1\nfile2\n"</span>)  → Host     <span class="cm">// stdout 输出</span>
+<b>Device</b> → CLSE(<span class="nu">1</span>, <span class="nu">0</span>)                            → Host     <span class="cm">// shell 命令执行完毕</span></div>
+</details>
+
+<!-- ═══ Ch6: 其他常用 Gadget Functions ═══ -->
+<h2 class="sh">6. 常用 Gadget Functions 全景</h2>
+<p class="ss">ConfigFS 支持几十种 Function——以下是 IPC 相机场景中最常用的几种</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>Function</th><th>ConfigFS 路径</th><th>端点</th><th>Host 侧驱动</th><th>IPC 应用场景</th></tr></thead>
+  <tbody>
+    <tr><td class="g">UVC</td><td>functions/uvc.0</td><td>等时/批量 IN</td><td>uvcvideo (V4L2)</td><td>USB 摄像头模式——电脑直接预览</td></tr>
+    <tr><td class="g">ADB (FFS)</td><td>functions/ffs.adb</td><td>批量 IN + OUT</td><td>adb (Android SDK)</td><td>调试 · logcat · 固件烧录 · shell</td></tr>
+    <tr><td class="g">Mass Storage</td><td>functions/mass_storage.0</td><td>批量 IN + OUT</td><td>usb-storage</td><td>SD 卡导出为 U 盘——录象文件读取</td></tr>
+    <tr><td>HID</td><td>functions/hid.usb0</td><td>中断 IN</td><td>usbhid (HID 驱动)</td><td>复位按键 · 抓图按钮 · OSD 菜单控制</td></tr>
+    <tr><td class="y">RNDIS</td><td>functions/rndis.0</td><td>批量 IN + OUT</td><td>rndis_host (Windows 内置)</td><td>USB 虚拟网卡——免驱 TCP/IP 通信</td></tr>
+    <tr><td class="g">NCM</td><td>functions/ncm.0</td><td>批量 IN + OUT</td><td>cdc_ncm (Linux 内置)</td><td>比 RNDIS 更高效的 USB 以太网</td></tr>
+    <tr><td>Serial (ACM)</td><td>functions/acm.0</td><td>中断 IN + 批量 IN/OUT</td><td>cdc_acm (USB 串口)</td><td>调试串口——替代 UART 的 USB CDC-ACM</td></tr>
+    <tr><td class="y">MTP</td><td>functions/mtp.0</td><td>批量 IN + OUT</td><td>mtp (libmtp)</td><td>媒体传输协议——手机导出照片/视频</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>HID Gadget — 自定义按键</h4>
+    <div class="lbl">Report Descriptor → /dev/hidg0 → write event → Host 识别</div>
+    <p>HID Function 通过<strong>HID Report Descriptor</strong>（一段二进制描述表）向 Host 宣告自己能发送什么类型的输入事件。例如：定义一个 Consumer Control 设备（音量+/-、静音、播放/暂停）或键盘设备（发送组合键）。用户态程序打开 <code>/dev/hidg0</code>，写入符合 Report Descriptor 格式的二进制数据 → Host 侧收到标准 HID 事件。<br>
+    <strong>IPC 用途</strong>：PC 上的视频预览软件可以响应"抓图"按键 → 无需安装额外驱动。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>NCM (Network Control Model)</h4>
+    <div class="lbl">USB Ethernet — 比 RNDIS 更标准、更高效</div>
+    <p>NCM（CDC-NCM）是<strong>USB-IF 标准</strong>的 USB 以太网协议（RNDIS 是 Microsoft 私有协议）。功能：NCM Function → 在 Host 侧创建 <code>usbX</code> 网络接口 → Device 侧创建 <code>usbX</code> 接口 → 通过批量端点传输以太网帧。支持<strong>多帧聚合</strong>（一个 USB 包中打包多个以太网帧——减少 USB 协议开销）。IPC 相机用途：<strong>USB 线直连 PC 实现 TCP/IP 通信</strong>——无需 WiFi/以太网，USB 线即网线。适合工厂产线配置、桌面调试。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch7: UDC 驱动 ═══ -->
+<h2 class="sh">7. UDC 驱动 — USB Device 控制器的硬件抽象</h2>
+<p class="ss">UDC (USB Device Controller) 驱动是 Gadget 框架的<strong>最底层</strong>——将 SoC 的 USB Device 硬件寄存器映射为 Gadget API</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>UDC 驱动实现的回调 (usb_gadget_ops)</h4>
+    <div class="lbl">SoC USB Device IP → usb_ep → usb_request</div>
+    <p><strong>udc_start/stop</strong>：激活/停用控制器——连接/断开 D+ 上拉电阻。<br>
+    <strong>udc_pullup</strong>：控制 D+ 上拉——通知 Host "设备已插入"（软件控制连接）。<br>
+    <strong>ep_enable/disable</strong>：配置端点（地址、类型、最大包大小）→ 分配硬件 FIFO。<br>
+    <strong>ep_queue/dequeue</strong>：提交/取消一个传输请求。<br>
+    <strong>ep_set_halt/clear_halt</strong>：设置/清除端点 STALL 状态。<br>
+    <strong>处理 EP0 SETUP 包</strong>：解析标准设备请求（GET_DESCRIPTOR/SET_ADDRESS/SET_CONFIGURATION）并响应。UDC 驱动负责<strong>自动处理</strong>这些标准请求——Gadget Function 只处理类特定请求。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>常见 UDC 硬件 IP</h4>
+    <div class="lbl">DesignWare DWC3/DWC2 · MUSB · ChipIdea</div>
+    <p><strong>DWC3</strong>（drivers/usb/dwc3/）：Synopsys USB3.0 DRD（Dual Role Device）控制器——<strong>嵌入式 SoC 的绝对主流</strong>（Rockchip、全志、高通、MTK、Intel 都在用）。支持 Host/Gadget/OTG 三种角色。<br>
+    <strong>DWC2</strong>（drivers/usb/dwc2/）：USB2.0 HS OTG 控制器。常见于中低端 SoC。<br>
+    <strong>MUSB</strong>（drivers/usb/musb/）：TI 设计的 Mentor USB OTG 控制器，TI/Allwinner 老型号使用。<br>
+    <strong>ChipIdea</strong>（drivers/usb/chipidea/）：Freescale/i.MX 系列常用。<br>
+    设备树中通过 <code>dr_mode</code> 属性指定角色：<code>"host"</code>（仅 Host）、<code>"peripheral"</code>（仅 Gadget）、<code>"otg"</code>（可切换）。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">设备树 — DWC3 控制器配置示例（支持 OTG 双角色）</div>
+  <div class="cb">usb@<span class="nu">38100000</span> {
+    compatible = <span class="st">"rockchip,rk3399-dwc3"</span>;
+    reg = <span class="kw">&lt;</span><span class="nu">0x38100000</span> <span class="nu">0x10000</span><span class="kw">&gt;</span>;
+    clocks = <span class="kw">&lt;</span>&amp;cru ACLK_USB3<span class="kw">&gt;</span>;
+    clock-names = <span class="st">"ref"</span>, <span class="st">"bus_early"</span>, <span class="st">"suspend"</span>;
+
+    <span class="kw">usb@38100000</span> {
+        compatible = <span class="st">"snps,dwc3"</span>;
+        reg = <span class="kw">&lt;</span><span class="nu">0x38100000</span> <span class="nu">0x10000</span><span class="kw">&gt;</span>;
+        interrupts = <span class="kw">&lt;</span>GIC_SPI <span class="nu">20</span> IRQ_TYPE_LEVEL_HIGH<span class="kw">&gt;</span>;
+        dr_mode = <span class="st">"otg"</span>;        <span class="cm">// ← 关键：支持 Host/Gadget 切换</span>
+        maximum-speed = <span class="st">"high-speed"</span>;  <span class="cm">// 或 "super-speed"</span>
+        phys = <span class="kw">&lt;</span>&amp;usb2_phy<span class="kw">&gt;</span>, <span class="kw">&lt;</span>&amp;usb3_phy<span class="kw">&gt;</span>;
+        phy-names = <span class="st">"usb2-phy"</span>, <span class="st">"usb3-phy"</span>;
+        snps,dis_u2_susphy_quirk;
+        snps,dis_u3_susphy_quirk;
+    };
+};</div>
+</div>
+
+<!-- ═══ Ch8: 调试 ═══ -->
+<h2 class="sh">8. USB 调试与诊断</h2>
+<p class="ss">USB 问题排查的三板斧——dmesg、usbmon、sysfs + debugfs</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>dmesg — 枚举日志</h4>
+    <div class="lbl">内核 USB 子系统打印的所有事件</div>
+    <p><code>dmesg | grep -i usb</code>：设备连接/断开、描述符解析、驱动绑定/解绑、URB 错误、传输超时。<br>
+    开启详细日志：<code>echo 1 > /sys/module/usbcore/parameters/usbfs_debug</code><br>
+    开启 UVC 驱动调试：<code>echo 0xFFFF > /sys/module/uvcvideo/parameters/trace</code>（内核需编译 CONFIG_DYNAMIC_DEBUG）<br>
+    关键信息：VID/PID、选择的配置、端点地址、dwMaxPacketSize、驱动 probe 是否成功。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>usbmon — USB 总线嗅探</h4>
+    <div class="lbl">类似 tcpdump 的 USB 包捕获</div>
+    <p><strong>Host 侧</strong>：<code>mount -t debugfs none /sys/kernel/debug; cat /sys/kernel/debug/usb/usbmon/0u > trace.log</code> → 捕获所有 USB bus 上的原始 URB（包括 Setup/Data/Status 阶段的完整内容）→ 用 Wireshark 打开 trace.log 分析。这是 USB 调试的终极大招——能看出描述符返回是否正确、端点数据是否到达、传输是否完成。<br>
+    <strong>Gadget 侧</strong>：<code>trace-cmd record -e dwc3 -e gadget</code> 捕获 DWC3 控制器的 ftrace 事件（请求排队、完成、STALL、ep enable/disable）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>sysfs / debugfs</h4>
+    <div class="lbl">/sys/class/udc/ /sys/kernel/debug/usb/</div>
+    <p><strong>/sys/class/udc/</strong>：列出可用的 UDC 控制器（如 38100000.dwc3）。<br>
+    <strong>/sys/kernel/config/usb_gadget/</strong>：ConfigFS gadget 配置——查看当前激活的 Function、VID/PID、字符串。<br>
+    <strong>/sys/kernel/debug/usb/</strong>：设备描述符树（devices 文件：T: Bus/Topology, D: Device, P: Port, I: Interface, E: Endpoint）、每个端点的传输统计。<br>
+    <strong>/sys/kernel/debug/gadget</strong>：Gadget 侧的端点队列状态、传输统计。与 /sys/kernel/debug/usb/devices 对应——Host 侧看到的描述符和 Gadget 侧配置的一不一致。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>调试场景</th><th>命令</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>Gadget 未出现在 Host 上</td><td><code>cat /sys/class/udc/*/state</code></td><td>确认 UDC 状态——不是 "configured" 说明未完成枚举</td></tr>
+    <tr><td>Host 无法识别设备</td><td><code>cat /sys/kernel/debug/usb/devices</code></td><td>查看 Host 解析到的描述符——检查 VID/PID/接口是否正确</td></tr>
+    <tr><td>UVC 无视频流</td><td>usbmon + Wireshark</td><td>确认 VS_PROBE_COMMIT 是否成功→流端点是否有数据</td></tr>
+    <tr><td>USB 3.0 降级为 2.0</td><td><code>dmesg | grep "SuperSpeed"</code></td><td>PHY 配置 / VBUS / 线缆质量问题导致 SS 协商失败</td></tr>
+    <tr><td>大量传输错误 (-EPROTO)</td><td><code>trace-cmd record -e dwc3</code></td><td>DWC3 硬件 FIFO 溢出或 PHY 时钟不稳定</td></tr>
+    <tr><td>复合设备只显示一个 Function</td><td>检查 ConfigFS 链接是否正确</td><td>每个 Function 都必须 ln -s 到 configs/c.1/</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ═══ Ch9: IPC 实战 ═══ -->
+<h2 class="sh">9. IPC 相机 USB Gadget 实战方案</h2>
+<p class="ss">IPC 相机通过 USB 线连接 PC 的完整方案——从硬件连接到软件栈</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f472b6">
+    <h4>方案 1: UVC + ADB 双模（推荐）</h4>
+    <div class="lbl">USB 摄像头预览 + 调试通道二合一</div>
+    <p><strong>配置</strong>：ConfigFS 创建 UVC(uvc.0) + ADB(ffs.adb) 复合设备。<br>
+    <strong>UVC 路径</strong>：IPC 的 ISP 输出 YUV → H.264 硬件编码 → Frame-Based Payload → UVC VS 批量端点 → Host 侧 uvcvideo 驱动 → PC 播放器（VLC/OBS/Chrome）直接显示。<br>
+    <strong>ADB 路径</strong>：PC 端 adb shell → USB 批量端点 → 设备端 adbd → 命令行访问完整 Linux 系统。<br>
+    <strong>优势</strong>：免驱预览（Windows/macOS/Linux 自带 UVC 驱动）、免驱调试（ADB 协议成熟稳定）、一根 USB 线同时做视频和调试。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>方案 2: NCM + HTTP-RTSP</h4>
+    <div class="lbl">USB 虚拟网卡 → TCP/IP → 标准流媒体</div>
+    <p><strong>配置</strong>：ConfigFS 创建 NCM(ncm.0) 复合设备。<br>
+    <strong>网络路径</strong>：USB NCM → Host 侧 usbX 网卡（自动获取 169.254.x.x 链路本地地址）→ Device 和 Host 通过 TCP/IP 通信。<br>
+    <strong>视频路径</strong>：IPC 运行 RTSP Server → Host 用 VLC 打开 <code>rtsp://169.254.x.x:554/stream1</code>。<br>
+    <strong>优势</strong>：不受 USB 协议限制——可以传视频、文件、API、HTTP——完整的 TCP/IP 通信。适合自动化产测。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>方案 3: Mass Storage（SD 卡导出）</h4>
+    <div class="lbl">IPC 的 SD 卡当 U 盘用</div>
+    <p><strong>配置</strong>：ConfigFS 创建 mass_storage.0 → 指定 backing file（如 <code>/dev/mmcblk0p1</code> 或 loop 设备）。<br>
+    <strong>注意</strong>：导出 SD 卡时<strong>必须确保 IPC 没有在写入</strong>（停止录像、卸载文件系统）→ 否则 Host 修改文件系统会导致数据损坏。解决方案：① 导出只读分区 ② 通过 UVC+HID 发送"停止录像"→"导出 SD"→"恢复录像"的状态机控制。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>方案 4: 三合一（UVC + ADB + NCM）</h4>
+    <div class="lbl">USB3.0 SuperSpeed — 带宽充裕的组合</div>
+    <p>USB3.0 (5Gbps) 有足够的带宽同时承载：UVC 视频流（H.264 ~4Mbps）+ ADB 调试（突发 Bulk）+ NCM 网络（TCP/IP 复用）。<strong>一个 USB 线同时：视频预览、adb 调试、TCP/IP 固件升级</strong>。<br>
+    USB2.0 HS (480Mbps 理论值，实际 ~240Mbps) 下同时跑 UVC+NCM 可能带宽不足——优先使用<strong>H.264 编码流</strong>降低 UVC 带宽占用，为 NCM 留出余量。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机 USB Gadget 部署 Checklist</div>
+  □ 内核编译 <code>CONFIG_USB_GADGET=y</code> + <code>CONFIG_USB_CONFIGFS=y</code> + <code>CONFIG_USB_CONFIGFS_F_UVC=y</code> + <code>CONFIG_USB_CONFIGFS_FFS=y</code><br>
+  □ 设备树 dr_mode = <code>"peripheral"</code> 或 <code>"otg"</code>（确保 USB 连接器方向正确——ID 引脚接地使能 Gadget 模式）<br>
+  □ 启动时执行 ConfigFS 脚本创建复合 gadget（UVC+ADB 或其他组合）→ echo UDC name 激活<br>
+  □ UVC 用户态守护进程：从 /dev/videoX 读帧 → 写入 /dev/uvc-gadget（确保帧率匹配 Host 请求的 dwFrameInterval）<br>
+  □ ADB：启动 adbd 守护进程 → 打开 /dev/usb-ffs/adb/ep0 → 等待 Host 的 USB 控制请求<br>
+  □ HID（可选）：配合 /dev/hidg0 发送按键事件（如 PC 端一键抓图）<br>
+  □ 测试：<code>dmesg | tail -50</code> 确认枚举成功 → Host 侧 <code>lsusb</code> 看到复合设备 → UVC 用 VLC/Chrome 打开 → adb devices 看到设备 → NCM 网卡 ping 通
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux USB 子系统 & Gadget 框架 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

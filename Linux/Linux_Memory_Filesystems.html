@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 内存文件系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; }
+.cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; }
+.cb .st { color: #34d399; } .cb .nu { color: #fbbf24; }
+.cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; } .st code { font-size: 10px; }
+
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+.map { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:14px 18px; margin:14px 0; font-family:"JetBrains Mono",monospace;
+  font-size:10.5px; line-height:1.55; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+
+.tag-g { display:inline-block; padding:1px 7px; border-radius:4px; font-size:10px; font-weight:700;
+  background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.2); }
+.tag-y { display:inline-block; padding:1px 7px; border-radius:4px; font-size:10px; font-weight:700;
+  background:rgba(251,191,36,.1); color:#fbbf24; border:1px solid rgba(251,191,36,.2); }
+.tag-r { display:inline-block; padding:1px 7px; border-radius:4px; font-size:10px; font-weight:700;
+  background:rgba(248,113,113,.08); color:#f87171; border:1px solid rgba(248,113,113,.15); }
+.tag-b { display:inline-block; padding:1px 7px; border-radius:4px; font-size:10px; font-weight:700;
+  background:rgba(108,99,255,.12); color:#a78bfa; border:1px solid rgba(108,99,255,.2); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 内存文件系统</h2>
+  <p class="sec-sub">系统化知识体系 — tmpfs · ramfs · devtmpfs · procfs · sysfs · debugfs</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>页缓存类</strong><br><small>ramfs · tmpfs · devtmpfs</small></span>
+    <span class="flow-arr">┊</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>伪文件系统</strong><br><small>procfs · sysfs</small></span>
+    <span class="flow-arr">┊</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>调试文件系统</strong><br><small>debugfs</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>核心概念</h4><div class="sub">nodev — 不依赖块设备</div>
+      <p>所有内存文件系统都是 <em>nodev</em> 类型 — 不存在磁盘后备存储，数据完全驻留在内存中或实时生成。<code>cat /proc/filesystems</code> 中标记为 <strong>nodev</strong> 的条目即为此类。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>两大分类</h4><div class="sub">页缓存型 vs 动态生成型</div>
+      <p><strong>页缓存型</strong>：ramfs / tmpfs — 数据存储在 page cache 中。<br>
+      <strong>动态生成型</strong>：procfs / sysfs / debugfs — 每次读时实时生成内容，无持久数据存储。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Linux 中的角色</h4><div class="sub">无处不在的内存文件系统</div>
+      <p><code>/dev</code> → devtmpfs · <code>/proc</code> → procfs · <code>/sys</code> → sysfs<br>
+      <code>/dev/shm</code> → tmpfs · <code>/tmp</code> → tmpfs · <code>/run</code> → tmpfs<br>
+      <code>/sys/kernel/debug</code> → debugfs · initramfs → ramfs/tmpfs</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ── Ch1: 分类总览 ── -->
+<h2 class="sh">1. 分类总览 — 六大内存文件系统</h2>
+<p class="ss">Linux 有六种核心 nodev 文件系统 — 每种的设计目标、存储方式和生命周期各不相同</p>
+
+<div class="ptbl" style="margin-top:18px">
+  <table>
+  <thead><tr><th>文件系统</th><th>数据存储</th><th>是否有大小限制</th><th>支持 Swap</th><th>典型挂载点</th><th>设计目标</th></tr></thead>
+  <tbody>
+    <tr><td><span class="tag-b">ramfs</span></td><td>Page Cache</td><td class="r"><strong>无 — OOM 风险</strong></td><td class="r">✗</td><td>initramfs (内核内部)</td><td>最简内存存储 — tmpfs 的模板</td></tr>
+    <tr><td><span class="tag-g">tmpfs</span></td><td>Page Cache + Swap</td><td class="g"><strong>有 (size=)</strong></td><td class="g">✓</td><td>/dev/shm, /tmp, /run</td><td>通用临时文件系统，POSIX 共享内存</td></tr>
+    <tr><td><span class="tag-y">devtmpfs</span></td><td>tmpfs 内部</td><td class="g">有 (继承 tmpfs)</td><td class="g">✓</td><td>/dev</td><td>内核自动创建/删除设备节点</td></tr>
+    <tr><td><span class="tag-b">procfs</span></td><td>无 — 实时生成</td><td>N/A</td><td>N/A</td><td>/proc</td><td>进程 &amp; 内核信息导出</td></tr>
+    <tr><td><span class="tag-y">sysfs</span></td><td>无 — kobject 映射</td><td>N/A</td><td>N/A</td><td>/sys</td><td>设备/驱动/总线拓扑</td></tr>
+    <tr><td><span class="tag-g">debugfs</span></td><td>无 — 实时生成</td><td>N/A</td><td>N/A</td><td>/sys/kernel/debug</td><td>内核开发者调试接口</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="map">
+<span class="cm">/* ===== 内存文件系统的架构全景 ===== */</span>
+<span class="cm">                              User Space</span>
+<span class="cm">                                  │</span>
+<span class="cm">                    ┌─────────────┼──────────────┐</span>
+<span class="cm">                    ▼             ▼              ▼</span>
+<span class="cm">              ┌──────────┐ ┌──────────┐ ┌──────────────────┐</span>
+<span class="cm">              │ Page Cache│ │ kobject  │ │ On-the-fly       │</span>
+<span class="cm">              │ 型文件系统│ │ 型文件系统│ │ Pseudo 文件系统   │</span>
+<span class="cm">              │           │ │          │ │                  │</span>
+<span class="cm">              │ · ramfs   │ │ · sysfs  │ │ · procfs         │</span>
+<span class="cm">              │ · tmpfs   │ │          │ │ · debugfs        │</span>
+<span class="cm">              │ · devtmpfs│ │          │ │                  │</span>
+<span class="cm">              └─────┬─────┘ └────┬─────┘ └────────┬─────────┘</span>
+<span class="cm">                    │            │                 │</span>
+<span class="cm">              ┌─────▼─────┐ ┌───▼──────────┐ ┌───▼──────────────┐</span>
+<span class="cm">              │ mm/shmem  │ │ lib/kobject  │ │ Kernel data      │</span>
+<span class="cm">              │ Page Alloc │ │ Driver Core  │ │ structs          │</span>
+<span class="cm">              │ Swap Subsys│ │ Device Model │ │ (实时遍历生成)    │</span>
+<span class="cm">              └─────┬─────┘ └──────────────┘ └──────────────────┘</span>
+<span class="cm">                    ▼</span>
+<span class="cm">              ┌──────────┐</span>
+<span class="cm">              │ Buddy    │</span>
+<span class="cm">              │ Allocator│</span>
+<span class="cm">              │ (RAM/Swap)│</span>
+<span class="cm">              └──────────┘</span></div>
+
+<!-- ── Ch2: ramfs ── -->
+<h2 class="sh">2. ramfs — 最简页面缓存文件系统</h2>
+<p class="ss">tmpfs 的模板 · 无条件使用 Page Cache · 无大小限制 · 无 Swap · 内核内部 initramfs 的基础</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>设计原理</h4><div class="lbl">fs/ramfs/ — 内核内置，无独立 Kconfig</div>
+    <p>ramfs 是 Linux 最简内存文件系统。文件数据直接以 <em>page</em> 形式存储在 <strong>Page Cache</strong> 中，目录结构通过 <strong>dentry cache</strong> 和 <strong>inode cache</strong> 维护。没有 backing store，没有 writepage 操作 — page 永远不标记为脏页需要回写。<strong>它是 tmpfs 的代码模板。</strong></p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>关键限制</h4><div class="lbl">无大小限制 = OOM 定时炸弹</div>
+    <p><strong>没有容量上限</strong> — 文件可以增长到耗尽全部可用内存，触发 OOM Killer。内存不足时<strong>不能 swap 出</strong> — 数据永久钉在 RAM 中。因此 ramfs 不适合用户空间直接使用。它的正确用途是内核内部场景：<strong>initramfs</strong>（rootfs 在 pivot_root 之前的临时根文件系统）。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== ramfs 关键实现 ===== */</span>
+<span class="cm">/* 注册文件系统类型 */</span>
+<span class="kw">static struct</span> <span class="ty">file_system_type</span> ramfs_fs_type = {
+    <span class="op">.name</span>     = <span class="st">"ramfs"</span>,
+    <span class="op">.mount</span>    = ramfs_mount,
+    <span class="op">.kill_sb</span>  = ramfs_kill_sb,
+    <span class="op">.fs_flags</span> = <span class="ma">FS_USERNS_MOUNT</span>,
+};
+
+<span class="cm">/* 超级块操作 — 几乎全部使用通用实现 */</span>
+<span class="kw">static const struct</span> <span class="ty">super_operations</span> ramfs_ops = {
+    <span class="op">.statfs</span>     = simple_statfs,        <span class="cm">/* 报告文件系统统计 (始终返回 0 可用空间) */</span>
+    <span class="op">.drop_inode</span> = generic_delete_inode,  <span class="cm">/* 引用计数为 0 时立即释放 inode 和页面 */</span>
+};
+
+<span class="cm">/* ⚠️ ramfs 没有 writepage → 页面永不 swap → 数据永久驻留 RAM */</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ ramfs vs tmpfs — 关键区别</div>
+  ramfs 没有 <code>address_space_operations.writepage</code> 实现 → 内核无法将页面写入 swap → 数据<strong>永久驻留 RAM</strong>。<br>
+  tmpfs (通过 shmem) 实现了 <code>writepage</code> → 内存压力下可以 swap out → 适合用户空间长期使用。<br>
+  <strong>结论</strong>：永远<strong>不要</strong>手动 mount ramfs，使用 tmpfs 代替。ramfs 的存在价值是作为 initramfs 的内核内部实现和 tmpfs 的代码参考。
+</div>
+
+<!-- ── Ch3: tmpfs ── -->
+<h2 class="sh">3. tmpfs — 可交换的内存文件系统</h2>
+<p class="ss">基于 mm/shmem.c · 支持 Swap · 大小限制 · POSIX 共享内存 · Linux 最广泛使用的 nodev 文件系统</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>shmem 核心引擎</h4><div class="lbl">mm/shmem.c — 整个 tmpfs 的后端</div>
+    <p>tmpfs 不是独立实现 — 它的读/写/分配/回收全部委托给 <strong>shmem (shared memory)</strong> 子系统。<code>shmem_get_folio()</code> 处理页面获取（先查 page cache → miss 则分配新页），<code>shmem_writepage()</code> 将页面标记为 dirty 并交给 swap 子系统。内核内部维护一个<strong>隐藏的 tmpfs 实例</strong>用于匿名共享映射和 SysV shmem。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Swap 生命周期</h4><div class="lbl">页缓存 ↔ Swap 区的双向迁移</div>
+    <p>① 写入文件 → 页在 page cache 中，标记 dirty<br>
+    ② 内存压力 → LRU 回收选中该页 → <strong>shmem_writepage → swap_writepage</strong> 写入 swap 区 → 页释放回 buddy<br>
+    ③ 再次读取 → page cache miss → <strong>shmem_swapin_page</strong> 从 swap 读回 → 重新加入 page cache<br>
+    ④ 长期不使用 → swap 中的页面最终被丢弃</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>内存统计</h4><div class="lbl">关键指标获取</div>
+    <p><code>cat /proc/meminfo</code>：<br>
+    <strong>Shmem</strong> — 所有 tmpfs + 共享内存占用的页面<br>
+    <strong>SwapTotal / SwapFree</strong> — swap 总/空闲量<br>
+    <code>df -t tmpfs -h</code> — 每个 tmpfs 挂载点使用量<br>
+    <code>free -h</code> — shared 列即 tmpfs 数据</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>挂载选项</th><th>示例</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>size</code></td><td><code>size=2G</code> · <code>size=50%</code></td><td><strong>最大容量</strong> (默认: 物理 RAM 的 50%)。支持 k/m/g 后缀和百分比</td></tr>
+    <tr><td><code>nr_blocks</code></td><td><code>nr_blocks=524288</code></td><td>最大块数 (PAGE_SIZE 为单位, x86 上 4K)</td></tr>
+    <tr><td><code>nr_inodes</code></td><td><code>nr_inodes=100000</code></td><td>最大 inode 数量 (文件+目录总数)</td></tr>
+    <tr><td><code>mode</code></td><td><code>mode=1777</code></td><td>初始根目录权限 (如 1777 = sticky + rwx 全部)</td></tr>
+    <tr><td><code>mpol</code></td><td><code>mpol=bind:0</code> · <code>mpol=interleave</code></td><td>NUMA 内存分配策略 (bind/prefer/interleave/local)</td></tr>
+    <tr><td><code>inode64</code> / <code>inode32</code></td><td>—</td><td>inode 编号宽度 (64-bit 默认无限制 / 32-bit 兼容)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 常用 mount 命令 ===== */</span>
+mount -t tmpfs -o size=<span class="nu">2</span>G,mode=<span class="nu">1777</span> tmpfs /mytmpfs            <span class="cm">/* 自定义 tmpfs */</span>
+
+<span class="cm">/* ===== 系统已挂载的 tmpfs (典型) ===== */</span>
+<span class="cm">tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)</span>
+<span class="cm">tmpfs on /run type tmpfs (rw,nosuid,nodev,size=10%,mode=755)</span>
+<span class="cm">tmpfs on /tmp type tmpfs (rw,nosuid,nodev,size=4G)</span>
+
+<span class="cm">/* ===== 查看 tmpfs 使用量 ===== */</span>
+df -t tmpfs -h
+<span class="cm">Filesystem      Size  Used Avail Use% Mounted on</span>
+<span class="cm">tmpfs           3.9G  2.1M  3.9G   1% /dev/shm</span>
+<span class="cm">tmpfs           3.9G  1.8M  3.9G   1% /run</span>
+<span class="cm">tmpfs           4.0G  1.2G  2.8G  30% /tmp</span></div>
+
+<div class="callout info">
+  <div class="ct">隐藏的 tmpfs 实例 — /proc/meminfo 中的 "Shmem"</div>
+  即使没有挂载任何 tmpfs，内核内部也存在一个<strong>不可见的 tmpfs 实例</strong>，用于：① 匿名 mmap (MAP_SHARED|MAP_ANONYMOUS) ② SysV 共享内存 (shmget) ③ memfd_create。这些页面在 <code>/proc/meminfo</code> 中显示为 "Shmem"，但<strong>不出现在 df 中</strong>。这就是 <code>free -h</code> 中 "shared" 列的实际含义。
+</div>
+
+<!-- ── Ch4: devtmpfs ── -->
+<h2 class="sh">4. devtmpfs — 内核自动设备节点文件系统</h2>
+<p class="ss">CONFIG_DEVTMPFS · 在用户空间之前挂载 /dev · 驱动注册时内核自动创建设备节点</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>设计动机</h4><div class="lbl">消除对早期用户空间设备管理器的依赖</div>
+    <p>在 devtmpfs 出现之前，<code>/dev</code> 要么是静态填充的（mknod 手动创建，维护噩梦），要么依赖 udev 在早期用户空间启动后才能工作。devtmpfs 让<strong>内核本身在设备注册时就创建节点</strong> — 不需要任何用户空间程序。内核在 boot 时自动挂载 devtmpfs 到 <code>/dev</code>，udev 运行后只需追加权限、符号链接等元数据。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>工作流程</h4><div class="lbl">从 device_add() 到 /dev 节点</div>
+    <p>① <code>device_add()</code> (驱动注册设备)<br>
+    → ② <code>devtmpfs_create_node(dev)</code> (driver core 回调)<br>
+    → ③ 在 devtmpfs 中创建 <code>/dev/sda1</code> 等设备节点<br>
+    ④ 设备移除时：<code>device_del() → devtmpfs_delete_node()</code> 删除节点。<br>
+    <strong>/dev 内容由内核 driver core 自动维护</strong>，无需手动 mknod。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 内核配置 ===== */</span>
+<span class="ma">CONFIG_DEVTMPFS</span>=y               <span class="cm">/* 启用 devtmpfs 支持 */</span>
+<span class="ma">CONFIG_DEVTMPFS_MOUNT</span>=y         <span class="cm">/* 内核自动挂载到 /dev (在 rootfs 后就绪) */</span>
+
+<span class="cm">/* ===== 启动序列 ===== */</span>
+<span class="cm">1. 内核初始化 devtmpfs 内部实例</span>
+<span class="cm">2. rootfs 挂载后 → 内核自动 mount devtmpfs to /dev</span>
+<span class="cm">3. 驱动通过 device_add() 注册设备 → /dev 节点自动出现</span>
+<span class="cm">4. 用户空间启动 udev → 添加 permissions/symlinks/device aliases</span>
+
+<span class="cm">/* ===== mount 显示 ===== */</span>
+<span class="cm">devtmpfs on /dev type devtmpfs (rw,nosuid,size=4096k,nr_inodes=1022382,mode=755)</span></div>
+
+<!-- ── Ch5: procfs ── -->
+<h2 class="sh">5. procfs — 进程 &amp; 内核信息伪文件系统</h2>
+<p class="ss">CONFIG_PROC_FS · 挂载于 /proc · 每次读实时生成内容 · seq_file API 的核心使用者</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>/proc 关键目录与文件</h4><div class="lbl">进程信息 + 系统运行时数据</div>
+    <p><code>/proc/&lt;PID&gt;/</code> — 进程信息 (maps, status, fd, cmdline, environ, cwd, exe...)<br>
+    <code>/proc/meminfo</code> — 内存统计 · <code>/proc/cpuinfo</code> — CPU 详情<br>
+    <code>/proc/interrupts</code> — IRQ 计数器 · <code>/proc/iomem</code> — MMIO 映射<br>
+    <code>/proc/filesystems</code> — 已注册文件系统类型<br>
+    <code>/proc/modules</code> — 已加载模块 (lsmod 的数据源)<br>
+    <code>/proc/sys/</code> — sysctl 参数 (<code>kernel.hostname</code> 等)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>seq_file 接口</h4><div class="lbl">解决 procfs 缓冲区溢出的标准方案</div>
+    <p>早期 procfs 直接用 <code>sprintf</code> 往固定大小缓冲区写 → 输出超过 PAGE_SIZE 时数据截断。seq_file 提供<strong>迭代器模式</strong>：<br>
+    <code>start() → next() → show()</code> 循环，每次 show 输出一条记录。内核自动管理页大小的缓冲区，自动分页。支持 <code>lseek</code> 随机访问。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== procfs 模块最小示例 — 使用 seq_file + single_open ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/proc_fs.h&gt;</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/seq_file.h&gt;</span>
+
+<span class="kw">static int</span> <span class="fn">my_show</span>(<span class="kw">struct</span> <span class="ty">seq_file</span> *m, <span class="kw">void</span> *v) {
+    <span class="fn">seq_printf</span>(m, <span class="st">"Hello from kernel! jiffies=%lu</span><span class="st">\n</span><span class="st">"</span>, jiffies);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static int</span> <span class="fn">my_open</span>(<span class="kw">struct</span> <span class="ty">inode</span> *inode, <span class="kw">struct</span> <span class="ty">file</span> *file) {
+    <span class="kw">return</span> <span class="fn">single_open</span>(file, my_show, <span class="ma">NULL</span>);
+}
+
+<span class="kw">static const struct</span> <span class="ty">file_operations</span> my_fops = {
+    <span class="op">.owner</span>   = <span class="ma">THIS_MODULE</span>,
+    <span class="op">.open</span>    = my_open,
+    <span class="op">.read</span>    = seq_read,         <span class="cm">/* seq_file 标准读 */</span>
+    <span class="op">.llseek</span>  = seq_lseek,        <span class="cm">/* seq_file 标准定位 */</span>
+    <span class="op">.release</span> = single_release,   <span class="cm">/* single_open 配对释放 */</span>
+};
+
+<span class="kw">static int</span> __init <span class="fn">my_init</span>(<span class="kw">void</span>) {
+    <span class="fn">proc_create</span>(<span class="st">"myproc"</span>, <span class="nu">0</span>, <span class="ma">NULL</span>, &amp;my_fops);  <span class="cm">// 创建 /proc/myproc</span>
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+<span class="kw">static void</span> __exit <span class="fn">my_exit</span>(<span class="kw">void</span>) {
+    <span class="fn">remove_proc_entry</span>(<span class="st">"myproc"</span>, <span class="ma">NULL</span>);      <span class="cm">// 删除</span>
+}
+<span class="fn">module_init</span>(my_init);  <span class="fn">module_exit</span>(my_exit);</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>seq_file API</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>single_open(file, show, private)</code></td><td>简单场景 — 整个输出在一个 show 调用中完成</td></tr>
+    <tr><td><code>seq_open(file, &amp;seq_ops)</code></td><td>复杂场景 — 需要定义 <code>start/next/stop/show</code> 四件套迭代大列表</td></tr>
+    <tr><td><code>seq_printf(m, fmt, ...)</code></td><td>格式化输出 (类 printf) — 内核自动管理缓冲区</td></tr>
+    <tr><td><code>seq_puts(m, str)</code> / <code>seq_putc(m, c)</code></td><td>输出字符串 / 输出单个字符</td></tr>
+    <tr><td><code>seq_read()</code> / <code>seq_lseek()</code></td><td>填充 <code>file_operations.read</code> / <code>.llseek</code></td></tr>
+    <tr><td><code>single_release()</code> / <code>seq_release()</code></td><td>填充 <code>file_operations.release</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">single_open vs seq_open — 如何选择</div>
+  <strong>single_open</strong>：输出数据量小，无需迭代 — 只需实现 <code>show()</code>。适用于简单的状态导出 (如模块参数、统计信息)。<br>
+  <strong>seq_open</strong>：需要遍历大列表/数组 — 实现全套 <code>start / next / stop / show</code>。适用于 <code>/proc/&lt;PID&gt;/maps</code>、<code>/proc/modules</code> 等需要逐条输出的场景。<br>
+  seq_file 保证 <strong>start→stop 之间不持有锁</strong>，因此可以在 seq_ops 回调中使用 spinlock/mutex。
+</div>
+
+<!-- ── Ch6: sysfs ── -->
+<h2 class="sh">6. sysfs — 内核对象模型文件系统</h2>
+<p class="ss">CONFIG_SYSFS · 挂载于 /sys · 基于 ramfs + kobject · 设备/驱动/总线/模块/类的结构化导出</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>/sys 顶级目录结构</h4><div class="lbl">每个子目录映射一个内核子系统</div>
+    <p><code>/sys/block/</code> — 各块设备的符号链接 → <code>/sys/devices/</code><br>
+    <code>/sys/bus/</code> — pci, usb, platform, sdio... (devices + drivers)<br>
+    <code>/sys/class/</code> — net, tty, block, graphics, sound...<br>
+    <code>/sys/devices/</code> — <strong>真实设备树根</strong> (物理拓扑)<br>
+    <code>/sys/dev/</code> — block/ + char/ (major:minor 符号链接)<br>
+    <code>/sys/kernel/</code> — 内核运行时参数<br>
+    <code>/sys/module/</code> — 每个已加载模块一个目录<br>
+    <code>/sys/firmware/</code> — ACPI, EFI, DMI...<br>
+    <code>/sys/fs/</code> — 文件系统特定导出 (ext4, cgroup...)<br>
+    <code>/sys/power/</code> — 电源管理状态</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>kobject — sysfs 的基石</h4><div class="lbl">一个 kobject = 一个 sysfs 目录</div>
+    <p><code>kobject_add()</code> → 在 sysfs 中创建目录<br>
+    <code>kobject_put()</code> → 引用计数减 1，0 时删除目录<br>
+    <code>sysfs_create_file()</code> — 创建属性文件 (show/store 回调)<br>
+    <code>sysfs_create_group()</code> — 批量创建属性组<br>
+    <strong>一个值一个文件</strong>：sysfs 设计哲学是每个文件只导出一个值，保证 machine-parsable。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== sysfs 属性操作 — show/store 模式 ===== */</span>
+<span class="kw">static</span> <span class="ty">ssize_t</span> <span class="fn">my_attr_show</span>(<span class="kw">struct</span> <span class="ty">kobject</span> *kobj,
+                             <span class="kw">struct</span> <span class="ty">kobj_attribute</span> *attr,
+                             <span class="kw">char</span> *buf) {
+    <span class="kw">return</span> <span class="fn">sysfs_emit</span>(buf, <span class="st">"%d</span><span class="st">\n</span><span class="st">"</span>, some_value);  <span class="cm">// 推荐 sysfs_emit 而非 sprintf</span>
+}
+
+<span class="kw">static</span> <span class="ty">ssize_t</span> <span class="fn">my_attr_store</span>(<span class="kw">struct</span> <span class="ty">kobject</span> *kobj,
+                              <span class="kw">struct</span> <span class="ty">kobj_attribute</span> *attr,
+                              <span class="kw">const char</span> *buf, <span class="ty">size_t</span> count) {
+    <span class="ty">int</span> ret = <span class="fn">kstrtoint</span>(buf, <span class="nu">10</span>, &amp;some_value);  <span class="cm">// 解析用户输入</span>
+    <span class="kw">return</span> ret ? ret : count;
+}
+
+<span class="kw">static struct</span> <span class="ty">kobj_attribute</span> my_attr = <span class="fn">__ATTR_RW</span>(my_attr);
+
+<span class="kw">static struct</span> <span class="ty">attribute</span> *my_attrs[] = {
+    &amp;my_attr<span class="op">.attr</span>,
+    <span class="ma">NULL</span>,                         <span class="cm">/* 必须 NULL 结尾 */</span>
+};
+<span class="fn">ATTRIBUTE_GROUPS</span>(my);          <span class="cm">/* 生成 my_groups[] */</span>
+
+<span class="cm">/* 在 kobject 上应用 */</span>
+<span class="kw">struct</span> <span class="ty">kobject</span> *kobj = <span class="fn">kobject_create_and_add</span>(<span class="st">"mykobj"</span>, kernel_kobj);
+<span class="fn">sysfs_create_groups</span>(kobj, my_groups);</div>
+
+<div class="callout info">
+  <div class="ct">sysfs_emit() — Linux 5.10+ 推荐的安全输出函数</div>
+  传统 <code>sprintf(buf, "%d\n", val)</code> 可能产生缓冲区溢出。新推荐 <code>sysfs_emit(buf, "%d\n", val)</code> 自动检查边界，返回实际写入字节数。show 函数<strong>必须使用 sysfs_emit</strong> 而非 sprintf。同理，store 函数使用 <code>kstrtoint/kstrtouint/kstrtobool</code> 安全解析用户输入。
+</div>
+
+<!-- ── Ch7: debugfs ── -->
+<h2 class="sh">7. debugfs — 内核调试接口</h2>
+<p class="ss">CONFIG_DEBUG_FS · 挂载于 /sys/kernel/debug · 非稳定 ABI · 开发者专用</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>设计理念</h4><div class="lbl">为内核开发者而生 — 无稳定接口承诺</div>
+    <p>debugfs 是一个<strong>简单的伪文件系统</strong>，专门用于内核调试。与 sysfs (<em>稳定的用户空间 ABI</em>) 不同，debugfs 的接口<strong>可能在内核版本间变化</strong>。提供了极简的 API：创建目录、创建文件（带自定义 file_operations）、创建类型化节点 (u32/bool/regset...)。使用者：ftrace、DRM、无线监管、块层、文件系统调试。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>便捷 API</h4><div class="lbl">一行创建类型化调试节点</div>
+    <p><code>debugfs_create_dir(name, parent)</code> — 创建目录<br>
+    <code>debugfs_create_file(name, mode, parent, data, fops)</code> — 创建文件<br>
+    <code>debugfs_create_u32(name, mode, parent, &amp;u32_var)</code> — 直接映射到 u32 变量 (自动 show/store)<br>
+    <code>debugfs_create_u8/u16/u64/x8/x16/x32/x64</code> — 各宽度无符号/十六进制<br>
+    <code>debugfs_create_bool(name, mode, parent, &amp;bool_var)</code> — 布尔值</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== debugfs 快速上手 ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;linux/debugfs.h&gt;</span>
+
+<span class="kw">static struct</span> <span class="ty">dentry</span> *my_dir;
+<span class="kw">static</span> <span class="ty">u32</span> my_counter = <span class="nu">0</span>;
+<span class="kw">static</span> <span class="ty">bool</span> my_enable = <span class="kw">true</span>;
+
+<span class="kw">static int</span> __init <span class="fn">my_init</span>(<span class="kw">void</span>) {
+    my_dir = <span class="fn">debugfs_create_dir</span>(<span class="st">"my_driver"</span>, <span class="ma">NULL</span>);           <span class="cm">// 创建目录</span>
+    <span class="fn">debugfs_create_u32</span>(<span class="st">"counter"</span>, <span class="nu">0644</span>, my_dir, &amp;my_counter);   <span class="cm">// 自动 show/store</span>
+    <span class="fn">debugfs_create_bool</span>(<span class="st">"enable"</span>, <span class="nu">0644</span>, my_dir, &amp;my_enable);   <span class="cm">// 输出 Y/N</span>
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+<span class="kw">static void</span> __exit <span class="fn">my_exit</span>(<span class="kw">void</span>) {
+    <span class="fn">debugfs_remove_recursive</span>(my_dir);  <span class="cm">/* 递归删除整个目录树 */</span>
+}
+
+<span class="cm">/* 使用后效果: */</span>
+<span class="cm"># cat /sys/kernel/debug/my_driver/counter</span>
+<span class="cm">42</span>
+<span class="cm"># echo 100 > /sys/kernel/debug/my_driver/counter</span>
+<span class="cm"># cat /sys/kernel/debug/my_driver/enable</span>
+<span class="cm">Y</span></div>
+
+<!-- ── Ch8: 对比总结 + 实战命令 ── -->
+<h2 class="sh">8. 对比总结 &amp; 实战命令</h2>
+<p class="ss">六大文件系统的关键差异 · 常用挂载与管理命令 · 常见问题诊断</p>
+
+<div class="ptbl" style="margin-top:18px">
+  <table>
+  <thead><tr><th>特性</th><th>ramfs</th><th>tmpfs</th><th>devtmpfs</th><th>procfs</th><th>sysfs</th><th>debugfs</th></tr></thead>
+  <tbody>
+    <tr><td>数据存储</td><td>Page Cache</td><td>PC + Swap</td><td>tmpfs 内部</td><td>实时生成</td><td>kobject 映射</td><td>实时生成</td></tr>
+    <tr><td>大小限制</td><td class="r">无 (OOM)</td><td class="g">有 (size=)</td><td class="g">有</td><td>N/A</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Swap</td><td class="r">✗</td><td class="g">✓</td><td class="g">✓</td><td>—</td><td>—</td><td>—</td></tr>
+    <tr><td>Kconfig</td><td>内置</td><td><code>CONFIG_TMPFS</code></td><td><code>CONFIG_DEVTMPFS</code></td><td><code>CONFIG_PROC_FS</code></td><td><code>CONFIG_SYSFS</code></td><td><code>CONFIG_DEBUG_FS</code></td></tr>
+    <tr><td>挂载点</td><td>initramfs</td><td>/dev/shm, /tmp</td><td>/dev</td><td>/proc</td><td>/sys</td><td>/sys/kernel/debug</td></tr>
+    <tr><td>稳定 ABI</td><td>N/A</td><td class="g">✓</td><td class="g">✓</td><td class="y">部分</td><td class="g">✓</td><td class="r">✗</td></tr>
+    <tr><td>实现源文件</td><td>fs/ramfs/</td><td>mm/shmem.c<br>fs/tmpfs/</td><td>drivers/base/<br>devtmpfs.c</td><td>fs/proc/</td><td>fs/sysfs/</td><td>fs/debugfs/</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 实用命令速查 ===== */</span>
+<span class="cm"># 列出所有已挂载的 nodev 文件系统</span>
+mount | grep -E <span class="st">'type (tmpfs|proc|sysfs|devtmpfs|debugfs|ramfs)'</span>
+
+<span class="cm"># 查看已注册的文件系统类型 (nodev = 无块设备的伪文件系统)</span>
+cat /proc/filesystems | grep nodev
+
+<span class="cm"># tmpfs 空间使用</span>
+df -t tmpfs -h
+
+<span class="cm"># 创建自定义 tmpfs</span>
+mount -t tmpfs -o size=<span class="nu">1</span>G,mode=<span class="nu">1777</span> tmpfs /myramdisk
+
+<span class="cm"># 查看 Shmem (所有 tmpfs + 匿名共享内存)</span>
+grep <span class="st">'Shmem\|SwapTotal\|SwapFree'</span> /proc/meminfo
+
+<span class="cm"># 挂载 debugfs (若未自动挂载)</span>
+mount -t debugfs none /sys/kernel/debug
+
+<span class="cm"># 查看某进程的内存映射 (procfs)</span>
+cat /proc/$$/maps
+
+<span class="cm"># 遍历 sysfs 查看设备属性</span>
+find /sys/devices -name <span class="st">"uevent"</span> | head -<span class="nu">5</span></div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>tmpfs 空间满但物理 RAM 有空余</td><td>size= 限制太低 / inode 耗尽</td><td><code>df -t tmpfs -h</code> 和 <code>df -i -t tmpfs</code></td></tr>
+    <tr><td>/proc/meminfo Shmem 很大但 df 显示 tmps 使用少</td><td>匿名共享内存 (mmap / shmget) 占用</td><td><code>ipcs -m</code> 查看 SysV shmem</td></tr>
+    <tr><td>/dev 下缺少设备节点</td><td>CONFIG_DEVTMPFS 未启用<br>驱动未加载</td><td><code>ls /dev</code> + <code>lsmod</code> 确认</td></tr>
+    <tr><td>OOM Killer 杀进程, dmesg 显示大量 Shmem</td><td>tmpfs 或匿名共享内存无限制增长</td><td>设置 size= 限制 / 使用 cgroup 限制</td></tr>
+    <tr><td>sysfs 属性写失败 (Permission denied)</td><td>属性 mode 为只读 (0444)</td><td><code>ls -l /sys/.../attr</code></td></tr>
+    <tr><td>/proc/&lt;PID&gt; 不存在但进程仍在运行</td><td>PID namespace 隔离</td><td>确认在正确的 namespace 中</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Memory Filesystems — 系统化知识体系 · 2026-06 · Linux Kernel v5.x / v6.x
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 内核日志系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:165px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 内核日志系统</h2>
+  <p class="sec-sub">系统化知识体系 — printk · 日志级别 · 环形缓冲区 · dmesg · /dev/kmsg · dynamic_debug · ftrace · journald</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>printk</strong><br><small>内核日志入口</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>ring buffer</strong><br><small>__log_buf</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>console</strong><br><small>串口/屏幕/netconsole</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>/dev/kmsg</strong><br><small>用户态读取</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>dmesg / journald</strong><br><small>用户态工具</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">0(EMERG)~7(DEBUG)</div><div class="l">8 级日志等级</div></div>
+    <div class="stat"><div class="n">1MB+</div><div class="l">环形缓冲区 (可配置)</div></div>
+    <div class="stat"><div class="n">CONSOLE_LOGLEVEL_DEFAULT</div><div class="l">控制台过滤阈值</div></div>
+    <div class="stat"><div class="n">dynamic_debug</div><div class="l">运行时动态开关</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: printk 核心机制 ═══ -->
+<h2 class="sh">1. printk — 内核日志的唯一入口</h2>
+<p class="ss"><code>printk()</code> 是 Linux 内核中<strong>所有日志消息的唯一起点</strong>——从驱动报错到 Oops 崩溃信息，每一行 dmesg 输出都源于一次 printk 调用。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>printk 的内部流程</h4>
+    <div class="lbl">格式化 → 加时间戳 → 写 ring buffer → 唤醒 console</div>
+    <p>① 格式化：类似 printf 的格式串处理（<code>%s %d %p %px</code> 等内核特有的格式说明符——<code>%pK</code> 对内核指针做哈希遮蔽保护安全）<br>② 加前缀：根据日志级别拼接 <code>"&lt;N&gt;"</code> 级别标记<br>③ <strong>原子写入</strong> ring buffer（log_buf 数组——自旋锁保护，可在任何上下文调用）<br>④ 唤醒 console 输出（如果当前级别 ≥ console_loglevel 阈值）<br>⑤ <strong>最关键的保证</strong>：printk 可在<strong>中断上下文、持自旋锁期间、NMI</strong> 中安全调用——是内核中最可靠的日志方式。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>日志等级 (Log Levels)</h4>
+    <div class="lbl">KERN_EMERG(0) → KERN_DEBUG(7)</div>
+    <p><strong>0 · KERN_EMERG</strong>：系统不可用（即将关机/重启）<br><strong>1 · KERN_ALERT</strong>：必须立即采取行动<br><strong>2 · KERN_CRIT</strong>：临界条件（硬件严重错误）<br><strong>3 · KERN_ERR</strong>：错误条件（驱动 probe 失败、I/O 错误）<br><strong>4 · KERN_WARNING</strong>：警告（配置不推荐、降级运行）<br><strong>5 · KERN_NOTICE</strong>：正常但值得注意<br><strong>6 · KERN_INFO</strong>：信息（设备注册、初始化完成）<br><strong>7 · KERN_DEBUG</strong>：调试信息</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>用法实例与格式说明符</h4>
+    <div class="lbl">printk(KERN_ERR "message") — 无逗号！</div>
+    <p><strong>正确写法</strong>：<code>printk(KERN_ERR "i2c timeout: addr=0x%02x\n", addr);</code>——注意 KERN_ERR 和字符串之间<strong>没有逗号</strong>（预处理器拼接字符串）。错误写法：<code>printk(KERN_ERR, "msg")</code> ← 有逗号会编译失败。<br>
+    <strong>推荐写法</strong>（现代内核）：<code>pr_err("i2c timeout: addr=0x%02x\n", addr);</code>——pr_* 系列宏自动加级别前缀，更简洁、防遗漏换行符。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>printk 防遗忘一览</th><th>使用方式</th><th>自动加设备名</th><th>适用场景</th></tr></thead>
+  <tbody>
+    <tr><td class="g">pr_emerg(fmt, ...)</td><td><code>pr_emerg("System halted\n");</code></td><td>✗</td><td>系统级紧急</td></tr>
+    <tr><td class="r">pr_alert(fmt, ...)</td><td><code>pr_alert("Temperature critical\n");</code></td><td>✗</td><td>需要人工干预</td></tr>
+    <tr><td class="r">pr_crit(fmt, ...)</td><td><code>pr_crit("DDR ECC uncorrectable\n");</code></td><td>✗</td><td>硬件严重错误</td></tr>
+    <tr><td class="r">pr_err(fmt, ...)</td><td><code>pr_err("probe failed: %d\n", ret);</code></td><td>✗</td><td>驱动错误</td></tr>
+    <tr><td class="y">pr_warn(fmt, ...)</td><td><code>pr_warn("deprecated API used\n");</code></td><td>✗</td><td>警告</td></tr>
+    <tr><td>pr_notice(fmt, ...)</td><td><code>pr_notice("version 2.0 loaded\n");</code></td><td>✗</td><td>值得注意</td></tr>
+    <tr><td>pr_info(fmt, ...)</td><td><code>pr_info("device registered\n");</code></td><td>✗</td><td>信息输出</td></tr>
+    <tr><td>pr_debug(fmt, ...)</td><td><code>pr_debug("reg=0x%08x\n", val);</code></td><td>✗</td><td>调试（需开启 dynamic_debug）</td></tr>
+    <tr><td class="g">dev_err(dev, fmt, ...)</td><td><code>dev_err(dev, "power up failed\n");</code></td><td class="g">✓</td><td>设备驱动错误</td></tr>
+    <tr><td>dev_info(dev, fmt, ...)</td><td><code>dev_info(dev, "firmware v%s\n", ver);</code></td><td class="g">✓</td><td>设备信息</td></tr>
+    <tr><td>dev_dbg(dev, fmt, ...)</td><td><code>dev_dbg(dev, "irq=%d\n", irq);</code></td><td class="g">✓</td><td>设备调试</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning" style="margin-top:0">
+  <div class="ct">⚠ printk 的性能代价 — 生产环境必须控制</div>
+  printk 虽然可在任何上下文调用，但<strong>不是免费的</strong>：格式化字符串 + 写 ring buffer + 唤醒 console 驱动（如果级别够高）——其中<strong>同步串口 console 输出是最耗时的</strong>（UART 115200bps ~11.5KB/s，打印一行 100 字节 ~9ms——在中断上下文中 9ms 是灾难）。<br>
+  <strong>生产环境策略</strong>：① <code>console_loglevel</code> 设为 3（只显示 ERR 及以上）② 调试信息用 pr_debug/dev_dbg（编译时默认关闭）③ 不要在高频路径（中断、每帧调用）中使用 printk——改用 tracepoint 或统计计数器 ④ 启用 <code>CONFIG_PRINTK_TIME</code> 确认每条日志的时间戳可度量性能影响。
+</div>
+
+<!-- ═══ Ch2: Ring Buffer ═══ -->
+<h2 class="sh">2. 环形缓冲区 (Ring Buffer) — 内核日志的存储核心</h2>
+<p class="ss">所有 printk 输出都写入一个<strong>固定大小的环形缓冲区</strong>——理解其结构和行为是解读/管理内核日志的基础。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>物理结构</h4>
+    <div class="lbl">__log_buf[] — 启动时分配，永不释放</div>
+    <p>内核维护一个<strong>循环字符数组</strong> <code>__log_buf</code>，默认大小由 <code>CONFIG_LOG_BUF_SHIFT</code> 决定（如 17 → 128KB，18 → 256KB，最大 21 → 2MB）。每条日志记录包含：<strong>前缀</strong>（级别 + 时间戳 + CPU ID + 进程名 PID）和<strong>消息体</strong>。通过启动参数 <code>log_buf_len=2M</code> 可增大。<br>
+    <strong>循环覆盖</strong>：缓冲区满了以后，最老的日志<strong>被新日志覆盖</strong>——不会 OOM、不会阻塞。代价：长时间运行后最早的日志丢失。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>读取路径</h4>
+    <div class="lbl">dmesg · /dev/kmsg · syslog syscall · kmsg dump</div>
+    <p>内核提供<strong>4 条读取路径</strong>访问 ring buffer：<br>① <strong>/dev/kmsg</strong>：字符设备——支持阻塞 read、poll、<strong>非破坏性 seek</strong>（读取后不清除——多消费者模式）。这是 systemd-journald 和 dmesg 的底层接口。<br>② <strong>sys_syslog</strong> 系统调用：<code>syslog(SYSLOG_ACTION_READ, ...)</code>——dmesg 命令的古老接口，读取后清除。不如 /dev/kmsg 功能全。<br>③ <strong>dmesg</strong>：用户态工具——通过 /dev/kmsg 或 syslog syscall 读取。<br>④ <strong>kmsg_dump</strong>：在内核 panic/Oops 时将整个 ring buffer dump 到 MTD 分区或 pstore，用于<strong>事后崩溃分析</strong>。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:12px">
+  <div class="ct">/dev/kmsg vs syslog — 为什么 /dev/kmsg 是未来的方向</div>
+  <code>/dev/kmsg</code> 的优势：① <strong>多消费者</strong>——多个进程同时打开/读取，各自独立 seek（syslog 只有一个全局 offset）② <strong>非破坏性读取</strong>——读取后日志仍在 ring buffer 中 ③ <strong>完整的元数据</strong>——每条消息包含 facility、序列号、时间戳、级别——不再是"一段文本"而是结构化记录 ④ <strong>支持 poll/epoll</strong>——可集成到 event loop。内核3.5+引入。现代 Linux 发行版的 systemd-journald、dmesg 等都基于 /dev/kmsg。
+</div>
+
+<!-- ═══ Ch3: Console 输出 ═══ -->
+<h2 class="sh">3. Console 输出控制</h2>
+<p class="ss">printk 除了写 ring buffer，<strong>可选地</strong>将日志同步输出到注册的控制台（串口、屏幕、netconsole）——这个"可选"由日志级别阈值决定。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>console_loglevel 阈值</h4>
+    <div class="lbl">/proc/sys/kernel/printk — 四个值</div>
+    <p><code>/proc/sys/kernel/printk</code> 包含 4 个值，空格分隔：<br>
+    <strong>① console_loglevel</strong>：<strong>当前控制台阈值</strong>——只有 &lt;= 此值的日志才输出到控制台。默认 7（全输出）→ 嵌入式生产环境应设为 3（只输出 ERR 及以上）。<br>
+    <strong>② default_message_loglevel</strong>：未指定级别的 printk 的默认级别。<br>
+    <strong>③ minimum_console_loglevel</strong>：console_loglevel 可设置的最小值（硬底限）。<br>
+    <strong>④ default_console_loglevel</strong>：启动时的默认值。<br>
+    示例：<code>echo "3 4 1 7" > /proc/sys/kernel/printk</code></p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>控制台驱动类型</h4>
+    <div class="lbl">串口 · framebuffer · netconsole · earlycon</div>
+    <p><strong>串口 console</strong>（8250/pl011/msm_serial）：最常用——UART 连接到调试 PC。内核配置 <code>console=ttyS0,115200 earlyprintk</code>。<br>
+    <strong>framebuffer console</strong>：输出到显示屏（fbcon + tty）。<br>
+    <strong>netconsole</strong>：日志通过 UDP 包发送到远程主机——<strong>无需物理串口</strong>。配置：<code>"netconsole=6666@10.0.0.1/eth0,6666@10.0.0.2/"</code><br>
+    <strong>earlycon</strong>：内核极早期阶段（串口驱动加载之前）的 console——通过设备树 <code>chosen/stdout-path</code> 或命令行 <code>earlycon=uart,mmio32,0x...</code> 指定。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>生产环境策略</h4>
+    <div class="lbl">降低 console 噪声 = 提升性能 + 清晰可读</div>
+    <p>① <code>console_loglevel=3</code>：只输出 ERR/CRIT/ALERT/EMERG——驱动 probe 成功、设备注册等信息不再刷屏。<br>
+    ② 关闭 <code>CONFIG_PRINTK_TIME</code>（如果不需要时间戳）。<br>
+    ③ <strong>quiet 启动参数</strong>：启动时静默模式——等价于 console_loglevel=4。<br>
+    ④ 使用 <code>ignore_loglevel</code> 恢复全量打印（调试时用）。<br>
+    ⑤ 嵌入式 IPC：保留串口 console 但级别设 3 + 关键信息用 pr_err 输出 + 详细调试走 netconsole 或事后 dmesg 查看（不刷串口）。</p>
+  </div>
+</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ 串口 console 的性能陷阱 — 在 115200bps 下打印一行 100 字节 ≈ 9ms</div>
+  在<strong>中断上下文</strong>中调用 printk(KERN_ERR ...) 且 console_loglevel ≥ 3 时，内核会<strong>同步等待</strong>串口 FIFO 有空位后将字符逐个发送——这 9ms 全部消耗在中断上下文中。如果这是一个 1ms 周期的定时器中断 → printk 导致中断执行时间从 10μs 膨胀到 9ms → <strong>系统实时性彻底崩溃</strong>。<br>
+  <strong>解决方案</strong>：① 将 console_loglevel 设低 ② 使用 <code>printk_deferred()</strong>——将日志推迟到 workqueue 执行 ③ 使用 <strong>trace_printk</strong> 或 tracepoint 替代高频路径的 printk ④ 启用 <code>CONFIG_PRINTK_NMI</code> 将 NMI 上下文中的 printk 推迟到 safe context。
+</div>
+
+<!-- ═══ Ch4: Dynamic Debug ═══ -->
+<h2 class="sh">4. Dynamic Debug — 运行时的调试开关</h2>
+<p class="ss">pr_debug/dev_dbg 默认<strong>不输出任何内容</strong>——通过 Dynamic Debug 可以在<strong>运行时按文件/函数/模块/行号</strong>精确启用。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>启用方式</h4>
+    <div class="lbl">CONFIG_DYNAMIC_DEBUG=y — 内核配置前提</div>
+    <p>内核启用 <code>CONFIG_DYNAMIC_DEBUG</code> 后，每个 pr_debug/dev_dbg 调用点在编译时注册到 <code>__dyndbg</code> 段（记录文件/函数/行号/模块名）。<strong>默认全部禁用</strong>（零开销）。运行时通过 <code>/sys/kernel/debug/dynamic_debug/control</code> 控制：<br>
+    <code>echo 'file my_driver.c +p' > control</code> —— 启用 my_driver.c 中所有 pr_debug<br>
+    <code>echo 'module my_module +p' > control</code> —— 启用指定模块<br>
+    <code>echo 'func my_isr +p' > control</code> —— 启用指定函数<br>
+    <code>echo 'file * +p' > control</code> —— 启用所有（谨慎——可能刷爆串口）</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>高级控制：标记与过滤</h4>
+    <div class="lbl">+p 启用 · -p 禁用 · +fl 行号 + 模块过滤</div>
+    <p><strong>+p</strong>：启用 printk 输出。<strong>-p</strong>：禁用。<br>
+    <strong>+fl</strong>：输出文件名 + 行号前缀（方便定位日志来源）。<br>
+    <strong>精确到行号</strong>：<code>echo 'file my_driver.c line 150 +p' > control</code><br>
+    <strong>查看所有调用点</strong>：<code>cat /sys/kernel/debug/dynamic_debug/control</code>（列出每个 pr_debug 的module/func/file/line/enabled 状态）<br>
+    <strong>启动时启用</strong>：内核命令行 <code>dyndbg="file my_driver.c +p"</code><br>
+    <strong>IPC 实践</strong>：用 <code>dev_dbg</code> 写调试日志 → 正常运行时零开销 → 现场出问题时远程 SSH/ADB 进去 echo 一行命令启用 → dmesg 看输出 → 排查完禁用。无需重编译、无需重启设备。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch5: 用户态工具 ═══ -->
+<h2 class="sh">5. 用户态工具链：dmesg · journalctl · klogd</h2>
+<p class="ss">内核写日志，用户态读日志——从最原始的 dmesg 到结构化 journald 的完整工具栈。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>dmesg — 最直接的读取</h4>
+    <div class="lbl">/dev/kmsg 或 syslog syscall</div>
+    <p><strong>dmesg</strong>（无参数）：打印 ring buffer 中全部日志。<br>
+    <strong>dmesg -w</strong>（--follow）：阻塞等待新日志——类 tail -f。<br>
+    <strong>dmesg -n 3</strong>：等价于设置 console_loglevel=3。<br>
+    <strong>dmesg -T</strong>：将时间戳转为可读时间（需要内核 CONFIG_PRINTK_TIME）。<br>
+    <strong>dmesg --level=err,warn</strong>：只显示指定级别。<br>
+    <strong>dmesg -c</strong>：读取后<strong>清空</strong> ring buffer（危险——其他消费者将丢失日志）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>journald — systemd 的日志守护</h4>
+    <div class="lbl">systemd-journald → /dev/kmsg → 持久化存储</div>
+    <p>systemd-journald 打开 /dev/kmsg，持续读取内核日志 + 用户态服务的 stdout/stderr（通过 syslog socket），统一写入<strong>结构化的二进制日志文件</strong>（/var/log/journal/）。<br>
+    <strong>journalctl -k</strong>：查看内核日志（等价于 dmesg）。<br>
+    <strong>journalctl -k -p err</strong>：只看 ERROR 及以上。<br>
+    <strong>journalctl -k --since "10 min ago"</strong>：时间范围过滤。<br>
+    <strong>journalctl -k -b -1</strong>：上一次启动的日志（如果 /var/log/journal/ 是持久存储）。<br>
+    嵌入式设备通常不安装 journald（体积大 + 需要持久存储）→ 直接用 dmesg + 串口 console。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>klogd / syslogd</h4>
+    <div class="lbl">传统 syslog 方案 — 小型嵌入式常用</div>
+    <p>klogd 打开 /proc/kmsg（旧接口）或 /dev/kmsg，读取内核日志并转发给<strong>syslogd</strong>。syslogd 根据 <code>/etc/syslog.conf</code> 规则将日志写入文件（如 <code>/var/log/messages</code>）、转发到远程 syslog 服务器、或打印到终端。<br>
+    轻量替代：<strong>busybox 的 syslogd + klogd</strong>——几 KB 的体积，适合嵌入式 IPC 产品。<br>
+    <strong>日志轮转</strong>：<code>logrotate</code> 周期性压缩/归档/删除旧日志——防止 /var/log 撑满文件系统。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch6: 关键内核配置 ═══ -->
+<h2 class="sh">6. 内核编译配置 — 日志相关 Kconfig 全景</h2>
+<p class="ss">默认内核配置可能不适合嵌入式 IPC 场景——理解每个选项的影响才能做出正确选择。</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>内核配置</th><th>默认</th><th>含义</th><th>IPC 建议</th></tr></thead>
+  <tbody>
+    <tr><td><code>CONFIG_PRINTK</code></td><td class="g">y</td><td>整个 printk 子系统——关闭后整个内核无日志输出</td><td class="g">必须开启</td></tr>
+    <tr><td><code>CONFIG_PRINTK_TIME</code></td><td class="g">y</td><td>每条日志带时间戳（[seconds.microseconds]）</td><td class="g">建议开启</td></tr>
+    <tr><td><code>CONFIG_LOG_BUF_SHIFT</code></td><td>17 (128KB)</td><td>ring buffer 大小 = 2^N 字节</td><td>建议 18 (256KB) 或更大</td></tr>
+    <tr><td><code>CONFIG_DYNAMIC_DEBUG</code></td><td class="r">n</td><td>运行时动态开关 pr_debug/dev_dbg</td><td class="g">强烈建议开启（额外代码 ~10KB）</td></tr>
+    <tr><td><code>CONFIG_DEBUG_KERNEL</code></td><td class="r">n</td><td>启用内核调试基础设施（DEBUG_FS + PRINTK_TIME..）</td><td class="g">开发阶段开启</td></tr>
+    <tr><td><code>CONFIG_PRINTK_NMI</code></td><td class="y">y</td><td>NMI 上下文中的 printk 推迟到 safe context</td><td class="g">建议开启</td></tr>
+    <tr><td><code>CONFIG_CONSOLE_LOGLEVEL_DEFAULT</code></td><td>7</td><td>启动时默认的 console 阈值</td><td>生产设为 3</td></tr>
+    <tr><td><code>CONFIG_MESSAGE_LOGLEVEL_DEFAULT</code></td><td>4</td><td>未指定级别的 printk 的默认级别</td><td>保持 4</td></tr>
+    <tr><td><code>CONFIG_LOG_CPU_MAX_BUF_SHIFT</code></td><td>12 (4KB)</td><td>per-CPU printk 缓冲区大小</td><td>保持默认</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info" style="margin-top:12px">
+  <div class="ct">内核命令行参数 — 启动时控制日志行为</div>
+  <div class="cb"><span class="cm">// 常用 printk 相关启动参数</span>
+<span class="kw">quiet</span>              <span class="cm">// console_loglevel=4 (静默模式，不显示 INFO/DEBUG)</span>
+<span class="kw">debug</span>              <span class="cm">// console_loglevel=10 (全部输出，等效 ignore_loglevel)</span>
+<span class="kw">loglevel</span>=3         <span class="cm">// 设置 console_loglevel=3</span>
+<span class="kw">ignore_loglevel</span>    <span class="cm">// 忽略 console_loglevel，输出所有级别到 console</span>
+<span class="kw">log_buf_len</span>=2M     <span class="cm">// 扩大 ring buffer 到 2MB</span>
+<span class="kw">earlyprintk</span>        <span class="cm">// 极早期串口输出（在 console 驱动加载之前）</span>
+<span class="kw">dyndbg</span>=<span class="st">"file mydrv.c +p"</span>  <span class="cm">// 启动时启用指定文件的 dynamic_debug</span>
+<span class="kw">netconsole</span>=<span class="nu">6666</span>@<span class="nu">10.0.0.1</span>/eth0,<span class="nu">6666</span>@<span class="nu">10.0.0.2</span>/  <span class="cm">// UDP 远程日志</span></div>
+</div>
+
+<!-- ═══ Ch7: ftrace ═══ -->
+<h2 class="sh">7. ftrace & trace_printk — 比 printk 更适合高频调试</h2>
+<p class="ss">printk 在高频路径（每帧、每个中断、每秒几千次）中会严重影响性能——ftrace/tracepoint 是专业的替代方案。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ftrace — 内核内置追踪器</h4>
+    <div class="lbl">tracefs → /sys/kernel/tracing/</div>
+    <p>ftrace 是内核内置的<strong>无锁、每 CPU 环形缓冲</strong>追踪框架，开销远低于 printk（几 μs vs 几 ms）。<br>
+    <strong>支持的事件源</strong>：系统调用、中断、调度事件、函数调用图、tracepoint、kprobe。每个事件源可以独立开关。<br>
+    <strong>输出方式</strong>：<code>trace-cmd</code>（命令行工具）→ 生成 trace.dat → <code>kernelshark</code>（GUI 可视化）——比看 dmesg 强大几个数量级。<br>
+    <strong>IPC 场景</strong>：用 ftrace 追踪 ISP 中断延迟、编码器调度延迟、Video Buffer 队列耗时——每帧一条 trace 记录，不会淹死在 printk 海洋中。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>trace_printk — 极简追踪</h4>
+    <div class="lbl">printk 的 ftrace 等价物</div>
+    <p><code>trace_printk("buf %d filled, irq=%d\n", idx, irq);</code>——用法和 printk 几乎一样，但<strong>输出到 ftrace 的 trace buffer</strong> 而非 console。适用于临时调试——写进代码、运行、看 trace、删除——完整的 printk 替代品。<br>
+    <strong>优势</strong>：① 不经过 console 驱动——不会阻塞串口 ② per-CPU buffering——无全局锁竞争 ③ 输出包含自动的 task/CPU 信息。<br>
+    <strong>限制</strong>：① 不能保证在所有上下文中安全 ② 不是 ABI 稳定的 ③ 编译时有警告提醒"这只是调试用，不应留在正式代码中"。</p>
+  </div>
+</div>
+
+<details style="margin-top:14px">
+  <summary>ftrace 快速入门 — 追踪一个函数的调用者</summary>
+  <div class="cb"><span class="cm"># 1. 挂载 tracefs</span>
+<span class="fn">mount</span> -t tracefs none /sys/kernel/tracing
+
+<span class="cm"># 2. 启用函数图追踪 + 过滤目标函数</span>
+<span class="fn">echo</span> function_graph <span class="kw">&gt;</span> /sys/kernel/tracing/current_tracer
+<span class="fn">echo</span> my_isr <span class="kw">&gt;</span> /sys/kernel/tracing/set_graph_function
+
+<span class="cm"># 3. 开启追踪</span>
+<span class="fn">echo</span> <span class="nu">1</span> <span class="kw">&gt;</span> /sys/kernel/tracing/tracing_on
+
+<span class="cm"># 4. 读取结果（每个函数调用的耗时）</span>
+<span class="fn">cat</span> /sys/kernel/tracing/trace
+<span class="cm"># 0)               |  my_isr() {</span>
+<span class="cm"># 0)   0.834 us    |    readl();       // 读寄存器耗时 0.834μs</span>
+<span class="cm"># 0)   5.123 us    |    i2c_transfer(); // ← 这里是瓶颈！</span>
+<span class="cm"># 0)   6.957 us    |  }</span>
+
+<span class="cm"># 5. 停止追踪</span>
+<span class="fn">echo</span> <span class="nu">0</span> <span class="kw">&gt;</span> /sys/kernel/tracing/tracing_on
+<span class="fn">echo</span> nop <span class="kw">&gt;</span> /sys/kernel/tracing/current_tracer</div>
+</details>
+
+<!-- ═══ Ch8: IPC 实战 ═══ -->
+<h2 class="sh">8. IPC 嵌入式日志实践</h2>
+<p class="ss">IPC 相机产品的日志策略——从开发调试到生产部署的完整方案。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>开发阶段：全量日志 + 快速迭代</h4>
+    <div class="lbl">console_loglevel=7 · dynamic_debug · netconsole</div>
+    <p>• 串口 console 保持 loglevel=7——编译调试内核时不怕刷屏，性能不是瓶颈<br>• 驱动中使用丰富的 <code>dev_dbg</code> 输出寄存器读写、中断触发、状态变化<br>• 使用 <code>dynamic_debug</code> 按需开关调试日志——不用反复编译<br>• <strong>netconsole</strong>：如果板子没有引出串口，用 netconsole 通过 UDP 发日志到开发 PC<br>• <strong>earlycon</strong>：如果内核在 console 驱动加载前 crash，earlycon 可以看到 crash 前的最新打印<br>• Oops/Panic 后：通过 pstore + ramoops 读取上一次崩溃的日志（reboot 后 dmesg 发现 pstore 内容）</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>生产阶段：精简日志 + 按需调试</h4>
+    <div class="lbl">console_loglevel=3 · dmesg 存 SD · 远程诊断</div>
+    <p>• <code>console_loglevel=3</code>——只输出 ERR/CRIT/ALERT/EMERG，正常操作串口零噪音<br>• pr_err/deb_err 记录<strong>关键错误</strong>（驱动 probe 失败、I2C 超时、DDR ECC 错误）<br>• 定期将 dmesg 追加写入 SD 卡日志文件（如 <code>/data/log/kmsg.log</code>）——每次重启保留<br>• 远程诊断：用户在 App 点击"上传日志"→ IPC 通过 HTTP 上传 dmesg+应用日志到云端<br>• <strong>OOM/panic 诊断</strong>：pstore+ramoops 在重启后保留 panic 日志 → 下次启动时读 pstore 发送到云端<br>• 正常运行时 pr_debug 全部禁用——零开销。<strong>现场排查</strong>：远程 SSH/ADB 开启 dynamic_debug → 复现问题 → 导出日志 → 关闭 dynamic_debug</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ IPC 相机日志的三大禁忌</div>
+  <strong>1. 禁止在 ISP/编码中断或高频回调中使用 printk。</strong>ISP 每帧完成触发一次中断（30fps = 每 33ms），在中断中 printk → 串口阻塞 9ms → 中断延迟从 2μs 膨胀到 9ms → 丢帧。<strong>替代</strong>：用 trace_printk 或 per-CPU 统计计数器，每 100 帧聚合 print 一次。<br>
+  <strong>2. 禁止 SD 卡满时无限 write 日志。</strong>日志写满 SD 卡 → 录像无法写入 → SD 卡被写穿。日志文件<strong>必须设置大小上限</strong>（如 10MB 循环写入）。<br>
+  <strong>3. 禁止将用户态日志和内核日志混淆。</strong>应用 crash 不是内核 panic——不要在内核日志中搜索应用错误。应用日志走 syslog/journald/自定义文件，内核日志走 dmesg。两者独立不能互相替代。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 内核日志系统 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

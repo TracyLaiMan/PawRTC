@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图像采集与ISP 全链路深度解析 — 从光子到像素</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+/* Page-specific overrides */
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{
+  background:linear-gradient(180deg, rgba(108,99,255,.12), rgba(108,99,255,.04));
+  color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);
+  position:sticky;top:0;white-space:nowrap;
+}
+.ptbl tbody td{
+  padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;
+  border-bottom:1px solid rgba(255,255,255,.03);
+}
+.ptbl tbody tr:first-child td{padding-top:14px}
+.ptbl tbody tr:last-child td{border-bottom:none;padding-bottom:14px}
+.ptbl tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td code{font-size:11px;background:rgba(108,99,255,.08);padding:2px 7px;border-radius:4px}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0;white-space:nowrap}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+/* Pipeline stage card with number badge */
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:12px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:8px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+/* HDR comparison split */
+.hdr-split{display:flex;gap:2px;max-width:960px;width:100%;margin:16px 0;border-radius:12px;overflow:hidden}
+.hdr-split .hdr-half{flex:1;padding:20px;text-align:center}
+.hdr-split .hdr-half:first-child{background:rgba(255,255,255,.03)}
+.hdr-split .hdr-half:last-child{background:rgba(108,99,255,.06)}
+.hdr-split .hdr-half h5{font-size:14px;font-weight:800;margin-bottom:8px}
+.hdr-split .hdr-half p{font-size:12px;color:#9999bb;line-height:1.7}
+
+/* Formula display */
+.formula{display:inline-block;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);border-radius:8px;padding:4px 12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#a78bfa;margin:4px 2px}
+
+/* Sensor diagram */
+.sensor-stack{display:flex;flex-direction:column;gap:2px;max-width:600px;width:100%;margin:16px auto;font-size:11px;font-weight:600}
+.sensor-stack>div{padding:10px 16px;border-radius:6px;text-align:center}
+.sensor-stack .ml{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);color:#a78bfa}
+.sensor-stack .cf{background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.1);color:#e0e0ff}
+.sensor-stack .pd{background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.2);color:#22d3ee}
+.sensor-stack .si{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.15);color:#34d399}
+
+/* Wrapper for non-sec full-width content blocks */
+.content-block{max-width:960px;width:100%}
+
+/* Code inline override for file/path refs */
+.ref{font-family:"JetBrains Mono",monospace;font-size:11px;color:#6c63ff}
+
+/* SVG diagram wrapper */
+.diagram-svg{width:100%;max-width:960px;margin:16px auto;opacity:0;transform:translateY(20px);transition:all .8s .3s}
+.diagram-svg.vis{opacity:1;transform:translateY(0)}
+.diagram-svg svg{width:100%;height:auto}
+
+/* Step list */
+.step-list{list-style:none;padding:0;margin:12px 0;max-width:960px;width:100%}
+.step-list li{counter-increment:step;padding:10px 16px 10px 52px;margin:6px 0;background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.04);border-radius:10px;position:relative;font-size:12.5px;color:#b0b0d0;line-height:1.7}
+.step-list li::before{content:counter(step);position:absolute;left:14px;top:14px;width:24px;height:24px;border-radius:50%;background:rgba(108,99,255,.12);color:#a78bfa;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
+.step-list li strong{color:#e0e0ff}
+
+/* Scroll hint clickable */
+.scroll-hint{cursor:pointer}
+
+/* Hero stats */
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+.hero-stats .stat{text-align:center}
+.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- S1: Hero — 视觉封面 -->
+<!-- ============================================================ -->
+<div class="sec" id="s1" style="min-height:100vh">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:3s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:4s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,52px);font-weight:900;line-height:1.2">图像采集与 ISP 全链路</h2>
+  <p class="sec-sub" id="s1s" style="max-width:680px">从光子撞击 Sensor 到 YUV 帧送入编码器——完整拆解相机系统的物理、电子和算法三层架构</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">光子</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">透镜</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#22d3ee">CFA</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">光电转换</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">ADC</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#c084fc">ISP</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">YUV/RGB</span>
+  </div>
+
+  <div class="hero-stats" style="margin-top:32px">
+    <div class="stat"><div class="n">~1ns</div><div class="l">光子→电荷</div></div>
+    <div class="stat"><div class="n">12-14bit</div><div class="l">ADC 精度</div></div>
+    <div class="stat"><div class="n">15-20+4</div><div class="l">ISP Pipeline 阶段</div></div>
+    <div class="stat"><div class="n">10^5:1</div><div class="l">WDR 动态范围</div></div>
+  </div>
+
+  <div class="scroll-hint" style="bottom:28px">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S2: 总体架构——相机系统的三层模型 -->
+<!-- ============================================================ -->
+<div class="sec" id="s2">
+  <h2 class="sec-title" id="s2t">总体架构：相机系统的三层模型</h2>
+  <p class="sec-sub" id="s2s">任何数字相机都可抽象为三层：光学层（收光）、传感器层（光→电→数）、ISP 层（数→图）</p>
+
+  <div class="diagram-svg" id="archDiagram">
+    <svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="gOpt" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fbbf24" stop-opacity=".12"/><stop offset="100%" stop-color="#fbbf24" stop-opacity=".04"/></linearGradient>
+        <linearGradient id="gSen" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#22d3ee" stop-opacity=".12"/><stop offset="100%" stop-color="#22d3ee" stop-opacity=".04"/></linearGradient>
+        <linearGradient id="gIsp" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#a78bfa" stop-opacity=".12"/><stop offset="100%" stop-color="#a78bfa" stop-opacity=".04"/></linearGradient>
+        <linearGradient id="gOut" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f472b6" stop-opacity=".12"/><stop offset="100%" stop-color="#f472b6" stop-opacity=".04"/></linearGradient>
+        <marker id="arrowH" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="rgba(108,99,255,.35)"/></marker>
+      </defs>
+
+      <!-- Title labels -->
+      <text x="140" y="28" fill="#fbbf24" font-size="12" font-weight="700" text-anchor="middle">光学层</text>
+      <text x="420" y="28" fill="#22d3ee" font-size="12" font-weight="700" text-anchor="middle">传感器层</text>
+      <text x="680" y="28" fill="#a78bfa" font-size="12" font-weight="700" text-anchor="middle">ISP 层</text>
+      <text x="860" y="28" fill="#f472b6" font-size="10" font-weight="600" text-anchor="middle">输出</text>
+
+      <!-- Optical layer block -->
+      <rect x="30" y="40" width="220" height="200" rx="10" fill="url(#gOpt)" stroke="rgba(251,191,36,.15)" stroke-width="1"/>
+      <rect x="45" y="55" width="190" height="26" rx="5" fill="rgba(251,191,36,.06)"/>
+      <text x="140" y="73" fill="#fbbf24" font-size="11" font-weight="600" text-anchor="middle">Lens / 镜头组</text>
+      <text x="140" y="105" fill="#aaaacc" font-size="10" text-anchor="middle">焦距、光圈、FOV</text>
+      <rect x="45" y="120" width="190" height="26" rx="5" fill="rgba(251,191,36,.06)"/>
+      <text x="140" y="138" fill="#fbbf24" font-size="11" font-weight="600" text-anchor="middle">IR Filter / 红外截止</text>
+      <rect x="45" y="160" width="190" height="26" rx="5" fill="rgba(251,191,36,.06)"/>
+      <text x="140" y="178" fill="#fbbf24" font-size="11" font-weight="600" text-anchor="middle">机械快门 (可选)</text>
+      <text x="140" y="215" fill="#6666aa" font-size="10" text-anchor="middle" font-style="italic">光子 → 聚焦光斑</text>
+
+      <!-- Arrows: Optical → Sensor -->
+      <line x1="250" y1="140" x2="290" y2="140" stroke="rgba(108,99,255,.2)" stroke-width="1.5" marker-end="url(#arrowH)"/>
+
+      <!-- Sensor layer block -->
+      <rect x="300" y="40" width="240" height="200" rx="10" fill="url(#gSen)" stroke="rgba(34,211,238,.15)" stroke-width="1"/>
+      <rect x="315" y="55" width="210" height="26" rx="5" fill="rgba(34,211,238,.06)"/>
+      <text x="420" y="73" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">Pixel Array / 像素阵列</text>
+      <rect x="315" y="95" width="210" height="26" rx="5" fill="rgba(34,211,238,.06)"/>
+      <text x="420" y="113" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">CFA (Bayer / RCCB)</text>
+      <rect x="315" y="135" width="210" height="26" rx="5" fill="rgba(34,211,238,.06)"/>
+      <text x="420" y="153" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">ADC / 列并行 ADC</text>
+      <rect x="315" y="175" width="210" height="26" rx="5" fill="rgba(34,211,238,.06)"/>
+      <text x="420" y="193" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">MIPI / DVP 输出</text>
+      <text x="420" y="230" fill="#6666aa" font-size="10" text-anchor="middle" font-style="italic">光信号 → RAW 数字信号</text>
+
+      <!-- Arrows: Sensor → ISP -->
+      <line x1="540" y1="140" x2="580" y2="140" stroke="rgba(108,99,255,.2)" stroke-width="1.5" marker-end="url(#arrowH)"/>
+
+      <!-- ISP layer block -->
+      <rect x="590" y="40" width="230" height="200" rx="10" fill="url(#gIsp)" stroke="rgba(167,139,250,.15)" stroke-width="1"/>
+      <rect x="605" y="55" width="200" height="26" rx="5" fill="rgba(167,139,250,.06)"/>
+      <text x="705" y="73" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">BLC → DPC → LSC</text>
+      <rect x="605" y="95" width="200" height="26" rx="5" fill="rgba(167,139,250,.06)"/>
+      <text x="705" y="113" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">AWB → Demosaic → CCM</text>
+      <rect x="605" y="135" width="200" height="26" rx="5" fill="rgba(167,139,250,.06)"/>
+      <text x="705" y="153" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">Gamma → NR → Sharpen</text>
+      <rect x="605" y="175" width="200" height="26" rx="5" fill="rgba(167,139,250,.06)"/>
+      <text x="705" y="193" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">3A Stats / AE AF AWB</text>
+      <text x="705" y="230" fill="#6666aa" font-size="10" text-anchor="middle" font-style="italic">RAW → YUV / RGB</text>
+
+      <!-- Arrow: ISP → Output -->
+      <line x1="820" y1="140" x2="850" y2="140" stroke="rgba(108,99,255,.2)" stroke-width="1.5" marker-end="url(#arrowH)"/>
+
+      <!-- Output -->
+      <rect x="853" y="120" width="40" height="40" rx="6" fill="rgba(244,114,182,.08)" stroke="rgba(244,114,182,.15)" stroke-width="1"/>
+      <text x="873" y="145" fill="#f472b6" font-size="9" font-weight="700" text-anchor="middle">YUV</text>
+
+      <!-- Bottom: timeline -->
+      <line x1="30" y1="275" x2="893" y2="275" stroke="rgba(255,255,255,.04)"/>
+      <text x="60" y="298" fill="#5555aa" font-size="9">~ps 级</text>
+      <text x="250" y="298" fill="#5555aa" font-size="9">~ns 级</text>
+      <text x="420" y="298" fill="#5555aa" font-size="9">~μs 级 (行读出)</text>
+      <text x="660" y="298" fill="#5555aa" font-size="9">~ms 级 (帧级)</text>
+      <text x="840" y="298" fill="#5555aa" font-size="9">~ms 级</text>
+    </svg>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🔬 光学层</h4>
+      <div class="sub">Optical Layer</div>
+      <p>镜头组负责收集并聚焦光线。关键参数：<em>焦距 f</em>、<em>光圈 F/#</em>、<em>视场角 FOV</em>。IR-cut 滤掉近红外以保证色彩准确。这一层的物理限制（衍射、像差、景深）决定了成像的上限。</p>
+    </div>
+    <div class="g-card" style="--gc:#22d3ee">
+      <h4>📷 传感器层</h4>
+      <div class="sub">Sensor Layer</div>
+      <p>像素阵列（光电二极管）+ CFA + ADC。光子通过<em>光电效应</em>转化为电子，再经 ADC 量化为数字信号。读出方式有 <strong>Rolling Shutter</strong>（逐行）和 <strong>Global Shutter</strong>（全局）两种。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>⚙️ ISP 层</h4>
+      <div class="sub">Image Signal Processor</div>
+      <p>将 RAW Bayer 数据"烹饪"成人眼可接受的彩色图像。15-20 个处理阶段，核心任务包括：去噪、颜色校正、色调映射。同时运行 3A 算法（AE/AF/AWB）闭环控制传感器和镜头。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>数据阶段</th><th>格式</th><th>位深</th><th>位置</th><th>数据量 (1080p)</th><th>特点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>光电信号</td><td>模拟电荷 (e⁻)</td><td>连续</td><td>光电二极管</td><td>—</td><td>光子→电子，光电效应</td></tr>
+      <tr><td>模拟电压</td><td>模拟电压 (V)</td><td>连续</td><td>像素放大器</td><td>—</td><td>电荷→电压，CDS 降噪</td></tr>
+      <tr><td class="y">RAW Bayer</td><td class="y">数字 (12-14bit)</td><td class="y">12-14 bit</td><td class="y">ADC 输出</td><td class="y">~3 MB/帧</td><td class="y">单通道，Bayer 模式，线性域</td></tr>
+      <tr><td>RGB (demosaic后)</td><td>数字 (16bit/通道)</td><td>16 bit</td><td>ISP 中间</td><td>~12 MB/帧</td><td>三通道 RGB，仍在线性域</td></tr>
+      <tr><td class="g">YUV 输出</td><td class="g">数字 (8/10bit)</td><td class="g">8-10 bit</td><td class="g">ISP 输出</td><td class="g">~3.1 MB/帧 (YUV420)</td><td class="g">Gamma域，可直接送入编码器</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S3: 光学系统——镜头与光路 -->
+<!-- ============================================================ -->
+<div class="sec" id="s3">
+  <h2 class="sec-title" id="s3t">光学系统：镜头与光路设计</h2>
+  <p class="sec-sub" id="s3s">镜头是成像的第一道关口——光圈决定光通量，焦距决定视角，MTF 决定解析力</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>光圈 (Aperture)</h4>
+      <div class="sub">F 值 = f / D</div>
+      <p><em>F/2.0</em> 大光圈 → 进光多、景深浅、暗光好<br><em>F/8.0</em> 小光圈 → 进光少、景深深、解析力高<br>每差一档 F，光通量差一倍（F/1.4→F/2.0 差一倍）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>焦距 (Focal Length)</h4>
+      <div class="sub">视场角 = 2·arctan(h/2f)</div>
+      <p><em>2.8mm</em> 广角（FOV ~110°），安防监控<br><em>6mm</em> 标准（FOV ~50°），人脸门禁<br><em>12mm+</em> 长焦（FOV ~25°），车牌识别</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>景深 (DoF)</h4>
+      <div class="sub">Depth of Field</div>
+      <p>大光圈 + 长焦 → 浅景深 → 背景虚化<br>小光圈 + 广角 → 深景深 → 全景清晰<br>定焦镜头通过<strong>超焦距</strong>最大化景深范围。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>参数</th><th>符号</th><th>典型值</th><th>影响</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>焦距</td><td>f</td><td>2.8mm / 4mm / 6mm / 12mm</td><td>决定 FOV 和放大倍率</td></tr>
+      <tr><td>光圈 (F数)</td><td>F/#</td><td>F/1.4 ~ F/16</td><td>控制进光量和景深</td></tr>
+      <tr><td>视场角</td><td>FOV</td><td>30° ~ 180° (鱼眼)</td><td>决定监控/拍摄范围</td></tr>
+      <tr><td>MTF (调制传递函数)</td><td>MTF</td><td>0.3~0.8 @特定线对</td><td>评价镜头解析力和对比度</td></tr>
+      <tr><td>畸变</td><td>—</td><td>&lt;1% (TV 失真)</td><td>桶形/枕形畸变，可用 ISP LDC 校正</td></tr>
+      <tr><td>相对照度</td><td>RI</td><td>&gt;50% (边缘 vs 中心)</td><td>边缘暗角，可用 LSC 补偿</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">MTF 曲线——镜头成像锐度的标尺</div>
+    MTF（Modulation Transfer Function）反映镜头在不同空间频率（线对/mm）下保留对比度的能力。MTF50（对比度降至 50% 时的频率）是常用评价指标——例如一颗镜头 MTF50 = 150 lp/mm，意味着它能清晰分辨 Sensor 上 3.3μm 的细节（1/(2×150)=3.3μm）。镜头 MTF 与 Sensor 像素尺寸的匹配决定了系统分辨率上限。
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:8px">
+    <div class="ct">红外截止滤光片 (IR-Cut Filter)</div>
+    Sensor 的硅基光电二极管对近红外光（700-1100nm）非常敏感。如果不滤除，红外成分会让<strong>绿色通道偏亮、画面泛红/泛白</strong>。IR-Cut 滤掉 650nm 以上的光，但 IR-Cut 可机械切换（ICR）——白天用 IR-Cut，夜晚切换到全光谱 + 红外补光实现夜视。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S4: 图像传感器——CCD vs CMOS，快门与读出 -->
+<!-- ============================================================ -->
+<div class="sec" id="s4">
+  <h2 class="sec-title" id="s4t">图像传感器：像素结构、快门与读出</h2>
+  <p class="sec-sub" id="s4s">从光子到电压——光电二极管、像素电路、ADC 架构和 MIPI 接口</p>
+
+  <!-- Sensor stack visual -->
+  <div class="sensor-stack">
+    <div class="ml">🔴🟢🔵 Microlens Array（微透镜阵列）— 将光汇聚到光电二极管</div>
+    <div class="cf">🔴🟢🟢🔵 Color Filter Array（Bayer 模式）— R:25% G:50% B:25%</div>
+    <div class="pd">⚡ Photodiode Array（光电二极管阵列）— 光子→电子，QE 量子效率 50-80%</div>
+    <div class="si">🔌 Silicon Substrate + Readout Circuit（硅衬底 + 读出电路）</div>
+  </div>
+  <p style="font-size:10px;color:#5555aa;margin-top:6px;text-align:center">CMOS 图像传感器 (CIS) 的截面结构，光从上往下穿过各层到达光电二极管</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>CCD — 电荷耦合器件</h4>
+      <div class="sub">Charge-Coupled Device</div>
+      <p>电荷逐行"搬运"到统一的读出放大器。全局快门天然，噪声极低。但功耗高、速度慢、难以片上集成 ISP。现代应用中几乎<strong>被 CMOS 完全取代</strong>，仅在天文、科学成像领域仍有使用。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>CMOS — 互补金属氧化物半导体</h4>
+      <div class="sub">CMOS Image Sensor (CIS)</div>
+      <p>每个像素自带放大器，片上集成 ADC（列并行架构）。功耗低、速度快、成本低、可片上 ISP。主流技术：<strong>FSI</strong>（前照式）→ <strong>BSI</strong>（背照式）→ <strong>Stacked</strong>（堆栈式）。手机、安防、车载全覆盖。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Rolling Shutter 卷帘快门</h4>
+      <div class="sub">逐行曝光 + 逐行读出</div>
+      <p>每行曝光起始时刻不同，导致<strong>果冻效应（Jello Effect）</strong>——快速运动物体倾斜或扭曲。优势是像素电路简单、读出噪声更低。消费类 CMOS Sensor 默认模式。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Global Shutter 全局快门</h4>
+      <div class="sub">同时曝光 + 逐行读出</div>
+      <p>所有像素<strong>同一时刻</strong>开始和结束曝光，无果冻效应。但每个像素需要额外的存储电容（Sample-and-Hold），增加噪声和成本。用于高速运动场景：工业检测、无人机、自动驾驶。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:20px">
+    <table>
+    <thead>
+      <tr><th>特性</th><th>Rolling Shutter</th><th>Global Shutter</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>曝光方式</td><td>逐行起始，逐行结束</td><td>所有行同时起始和结束</td></tr>
+      <tr><td>果冻效应</td><td class="r">明显（快速运动物体变形）</td><td class="g">无</td></tr>
+      <tr><td>读出噪声</td><td class="g">更低（像素电路简单）</td><td class="y">更高（存储电容引入 KT/C 噪声）</td></tr>
+      <tr><td>帧率</td><td class="g">更高（流水线读出）</td><td>受限于全局复位和存储</td></tr>
+      <tr><td>成本</td><td class="g">低（结构简单）</td><td class="y">高（需要额外晶体管）</td></tr>
+      <tr><td>动态范围</td><td class="g">更好（填充因子更高）</td><td>略低（存储电容占面积）</td></tr>
+      <tr><td>典型应用</td><td>手机、安防、无人机航拍</td><td>工业 AOI、自动驾驶、高速摄影</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">Sensor 输出接口：MIPI CSI-2 vs DVP</div>
+    <strong>MIPI CSI-2</strong>：差分串行，1-4 Lane，每 Lane 最高 2.5 Gbps（D-PHY v2.0），支持 RAW8/10/12/14，移动/嵌入式主流。<br>
+    <strong>DVP (Parallel)</strong>：8/10/12 bit 并行 + HSYNC/VSYNC/PCLK，简单但引脚多，EMI 差，低速 Sensor 或 MCU 方案使用。<br>
+    <strong>SLVS-EC</strong>：高像素 Sensor（>12MP）用，每 Lane 4.5 Gbps，8 Lane 可达 36 Gbps。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5: Bayer 模式与颜色滤波阵列 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5">
+  <h2 class="sec-title" id="s5t">Bayer 模式与颜色滤波阵列 (CFA)</h2>
+  <p class="sec-sub" id="s5s">每个像素只感一种颜色——这就是为什么 Sensor 输出的 RAW 数据需要 ISP 重建全彩</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Bayer RGGB — 最经典的 CFA</h4>
+      <div class="sub">Bryce Bayer, Kodak 1976</div>
+      <p>2×2 重复单元：<strong>G 占 50%、R 25%、B 25%</strong>。G 通道翻倍是因为人眼对亮度（绿色贡献最大）最敏感。几乎所有消费级 Sensor 都用 Bayer 或其变体。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>其他 CFA 模式</h4>
+      <div class="sub">RCCB / RGB-IR / Monochrome</div>
+      <p><strong>RCCB</strong>：一个 C(Clear) 替代一个 G → 低照度更好、但颜色重建更难<br><strong>RGB-IR</strong>：一个 G 换 IR → 同时获取彩色+红外<br><strong>Quad Bayer</strong>：4个同色像素一组 → 像素合并提升灵敏度</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>CFA 类型</th><th>2×2 单元</th><th>特点</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="g">Bayer RGGB</td><td>R G / G B</td><td>最成熟，G 占比 50%，色彩还原稳定</td><td>手机、安防、车载、消费电子</td></tr>
+      <tr><td>Bayer GRBG</td><td>G R / B G</td><td>RGGB 的排列变体，处理类似</td><td>部分 Sony/OmniVision Sensor</td></tr>
+      <tr><td>RCCB</td><td>R C / C B</td><td>低照度 SNR ↑6dB，但色彩恢复依赖复杂算法</td><td>暗光安防 (星光级)、车载夜视</td></tr>
+      <tr><td>Quad Bayer</td><td>4×4 像素合并</td><td>亮光: 高分辨率 / 暗光: 4合1 大像素</td><td>高端手机 (Samsung HM, Sony IMX)</td></tr>
+      <tr><td>Monochrome</td><td>无 CFA</td><td>灵敏度极高（无颜色滤光损失），但无色彩</td><td>工业检测、天文、结构光</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">为什么 Bayer 模式 G 通道要占 50%？</div>
+    人眼视网膜中感知亮度的<strong>视杆细胞</strong>远多于感知颜色的<strong>视锥细胞</strong>，对亮度细节的敏感度远高于颜色。在标准亮度公式中：<span class="formula">Y = 0.299R + 0.587G + 0.114B</span>，绿色贡献了约 59% 的亮度信息。因此 Bayer 模式将 50% 的像素分配给 G 通道，最大化感知分辨率的同时保持色彩可恢复。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5b: 红外夜视与 ICR 切换 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5b">
+  <h2 class="sec-title" id="s5bt">红外夜视：ICR 切换与 IR 补光技术</h2>
+  <p class="sec-sub" id="s5bs">IPC 安防的核心场景——白天彩色、夜晚黑白红外。ICR（IR-Cut Removal）是连接两个世界的机械开关</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#f87171">
+    <div class="stage-num" style="background:#f87171">ICR</div>
+    <div class="stage-body">
+      <h4>ICR 的工作原理</h4>
+      <div class="en">IR-Cut Filter Removable — 机械切换红外滤光片</div>
+      <p>ICR 是一个<strong>电磁/电机驱动</strong>的机械装置，包含两片滤光片：<strong>IR-Cut 滤光片</strong>（白天模式，滤掉 650nm 以上近红外）和<strong>全透玻璃片</strong>（夜晚模式，让红外光通过）。当光照降到阈值以下时，电磁铁将 IR-Cut 片移开，切换为全透模式——此时 Sensor 可接收红外补光灯照射物体后反射回来的红外光。切换动作通常耗时 200-500ms，期间画面会有短暂的模糊/色偏。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>850nm IR LED</h4>
+      <div class="sub">最常用，有可见红曝</div>
+      <p>波长 850nm 的近红外 LED 是安防相机的<strong>标配</strong>。人眼不可见红外光，但 LED 本身有微弱的<strong>红色光晕（红曝）</strong>——在完全黑暗中人眼可以看到淡淡的红光点。优点是 Sensor 在此波段灵敏度较高，照射距离远。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>940nm IR LED</h4>
+      <div class="sub">无红曝，隐蔽监控</div>
+      <p>波长 940nm 完全在人眼可见范围之外——<strong>零红曝</strong>，适合隐蔽监控场景。但 Sensor 在 940nm 的量子效率远低于 850nm（约一半），同等功率下<strong>照射距离更短</strong>。需要更高功率的 LED 或更灵敏的 Sensor 来补偿。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>智能 IR (Smart IR)</h4>
+      <div class="sub">动态调节 IR LED 亮度</div>
+      <p>固定功率 IR 的问题：近距离物体过曝（一片白），远距离亮度不足。<strong>Smart IR</strong> 根据画面的 AE 统计数据<strong>动态调节 IR LED 的 PWM 占空比</strong>——当有人靠近相机时自动降低 IR 亮度，避免人脸过曝丢失细节；人走远时恢复全功率。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠️ IPC 红外夜视的三大实战问题</div>
+    <strong>1. IR 反射（IR Reflection）</strong>——半球/球机护罩、近处墙壁、树叶等近距离物体将 IR 光反射回镜头，造成画面局部过曝（白雾状）。解决：调整 IR LED 角度使光路偏离镜头视轴、使用外置 IR 灯分离光路。<br>
+    <strong>2. ICR 切换的临界振荡</strong>——晨昏时刻光照在阈值附近波动，ICR 频繁切换（咔嗒声 + 画面反复变色）。解决：软件中加入<strong>滞回（Hysteresis）</strong>——例如光照低于 2 lux 切换夜视，但需要高于 5 lux 才切回白天。<br>
+    <strong>3. 红外偏焦（IR Focus Shift）</strong>——红外光波长不同于可见光，镜头的折射率不同，导致红外模式下焦点偏移。高端镜头有<strong>IR 校正镀膜</strong>或共焦设计；普通镜头在切换到夜视后画面会略微变软。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S5c: 微光全彩与星光级技术 -->
+<!-- ============================================================ -->
+<div class="sec" id="s5c">
+  <h2 class="sec-title" id="s5ct">微光全彩：星光级低照度技术</h2>
+  <p class="sec-sub" id="s5cs">不需要红外补光也能在月光/星光下输出彩色图像——这是 IPC 画质分级的核心指标</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>什么是"星光级"？</h4>
+      <div class="sub">Starlight / Ultra-Low-Light</div>
+      <p>行业约定：Sensor 在 <strong>0.001 lux 及以下</strong> 照度仍能输出可辨识的彩色图像，即为"星光级"。参考：满月约 0.1 lux、无月星空约 0.001 lux、阴云密布约 0.0001 lux。星光级 Sensor 在月光下就能<strong>全彩成像</strong>，无需切换到 IR 黑白模式——这是微光全彩的技术基础。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>核心指标：SNR1s</h4>
+      <div class="sub">信噪比 = 1 时的最小照度</div>
+      <p>衡量 Sensor 低照度能力的<strong>最硬核指标</strong>：在什么照度下画面信噪比降为 1（信号和噪声一样大）。Sony STARVIS 2 的 SNR1s 可达 <strong>0.0003 lux</strong>（彩色），远超上一代。但 SNR1s 是芯片级指标——实际系统中镜头（F 值）和 ISP 降噪能力同样决定最终低照度画质。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#22d3ee">
+      <h4>大像素策略</h4>
+      <div class="sub">2.0μm → 2.9μm → 3.0μm+</div>
+      <p>单个像素面积越大 → 捕获光子越多 → 暗光 SNR 越高。星光级 Sensor 坚持使用大像素：<strong>Sony IMX662</strong>（2.9μm，200万像素星光）、<strong>OmniVision OS08A</strong>（2.0μm BSI）。手机 Sensor 走向 0.6μm 极限，IPC Sensor 却"倒退"做大像素——目的不同。</p>
+    </div>
+    <div class="g-card" style="--gc:#c084fc">
+      <h4>BSI 背照式</h4>
+      <div class="sub">Back-Side Illumination</div>
+      <p>BSI 将光电二极管放在<strong>金属布线层的上方</strong>（翻转芯片，从背面进光），消除了 FSI 中金属走线对光线的遮挡。量子效率（QE）从 FSI 的 40-50% 提升到 <strong>70-80%</strong>。星光级 Sensor 几乎全部采用 BSI 工艺。进一步有 <strong>Stacked BSI</strong>（堆栈式背照）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>AI 降噪加持</h4>
+      <div class="sub">AI-NR / Deep Learning Denoise</div>
+      <p>在 0.001 lux 下即使大像素 BSI Sensor 的 SNR 也只有 ~6-10dB——噪声仍然明显。AI 降噪（CNN/Transformer）在保持纹理清晰度的前提下能额外压制 3-6dB 噪声，是微光全彩的<strong>最后一道关</strong>。但 AI-NR 需要 NPU/GPU 加速，增加功耗和成本。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>低照度等级</th><th>典型照度 (lux)</th><th>Sensor 要求</th><th>画面表现</th><th>是否需要 IR</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>普通</td><td>≥ 1 lux</td><td>普通 FSI, 1.xμm 像素</td><td>昏暗场景噪声明显</td><td class="r">需要</td></tr>
+      <tr><td>暗光增强</td><td>0.1 ~ 1 lux</td><td>BSI, ≥2.0μm</td><td>月光下可见彩色，噪声可控</td><td class="y">部分需要</td></tr>
+      <tr><td class="g">星光级 (Starlight)</td><td class="g">0.001 ~ 0.1 lux</td><td class="g">BSI/Stacked, ≥2.5μm, SNR1s &lt;1mlx</td><td class="g">星光下可见彩色，AI-NR 辅助</td><td class="g">大部分场景不需要</td></tr>
+      <tr><td>超星光 (Ultra Starlight)</td><td>&lt; 0.001 lux</td><td>Stacked BSI, ≥2.9μm, 极致 SNR1s</td><td>极暗环境仍有彩色，但噪声较大</td><td>仅极端场景需要</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">微光全彩 vs 红外黑白——场景驱动的选择</div>
+    红外夜视的优势是<strong>绝对照度下限低</strong>（配合 IR 补光可在 0 lux 工作），但代价是<strong>丢失色彩信息</strong>——人脸、衣服、车牌的颜色在红外下全部变成灰度。微光全彩保留了色彩，但有照度下限（0.001 lux 以下仍需 IR 辅助）。高端 IPC 的策略：<strong>优先微光全彩</strong>（保留色彩信息用于 AI 识别），只有环境光确实不足时才自动切换 IR + 白光补光混合模式——这就是"暖光全彩"或"双光融合"。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S6: ISP Pipeline 全流程——序章 -->
+<!-- ============================================================ -->
+<div class="sec" id="s6">
+  <h2 class="sec-title" id="s6t">ISP Pipeline 总览：15 个核心阶段</h2>
+  <p class="sec-sub" id="s6s">ISP 是高度流水线化的图像处理引擎——每一阶段解决一个问题，输出数据立刻成为下一阶段的输入</p>
+
+  <!-- Pipeline flow diagram as SVG -->
+  <div class="diagram-svg" id="pipelineOverviewSvg">
+    <svg viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><path d="M0,0 L6,2 L0,4 Z" fill="rgba(108,99,255,.3)"/></marker>
+      </defs>
+      <!-- Row 1: RAW Domain -->
+      <text x="30" y="40" fill="#22d3ee" font-size="10" font-weight="700">RAW 域 (Bayer)</text>
+      <rect x="18" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="80" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">BLC</text>
+      <text x="80" y="93" fill="#6666aa" font-size="8" text-anchor="middle">黑电平校正</text>
+      <line x1="143" y1="80" x2="168" y2="80" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="170" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="232" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">DPC</text>
+      <text x="232" y="93" fill="#6666aa" font-size="8" text-anchor="middle">坏点校正</text>
+      <line x1="295" y1="80" x2="320" y2="80" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="322" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="384" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">LSC</text>
+      <text x="384" y="93" fill="#6666aa" font-size="8" text-anchor="middle">镜头阴影校正</text>
+      <line x1="447" y1="80" x2="472" y2="80" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="474" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="536" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">BLC (二次)</text>
+      <text x="536" y="93" fill="#6666aa" font-size="8" text-anchor="middle">扣除暗电流</text>
+      <line x1="599" y1="80" x2="624" y2="80" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="626" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="688" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">WDR/HDR 合成</text>
+      <text x="688" y="93" fill="#6666aa" font-size="8" text-anchor="middle">多曝光融合</text>
+      <line x1="751" y1="80" x2="776" y2="80" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="778" y="55" width="125" height="50" rx="8" fill="rgba(34,211,238,.06)" stroke="rgba(34,211,238,.12)"/>
+      <text x="840" y="78" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Bayer NR</text>
+      <text x="840" y="93" fill="#6666aa" font-size="8" text-anchor="middle">RAW 域降噪</text>
+
+      <!-- Arrow down to Row 2 -->
+      <line x1="480" y1="120" x2="480" y2="145" stroke="rgba(108,99,255,.2)"/>
+      <line x1="480" y1="145" x2="30" y2="145" stroke="rgba(108,99,255,.1)"/>
+      <line x1="30" y1="145" x2="30" y2="165" stroke="rgba(108,99,255,.2)" marker-end="url(#arr)"/>
+
+      <!-- Row 2: RGB Domain -->
+      <text x="30" y="190" fill="#a78bfa" font-size="10" font-weight="700">RGB 域 (线性/Gamma)</text>
+      <rect x="18" y="205" width="125" height="50" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.12)"/>
+      <text x="80" y="228" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Demosaic</text>
+      <text x="80" y="243" fill="#6666aa" font-size="8" text-anchor="middle">去马赛克</text>
+      <line x1="143" y1="230" x2="163" y2="230" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="165" y="205" width="125" height="50" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.12)"/>
+      <text x="227" y="228" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">AWB Gain</text>
+      <text x="227" y="243" fill="#6666aa" font-size="8" text-anchor="middle">白平衡增益</text>
+      <line x1="290" y1="230" x2="310" y2="230" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="312" y="205" width="125" height="50" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.12)"/>
+      <text x="374" y="228" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">CCM</text>
+      <text x="374" y="243" fill="#6666aa" font-size="8" text-anchor="middle">色彩校正矩阵</text>
+      <line x1="437" y1="230" x2="457" y2="230" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="459" y="205" width="125" height="50" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.12)"/>
+      <text x="521" y="228" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Gamma / LTM</text>
+      <text x="521" y="243" fill="#6666aa" font-size="8" text-anchor="middle">伽马校正+局部色调映射</text>
+      <line x1="584" y1="230" x2="604" y2="230" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="606" y="205" width="125" height="50" rx="8" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.12)"/>
+      <text x="668" y="228" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">RGB2YUV</text>
+      <text x="668" y="243" fill="#6666aa" font-size="8" text-anchor="middle">色彩空间转换</text>
+      <line x1="731" y1="230" x2="751" y2="230" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <!-- Arrow down to Row 3 -->
+      <line x1="480" y1="270" x2="480" y2="295" stroke="rgba(108,99,255,.2)"/>
+      <line x1="480" y1="295" x2="30" y2="295" stroke="rgba(108,99,255,.1)"/>
+      <line x1="30" y1="295" x2="30" y2="315" stroke="rgba(108,99,255,.2)" marker-end="url(#arr)"/>
+
+      <!-- Row 3: YUV Domain -->
+      <text x="30" y="340" fill="#34d399" font-size="10" font-weight="700">YUV 域 (后处理)</text>
+      <rect x="18" y="355" width="125" height="50" rx="8" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.12)"/>
+      <text x="80" y="378" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Y Denoise</text>
+      <text x="80" y="393" fill="#6666aa" font-size="8" text-anchor="middle">亮度降噪 (2D/3D NR)</text>
+      <line x1="143" y1="380" x2="163" y2="380" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="165" y="355" width="125" height="50" rx="8" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.12)"/>
+      <text x="227" y="378" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">UV Denoise</text>
+      <text x="227" y="393" fill="#6666aa" font-size="8" text-anchor="middle">色度降噪</text>
+      <line x1="290" y1="380" x2="310" y2="380" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="312" y="355" width="125" height="50" rx="8" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.12)"/>
+      <text x="374" y="378" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Sharpening</text>
+      <text x="374" y="393" fill="#6666aa" font-size="8" text-anchor="middle">锐化 (Edge Enhance)</text>
+      <line x1="437" y1="380" x2="457" y2="380" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="459" y="355" width="125" height="50" rx="8" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.12)"/>
+      <text x="521" y="378" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">CSC / Scaling</text>
+      <text x="521" y="393" fill="#6666aa" font-size="8" text-anchor="middle">色域转换+缩放</text>
+      <line x1="584" y1="380" x2="604" y2="380" stroke="rgba(108,99,255,.15)" marker-end="url(#arr)"/>
+
+      <rect x="606" y="355" width="125" height="50" rx="8" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.12)"/>
+      <text x="668" y="378" fill="#c8c8e8" font-size="11" font-weight="600" text-anchor="middle">Output Format</text>
+      <text x="668" y="393" fill="#6666aa" font-size="8" text-anchor="middle">YUV420/NV12 封装</text>
+
+      <!-- 3A side channel -->
+      <rect x="18" y="435" width="860" height="55" rx="10" fill="rgba(108,99,255,.03)" stroke="rgba(108,99,255,.08)" stroke-dasharray="4 2"/>
+      <text x="448" y="458" fill="#a78bfa" font-size="12" font-weight="700" text-anchor="middle">3A 统计信息采集回路（从各阶段采集统计量，闭环反馈控制 Sensor/镜头/ISP 参数）</text>
+      <text x="448" y="478" fill="#6666aa" font-size="10" text-anchor="middle">AE 自动曝光（亮度直方图）←→ AF 自动对焦（对比度/相位）←→ AWB 自动白平衡（灰区检测）</text>
+
+      <!-- Bottom timeline with latency -->
+      <text x="448" y="525" fill="#5555aa" font-size="9" text-anchor="middle">典型 ISP Pipeline 延迟：1-3 帧 (33-100ms @30fps) → 受 DDR 带宽和 Pipeline 级数限制</text>
+
+      <!-- Row layer labels on the right -->
+      <text x="895" y="140" fill="#5555aa" font-size="9" text-anchor="start" transform="rotate(-90,895,140)">RAW Domain</text>
+      <text x="895" y="440" fill="#5555aa" font-size="9" text-anchor="start" transform="rotate(-90,895,440)">Output Ready</text>
+    </svg>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S7-S22: 逐个 Pipeline 阶段详解 -->
+<!-- 以下每个 section 聚焦一个 ISP 阶段 -->
+
+<!-- ============================================================ -->
+<!-- S7: BLC -->
+<!-- ============================================================ -->
+<div class="sec" id="s7">
+  <h2 class="sec-title" id="s7t">阶段 1：BLC — 黑电平校正</h2>
+  <p class="sec-sub" id="s7s">Black Level Correction：当没有光时，Sensor 输出也不为零——必须把这部分"暗底"减掉</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#22d3ee">
+    <div class="stage-num" style="background:#22d3ee">1</div>
+    <div class="stage-body">
+      <h4>为什么需要 BLC？</h4>
+      <div class="en">Black Level Correction</div>
+      <p>即使在完全黑暗的条件下，Sensor 的模拟电路（放大器、ADC）仍然输出一个微小的正电压——称为<strong>黑电平（Black Level）</strong>或 Optical Black。典型值在 ADC 量程的 5-10% 处（例如 12bit Sensor 的黑电平约为 64-256 ADU）。不扣除黑电平，暗区会偏灰偏紫，后续白平衡和色彩校正也会偏移。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#22d3ee">
+    <div class="stage-num" style="background:#22d3ee">1</div>
+    <div class="stage-body">
+      <h4>BLC 的实现方式</h4>
+      <p>Sensor 的边缘有几行/几列被金属遮光层覆盖——这些是<strong>Optical Black (OB) 像素</strong>。它们接受与有效像素完全相同的模拟处理（包括暗电流和电路偏置），但不受光照影响。ISP 读取 OB 像素的平均值作为黑电平参考，从所有有效像素中减去。公式很简单：<span class="formula">P_out = P_in − BL</span>。其中 BL 是 OB 行/列的均值（或按行/列分别计算以补偿横向条纹噪声）。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:8px">
+    <div class="ct">⚠️ BLC 与传感器温度的关系</div>
+    暗电流随温度指数增长——温度每升高 6-8°C，暗电流翻倍。因此<strong>黑电平会随 Sensor 温度漂移</strong>。高端 ISP 会根据片上温度传感器动态调整 BLC 值，或在每帧中重新采样 OB 像素。如果 BLC 不跟踪温度变化，暗区会出现色偏或绿色条纹。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S8: DPC -->
+<!-- ============================================================ -->
+<div class="sec" id="s8">
+  <h2 class="sec-title" id="s8t">阶段 2：DPC — 坏点校正</h2>
+  <p class="sec-sub" id="s8s">Defect Pixel Correction：制造缺陷、宇宙射线、高温产生的异常像素必须被检测和修正</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>静态坏点 (Static)</h4>
+      <div class="sub">制造缺陷，出厂即存在</div>
+      <p>由于硅晶圆缺陷、掺杂不均匀等原因，某些像素的暗电流异常高或响应异常低。<strong>亮坏点（Hot Pixel）</strong>在低光照下表现为白色亮点；<strong>暗坏点（Dead Pixel）</strong>完全不响应光。Sensor 厂商会提供坏点坐标表（Defect Map）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>动态坏点 (Dynamic)</h4>
+      <div class="sub">使用过程中产生，需实时检测</div>
+      <p>宇宙射线、高温、老化等因素会在使用过程中产生新的坏点。ISP 需要<strong>实时检测</strong>：如果某个像素值与其邻域（同色通道）相差超过阈值，则判定为坏点，用邻域插值替代。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>坏点类型</th><th>检测方法</th><th>校正方法</th><th>复杂性</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>亮坏点 (Hot)</td><td>与邻域同色像素比较，值异常高</td><td>中值滤波 / 邻域均值替代</td><td class="g">低</td></tr>
+      <tr><td>暗坏点 (Dead)</td><td>与邻域同色像素比较，值异常低</td><td>同上</td><td class="g">低</td></tr>
+      <tr><td>列坏点 (Column)</td><td>整列像素行为一致异常</td><td>相邻列插值</td><td class="y">中</td></tr>
+      <tr><td>闪烁坏点 (Flickering)</td><td>时域变化异常大</td><td>多帧检测 + 中值替换</td><td class="r">高</td></tr>
+      <tr><td>簇坏点 (Cluster)</td><td>连续多个像素同时异常</td><td>扩大邻域范围进行插值</td><td class="r">高</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:8px">
+    <div class="ct">DPC 在 RAW 域的独特优势</div>
+    在 Bayer 模式（每个像素只有一个颜色通道）下做坏点检测，可以利用<strong>同色通道邻域像素</strong>（例如以当前 G 像素为中心，对比上下左右的 G 像素）做出更精确的判断。如果在 RGB 域做 DPC，坏点的影响已经通过 Demosaic 扩散到三个通道，修复难度大增。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S9: LSC -->
+<!-- ============================================================ -->
+<div class="sec" id="s9">
+  <h2 class="sec-title" id="s9t">阶段 3：LSC — 镜头阴影校正</h2>
+  <p class="sec-sub" id="s9s">Lens Shading Correction：画面中心亮、边缘暗，且 R/G/B 通道衰减不一致——需要增益补偿</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">3</div>
+    <div class="stage-body">
+      <h4>两种 Shading 现象</h4>
+      <p><strong>Luminance Shading（亮度阴影）</strong>：由 cos⁴ 定律导致——光线以大角度（边缘）入射时传感器接收到的光通量按 cos⁴θ 衰减。画面中心最亮，边缘亮度可下降 30-60%。<br>
+      <strong>Color Shading（颜色阴影）</strong>：不同波长的光在微透镜和 CFA 中的折射角度不同，导致 R/G/B 通道的边缘衰减幅度不一样——表现为边缘偏色（通常偏青或偏品）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">3</div>
+    <div class="stage-body">
+      <h4>LSC 校正方法</h4>
+      <p>ISP 对每个像素位置 (x,y) 应用<strong>径向增益</strong>：<span class="formula">P_out(x,y) = P_in(x,y) × Gain(r)</span>，其中 r 是像素距光学中心的归一化距离。增益函数通常用 4-6 阶多项式拟合（<span class="formula">Gain(r) = 1 + a₁r² + a₂r⁴ + a₃r⁶ + ...</span>），R/Gr/Gb/B 四个通道分别有独立的增益曲线。校正参数在模组出厂标定中通过拍摄均匀白板得到。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:8px">
+    <div class="ct">LSC 过度补偿会放大噪声</div>
+    边缘增益可达 2-3×，这意味着<strong>边缘像素的噪声也被放大了 2-3 倍</strong>。在低照度场景中，LSC 后的边缘 SNR 显著低于中心。解决方案：在 LSC 之前先用 RAW 域降噪，或对 LSC 增益做上限裁剪（trade-off 均匀度 vs 噪声）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S10: WDR/HDR -->
+<!-- ============================================================ -->
+<div class="sec" id="s10">
+  <h2 class="sec-title" id="s10t">阶段 4：WDR/HDR — 高动态范围合成</h2>
+  <p class="sec-sub" id="s10s">单次曝光只能捕获 60-70dB 动态范围——WDR 通过多次曝光将动态范围扩展到 100-140dB</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>DOL/WDR — 多曝光合成</h4>
+      <div class="sub">Digital Overlap / Staggered HDR</div>
+      <p>Sensor 在<strong>同一帧周期</strong>内进行两次或三次曝光：<em>短曝光 (Short)</em> 捕获高亮区域，<em>长曝光 (Long)</em> 捕获暗部细节。ISP 将多帧 RAW 合成为一帧高位深（16-20bit）的线性图像。<strong>关键挑战</strong>：运动鬼影（Motion Ghost）——运动物体在长短曝光之间位置变化。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>DCG — 双转换增益</h4>
+      <div class="sub">Dual Conversion Gain</div>
+      <p>Sensor 像素级的技术：每个像素有两套电荷-电压转换增益——<strong>高增益 (HCG)</strong> 用于暗光（高灵敏度、低满阱）、<strong>低增益 (LCG)</strong> 用于亮光（低灵敏度、高满阱）。无需多次曝光，天然无鬼影，但动态范围增加有限（~15-20dB）。高端 Sensor 将 DOL + DCG 组合使用。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:20px">
+    <table>
+    <thead>
+      <tr><th>WDR 方案</th><th>曝光次数</th><th>动态范围</th><th>鬼影</th><th>成本</th><th>典型 Sensor</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>单曝光 (LDR)</td><td>1</td><td>60-72 dB</td><td class="g">无</td><td class="g">低</td><td>普通 Sensor</td></tr>
+      <tr><td>DCG 双转换增益</td><td>1</td><td>80-90 dB</td><td class="g">无</td><td class="y">中</td><td>Sony STARVIS 2</td></tr>
+      <tr><td class="g">DOL 2 帧合成</td><td>2</td><td>100-120 dB</td><td class="y">有 (需 de-ghost)</td><td class="y">中</td><td>OmniVision OS08A</td></tr>
+      <tr><td>DOL 3 帧合成</td><td>3</td><td>120-140 dB</td><td class="r">明显 (需复杂 de-ghost)</td><td class="r">高</td><td>Sony IMX490 (车载)</td></tr>
+      <tr><td>DCG + DOL</td><td>2+2</td><td>130-140 dB</td><td class="y">有</td><td class="r">高</td><td>Sony IMX728</td></tr>
+      <tr><td>Split-Pixel (大小像素)</td><td>1</td><td>100-110 dB</td><td class="g">无</td><td class="y">中</td><td>OmniVision OV10640</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">WDR 合成的关键：运动补偿与 De-ghost</div>
+    两帧（Short + Long）之间可能有 ms 级的时间差——如果场景中有运动物体，直接加权平均会产生鬼影。De-ghost 策略包括：<strong>运动检测</strong>（比较 Short/Long 的亮度比值是否一致）、<strong>运动区域退化</strong>（运动区只用 Short 帧以避免鬼影但损失暗部 SNR）、<strong>光流运动补偿</strong>（用运动矢量对齐两帧，计算量大但对齐效果好）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S11: Bayer NR -->
+<!-- ============================================================ -->
+<div class="sec" id="s11">
+  <h2 class="sec-title" id="s11t">阶段 5：RAW 域降噪 — Bayer NR</h2>
+  <p class="sec-sub" id="s11s">在 Demosaic 之前做降噪——噪声还没有跨通道扩散，模型最干净</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>光子散粒噪声</h4>
+      <div class="sub">Photon Shot Noise</div>
+      <p>光的量子本质——光子到达时间的随机性。服从<strong>泊松分布</strong>：信号为 S 时，噪声标准差 = sqrt(S)。信噪比 SNR = sqrt(S)——信号越强，SNR 越高。<em>物理极限，无法消除</em>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>读出噪声</h4>
+      <div class="sub">Read Noise</div>
+      <p>像素放大器、ADC 等电路引入的固定噪声底——与信号强度无关。等效于几个到十几个电子。在<strong>暗光场景是主要噪声源</strong>。CDS（相关双采样）可以有效削减读出噪声。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>模式噪声 (FPN)</h4>
+      <div class="sub">Fixed Pattern Noise</div>
+      <p>由于制造工艺不均匀，每个像素的暗电流和增益略有不同——在均匀亮度的画面上呈<strong>固定的纵向条纹或颗粒纹理</strong>。列并行 ADC 还会引入列 FPN。用暗帧减法（Dark Frame Subtraction）消除。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#34d399">
+    <div class="stage-num" style="background:#34d399">5</div>
+    <div class="stage-body">
+      <h4>Bayer 域降噪的核心思路</h4>
+      <p>在 Bayer 域，一个像素只有一种颜色信息。降噪时<strong>只能在同色通道的邻域像素上操作</strong>——例如对当前的 G 像素，参考它上下左右（2像素步长）的 G 像素做加权平均。常用技术：<strong>双边滤波（Bilateral Filter）</strong>——空间域和亮度域双重加权，边缘保留效果好；<strong>NLM（Non-Local Means）</strong>——在全图搜索相似块，效果好但计算量大；<strong>AI-NR（神经网络降噪）</strong>——高端手机 ISP 的标配。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S12: Demosaic -->
+<!-- ============================================================ -->
+<div class="sec" id="s12">
+  <h2 class="sec-title" id="s12t">阶段 6：Demosaic — 去马赛克</h2>
+  <p class="sec-sub" id="s12s">每个像素只有一个颜色，但我们需要 RGB 三个——Demosaic 是 ISP 中最关键、最容易出错的插值步骤</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#a78bfa">
+    <div class="stage-num" style="background:#a78bfa">6</div>
+    <div class="stage-body">
+      <h4>问题的本质</h4>
+      <div class="en">Demosaicing / Color Interpolation</div>
+      <p>Bayer 模式下，每个像素仅有 R、G、B 之一。Demosaic 需要为每个像素重建缺失的两个颜色通道——本质是一个<strong>插值问题</strong>。但简单的双线性插值会导致严重的伪影：<strong>拉链效应（Zippering）</strong>在边缘出现交替色块、<strong>伪彩色（False Color）</strong>在高频纹理区域出现彩虹纹。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>双线性插值 (Bilinear)</h4>
+      <div class="sub">最简单，硬件实现成本最低</div>
+      <p>对每个缺失的颜色，取邻域同色像素的平均值。G 通道用上下左右 4 邻域，R/B 通道用对角 4 邻域。计算量极小但<em>边缘伪影严重</em>，仅用于极低成本方案。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>边缘自适应插值</h4>
+      <div class="sub">AHCL / Malvar-He-Cutler</div>
+      <p>检测局部梯度方向，沿边缘方向插值（而非跨边缘）。先插 G 通道（因为 G 采样率最高），再<strong>以色差恒定假设</strong>（R-G、B-G 变化平缓）插 R 和 B。这是硬件 ISP 的<strong>主流方法</strong>，性价比最优。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#c084fc">
+      <h4>RES / AHD 高级方法</h4>
+      <div class="sub">Residual Interpolation / Adaptive Homogeneity-Directed</div>
+      <p>在残差域（R-G 或 log 域）做插值，更符合色差平滑假设。AHD 在同质区域用双线性、在边缘用梯度导向插值。伪影更少，但需要更大的计算和行缓存。</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>AI/Deep Learning Demosaic</h4>
+      <div class="sub">神经网络方法</div>
+      <p>CNN/Transformer 直接学习 Bayer→RGB 的映射。表现最好（高频纹理、摩尔纹抑制），但需要 NPU/GPU 加速且功耗高。高端手机（Apple Deep Fusion、Qualcomm Spectra）的标配。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>算法</th><th>计算量</th><th>边缘保留</th><th>伪彩色抑制</th><th>摩尔纹</th><th>典型应用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Bilinear</td><td class="g">极低</td><td class="r">差</td><td class="r">严重</td><td class="r">严重</td><td>MCU 简易相机</td></tr>
+      <tr><td class="g">边缘自适应</td><td class="y">中等</td><td class="g">好</td><td class="y">较好</td><td class="y">中等</td><td>安防、车载、嵌入式 ISP</td></tr>
+      <tr><td>RES/AHD</td><td class="y">较高</td><td class="g">很好</td><td class="g">好</td><td class="y">较少</td><td>中高端 ISP/SoC</td></tr>
+      <tr><td>AI-NR Demosaic</td><td class="r">极高</td><td class="g">极好</td><td class="g">极好</td><td class="g">少</td><td>旗舰手机 NPU ISP</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:8px">
+    <div class="ct">摩尔纹 (Moiré)——Demosaic 的终极敌人</div>
+    当场景中存在<strong>接近 Sensor 奈奎斯特频率的高频纹理</strong>（如细条纹衣服、远处栏杆）时，Bayer 采样的混叠效应导致 Demosaic 后出现<strong>低频彩色波纹</strong>。光学低通滤镜（OLPF/AA Filter）可以在空间上模糊掉高于奈奎斯特频率的细节来抑制摩尔纹，但代价是牺牲绝对锐度。现代高像素 Sensor 通常去掉 OLPF 以追求锐度，摩尔纹交给软件处理。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S13: AWB + CCM -->
+<!-- ============================================================ -->
+<div class="sec" id="s13">
+  <h2 class="sec-title" id="s13t">阶段 7-8：AWB + CCM — 白平衡与色彩校正</h2>
+  <p class="sec-sub" id="s13s">从"物理颜色"到"感知颜色"——让白色在任意光源下都呈现为白色，再让 RGB 接近人眼</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">7</div>
+    <div class="stage-body">
+      <h4>AWB (Auto White Balance) 自动白平衡</h4>
+      <div class="en">R_gain × R, G_gain × G, B_gain × B</div>
+      <p>不同光源有不同的色温：<strong>烛光 ~2000K</strong>（偏橙）、<strong>白炽灯 ~3200K</strong>（偏黄）、<strong>日光 ~5500K</strong>（白）、<strong>阴天 ~6500K</strong>（偏蓝）。AWB 的任务是估计场景光源色温，计算 R/G/B 增益使白色物体在画面上呈现为 R=G=B。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>灰世界法 (Gray World)</h4>
+      <div class="sub">假设场景的平均颜色是灰色</div>
+      <p>计算整帧 R、G、B 的均值，令 G 增益为 1，调整 R/B 增益使三者均值相等。简单高效，但<strong>大色块场景（大片绿草地、红叶）会严重偏色</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>白点检测法</h4>
+      <div class="sub">只检测画面中的"近白点"</div>
+      <p>在色温曲线（Planckian Locus）附近搜索可能是白色的像素（R/G≈B/G≈1 的区域），只对这些像素做灰世界计算。抗大色块干扰能力强，<strong>主流 ISP 的标准做法</strong>。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#c084fc">
+    <div class="stage-num" style="background:#c084fc">8</div>
+    <div class="stage-body">
+      <h4>CCM (Color Correction Matrix) 色彩校正矩阵</h4>
+      <div class="en">3×3 矩阵：将 Sensor RGB 变换到标准 sRGB</div>
+      <p>AWB 只解决了白平衡，但 Sensor 的光谱响应曲线与人眼的三色刺激函数（CIE 1931）不完全匹配——也就是说 Sensor 看到的"红"和人眼看到的"红"不太一样。CCM 用一个 3×3 矩阵（或更高阶的 3×n 多项式）将 Sensor 的 RGB 映射到标准色彩空间。参数通过拍摄标准色卡（X-Rite ColorChecker 24 色）最小化色差（ΔE）拟合得到。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:8px">
+    <div class="ct">色彩饱和度和"记忆色"偏好</div>
+    严格色彩还原（Colorimetric）不一定好看——人脑对蓝天、绿草、肤色有"记忆色"偏好。ISP 通常在 CCM 之后还会叠加<strong>色相映射（Hue Mapping）</strong>和<strong>饱和度增强（Saturation Boost）</strong>，让天空更蓝、肤色更粉嫩。这就是为什么不同手机拍同一场景颜色不一样——差异不在传感器，而在色彩调校哲学。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S14: Gamma + Tone Mapping -->
+<!-- ============================================================ -->
+<div class="sec" id="s14">
+  <h2 class="sec-title" id="s14t">阶段 9：Gamma 校正与色调映射</h2>
+  <p class="sec-sub" id="s14s">线性光的巨大动态范围需要被压缩到显示器的非线性空间——Gamma 是连接二者的桥梁</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#f472b6">
+    <div class="stage-num" style="background:#f472b6">9</div>
+    <div class="stage-body">
+      <h4>为什么需要 Gamma 校正？</h4>
+      <div class="en">Gamma Correction = 编码端的非线性映射</div>
+      <p>人眼对暗部亮度变化的敏感度远高于亮部（Weber-Fechner 定律）。线性编码中，50% 亮度用掉一半码字，但人眼很难区分 50% 和 51% 的亮度差——这是巨大的编码效率浪费。Gamma 校正将<strong>更多码字分配给暗部</strong>，匹配人眼的感知特性。同时，CRT/LCD 显示器天然的电压-亮度响应是 Gamma 2.2，需要<strong>端到端 Gamma = 1.0</strong>（编码 Gamma × 显示 Gamma ≈ 1.0）。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>sRGB Gamma</h4>
+      <div class="sub">≈ Gamma 2.2</div>
+      <p>最广泛的标准。线性段（暗部）+ 幂函数段（中高亮）。公式：暗部线性（斜率≈12.92），亮部 power(1/2.4)。Web、PC、消费级显示的默认色彩空间。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Rec.709 (BT.709)</h4>
+      <div class="sub">≈ Gamma 2.4</div>
+      <p>HDTV/1080p 标准。Gamma 略高于 sRGB，比 sRGB 稍暗。配合 Rec.709 色域（与 sRGB 色域相同），是 H.264 编码器最常用的输入色彩空间。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>PQ / HLG (HDR)</h4>
+      <div class="sub">Perceptual Quantizer / Hybrid Log-Gamma</div>
+      <p><strong>PQ (ST.2084)</strong>：基于人眼绝对亮度感知阈值设计，支持 0-10000 nit。HDR10 / Dolby Vision 使用。<br><strong>HLG</strong>：下半段是 Gamma 曲线（兼容 SDR 显示器），上半段是对数曲线（HDR 信息）。广播电视 HDR 方案。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">局部色调映射 (LTM / Local Tone Mapping)</div>
+    全局 Gamma 曲线的问题是：画面的亮区和暗区共享同一曲线——照顾暗部时亮部过曝，照顾亮部时暗部细节丢失。<strong>LTM</strong> 将画面分割成块，每块根据其局部亮度自适应调整映射曲线：<strong>暗块提亮、亮块压低</strong>，大幅提升动态范围的视觉利用率。代价是：块边界可能出现光晕（Halo），全局对比度可能降低——需要精心调校。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S15: RGB→YUV -->
+<!-- ============================================================ -->
+<div class="sec" id="s15">
+  <h2 class="sec-title" id="s15t">阶段 10：色彩空间转换 — RGB → YUV</h2>
+  <p class="sec-sub" id="s15s">Gamma-encoded RGB 转为 YUV 后，亮度与色彩分离——为后续独立降噪、色度下采样和编码做准备</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#34d399">
+    <div class="stage-num" style="background:#34d399">10</div>
+    <div class="stage-body">
+      <h4>RGB → YUV 的本质</h4>
+      <p>YUV 将图像分解为：<strong>Y（Luma，亮度）</strong>——携带结构、边缘、纹理等感知敏感信息；<strong>U/V（Chroma，色度）</strong>——携带颜色信息，人眼对色度分辨率不敏感。转换公式（BT.601 标准）：<br>
+      <span class="formula">Y  = 0.299R + 0.587G + 0.114B</span><br>
+      <span class="formula">Cb = 0.564(B − Y)</span>&nbsp;&nbsp;<span class="formula">Cr = 0.713(R − Y)</span></p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:12px">
+    <table>
+    <thead>
+      <tr><th>标准</th><th>适用场景</th><th>色域</th><th>Gamma</th><th>转换矩阵特征</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="g">BT.601</td><td>SD 视频 (480p/576p)</td><td>NTSC/PAL</td><td>2.2</td><td>基于 CRT 荧光粉，历史标准</td></tr>
+      <tr><td>BT.709</td><td>HD 视频 (720p/1080p)</td><td>sRGB</td><td>~2.4</td><td>HDTV/H.264 标准，最常用</td></tr>
+      <tr><td>BT.2020</td><td>UHD 视频 (4K/8K)</td><td class="g">广色域</td><td>2.4 / PQ / HLG</td><td>H.265/H.266/AV1，支持 HDR</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S16: YUV Denoise -->
+<!-- ============================================================ -->
+<div class="sec" id="s16">
+  <h2 class="sec-title" id="s16t">阶段 11-12：YUV 域降噪 — 2D/3D NR</h2>
+  <p class="sec-sub" id="s16s">RAW 域降噪后再在 YUV 域做精细化降噪——亮度和色度分开处理，利用时域信息</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>2D NR — 空间域降噪</h4>
+      <div class="sub">2D Spatial Noise Reduction</div>
+      <p>在当前帧内部进行降噪。Y 通道和 UV 通道分开处理——<strong>Y 通道轻手降噪</strong>（保留纹理细节），<strong>UV 通道重手降噪</strong>（色度噪声人眼敏感但色度细节不敏感）。常用 Bilateral Filter、Guided Filter、小波阈值降噪等。不会引入拖影（因为是单帧处理），但降噪强度受限。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>3D NR — 时域降噪</h4>
+      <div class="sub">3D Temporal Noise Reduction</div>
+      <p>利用连续多帧的平均来消除随机噪声——因为噪声是随机的（帧间无关），而信号是稳定的（帧间相关）。核心是<strong>运动自适应/运动补偿的时域滤波</strong>：静止区域做多帧强滤波 → SNR 大幅提升；运动区域做运动补偿对齐后再滤波 → 避免拖影。3D NR 的降噪效果远超 2D NR，但<strong>运动检测和鬼影问题是难点</strong>。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">YUV 降噪的最佳实践：分层策略</div>
+    ISP 降噪通常分三层：<strong>RAW 域</strong>（Bayer NR，最小化跨通道扩散）→ <strong>RGB 域</strong>（Demosaic 后残留噪声）→ <strong>YUV 域</strong>（Y/UV 分开，2D+3D 组合）。每一层只处理自己最擅长的噪声类型。把全部降噪堆在 YUV 域会损失细节；把全部降噪堆在 RAW 域则无法利用跨通道和时域信息。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S17: Sharpen -->
+<!-- ============================================================ -->
+<div class="sec" id="s17">
+  <h2 class="sec-title" id="s17t">阶段 13：锐化 — Sharpening</h2>
+  <p class="sec-sub" id="s17s">降噪让画面干净但也变软——锐化是补偿过程，但做过头就是振铃和噪点增强</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#38bdf8">
+    <div class="stage-num" style="background:#38bdf8">13</div>
+    <div class="stage-body">
+      <h4>Unsharp Mask (USM) — 最经典的锐化方法</h4>
+      <div class="en">Sharp = Original + Amount × (Original − Blurred)</div>
+      <p>1. 对原图做高斯模糊 → 2. 原图减去模糊图得到<strong>细节层</strong>（高频分量）→ 3. 原图 + Gain × 细节层 = 锐化输出。三个参数：<strong>Amount</strong>（增益强度）、<strong>Radius</strong>（影响多大尺度的边缘）、<strong>Threshold</strong>（低于此值的细节不增强，避免放大平坦区噪声）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#38bdf8">
+    <div class="stage-num" style="background:#38bdf8">13</div>
+    <div class="stage-body">
+      <h4>边缘增强 vs 纹理增强</h4>
+      <p>高端 ISP 将锐化分为两个独立模块：<strong>Edge Enhance（边缘增强）</strong>针对大振幅的强边缘（如物体轮廓），使用较大的 Radius 和较小的 Amount，产生清晰分界感；<strong>Texture Enhance（纹理增强）</strong>针对小振幅的弱纹理（如皮肤毛孔、织物纹理），使用较小的 Radius 和适当的 Amount，增加画面细腻度。两者独立可调避免互相干扰。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:8px">
+    <div class="ct">锐化的代价：振铃效应与噪声放大</div>
+    锐化本质是<strong>强调高频分量</strong>——但噪声也是高频。过度锐化会在强边缘两侧产生<strong>光晕（Halo/Ringing）</strong>（USM 的 Radius 越大越明显），同时在平坦区域放大噪声。好的 ISP 会将降噪和锐化设计为<strong>互补的频带分割策略</strong>：降噪处理高频噪声段，锐化处理中高频信号段，两者不重叠。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S17b: LDC 畸变校正 -->
+<!-- ============================================================ -->
+<div class="sec" id="s17b">
+  <h2 class="sec-title" id="s17bt">LDC：镜头畸变校正</h2>
+  <p class="sec-sub" id="s17bs">广角镜头带来大视角，也带来了桶形畸变——ISP 需要用几何变换把弯曲的直线"拉直"</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">LDC</div>
+    <div class="stage-body">
+      <h4>畸变的类型与成因</h4>
+      <div class="en">Lens Distortion Correction — 几何变换纠正镜头畸变</div>
+      <p><strong>桶形畸变（Barrel）</strong>：广角镜头最常见——画面中心的放大率大于边缘，直线向外弯曲。IPC 超广角（FOV≥120°）非常明显。<br>
+      <strong>枕形畸变（Pincushion）</strong>：长焦镜头常见——中心放大率小于边缘，直线向内弯。<br>
+      <strong>胡子畸变（Mustache）</strong>：桶形+枕形混合——近距离桶形、远距离枕形，最复杂。<br>
+      畸变的根源是<strong>镜片组的光学设计</strong>——完全消除畸变需要更多镜片（成本、体积、透光率），因此用 ISP 做软件校正更经济。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>径向畸变模型</h4>
+      <div class="sub">Brown-Conrady 多项式模型</div>
+      <p>用归一化坐标 (x,y) 描述畸变：<br>
+      <span class="formula">x' = x(1 + k₁r² + k₂r⁴ + k₃r⁶)</span><br>
+      <span class="formula">y' = y(1 + k₁r² + k₂r⁴ + k₃r⁶)</span><br>
+      其中 <strong>r² = x² + y²</strong>（距光心的距离），k₁/k₂/k₃ 是畸变系数。桶形畸变时 k₁ 为负，枕形畸变为正。通常 3 个系数就足够，极端鱼眼需要 5-6 个。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>切向畸变模型</h4>
+      <div class="sub">镜头组装偏心引入</div>
+      <p>镜头与 Sensor 平面不完全平行导致：<br>
+      <span class="formula">x' = x + [2p₁xy + p₂(r²+2x²)]</span><br>
+      <span class="formula">y' = y + [p₁(r²+2y²) + 2p₂xy]</span><br>
+      p₁/p₂ 通常很小（~10⁻⁴ 量级），但在高像素 Sensor 上仍可察觉。高端模组出厂前会逐颗标定畸变参数并烧录到 OTP 中。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#c084fc">
+    <div class="stage-num" style="background:#c084fc">HW</div>
+    <div class="stage-body">
+      <h4>LDC 的硬件实现与管线位置</h4>
+      <div class="en">Warp Engine / DMA-based Geometric Transformation</div>
+      <p>LDC 本质是对图像做<strong>逐像素重映射（Remap）</strong>——校正后的每个输出像素，通过畸变模型反算其在输入图中的位置，再用插值（双线性/Bicubic）取色。这需要<strong>随机访存</strong>（不像其他 ISP 阶段是顺序处理），因此很多 ISP 用专用 <strong>Warp DMA 引擎</strong>做高效映射表查表（LUT）。管线位置通常在 YUV 域——色彩已重建完毕，几何变换不会引入新的颜色伪影。对于超广角（≥140°），LDC 通常与<strong>鱼眼展开（Dewarping）</strong>合并处理。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">畸变校正的代价——分辨率的空间不均匀损失</div>
+    桶形校正时<strong>边缘被拉伸</strong>（需要插值放大），而 Sensor 的边缘像素本来在镜头 MTF 衰减下就已经比中心模糊——LDC 边缘拉伸会进一步放大边缘模糊。结果：校正后画面<strong>中心清晰、边缘软</strong>。缓解方法：① LDC 在校正量上做 trade-off（不完全拉直，留一点畸变换取更好的边缘解析力）；② 使用更高分辨率的 Sensor 给 LDC 留出"裁剪余量"；③ 结合电子防抖（EIS）——LDC 裁剪掉边缘区域刚好给 EIS 提供位移空间。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S18: Scaling + Format -->
+<!-- ============================================================ -->
+<div class="sec" id="s18">
+  <h2 class="sec-title" id="s18t">阶段 14-15：缩放与输出格式</h2>
+  <p class="sec-sub" id="s18s">ISP 输出需要缩放到目标分辨率，并封装为编码器友好的像素格式</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#c084fc">
+      <h4>缩放 (Scaling)</h4>
+      <div class="sub">Downscale / Upscale</div>
+      <p>ISP 通常输出多个分辨率的流：<strong>主路（Main Stream）</strong> 1080p/4K 供编码录像、<strong>子路（Sub Stream）</strong> 640×480 供预览/AI 检测、<strong>抓图流（Snapshot）</strong> 全分辨率供拍照。缩放滤波器：<em>双线性</em>（快但模糊）、<em>Lanczos</em>（锐利但振铃）、<em>Bicubic</em>（折中选择）。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>像素格式转换</h4>
+      <div class="sub">YUV444 → YUV422 → YUV420/NV12</div>
+      <p>硬件编码器通常要求 <strong>NV12</strong>（Y 平面 + UV 交错平面）或 <strong>NV21</strong>（Y 平面 + VU 交错平面）。ISP 从 YUV444 下采样到 YUV420：UV 平面的水平和垂直分辨率各降一半。色度下采样的位置（cositing）需要与编码器的期望一致，否则会出现色度偏移。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>输出格式</th><th>内存布局</th><th>Y 尺寸</th><th>UV 尺寸</th><th>硬件编码器</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="g">NV12</td><td>Y 平面 → UV 交错平面</td><td>W×H</td><td>W×H/2 (uint16交错)</td><td>VAAPI / V4L2 / MediaCodec / NPP</td></tr>
+      <tr><td>NV21</td><td>Y 平面 → VU 交错平面</td><td>W×H</td><td>W×H/2 (uint16交错)</td><td>Android Camera2 默认</td></tr>
+      <tr><td>I420 (YUV420p)</td><td>Y 平面 → U 平面 → V 平面</td><td>W×H</td><td>W/2×H/2 每平面</td><td>FFmpeg 软件编码</td></tr>
+      <tr><td>YV12</td><td>Y 平面 → V 平面 → U 平面</td><td>W×H</td><td>W/2×H/2 每平面</td><td>部分旧系统</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S19: 3A 算法详解 -->
+<!-- ============================================================ -->
+<div class="sec" id="s19">
+  <h2 class="sec-title" id="s19t">3A 算法：AE / AF / AWB</h2>
+  <p class="sec-sub" id="s19s">3A 是 ISP 的闭环控制核心——根据图像统计数据，实时调整 Sensor、镜头和 ISP 参数</p>
+
+  <!-- AE -->
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">AE</div>
+    <div class="stage-body">
+      <h4>AE — Auto Exposure 自动曝光</h4>
+      <div class="en">控制曝光时间 + 模拟增益 + 数字增益 + 光圈</div>
+      <p>AE 计算画面亮度直方图，与<strong>目标亮度（Target Luma）</strong>比较，调整四条"曝光杠杆"：<strong>1) 曝光时间</strong>（微秒到毫秒级，运动模糊 vs 暗光 SNR）、<strong>2) 模拟增益</strong>（放大器增益，1×~16×，噪声友好但上限有限）、<strong>3) 数字增益</strong>（ISP 数字放大，噪声不友好仅限于救急）、<strong>4) 光圈</strong>（硬件调整，普通相机不用）。AE 收敛速度通常在 3-10 帧，收敛太快会振荡，太慢则延迟明显。</p>
+    </div>
+  </div>
+
+  <!-- AF -->
+  <div class="stage-card" style="max-width:960px;--sc:#38bdf8">
+    <div class="stage-num" style="background:#38bdf8">AF</div>
+    <div class="stage-body">
+      <h4>AF — Auto Focus 自动对焦</h4>
+      <div class="en">对比度检测 (CDAF) / 相位检测 (PDAF) / 激光辅助</div>
+      <p><strong>CDAF（反差对焦）</strong>：通过移动镜头，计算 ROI 区域对比度（高频能量），搜索对比度峰值。准确但慢（需要反复移动镜头）。<br>
+      <strong>PDAF（相位对焦）</strong>：Sensor 上部分像素被遮挡（一半遮左一半遮右），通过左右像素的信号相位差直接计算离焦量和方向——一次到位，速度快。高端手机和微单标配。<br>
+      <strong>激光对焦</strong>：ToF 测距辅助近距离快速对焦。</p>
+    </div>
+  </div>
+
+  <!-- AWB -->
+  <div class="stage-card" style="max-width:960px;--sc:#a78bfa">
+    <div class="stage-num" style="background:#a78bfa">AWB</div>
+    <div class="stage-body">
+      <h4>AWB — Auto White Balance 自动白平衡</h4>
+      <div class="en">光源色温估计 + R/G/B 增益计算</div>
+      <p>在 S13 已详细描述。补充闭环控制逻辑：AWB 根据当前帧统计量计算 R/G/B 增益 → 应用到下一帧 → 再统计验证白点分布 → 迭代收敛。为防止色温跳变引起的画面闪烁，AWB 增益变化需要<strong>阻尼（Damping）</strong>——每次调整不超过 5-10%，过渡平滑。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">AE 与 AWB 的耦合问题</div>
+    曝光改变亮度 → 影响 AWB 的白点检测（白点判定依赖于像素亮度） → AWB 改变增益 → 影响画面亮度 → 影响 AE 判断。如果两者独立运行，容易产生<strong>振荡</strong>。好的 3A 设计需要<strong>AE-AWB 联合控制</strong>：AE 先收敛 → 锁定 → AWB 再收敛 → 解锁 → AE 微调。或使用<strong>收敛状态机</strong>协调两者的更新时序。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S20: ISP 硬件架构 -->
+<!-- ============================================================ -->
+<div class="sec" id="s20">
+  <h2 class="sec-title" id="s20t">ISP 硬件架构：管线、缓存与带宽</h2>
+  <p class="sec-sub" id="s20s">ISP 的高吞吐处理依赖于精心设计的流水线架构和 DDR 带宽管理</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>硬线 ISP (Hardwired Pipeline)</h4>
+      <div class="sub">固定功能流水线，ASIC 实现</div>
+      <p>每个处理阶段都是专用的硬件模块，数据从前一站直通下一站。功耗极低、延迟极小（2-5 行缓存即可启动处理），但<strong>算法固定、不可编程</strong>。嵌入式 SoC（海思、安霸、Ingenic）和低功耗 Camera 芯片的标配。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>可编程 ISP</h4>
+      <div class="sub">SIMD/DSP + 部分硬线</div>
+      <p>核心阶段（Demosaic、NR）用可编程 SIMD 向量处理器实现，轻量阶段（BLC、Gamma）保留硬线。兼顾灵活性和功耗。Apple ISP、Qualcomm Spectra 都采用此架构，允许<strong>通过固件升级改善画质</strong>。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>架构类型</th><th>代表方案</th><th>灵活性</th><th>功耗</th><th>延迟</th><th>成本</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>全硬线 ASIC ISP</td><td>海思 Hi3516 / SigmaStar / 君正 T41</td><td class="r">低（固件不可改）</td><td class="g">极低</td><td class="g">极低（行级）</td><td class="g">低</td><td>安防、车载、IoT</td></tr>
+      <tr><td>可编程 SIMD ISP</td><td>Apple ISP / Qualcomm Spectra</td><td class="g">高（固件可升级）</td><td class="y">中</td><td class="g">低</td><td class="r">高</td><td>高端手机</td></tr>
+      <tr><td>GPU Compute ISP</td><td>NVIDIA Jetson ISP / CUDA</td><td class="g">极高（全可编程）</td><td class="r">高</td><td class="y">中（帧级）</td><td class="r">高</td><td>AI 相机、机器人</td></tr>
+      <tr><td>纯软件 ISP</td><td>libcamera SoftISP / PixelVisualCore</td><td class="g">极高</td><td class="r">极高</td><td class="r">高</td><td class="g">低（无专用硬件）</td><td>低帧率/非实时</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">ISP 的 DDR 带宽需求——4K 场景下的真实压力</div>
+    ISP 处理过程中需要大量读写 DDR（特别是 WDR 多帧合成和 3D NR 需要缓存多帧）。以 4K@30fps YUV420 为例：<br>
+    • 读 RAW (12bit Bayer): 3840×2160×12/8 ≈ <strong>12.4 MB/帧</strong> → 373 MB/s<br>
+    • 写多路 YUV 输出 (主+子): <strong>~15 MB/帧</strong> → 450 MB/s<br>
+    • 3D NR 前后帧读写: <strong>×2~3</strong> → 总带宽可轻易突破 <strong>1.5-2 GB/s</strong><br>
+    这对 DDR3/DDR4 控制器和系统总线（AXI）是巨大的考验，ISP 通常有专用的多级缓存（Line Buffer / Tile Buffer）来降低片外访问次数。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S21: ISP Tuning 实践 -->
+<!-- ============================================================ -->
+<div class="sec" id="s21">
+  <h2 class="sec-title" id="s21t">ISP 调校实践</h2>
+  <p class="sec-sub" id="s21s">一个好的 ISP 参数配置需要数周甚至数月的拍摄-分析-调优循环</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>1. 黑电平标定</h4>
+      <div class="sub">暗室 + OB 像素统计</div>
+      <p>在全黑环境下采集多帧，统计 OB 像素的均值、标准差和行/列剖面。确定 BLC 基准值和行噪声补偿参数。需在不同温度和增益下重复。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>2. LSC 标定</h4>
+      <div class="sub">均匀光源 + 多色温</div>
+      <p>拍摄均匀白板（积分球/灯箱），在 D65/D50/A 等多个色温下分别采集，拟合每个色温下 R/G/B 四通道的径向衰减曲线。LSC 应<strong>在 BLC 之后</strong>标定。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>3. CCM 标定</h4>
+      <div class="sub">24 色卡 + 最小二乘拟合</div>
+      <p>拍摄标准色卡（X-Rite ColorChecker），提取每个色块的 Sensor RGB 值，用最小二乘法拟合 3×3 CCM 矩阵使 ΔE 最小化。需要<strong>分色温做多组 CCM</strong>并随 AWB 插值。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>4. 降噪参数</h4>
+      <div class="sub">多 ISO 级别调节</div>
+      <p>在不同增益（ISO 100/400/1600/6400）下拍摄灰卡和纹理图，平衡噪声抑制与细节保留。Y 通道和 UV 通道独立调优。3D NR 的运动阈值需要运动场景验证。</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>5. AE 策略</h4>
+      <div class="sub">目标亮度 + 曝光表</div>
+      <p>设定目标亮度（Target Luma，通常 18% 灰 = ~128 ADU），编制<strong>曝光表（Exposure Table）</strong>——在每条亮度水平下，曝光时间和增益的最优组合。一般优先增加曝光时间（直到运动模糊极限），再增加模拟增益（直到设定的最高增益）。</p>
+    </div>
+    <div class="g-card" style="--gc:#c084fc">
+      <h4>6. 主观调优</h4>
+      <div class="sub">记忆色 + 场景偏好</div>
+      <p>仪器标定只能保证色彩还原准确——但"好看"和"准确"不是一回事。最终调校需要：<strong>肤色偏好</strong>（白种人/黄种人/黑人不同）、<strong>天空蓝</strong>（饱和但不过饱和）、<strong>绿植</strong>（鲜活但不荧光）。需要大量实景拍摄和主观评价迭代。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">IQ Tuning 工具链</div>
+    工业级 ISP 调校依赖专业工具：<strong>Imatest</strong> / <strong>DXO Analyzer</strong>（客观指标测试——MTF、噪声、色差、动态范围）、<strong>灯箱/标准光源</strong>（D65/D50/TL84/A/Horizon 等多种光源）、<strong>透射式色卡</strong>（精确控制曝光量）、<strong>自动调优框架</strong>（海思 PQTool、安霸 AFT——半自动搜索最优参数组合）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S22: 嵌入式 ISP 实战 -->
+<!-- ============================================================ -->
+<div class="sec" id="s22">
+  <h2 class="sec-title" id="s22t">嵌入式 ISP 实战：从 Sensor 驱动到编码输入</h2>
+  <p class="sec-sub" id="s22s">在 Linux/V4L2 生态中，Sensor 驱动、ISP 驱动、3A 库和应用程序如何协同工作</p>
+
+  <div class="flow-row" style="margin:24px auto;flex-wrap:wrap;gap:4px">
+    <span class="flow-box" style="color:#22d3ee">Sensor 驱动 (v4l2-subdev)</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">MIPI 控制器驱动</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">ISP 驱动 (v4l2-subdev)</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#c084fc">3A 库 (libtuning)</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">V4L2 Video Node (/dev/videoX)</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">编码器 (V4L2 M2M / VAAPI)</span>
+  </div>
+
+  <div class="ptbl" style="margin-top:20px">
+    <table>
+    <thead>
+      <tr><th>环节</th><th>Linux 接口</th><th>关键操作</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Sensor 配置</td><td><code>VIDIOC_SUBDEV_S_FMT</code></td><td>设置分辨率、帧率、Bayer 格式</td><td>通过 I2C 写 Sensor 寄存器</td></tr>
+      <tr><td>MIPI 接收</td><td>Media Controller</td><td>配置 Lane 数、速率</td><td>phy + csi 两个子设备</td></tr>
+      <tr><td>ISP 参数下发</td><td><code>VIDIOC_S_EXT_CTRLS</code></td><td>设置 BLC/DPC/LSC/Gamma 等</td><td>私有扩展控制，厂商特定</td></tr>
+      <tr><td>3A 统计获取</td><td><code>VIDIOC_G_EXT_CTRLS</code> / META</td><td>获取 AE/AWB/AF 直方图和统计量</td><td>中断驱动，每帧更新</td></tr>
+      <tr><td>ISP 输出捕获</td><td><code>VIDIOC_DQBUF / QBUF</code></td><td>DMA-BUF 零拷贝出帧</td><td>通常输出 NV12 格式</td></tr>
+      <tr><td>送入编码器</td><td><code>VIDIOC_QBUF (OUTPUT queue)</code></td><td>将 ISP 输出缓冲送入 M2M 编码器</td><td>或通过 ion/dma-heap 共享</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">libcamera — Linux 相机栈的未来</div>
+    libcamera 是 Linux 基金会主导的新一代相机框架，旨在统一 Android Camera HAL 和 Linux V4L2 两套体系。它提供<strong>统一的 ISP 控制接口（IPA）</strong>和<strong>3A 算法库</strong>，屏蔽不同 ISP 硬件的差异。支持 Pipeline Handler 插件机制适配各厂商 ISP（Intel IPU3/IPU6、RPi ISP、NXP ISI、MediaTek等）。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S22b: IPC 实战经验与工程教训 -->
+<!-- ============================================================ -->
+<div class="sec" id="s22b">
+  <h2 class="sec-title" id="s22bt">IPC 实战：经验教训与工程陷阱</h2>
+  <p class="sec-sub" id="s22bs">实验室里调好的 ISP 参数，到了真实场景往往一塌糊涂——这是 IPC 产品化最痛的领悟</p>
+
+  <!-- 日夜切换 -->
+  <div class="stage-card" style="max-width:960px;margin-top:24px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">1</div>
+    <div class="stage-body">
+      <h4>日夜切换的工程细节</h4>
+      <div class="en">Day/Night Switch — 不止是 IR-Cut 切换那么简单</div>
+      <p>日夜切换涉及一连串联动操作：① ICR 电磁铁动作（200-500ms）→ ② ISP 切换日夜两组参数（AWB 目标、Gamma 曲线、降噪强度、AE 目标亮度都不同）→ ③ 如果从白天切到夜晚且 IR LED 开启，AE 需要<strong>重新收敛</strong>（IR 补光改变了整个场景的亮度分布）→ ④ 从夜切回白天时，IR LED 需要先关再切 ICR（否则 Sensor 在无 IR-Cut 下被 IR LED 照射的画面会过曝）。整套切换序列的时序编排如果出错，就会出现<strong>闪烁、偏色、过曝</strong>。经验：用状态机严格管理切换流程，每个步骤设置超时和回退机制。</p>
+    </div>
+  </div>
+
+  <!-- 常见工程陷阱 -->
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>电源噪声 → 图像横纹</h4>
+      <div class="sub">DC-DC 纹波耦合到 Sensor AVDD</div>
+      <p>Sensor 的模拟供电（AVDD 2.8V）对噪声极度敏感。劣质 DC-DC 的开关纹波（100-500kHz）耦合到 AVDD 上，会表现为画面<strong>固定频率的横向条纹（Banding）</strong>——尤其在低照度高增益时明显。排查：用示波器量 AVDD 纹波，目标 &lt;10mVpp。解决：加 LDO 二次稳压（DC-DC → LDO → AVDD），或增大去耦电容 + 磁珠滤波。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>MIPI 信号完整性</h4>
+      <div class="sub">长排线 + 高速差分信号 = 灾难配方</div>
+      <p>MIPI CSI 每 Lane 速率 1-2.5 Gbps——这是<strong>射频级别的信号</strong>。排线超过 10cm、FPC 弯折、连接器阻抗不匹配都可能导致：<strong>花屏（CRC 错误不纠错）、间歇性丢帧、特定分辨率/帧率下才出问题</strong>。实测经验：排线 ≤ 5cm 安全、5-15cm 需要等长设计和阻抗控制、≥15cm 需用同轴线或 GMSL/FPD-Link 转换。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>温度对焦点的影响</h4>
+      <div class="sub">热胀冷缩导致 Focus Shift</div>
+      <p>IPC 在户外经历 -20°C 到 60°C 的温差——镜筒金属材料的热胀冷缩（~20μm 量级）足以让焦点偏移。白天可能清晰，夜晚低温下变模糊。高端 IPC 镜头使用<strong>低热膨胀系数材料</strong>（如钛合金镜筒），或在 ISP 固件中<strong>根据温度传感器做 AF 补偿</strong>。定焦镜头出厂时需在不同温度下标定最佳焦面。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>球机护罩与光学污染</h4>
+      <div class="sub">Dome Bubble 的 AR 镀膜退化</div>
+      <p>球机透明护罩（PC/PMMA 材质）在户外<strong>紫外线照射</strong>下逐渐黄化，AR 镀膜也会被风沙侵蚀——2-3 年后画面反差下降、杂散光增加。护罩内表面<strong>凝露/起雾</strong>是最头疼的问题：昼夜温差导致内部水汽凝结。解决：填充氮气密封、放置干燥剂包、加热除雾（加热器 + 温度传感器自动控制）。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>IR 补光的实际痛点</h4>
+      <div class="sub">反射、过曝、角度匹配</div>
+      <p>• IR LED 发光角度必须与镜头 FOV 匹配——角度太小则画面边缘暗（手电筒效应）、太大则近处过曝远处不足<br>
+      • 球机/半球 IR 灯板与镜头在同一腔体内，护罩内反射造成<strong>白雾/光晕</strong>——灯板与镜头之间必须有不透光隔离结构<br>
+      • 蜘蛛喜欢在 IR LED 附近结网（红外光吸引昆虫→吸引蜘蛛）——定期清洁或物理防虫设计</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Sensor 老化与像素退化</h4>
+      <div class="sub">长期运行后的画质漂移</div>
+      <p>• <strong>热像素（Hot Pixel）增加</strong>：Sensor 运行数年后暗电流增大，新出现亮坏点——DPC 无法全部覆盖 → 需定期更新坏点表<br>
+      • <strong>CFA 褪色</strong>：紫外线长期照射使颜色滤光片染料退化 → 色彩饱和度下降、白平衡漂移 → 需定期重新标定 CCM/AWB<br>
+      • <strong>BLC 漂移</strong>：暗电流随工作年限增大 → 黑电平基准偏移 → 暗区偏色。需在 OTA 固件中更新 BLC 参数</p>
+    </div>
+  </div>
+
+  <!-- 现场调试经验 -->
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">🔧 IPC 现场调试的黄金法则</div>
+    <strong>1. 永远怀疑电源。</strong>图像异常的第一检查项不是 ISP 参数、不是 Sensor 寄存器——是用示波器看 AVDD/DVDD/DOVDD 纹波。70% 的"ISP 问题"其实是模拟供电噪声。<br>
+    <strong>2. AWB 是大色块场景的第一受害者。</strong>绿草地、红砖墙、大面积单色物体——Gray World 假设直接崩溃。如果客户投诉"白天偏色"，先检查画面中是否有大面积单色区域。<br>
+    <strong>3. 3D NR 的拖影只在运动场景暴露。</strong>实验室用静态图测 3D NR 看不出问题——必须用<strong>实际运动场景</strong>（行人、车辆）验证运动鬼影。运动阈值设太高 → 拖影；设太低 → 降噪效果不足。<br>
+    <strong>4. ISP 参数不能"一套走天下"。</strong>室内/室外、白天/夜晚、晴天/阴天——至少准备 4-6 组场景参数。好的 3A 库会根据 AE 亮度 + AWB 色温 + 运动检测自动切换场景 Profile。
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:8px">
+    <div class="ct">IPC 产品化 Checklist（摘录）</div>
+    □ 24h 连续运行内存/CPU 无泄漏 &nbsp;|&nbsp; □ ICR 切换 1000 次无故障 &nbsp;|&nbsp; □ -20°C~60°C 温箱画质验证<br>
+    □ 各色温下 AWB 收敛时间 &lt;3s &nbsp;|&nbsp; □ IR 反射测试（近距离白墙） &nbsp;|&nbsp; □ MIPI 眼图余量 >30%<br>
+    □ 断电/上电 100 次参数不丢失 &nbsp;|&nbsp; □ OTA 升级后 ISP 参数兼容 &nbsp;|&nbsp; □ SD 卡满/故障时录像不中断
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S23: 总结与选型指南 -->
+<!-- ============================================================ -->
+<div class="sec" id="s23">
+  <h2 class="sec-title" id="s23t">总结：ISP 选型与性能关键路径</h2>
+  <p class="sec-sub" id="s23s">回顾整个 Pipeline，记住几个关键决策点</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>Sensor 选型四要素</h4>
+      <div class="sub">像素尺寸 · 快门类型 · 动态范围 · 接口</div>
+      <p>• <strong>暗光优先</strong>：大像素 (≥2.0μm) + BSI + DCG<br>
+      • <strong>高速运动</strong>：Global Shutter 或极快读出<br>
+      • <strong>高动态场景</strong>：DOL WDR ≥120dB<br>
+      • <strong>接口</strong>：4K+ 用 MIPI 4-lane，1080p 用 2-lane</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>ISP 选型要点</h4>
+      <div class="sub">3A 能力 · 降噪 · WDR · 编码集成</div>
+      <p>• <strong>3A 智能程度</strong>：复杂光源 AWB、混合 AF 最见功力<br>
+      • <strong>降噪水平</strong>：3D NR + AI NR 拉开高低端差距<br>
+      • <strong>WDR 合成</strong>：de-ghost 能力是关键<br>
+      • <strong>集成编码器</strong>：ISP→编码 DMA 直通降低延迟</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>性能关键路径 (Latency)</h4>
+      <div class="sub">光子到编码输出的端到端延迟</div>
+      <p>• 曝光时间：1-33ms（取决于帧率和光照）<br>
+      • Sensor 读出：5-20ms（取决于分辨率和 MIPI 速率）<br>
+      • ISP Pipeline：1-3 帧（33-100ms @30fps）<br>
+      • 编码 (H.264 I 帧)：5-15ms @1080p<br>
+      • <strong>关键词：减少 DDR 往返、减少帧缓存、使用行级流式处理</strong></p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>画质关键路径 (Image Quality)</h4>
+      <div class="sub">决定最终画质差异的核心环节</div>
+      <p>• <strong>光学 > Sensor > ISP > 编码</strong>——源头决定上限<br>
+      • ISP 内部：Demosaic > 降噪 > Tone Mapping > 锐化<br>
+      • 好的光学 + 中端 ISP > 差的光学 + 旗舰 ISP<br>
+      • 好的 Tuning > 好的硬件（但差硬件做不了好 Tuning）</p>
+    </div>
+  </div>
+
+  <div class="flow-row" style="margin:32px auto">
+    <span class="flow-box" style="color:#fbbf24">🔬 光学</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#22d3ee">📷 Sensor</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">⚙️ ISP</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">🎞️ 编码器</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">📡 传输 / 存储</span>
+  </div>
+  <p style="text-align:center;color:#5555aa;font-size:12px;margin-top:8px">每一步都在为下一步"打基础"——前一步的信息丢失永远无法在后一步恢复</p>
+
+  <div style="height:60px"></div>
+  <p style="text-align:center;color:#444466;font-size:11px;margin-top:20px">PawRTC — 图像采集与 ISP 全链路深度解析</p>
+  <p style="text-align:center;color:#444466;font-size:10px">2026 · 持续更新中</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- Intersection Observer + Scroll Animation Script -->
+<!-- ============================================================ -->
+<script>
+(function() {
+  // Intersection Observer for scroll-triggered animations
+  const observerOptions = { root: null, rootMargin: '0px 0px -60px 0px', threshold: 0.1 };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        // Add .vis class to all direct children with animation classes
+        entry.target.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .cv-wrap, .diagram-svg').forEach(el => {
+          el.classList.add('vis');
+        });
+        // Also handle the target itself
+        if (entry.target.classList.contains('sec-title') ||
+            entry.target.classList.contains('sec-sub') ||
+            entry.target.classList.contains('g-card') ||
+            entry.target.classList.contains('stage-card') ||
+            entry.target.classList.contains('cv-wrap') ||
+            entry.target.classList.contains('diagram-svg')) {
+          entry.target.classList.add('vis');
+        }
+        observer.unobserve(entry.target);
+      }
+    });
+  }, observerOptions);
+
+  // Observe all sections
+  document.querySelectorAll('.sec').forEach(sec => observer.observe(sec));
+
+  // Also observe diagram SVGs directly (they might be deep)
+  document.querySelectorAll('.diagram-svg').forEach(el => observer.observe(el));
+})();
+</script>
+
+</body>
+</html>

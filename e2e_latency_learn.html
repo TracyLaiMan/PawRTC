@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>端到端延迟优化 — 从光子到像素的全链路</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}
+.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+.formula{display:inline-block;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);border-radius:8px;padding:4px 12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#a78bfa;margin:4px 2px}
+
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}
+.canvas-wrap canvas{width:100%;height:100%;display:block}
+
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg, rgba(108,99,255,.12), rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+
+/* Latency bar chart */
+.latency-bar{display:flex;align-items:center;gap:0;max-width:960px;width:100%;margin:16px auto;height:28px;border-radius:14px;overflow:hidden}
+.latency-bar .lb-seg{height:100%;transition:all .3s;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center}
+.latency-bar .lb-seg:hover{filter:brightness(1.4);z-index:2}
+.latency-bar .lb-seg .lb-label{font-size:9px;font-weight:700;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+
+/* Latency legend */
+.latency-legend{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:960px;width:100%;margin:10px auto}
+.latency-legend .ll-item{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#8888aa}
+.latency-legend .ll-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+
+/* Gantt-style optimization table */
+.opt-table{max-width:960px;width:100%;margin:16px auto}
+.opt-row{display:grid;grid-template-columns:140px 90px 100px 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,.03);font-size:12px;align-items:center;padding:8px 0}
+.opt-row.header{font-size:10px;font-weight:700;color:#6666aa;text-transform:uppercase;letter-spacing:.5px;padding:6px 0}
+.opt-row .opt-val{font-weight:700}
+.opt-row .opt-before{color:#f87171}
+.opt-row .opt-after{color:#34d399}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}
+.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}
+.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+
+/* Section title colors */
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">延迟全景</a><span class="sep"></span>
+  <a href="#s2">逐段拆解</a><span class="sep"></span>
+  <a href="#s3">编码优化</a><span class="sep"></span>
+  <a href="#s4">传输优化</a><span class="sep"></span>
+  <a href="#s5">渲染优化</a><span class="sep"></span>
+  <a href="#s6">硬件加速</a><span class="sep"></span>
+  <a href="#s7">测量方法</a><span class="sep"></span>
+</nav>
+
+<!-- ===== S1: Hero ===== -->
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:10%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:35%;animation-duration:16s;animation-delay:3s"></div>
+  <div class="particle" style="left:60%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:80%;animation-duration:18s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(30px,5vw,48px);font-weight:900">端到端延迟优化</h2>
+  <p class="sec-sub" id="s1s" style="max-width:680px">从光子撞击 Sensor 到像素出现在屏幕——IPC 实时监控的核心竞争力就是<strong>这段距离有多短</strong></p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">📷 曝光</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#22d3ee">读出</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">ISP</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#c084fc">编码</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">打包</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">网络</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">解码</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24">渲染</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">&lt;100ms</div><div class="l">优秀 (玻璃到玻璃)</div></div>
+    <div class="stat"><div class="n">100-300ms</div><div class="l">可接受 (标准 IPC)</div></div>
+    <div class="stat"><div class="n">&gt;500ms</div><div class="l">不可用 (体感卡顿)</div></div>
+    <div class="stat"><div class="n">8</div><div class="l">优化阶段</div></div>
+  </div>
+
+  <!-- Latency breakdown bar -->
+  <div class="latency-legend" style="margin-top:28px">
+    <div class="ll-item"><div class="ll-dot" style="background:#fbbf24"></div>曝光+读出 ~30ms</div>
+    <div class="ll-item"><div class="ll-dot" style="background:#a78bfa"></div>ISP ~35ms</div>
+    <div class="ll-item"><div class="ll-dot" style="background:#c084fc"></div>编码 ~15ms</div>
+    <div class="ll-item"><div class="ll-dot" style="background:#38bdf8"></div>网络 ~20ms</div>
+    <div class="ll-item"><div class="ll-dot" style="background:#34d399"></div>解码+渲染 ~25ms</div>
+  </div>
+  <div class="latency-bar">
+    <div class="lb-seg" style="width:24%;background:#fbbf24" title="曝光+读出: ~30ms"><span class="lb-label">曝光+读出</span></div>
+    <div class="lb-seg" style="width:28%;background:#a78bfa" title="ISP: ~35ms"><span class="lb-label">ISP</span></div>
+    <div class="lb-seg" style="width:12%;background:#c084fc" title="编码: ~15ms"><span class="lb-label">编码</span></div>
+    <div class="lb-seg" style="width:16%;background:#38bdf8" title="网络: ~20ms"><span class="lb-label">网络</span></div>
+    <div class="lb-seg" style="width:20%;background:#34d399" title="解码+渲染: ~25ms"><span class="lb-label">解码+渲染</span></div>
+  </div>
+  <p style="text-align:center;color:#5555aa;font-size:10px;margin-top:6px">典型 IPC 端到端延迟: ~125ms（玻璃到玻璃）。目标：每一项砍半。</p>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S2: Breakdown of Each Stage ===== -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">延迟逐段拆解与优化</h2>
+  <p class="sec-sub" id="s2s">每一段的延迟是怎么产生的？能优化到什么程度？——8 个阶段逐一解剖</p>
+
+  <div class="stage-card" style="max-width:960px;margin-top:20px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">1</div>
+    <div class="stage-body">
+      <h4>曝光时间 (Exposure Time)</h4>
+      <div class="en">延迟贡献: 1-33ms | 可优化至: 1-5ms | 与光照强度直接冲突</div>
+      <p>曝光时间是延迟的<strong>第一跳</strong>——也是最硬的物理约束。Sensor 必须物理上积累足够光子才能形成可用图像。<strong>优化手段</strong>：① 用更大光圈（F/1.4→F/1.0 让曝光时间减半）② 增大像素尺寸（2.0μm→2.9μm，光子收集效率 ↑2×）③ 接受更高模拟增益换取更短曝光时间（SNR 降低但延迟改善）④ 限制最大曝光时间（如强制 ≤8ms，暗光下允许画面变暗但保证延迟）。典型目标：强光 1-2ms，室内 4-8ms，暗光 ≤16ms。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#22d3ee">
+    <div class="stage-num" style="background:#22d3ee">2</div>
+    <div class="stage-body">
+      <h4>Sensor 读出 (Sensor Readout)</h4>
+      <div class="en">延迟贡献: 5-33ms | 可优化至: 3-10ms | 与分辨率直接冲突</div>
+      <p>Rolling Shutter 逐行读出——最后一行的曝光结束时刻比第一行晚一个帧周期。<strong>优化手段</strong>：① 提高 MIPI 时钟（2-lane→4-lane，每 lane 1Gbps→2.5Gbps）② 降低分辨率（4K→1080p，数据量降 4×）③ 使用更快的读出模式（Sony 的 10bit→8bit 压缩读出）④ 裁剪 ROI 只读出感兴趣区域（如 1920×1080→1280×720 窗口裁剪）⑤ 提高帧率（30fps→60fps，每帧读出时间减半）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#a78bfa">
+    <div class="stage-num" style="background:#a78bfa">3</div>
+    <div class="stage-body">
+      <h4>ISP 管线 (ISP Pipeline)</h4>
+      <div class="en">延迟贡献: 33-100ms (1-3帧) | 可优化至: 5-16ms (行级)</div>
+      <p>ISP 是延迟的大头。传统 ISP 先缓存一整帧再处理 → 至少 1 帧延迟。<strong>优化手段</strong>：① <strong>行级流式处理 (Line-based Streaming)</strong>——ISP 不等待整帧到齐，只要积累几行就开始处理。硬线 ISP 通常只需 3-10 行缓存即可启动，延迟从帧级降到行级（&lt;1ms 额外延迟）。② 关闭不必要的 ISP 阶段（如 3D NR 需要多帧缓存→0ms，降级为 2D NR）。③ 关闭 LDC（Warp 引擎需要帧级缓存→0ms）。④ 用简化 Demosaic 算法（Bilinear 替代高级方法）。<strong>低延迟 ISP 配置通常牺牲画质换取速度</strong>——这是延迟与质量的最核心权衡。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#c084fc">
+    <div class="stage-num" style="background:#c084fc">4</div>
+    <div class="stage-body">
+      <h4>视频编码 (Video Encoding)</h4>
+      <div class="en">延迟贡献: 5-50ms | 可优化至: 2-8ms | 硬件编码器是关键</div>
+      <p>编码延迟取决于三个因素：硬件 vs 软件、GOP 结构、码率控制。<strong>优化手段见 S3 专门章节</strong>。核心：使用硬件编码器 + 无 B 帧 + 低延迟码控 + 单 slice 编码。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#f472b6">
+    <div class="stage-num" style="background:#f472b6">5</div>
+    <div class="stage-body">
+      <h4>发送端打包与缓冲 (Tx Packing)</h4>
+      <div class="en">延迟贡献: 1-10ms | 可优化至: &lt;1ms | 通常不是瓶颈但易被忽视</div>
+      <p>RTP 打包、加密（SRTP）、FEC 编码、NACK 重传缓冲区——每个环节增加微小的处理延迟。<strong>优化手段</strong>：① 编码帧输出直接 DMA 到网络发送缓冲区，零拷贝 ② 减少 RTP 分包数（增大 MTU 或使用 RTP 扩展头减少包数）③ 关闭 FEC（减少前向纠错的编码延迟，但降低弱网鲁棒性）④ SRTP 加密使用 AES-GCM 硬件加速。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#38bdf8">
+    <div class="stage-num" style="background:#38bdf8">6</div>
+    <div class="stage-body">
+      <h4>网络传输 (Network)</h4>
+      <div class="en">延迟贡献: 1-200ms | 可优化至: &lt;5ms(LAN)/10-30ms(WAN) | 不可控因素最多</div>
+      <p>有线以太网延迟 &lt;1ms，WiFi 2-20ms（取决于干扰和距离），4G 20-80ms。优化手段见 S4。核心思想：发送端尽可能<strong>即刻发送</strong>（不攒批），接收端 <strong>Jitter Buffer 最小化</strong>（接受丢帧换延迟）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#34d399">
+    <div class="stage-num" style="background:#34d399">7</div>
+    <div class="stage-body">
+      <h4>接收端解码 (Rx Decode)</h4>
+      <div class="en">延迟贡献: 1-20ms | 可优化至: 1-5ms | 硬件解码器是关键</div>
+      <p>硬件 H.264 解码器延迟通常 1-5ms。软件解码（FFmpeg/软解）5-20ms。<strong>优化手段</strong>：① 使用硬件解码器 (VAAPI/VDPAU/MediaCodec/VideoToolbox) ② 解码后直接渲染，不做中间拷贝 ③ 关闭解码器的输出重排序缓冲（B 帧重排需要额外缓冲）④ 使用 <strong>低延迟解码模式</strong>（如 FFmpeg 的 <code>lowres</code> 或硬件解码器的低延迟 flag）。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#fbbf24">
+    <div class="stage-num" style="background:#fbbf24">8</div>
+    <div class="stage-body">
+      <h4>渲染显示 (Render & Display)</h4>
+      <div class="en">延迟贡献: 1-33ms | 可优化至: 2-8ms | 显示管线 vs 垂直同步</div>
+      <p>渲染本身很快（GPU 纹理映射 &lt;1ms），但<strong>等待垂直同步（VSync）</strong>可能引入 0-16.7ms (60Hz) 的额外延迟。移动端显示管线的合成（SurfaceFlinger/Compositor）也有 1-2 帧缓冲。<strong>优化手段</strong>：① 禁用 VSync 或使用 <strong>Adaptive VSync</strong> ② Android 上使用 <code>AAudio</code> 低延迟音频 + <code>ANativeWindow</code> 直接渲染 ③ 使用 <strong>异步渲染</strong>（解码完成立刻提交，不等 VSync 对齐）。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S3: Encoder Optimization ===== -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">编码器延迟优化（深度）</h2>
+  <p class="sec-sub" id="s3s">编码器延迟受 GOP 结构、码控策略、硬件架构三重影响——逐一击破</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>GOP 结构</h4>
+      <div class="sub">最关键的单因素</div>
+      <p><strong>关闭 B 帧</strong>（B 帧需要等待未来帧，引入 1-3 帧延迟）。使用 <span class="formula">IPPPP...</span> 结构。<br>
+      <strong>GOP 长度 ≤ 帧率</strong>（如 30fps → GOP ≤ 30 即 1 秒一个 I 帧）。<br>
+      极端低延迟：<strong>全 I 帧</strong>（无帧间预测延迟，但码率暴增 5-10×）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>码率控制</h4>
+      <div class="sub">CBR vs VBR vs CVBR</div>
+      <p><strong>CBR</strong> 延迟最可控（每帧目标大小固定）但画质波动。<br>
+      <strong>CVBR（Capped VBR）</strong>折中选择——允许码率波动但有上限。<br>
+      避免 <strong>CRF（恒定质量）</strong>：I 帧可能极大导致传输延迟尖峰。<br>
+      使用 <strong>HRD（Hypothetical Reference Decoder）</strong>兼容的码控，确保解码缓冲不溢出。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>编码器参数</h4>
+      <div class="sub">调参换取低延迟</div>
+      <p><strong>单 Slice 编码</strong>（多 Slice 需要等所有 Slice 到齐）。<br>
+      <strong>关闭 Lookahead</strong>（预分析未来帧引入延迟）。<br>
+      <strong>减少 Reference Frames</strong>（ref=1 而非 ref=4，减少运动搜索范围）。<br>
+      <strong>使用 CAVLC</strong>而非 CABAC（熵编码更快但压缩率略降）。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>编码器类型</th><th>典型延迟</th><th>适用场景</th><th>画质代价</th><th>典型方案</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="r">软件编码 (x264 ultrafast)</td><td class="r">5-15ms (1080p)</td><td>服务器、桌面</td><td class="y">中等</td><td>x264 preset=ultrafast, tune=zerolatency</td></tr>
+      <tr><td class="y">软件编码 (x264 medium)</td><td class="y">20-50ms</td><td>非实时场景</td><td class="g">好</td><td>默认 preset</td></tr>
+      <tr><td class="g">硬件编码 (Rockchip MPP)</td><td class="g">2-5ms</td><td>嵌入式 IPC</td><td class="y">中等</td><td>MPP + 无 B 帧 + low_delay flag</td></tr>
+      <tr><td class="g">硬件编码 (NVIDIA NVENC)</td><td class="g">1-3ms</td><td>边缘服务器</td><td class="g">好</td><td>NVENC low-latency preset</td></tr>
+      <tr><td class="g">硬件编码 (Intel QSV)</td><td class="g">2-4ms</td><td>桌面/服务器</td><td class="g">好</td><td>QSV lowpower mode</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">x264 低延迟魔法参数</div>
+    <div class="cblock" style="margin-top:0"><span class="kw">x264_param_default</span>(&param);
+param.i_fps_num = <span class="nu">30</span>;
+param.i_keyint_max = <span class="nu">30</span>;        <span class="cm">// GOP=1秒（30fps下）</span>
+param.i_bframe = <span class="nu">0</span>;              <span class="cm">// 关闭B帧——最关键的设置</span>
+param.i_threads = <span class="nu">1</span>;             <span class="cm">// 单线程编码（避免帧级并行延迟）</span>
+param.b_sliced_threads = <span class="nu">1</span>;      <span class="cm">// 或使用slice级多线程</span>
+param.rc.i_rc_method = X264_RC_ABR;   <span class="cm">// ABR码控</span>
+param.rc.i_vbv_buffer_size = <span class="nu">1000</span>; <span class="cm">// 小VBV缓冲(1秒)→编码延迟可控</span>
+param.rc.i_vbv_max_bitrate = <span class="nu">2000</span>; <span class="cm">// VBV上限</span>
+param.b_vfr_input = <span class="nu">0</span>;           <span class="cm">// 强制CFR</span>
+param.i_lookahead = <span class="nu">0</span>;           <span class="cm">// 关闭预分析——零延迟的关键</span></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S4: Network Optimization ===== -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">网络传输延迟优化</h2>
+  <p class="sec-sub" id="s4s">网络是不可控变量最多的环节——但仍有大量手段可以压低延迟</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>发送端：零攒批策略</h4>
+      <div class="sub">编码完立刻发，不等</div>
+      <p>• H.264 编码器输出一帧 → <strong>立刻</strong> RTP 打包发送，不等待下一帧<br>
+      • 禁用 <strong>Nagle 算法</strong>（TCP_NODELAY / UDP 天然无此问题）<br>
+      • <strong>分散发送</strong>：不要把一整帧塞进一个 UDP 包（会被 IP 层分片重组引入延迟）→ 按 MTU 大小（~1400 bytes）分 RTP 包<br>
+      • 减小 RTP 打包间隔：不要等所有 RTP 包都准备好才开始发——第一个包准备好就发</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>接收端：Jitter Buffer 最小化</h4>
+      <div class="sub">缓冲越深 = 抗抖动越强 = 延迟越大</div>
+      <p>• <strong>自适应 Jitter Buffer</strong>：开始时缓冲 0ms，检测到抖动后<strong>逐步增大</strong>（而非一开始就设大缓冲）<br>
+      • WebRTC 默认 Jitter Buffer 目标延迟 30-200ms → 对 IPC 可以压低到 <strong>10-50ms</strong><br>
+      • 配合 NACK：丢包用重传而非 FEC（FEC 需要等待冗余包到齐）<br>
+      • <strong>Active Fast-Forward</strong>：如果缓冲开始堆积（网络恢复后积压帧涌入），加速播放或丢帧清空缓冲</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>WebRTC 调参实战</h4>
+      <div class="sub">修改 WebRTC 内部参数适应低延迟场景</div>
+      <p>• <strong>减少 NACK 重传等待</strong>：默认 RTT×1.5→改为 RTT×1.0<br>
+      • <strong>缩小 Playout Delay</strong>：<code>playout_delay.min = 0ms, max = 50ms</code><br>
+      • <strong>禁用 FEC</strong>（音频除外——音频 FEC 代价小）<br>
+      • <strong>降低 PLI 触发阈值</strong>：更快请求关键帧<br>
+      • <strong>使用单一 RTP Stream</strong>，不启用 Simulcast（多个流增加调度复杂度）</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>物理层优化</h4>
+      <div class="sub">硬件层面的延迟削减</div>
+      <p>• <strong>有线 > WiFi > 4G > 5G</strong>（延迟依次增大）<br>
+      • WiFi：使用 5GHz（比 2.4GHz 延迟低、干扰少）、启用 <strong>WMM (QoS)</strong><br>
+      • 4G/5G：使用 <strong>URLLC</strong>（5G 超低延迟模式）或专网切片<br>
+      • 交换机：使用 <strong>直通转发</strong>（Cut-Through）而非存储转发<br>
+      • 路由器：禁用深度包检测 (DPI)，减少 bufferbloat<br>
+      • <strong>关键：控制网络路径的跳数</strong>——每增加一跳路由器增加 0.5-5ms</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S5: Render Pipeline Optimization ===== -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">渲染管线优化</h2>
+  <p class="sec-sub" id="s5s">解码完毕到像素点亮屏幕——最后一公里的优化</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>零拷贝渲染链路</h4>
+      <div class="sub">DMA-BUF 贯穿全链路</div>
+      <p>解码器输出 → DMA-BUF → GPU 纹理 → DRM/KMS 直接显示。全程不经过 CPU 拷贝。每减少一次 memcpy 节省 1-3ms (1080p 帧 3MB 内存带宽 ~3GB/s → ~1ms/copy)。Linux 上使用 <code>dma-heap</code> 或 <code>ION</code> 分配器 + <code>EGL_EXT_image_dma_buf_import</code> 扩展。</p>
+    </div>
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>VSync 策略</h4>
+      <div class="sub">垂直同步的双刃剑</div>
+      <p>VSync ON：画面无撕裂但引入 0-16.7ms 额外延迟（60Hz）。<br>
+      <strong>Adaptive VSync</strong>：帧率 &gt; 刷新率时开启（防撕裂），帧率 &lt; 刷新率时关闭（降低延迟）。<br>
+      <strong>Immediate Present</strong>：解码完成立刻提交显示，不等待 VSync 对齐——会有撕裂但在监控场景可接受。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>Android 特定优化</h4>
+      <div class="sub">SurfaceFlinger + AAudio</div>
+      <p>• 使用 <code>ANativeWindow_setBuffersGeometry</code> 设置最小缓冲数（2 而非 3）<br>
+      • 使用 <code>AAudio MMAP 模式</code>（绕过 AudioFlinger 混音器，延迟从 40ms→10ms）<br>
+      • 视频使用 <code>ASurfaceTexture</code> 异步模式（不等待 Choreographer）<br>
+      • 禁用 GPU 合成器的额外缓冲层</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S6: Hardware Acceleration ===== -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">硬件加速路径与 DMA 直通</h2>
+  <p class="sec-sub" id="s6s">IPC SoC 内部的总线架构决定了延迟下限——理解硬件才能榨干最后一毫秒</p>
+
+  <div class="canvas-wrap" data-reveal style="height:380px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>理想 DMA 直通链路</h4>
+      <div class="sub">0 CPU 拷贝，全硬件加速</div>
+      <p>Sensor(MIPI) → ISP(硬线) → DDR(RGB/YUV) → 编码器(硬线, 从 DDR 读) → 编码输出(DDR) → 网卡(DMA, 从 DDR 读)。CPU 只做控制（启动/停止/参数配置），<strong>数据面完全不经过 CPU</strong>。延迟：ISP 行级 (3-10行缓存) + 编码器 slice 级 (几个宏块行缓存) + DMA 传输 = 总延迟 &lt; 20ms（不含曝光）。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>踩坑：伪硬件加速</h4>
+      <div class="sub">看似硬编，实则数据反复搬运</div>
+      <p>• ISP 输出到 DDR → CPU <strong>memcpy</strong> 到编码器输入 buf → 编码器读回 DDR（多余的来回）<br>
+      • 编码器输出在 DDR → CPU <strong>拷贝</strong> 到用户态 → 再 <strong>拷贝</strong> 到 socket 发送缓冲 → 网卡 DMA（两次多余拷贝）<br>
+      • <strong>诊断方法</strong>：用 <code>perf record</code> 看 <code>memcpy</code>/<code>copy_to_user</code> 的 CPU 占比——如果编码 1080p@30fps 时 memcpy 占 >5% CPU，说明数据搬运路径有问题。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">Rockchip RV1106/RV1109 低延迟参考架构</div>
+    <div class="cblock" style="margin-top:0"><span class="cm">// 低延迟视频编码+传输链路（基于 Rockchip MPP + RKMEDIA）</span>
+<span class="cm">// 1. VI (Video Input) 直接从 ISP 获取 YUV 帧</span>
+VI → <span class="st">"rkispp"</span> (ISP subdev) → DMA-BUF → VI capture node
+
+<span class="cm">// 2. 编码器从 VI 的 DMA-BUF 直接读取（零拷贝）</span>
+MPP_ENC → <span class="kw">import</span> DMA-BUF fd → H.264 encode → output DMA-BUF
+
+<span class="cm">// 3. RTP 打包直接用编码输出的 DMA-BUF（零拷贝发送）</span>
+RTP → <span class="kw">reference</span> DMA-BUF (no copy) → sendto()
+
+<span class="cm">// 全链路 CPU 只参与控制面，数据面完全在硬件+DMA</span></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ===== S7: Measurement ===== -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">延迟测量方法</h2>
+  <p class="sec-sub" id="s7s">没有测量就没有优化——三种量化玻璃到玻璃延迟的实用方法</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>方法 1: 毫秒计时器法</h4>
+      <div class="sub">最经典，精度 ~1ms</div>
+      <p>在 IPC 镜头前放一个<strong>显示毫秒级数字的屏幕</strong>（如手机运行毫秒计时器 App）。IPC 采集并传输，在接收端<strong>用另一台相机同时拍下 IPC 镜头前的计时器 和 接收端的显示画面</strong>。两张照片上计时器读数的差值 = 端到端延迟。这是业界标准方法，精度取决于相机快门速度（&lt;1ms 快门 = &lt;1ms 精度）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>方法 2: LED 触发法</h4>
+      <div class="sub">硬件级精度，&lt;1ms</div>
+      <p>GPIO 触发 LED 亮起 → IPC 采集到 LED 亮 → 接收端显示。用<strong>光电二极管</strong>检测 LED 亮起的时刻 T1，再用另一个光电二极管检测接收端屏幕出现 LED 画面的时刻 T2。T2-T1 = 端到端延迟。<strong>精度可达微秒级</strong>。适合实验室精确测量，不适合现场快速评估。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>方法 3: SEI 时间戳法</h4>
+      <div class="sub">软件方法，精度 ~1ms</div>
+      <p>在 H.264 SEI NAL 单元中嵌入<strong>发送端的高精度时间戳</strong>（PTP/NTP 时间或 CLOCK_MONOTONIC）。接收端解码后立即记录自己的系统时钟，与 SEI 中的时间戳比较。要求发送端和接收端的时钟通过<strong>PTP/NTP 同步</strong>（偏差 &lt;1ms）。优点：可以在每个 GOP 甚至每帧检测延迟变化趋势，适合持续监控。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead>
+      <tr><th>测量方法</th><th>精度</th><th>是否需要同步时钟</th><th>适合场景</th><th>局限性</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="g">毫秒计时器</td><td class="g">~1ms</td><td class="g">不需要</td><td>实验室 + 现场快速评估</td><td>需要高速快门相机，人工读刻度</td></tr>
+      <tr><td class="g">LED + 光电探测器</td><td class="g">&lt;0.1ms</td><td class="g">不需要</td><td>实验室精确测量</td><td>需要硬件搭建，不适合现场</td></tr>
+      <tr><td>SEI 时间戳</td><td>~1ms</td><td class="r">需要 (PTP/NTP)</td><td>持续生产监控</td><td>依赖时钟同步精度</td></tr>
+      <tr><td>RTCP RR (Round-Trip)</td><td>~5ms</td><td class="g">不需要</td><td>WebRTC 内置</td><td>测量的是 RTT 而非单向延迟</td></tr>
+      <tr><td>Wireshark RTP 分析</td><td>~10ms</td><td class="y">需要（捕获时钟）</td><td>网络层分析</td><td>只覆盖网络段，不含采集/渲染</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠️ 常见测量误区</div>
+    <strong>1. 用 ping 延迟代替端到端延迟。</strong>ping 只测了网络 ICMP 延迟——忽略了 Sensor、ISP、编码、解码、渲染各段，误差可达 50-150ms。<br>
+    <strong>2. 静态场景测延迟。</strong>静态画面下编码器输出极小（P 帧几乎全 Skip Block），编码延迟异常低（~1ms），不能代表真实场景。必须用<strong>动态场景</strong>（如旋转风扇）测量。<br>
+    <strong>3. 用平均延迟代替 P99 延迟。</strong>I 帧周期性地引入延迟尖峰——<strong>P99 延迟</strong>（最大 1% 的帧延迟）才是用户真正感受到的卡顿。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  端到端延迟优化 · 从光子到像素的全链路 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="av_sync_learn.html">音视频同步 →</a>
+</footer>
+
+<script>
+// ===== Scroll Reveal =====
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+
+// ===== Top Nav =====
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});
+  });
+});
+
+// ===== Canvas: Hardware DMA Pipeline =====
+(function() {
+  const c = document.getElementById('c1');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=380;
+    c.width=W*dpr; c.height=H*dpr;
+    c.style.width=W+'px'; c.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  function drawBlock(x, y, w, h, label, color, alpha) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha || 0.15;
+    ctx.beginPath();
+    ctx.roundRect(x-w/2, y-h/2, w, h, 10);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#d0d0f0';
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y+4);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawDmaArrow(x1, y1, x2, y2, color, label) {
+    const progress = 0.3 + Math.sin(t*2 + x1*0.01)*0.2;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6,3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Animated dot
+    const dx = x1 + (x2-x1)*progress, dy = y1 + (y2-y1)*progress;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 5, 0, Math.PI*2);
+    ctx.fill();
+    // Label
+    if(label) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.6;
+      ctx.font = '10px -apple-system, "Noto Sans SC", sans-serif';
+      ctx.fillText(label, (x1+x2)/2, (y1+y2)/2 - 12);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function animate() {
+    t += 0.016;
+    ctx.clearRect(0,0,W,H);
+
+    // Layout: DDR in center, ISP/ENC/NIC around it
+    const cx = W/2, cy = H/2;
+
+    // Title
+    ctx.fillStyle = '#e0e0ff';
+    ctx.font = 'bold 14px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('IPC SoC 内部: 理想 DMA 直通架构（数据面零 CPU 参与）', cx, 24);
+
+    // DDR (center)
+    drawBlock(cx, cy, 180, 80, 'DDR\n(帧缓冲)', '#c084fc', 0.2);
+
+    // Sensor + ISP (top)
+    drawBlock(cx-180, 100, 140, 60, 'Sensor\nMIPI RX', '#fbbf24', 0.15);
+    drawBlock(cx, 100, 140, 60, 'ISP 硬线\nLine-based', '#a78bfa', 0.15);
+
+    // Encoder (left)
+    drawBlock(cx-180, cy, 130, 60, 'H.264 编码器\n硬件 IP', '#38bdf8', 0.15);
+
+    // NIC (right)
+    drawBlock(cx+180, cy, 120, 60, 'GMAC\n网卡 DMA', '#34d399', 0.15);
+
+    // CPU (bottom)
+    drawBlock(cx, H-60, 200, 50, 'CPU (只做控制面)', '#f87171', 0.08);
+
+    // DMA arrows
+    drawDmaArrow(cx-90, 100, cx-50, cy-20, '#fbbf24', 'DMA Write');
+    drawDmaArrow(cx-90, 100, cx-50, cy-20, '#a78bfa', '');
+    drawDmaArrow(cx-50, cy-20, cx-110, cy, '#38bdf8', 'DMA Read');
+    drawDmaArrow(cx-110, cy, cx-50, cy+20, '#38bdf8', 'DMA Write');
+    drawDmaArrow(cx+50, cy+20, cx+120, cy, '#34d399', 'DMA Read');
+    drawDmaArrow(cx+120, cy, cx+170, 300, '#34d399', 'DMA→PHY');
+
+    // CPU control lines (thin dashed)
+    ctx.strokeStyle = '#f87171';
+    ctx.globalAlpha = 0.2;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2,6]);
+    ['Sensor','ISP','Encoder','NIC'].forEach((label, i) => {
+      ctx.beginPath();
+      ctx.moveTo(cx-50 + i*40, H-35);
+      ctx.lineTo(cx-50 + i*40, cy+40);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+
+    // Labels
+    ctx.fillStyle = '#a78bfa';
+    ctx.globalAlpha = 0.6;
+    ctx.font = '11px -apple-system, "Noto Sans SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('数据流: Sensor→ISP→DDR→Encoder→DDR→NIC→Network (全部 DMA, 零 CPU 拷贝)', cx, H-15);
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

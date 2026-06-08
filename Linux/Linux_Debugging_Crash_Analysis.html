@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 调试与崩溃分析 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.6; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,40px);font-weight:900">Linux 调试与崩溃分析</h2>
+  <p class="sec-sub">系统化知识体系 — Core Dump · GDB · 编译参数 · Sanitizer · Valgrind · perf · strace · 方法论</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>编译期</strong><br><small>-g · sanitizers</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>运行期</strong><br><small>strace · perf · valgrind</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>崩溃时</strong><br><small>Core Dump · signal</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>事后分析</strong><br><small>GDB · coredumpctl</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>编译与符号</h4><div class="sub">-g · -O0 · -fno-omit-frame-pointer</div>
+      <p><em>Debug 符号</em> 是调试的基石。不同优化级别影响调试体验。<code>-fsanitize=address/undefined</code> 在编译期注入运行时检查。DWARF 调试信息格式支持源代码级调试。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Core Dump 机制</h4><div class="sub">do_coredump() → ELF 文件</div>
+      <p>致命信号 (SIGSEGV/SIGABRT...) 触发内核 <em>do_coredump()</em>，生成 ELF 格式 core 文件，包含<strong>所有线程寄存器</strong>、<strong>内存映射</strong>、<strong>打开文件列表</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>GDB 实战分析</h4><div class="sub">bt · frame · x · info registers</div>
+      <p><code>bt full</code> 查看全线程调用栈+变量 · <code>frame N</code> 切换栈帧 · <code>x/Ngx $rsp</code> 检查栈内存 · <code>thread apply all bt</code> 多线程诊断。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 编译参数 ══ -->
+<h2 class="sh">1. 编译参数 — 调试的基石</h2>
+<p class="ss">正确的编译选项是有效调试的前提 — Debug 符号 · 优化级别 · Sanitizer 注入 · 帧指针 · 地址无关</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Debug 符号</h4><div class="lbl">-g · DWARF 调试信息</div>
+    <p><code>-g</code>: 生成 DWARF 调试信息 (函数名/行号/变量/类型)。<br>
+    <code>-g3</code>: 额外包含<strong>宏定义</strong> 信息。<br>
+    <code>-ggdb</code>: 针对 GDB 优化格式。<br>
+    <code>-gdwarf-4/5</code>: 指定 DWARF 版本。<br>
+    Debug 符号可后续用 <code>strip</code> 移除或 <code>objcopy --only-keep-debug</code> 分离。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>优化级别对调试的影响</h4><div class="lbl">-O0 → -O2 → -Os</div>
+    <p><code>-O0</code>: 不优化 — 变量值精确，但性能差。<br>
+    <code>-Og</code>: ★ <strong>调试推荐</strong> — 开启不影响调试的优化。<br>
+    <code>-O2</code>: 常见优化 — 变量常被优化掉 (<code>&lt;optimized out&gt;</code>)，但可配合 <code>-fvar-tracking</code> 缓解。<br>
+    <code>-Os</code>: 体积优化 — 嵌入式常用。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Sanitizer 与帧指针</h4><div class="lbl">运行时检查 + perf 回溯</div>
+    <p><code>-fsanitize=address</code> (ASan) — 堆/栈越界、use-after-free<br>
+    <code>-fsanitize=undefined</code> (UBSan) — 整数溢出、空指针<br>
+    <code>-fsanitize=thread</code> (TSan) — 数据竞争<br>
+    <code>-fno-omit-frame-pointer</code> — <strong>perf 回溯必需</strong> (x86_64 上 -O2 默认省略 rbp)</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 推荐的调试编译组合 ===== */</span>
+<span class="cm"># 开发调试构建</span>
+CFLAGS=<span class="st">"-g3 -Og -fno-omit-frame-pointer -Wall -Wextra"</span>
+
+<span class="cm"># 运行时内存检查构建</span>
+CFLAGS=<span class="st">"-g3 -O0 -fsanitize=address -fsanitize=undefined"</span>
+<span class="kw">export</span> ASAN_OPTIONS=<span class="st">detect_leaks=1:halt_on_error=0:log_path=asan.log</span>
+
+<span class="cm"># 线程竞争检查构建</span>
+CFLAGS=<span class="st">"-g3 -O1 -fsanitize=thread"</span>
+
+<span class="cm"># perf 性能分析构建</span>
+CFLAGS=<span class="st">"-g -O2 -fno-omit-frame-pointer"</span>
+
+<span class="cm">/* ===== 分离 Debug 符号 (生产环境) ===== */</span>
+objcopy --only-keep-debug myapp myapp.debug
+strip --strip-debug myapp
+objcopy --add-gnu-debuglink=myapp.debug myapp
+<span class="cm"># GDB 会自动查找 .debug 文件</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 常见误区</div>
+  <strong>-O2 调试</strong>: 变量显示 <code>&lt;optimized out&gt;</code> 是正常的 — 编译器已将变量放入寄存器或消除。使用 <code>-Og</code> 或 <code>-O0</code> 获得更好的调试体验。<br>
+  <strong>Release build 无符号</strong>: 即使不带 <code>-g</code>，仍可调试汇编级别。配合 <code>objdump -d</code> 和 <code>addr2line</code> 定位崩溃地址。
+</div>
+
+<!-- ══ Ch2: Core Dump ══ -->
+<h2 class="sh">2. Core Dump — 内核崩溃转储机制</h2>
+<p class="ss">致命信号 → do_coredump() → ELF 格式 core 文件 · core_pattern 管道 · coredump_filter 过滤 · systemd-coredump</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>触发流程 — 内核侧</h4><div class="lbl">fs/coredump.c — do_coredump()</div>
+    <p>① 进程收到<strong>致命信号</strong> (SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGQUIT...)<br>
+    ② <strong>检查条件</strong>: <code>get_dumpable()</code> (suid_dumpable) · RLIMIT_CORE (`ulimit -c`) · 文件系统可写<br>
+    ③ <strong>格式化路径</strong>: <code>format_corename()</code> 根据 <code>/proc/sys/kernel/core_pattern</code> 生成文件名<br>
+    ④ <strong>输出格式</strong>: <code>binfmt-&gt;core_dump()</code> (ELF: fs/binfmt_elf.c) → 写内存段 + Notes 元数据<br>
+    ⑤ <strong>管道模式</strong>: 若 core_pattern 以 <code>|</code> 开头 → 数据 pipe 到用户空间 handler</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ELF Core 文件内容</h4><div class="lbl">Program Headers + Notes + 内存段</div>
+    <p><strong>ELF Header</strong>: 架构 (x86_64/ARM64)、类型 ET_CORE<br>
+    <strong>PT_NOTE Notes</strong>:
+      <code>NT_PRSTATUS</code> — <strong>★ 每线程寄存器状态</strong><br>
+      <code>NT_PRPSINFO</code> — PID/PPID/信号号<br>
+      <code>NT_FPREGSET</code> — 浮点寄存器<br>
+      <code>NT_AUXV</code> — 辅助向量<br>
+      <code>NT_FILE</code> — 映射文件路径列表<br>
+      <code>NT_SIGINFO</code> — siginfo_t (含 si_addr 故障地址!)<br>
+    <strong>PT_LOAD 段</strong>: 每个被转储 VMA 的内存页</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== Core Dump 配置 ===== */</span>
+<span class="cm"># 查看当前 core 大小限制 (0 = 禁用, unlimited = 不限制)</span>
+ulimit -c
+ulimit -c unlimited       <span class="cm">// ★ 必须设置! 否则段错误只输出 "Segmentation fault"</span>
+
+<span class="cm"># 查看/设置 core 文件名模式</span>
+cat /proc/sys/kernel/core_pattern
+<span class="cm"># 默认: core (仅 core 文件名, 保存在当前目录)</span>
+
+<span class="cm"># 推荐: 含 PID + 程序名 + 时间戳</span>
+echo <span class="st">"/var/coredumps/core.%e.%p.%t"</span> | <span class="kw">sudo tee</span> /proc/sys/kernel/core_pattern
+
+<span class="cm"># systemd 管道模式 (systemd-coredump)</span>
+<span class="cm"># 查看: cat /proc/sys/kernel/core_pattern</span>
+<span class="cm"># 输出: |/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h</span>
+
+<span class="cm"># core_pattern 格式符:</span>
+<span class="cm"># %e=执行文件名  %p=PID  %t=时间戳  %s=信号号  %h=主机名</span>
+<span class="cm"># %P=PID(全局)  %u=UID  %g=GID  %c=rlimit大小  %E=执行文件路径</span>
+
+<span class="cm">/* ===== coredump_filter — 控制转储哪些 VMA ===== */</span>
+cat /proc/$$/coredump_filter   <span class="cm">// 查看当前值 (默认 0x33)</span>
+<span class="cm">// bit 0 (0x01): 匿名私有内存</span>
+<span class="cm">// bit 1 (0x02): 匿名共享内存</span>
+<span class="cm">// bit 2 (0x04): 文件映射私有内存</span>
+<span class="cm">// bit 3 (0x08): 文件映射共享内存</span>
+<span class="cm">// bit 4 (0x10): ELF 头部</span>
+<span class="cm">// bit 5 (0x20): HugeTLB 私有</span>
+echo <span class="nu">0x3f</span> &gt; /proc/$$/coredump_filter  <span class="cm">// 转储所有映射 (包括 .text/.rodata)</span></div>
+
+<div class="callout info">
+  <div class="ct">systemd-coredump — 现代 Linux 的 core 管理</div>
+  若 core_pattern 是 systemd 管道，core 被压缩存储在 <code>/var/lib/systemd/coredump/</code>。使用 <strong>coredumpctl</strong> 交互式管理:<br>
+  <code>coredumpctl list</code> — 列出所有 core · <code>coredumpctl info</code> — 最后崩溃详情<br>
+  <code>coredumpctl gdb</code> — <strong>★ 直接启动 GDB 分析最近崩溃</strong> (自动找到二进制和 core!)
+</div>
+
+<!-- ══ Ch3: GDB ══ -->
+<h2 class="sh">3. GDB — 核心调试器实战</h2>
+<p class="ss">Core 分析 · 实时调试 · 栈帧回溯 · 寄存器/内存检查 · 多线程 · 信号分析 · Python 自动化</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>类别</th><th>命令</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="5"><strong>栈帧回溯</strong></td><td><code>bt</code></td><td>当前线程调用栈</td></tr>
+    <tr><td><code class="g">bt full</code></td><td class="g"><strong>★ 完整回溯 + 所有局部变量值</strong></td></tr>
+    <tr><td><code>bt 10</code></td><td>只显示前 10 帧</td></tr>
+    <tr><td><code class="g">thread apply all bt</code></td><td class="g"><strong>★ 所有线程的回溯 (最重要!)</strong></td></tr>
+    <tr><td><code>thread apply all bt full</code></td><td>所有线程完整回溯+变量 — 输出到文件分析</td></tr>
+    <tr><td rowspan="3"><strong>栈帧切换</strong></td><td><code>frame N</code></td><td>切换到第 N 帧</td></tr>
+    <tr><td><code>up / down</code></td><td>上移/下移一个栈帧</td></tr>
+    <tr><td><code>info frame</code></td><td>当前帧详细信息 (rip/rsp/rbp/saved registers)</td></tr>
+    <tr><td rowspan="3"><strong>变量检查</strong></td><td><code>info locals</code></td><td>当前帧所有局部变量</td></tr>
+    <tr><td><code>info args</code></td><td>当前帧函数参数</td></tr>
+    <tr><td><code>p var_name</code></td><td>打印变量值 (支持 C 表达式)</td></tr>
+    <tr><td rowspan="3"><strong>寄存器</strong></td><td><code>info registers</code></td><td>所有 CPU 寄存器值</td></tr>
+    <tr><td><code>p/x $rax</code></td><td>以十六进制打印 rax 寄存器</td></tr>
+    <tr><td><code class="g">p/x $rip</code></td><td class="g">崩溃时的指令指针 — 最关键寄存器</td></tr>
+    <tr><td rowspan="4"><strong>内存检查</strong></td><td><code class="g">x/10gx $rsp</code></td><td class="g">★ 查看栈顶 10 个 8 字节值 (十六进制)</td></tr>
+    <tr><td><code>x/20i $rip</code></td><td>反汇编 rip 开始的 20 条指令</td></tr>
+    <tr><td><code>x/s 0xADDR</code></td><td>以字符串形式显示内存</td></tr>
+    <tr><td><code>p *((char**)addr)@10</code></td><td>打印 addr 处的前 10 个指针值</td></tr>
+    <tr><td rowspan="2"><strong>信号分析</strong></td><td><code class="g">p $_siginfo</code></td><td class="g">★ 崩溃信号详情 (si_signo/si_code/si_addr)</td></tr>
+    <tr><td><code>p $_siginfo.si_addr</code></td><td><strong>故障内存地址</strong> (SEGV 时指向非法地址)</td></tr>
+    <tr><td rowspan="2"><strong>多线程</strong></td><td><code>info threads</code></td><td>列出所有线程及状态</td></tr>
+    <tr><td><code>thread 3</code></td><td>切换到线程 3</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== GDB Core 分析 — 标准工作流 ===== */</span>
+<span class="cm"># 1. 加载 core dump</span>
+gdb /path/to/myapp /path/to/core.myapp.12345
+
+<span class="cm"># 2. 查看崩溃概况</span>
+(gdb) bt                    <span class="cm">// 崩溃线程的回溯 (通常 bt 足够定位大部分崩溃)</span>
+(gdb) bt full               <span class="cm">// 加上全部局部变量值</span>
+
+<span class="cm"># 3. 查看所有线程</span>
+(gdb) info threads          <span class="cm">// 列出所有线程 — 看是否有其它线程也异常</span>
+(gdb) thread apply all bt   <span class="cm">// ★ 所有线程的回溯 — 多线程死锁/竞争诊断必需</span>
+
+<span class="cm"># 4. 深入崩溃帧</span>
+(gdb) frame <span class="nu">0</span>                <span class="cm">// 进入崩溃帧 (#0)</span>
+(gdb) info locals           <span class="cm">// 局部变量 — 检查指针是否为 NULL/野指针</span>
+(gdb) info args             <span class="cm">// 函数参数</span>
+(gdb) info registers        <span class="cm">// 寄存器快照</span>
+(gdb) p $_siginfo           <span class="cm">// ★ 信号信息 — si_addr = 故障地址</span>
+
+<span class="cm"># 5. 反汇编崩溃位置</span>
+(gdb) disassemble /m        <span class="cm">// 反汇编当前帧 (带源码/行号对照)</span>
+(gdb) x/10i $rip - <span class="nu">20</span>       <span class="cm">// RIP 前 20 条指令 — 看是什么操作导致崩溃</span>
+
+<span class="cm">/* ===== 一键批处理 — 自动化 Core 分析 ===== */</span>
+gdb -batch -ex <span class="st">"thread apply all bt full"</span> -ex <span class="st">"quit"</span> \
+    /path/to/myapp /path/to/core &gt; crash_analysis.log <span class="nu">2</span>&gt;&amp;<span class="nu">1</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ Core 分析的前置条件</div>
+  <strong>① 二进制与 core 必须匹配</strong> — 使用生成 core 的<strong>同一</strong>二进制文件。编译后的二进制不可重新编译 (地址/偏移变化)。<br>
+  <strong>② 共享库路径</strong> — 若目标环境 lib 路径不同，用 <code>set sysroot /path/to/target/rootfs</code> 指定。<br>
+  <strong>③ .debug 分离符号</strong> — 若符号被 strip 分离，需 <code>objcopy --add-gnu-debuglink</code> 关联。<br>
+  <strong>④ 交叉调试</strong>: <code>aarch64-linux-gnu-gdb</code> 配合 <code>set sysroot</code> 可分析 ARM64 目标 core。
+</div>
+
+<!-- ══ Ch4: 内存诊断 ══ -->
+<h2 class="sh">4. 内存错误诊断工具 — Valgrind · ASan · TSan</h2>
+<p class="ss">Valgrind 无侵入运行时检查 · AddressSanitizer 编译期注入 · ThreadSanitizer 数据竞争检测</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Valgrind (Memcheck)</h4><div class="lbl">无侵入 — LD_PRELOAD 等不需要重编译</div>
+    <p><strong>检测</strong>: 内存泄漏、非法访问、未初始化值、double-free、错误 free。<br>
+    <strong>代价</strong>: ~10-20× 慢 — 适合测试环境。<br>
+    <code>valgrind --leak-check=full --show-reachable=yes ./myapp</code><br>
+    <code>--track-origins=yes</code> — 追踪未初始化值来源。<br>
+    <code>--suppressions=ignored.supp</code> — 过滤已知误报。<br>
+    <strong>Helgrind</strong> (--tool=helgrind) — 线程竞争检测。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ASan (AddressSanitizer)</h4><div class="lbl">编译期注入 — 需重新编译</div>
+    <p><strong>检测</strong>: 堆/栈/全局缓冲区溢出、use-after-free、double-free。<br>
+    <strong>代价</strong>: ~2× 慢 — 可在准生产环境使用。<br>
+    <code>gcc -fsanitize=address -g -O0 myapp.c</code><br>
+    <code>ASAN_OPTIONS=detect_leaks=1 ./myapp</code><br>
+    <strong>原理</strong>: 在每次内存访问前后插入<strong>影子内存</strong> 检查指令，在分配周围创建<strong>红区 (Redzone)</strong> 检测越界。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>TSan + UBSan</h4><div class="lbl">数据竞争 + 未定义行为</div>
+    <p><strong>TSan (ThreadSanitizer)</strong>: <code>-fsanitize=thread</code><br>
+    检测数据竞争 (data race)、锁顺序反转。<br>
+    <strong>UBSan (UndefinedBehavior)</strong>: <code>-fsanitize=undefined</code><br>
+    检测整数溢出、除零、空指针解引用、对齐错误、类型转换越界。<br>
+    <strong>MSan (MemorySanitizer)</strong>: 检测未初始化内存读取 (需全部代码用 MSan 编译)。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== ASan 实战 — 快速定位越界/释放后使用 ===== */</span>
+<span class="cm"># 编译</span>
+gcc -fsanitize=address -g -O0 myapp.c -o myapp
+
+<span class="cm"># 运行 (出错时自动打印详细报告)</span>
+$ ./myapp
+<span class="cm"># =================================================================</span>
+<span class="cm"># ==12345==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x60300000fff4</span>
+<span class="cm"># READ of size 4 at 0x60300000fff4 thread T0</span>
+<span class="cm">#     #0 0x402a3b in process_data myapp.c:42   ← 直接指向源代码行!</span>
+<span class="cm">#     #1 0x4031c5 in main myapp.c:87</span>
+<span class="cm"># 0x60300000fff4 is located 0 bytes after 100-byte region [0x60300000ff90,0x60300000fff4)</span>
+<span class="cm"># allocated by thread T0 here:</span>
+<span class="cm">#     #0 0x7f9a in malloc</span>
+<span class="cm">#     #1 0x402a10 in process_data myapp.c:40   ← 分配点</span></div>
+
+<div class="callout info">
+  <div class="ct">CI 集成 — 自动化内存检查</div>
+  <code>ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:log_path=/tmp/asan.log ./tests</code><br>
+  检查退出码 (ASan 检测到错误 → exit code = 1) + 收集 log 文件用于事后分析。<br>
+  Valgrind 使用 <code>--error-exitcode=1</code> 确保 CI 检测到问题。
+</div>
+
+<!-- ══ Ch5: strace & perf ══ -->
+<h2 class="sh">5. strace · ltrace · perf — 系统调用追踪与性能分析</h2>
+<p class="ss">strace 追踪系统调用 · ltrace 追踪库函数 · perf 硬件性能计数器 + 火焰图</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>strace — 系统调用追踪</h4><div class="lbl">进程与内核交互的完整记录</div>
+    <p><code>strace -f -tt -o trace.log ./myapp</code> — 完整追踪 (+fork +时间戳 +输出到文件)<br>
+    <code>strace -e trace=open,openat,read,write</code> — 仅文件 I/O<br>
+    <code>strace -e trace=network</code> — 仅网络相关<br>
+    <code>strace -e trace=signal</code> — 信号处理<br>
+    <code>strace -c ./myapp</code> — <strong>★ 按系统调用统计耗时</strong> (快速定位性能瓶颈)<br>
+    <code>strace -p &lt;PID&gt;</code> — 附加到运行中进程</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>perf — 硬件性能分析</h4><div class="lbl">CPU 计数器 · 调用图 · 火焰图</div>
+    <p><code>perf record -g -e cpu-clock ./myapp</code> — 以 CPU 时钟采样 + 调用图<br>
+    <code>perf record -g -e cache-misses ./myapp</code> — 缓存未命中事件<br>
+    <code>perf record -g -e page-faults ./myapp</code> — 缺页中断<br>
+    <code>perf report</code> — 交互式查看报告<br>
+    <code>perf script &gt; out.perf</code> — 导出供 FlameGraph 工具生成<strong>火焰图</strong></p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== strace 实战示例 ===== */</span>
+<span class="cm"># 追踪进程 "找不到文件" 的原因</span>
+strace -e trace=open,openat,stat ./myapp <span class="nu">2</span>&gt;&amp;<span class="nu">1</span> | grep ENOENT
+<span class="cm"># openat(AT_FDCWD, "/etc/myapp.conf", O_RDONLY) = -1 ENOENT (No such file or directory)</span>
+
+<span class="cm"># 追踪系统调用耗时排序 (找出最耗时 syscall)</span>
+strace -c ./myapp
+<span class="cm"># % time     seconds  usecs/call     calls    errors syscall</span>
+<span class="cm">#  45.23    0.123456          12     10234           read</span>
+<span class="cm">#  23.11    0.063210           6     10532           write</span>
+<span class="cm">#  15.67    0.042800        8560         5           fsync     ← 瓶颈!</span>
+
+<span class="cm"># 追踪信号传递</span>
+strace -e trace=signal ./myapp
+<span class="cm"># --- SIGSEGV {si_signo=SIGSEGV, si_code=SEGV_MAPERR, si_addr=0x0} ---</span>
+
+<span class="cm">/* ===== perf + 火焰图工作流 ===== */</span>
+perf record -F <span class="nu">99</span> -g -p $(pidof myapp) -- sleep <span class="nu">30</span>  <span class="cm">// 99Hz 采样 30 秒</span>
+perf script &gt; out.perf
+<span class="cm"># 下载 FlameGraph 工具 (Brendan Gregg):</span>
+<span class="cm"># ./stackcollapse-perf.pl out.perf &gt; out.folded</span>
+<span class="cm"># ./flamegraph.pl out.folded &gt; flamegraph.svg</span>
+<span class="cm"># → 浏览器打开 svg, 可交互式点击放大热点函数</span></div>
+
+<!-- ══ Ch6: 崩溃分析方法论 ══ -->
+<h2 class="sh">6. 崩溃分析实战方法论</h2>
+<p class="ss">从信号类型判断崩溃性质 · SEGV_MAPERR vs SEGV_ACCERR · SIGABRT 双重释放 · SIGBUS 对齐 · SIGFPE 除零</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>信号</th><th>典型原因</th><th>GDB 中的关键线索</th><th>首选工具</th></tr></thead>
+  <tbody>
+    <tr><td><strong>SIGSEGV</strong> (11)<br>SEGV_MAPERR</td><td><strong>NULL 指针解引用</strong> / 访问未映射地址</td><td><code>$_siginfo.si_addr = 0x0</code> 或极小值</td><td>GDB + ASan</td></tr>
+    <tr><td><strong>SIGSEGV</strong> (11)<br>SEGV_ACCERR</td><td>访问权限错误 (写只读内存/执行数据段)</td><td><code>si_addr</code> 指向合法映射但权限不对</td><td>GDB + /proc/PID/maps</td></tr>
+    <tr><td><strong>SIGABRT</strong> (6)</td><td>assert() 失败 / double-free / 堆损坏<br>glibc 检测到堆结构异常 → abort()</td><td><code>bt</code> 通常看到 <code>__GI_raise → __GI_abort → __libc_message</code><br>栈中可能有 <code>malloc_printerr</code></td><td>ASan + Valgrind</td></tr>
+    <tr><td><strong>SIGBUS</strong> (7)</td><td>未对齐访问 / mmap 文件被截断<br>硬件故障 (ECC 错误)</td><td><code>si_addr</code> 为对齐地址，<code>si_code = BUS_ADRALN</code></td><td>GDB + objdump</td></tr>
+    <tr><td><strong>SIGFPE</strong> (8)</td><td>整数除零 / 浮点异常</td><td><code>bt</code> 中可见除法操作指令</td><td>GDB + UBSan</td></tr>
+    <tr><td><strong>SIGPIPE</strong> (13)</td><td>向已关闭的管道/socket 写入</td><td>通常可忽略 — 网络编程常见</td><td>正常流程: signal(SIGPIPE, SIG_IGN)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>方法论: 6 步系统化分析</h4><div class="lbl">从拿到 core 到定位根因</div>
+    <p><strong>① 确认信号</strong>: <code>p $_siginfo.si_signo</code> → 判断崩溃类型<br>
+    <strong>② 查看崩溃现场</strong>: <code>bt full</code> → 定位崩溃栈帧<br>
+    <strong>③ 检查故障地址</strong>: <code>p $_siginfo.si_addr</code> → 判断 NULL/野指针/已释放<br>
+    <strong>④ 回溯分配历史</strong>: 如果有 ASan/Valgrind 日志 → 找到 "allocated by" 行 → 对比 "freed by"<br>
+    <strong>⑤ 全线程诊断</strong>: <code>thread apply all bt</code> → 排除多线程死锁/竞争<br>
+    <strong>⑥ 复现验证</strong>: 用 ASan/TSan 构建重现 → 确认修复</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>CI 自动崩溃分析</h4><div class="lbl">将崩溃诊断集成到开发流程</div>
+    <p><strong>崩溃即 Bug</strong>: CI 中 <code>ulimit -c unlimited</code> → 测试崩溃自动生成 core<br>
+    <strong>自动提取回溯</strong>: <code>gdb -batch -ex "thread apply all bt full" -ex "quit" &gt; crash.txt</code><br>
+    <strong>匹配已知模式</strong>: 正则扫描 crash.txt → 自动关联相似 Jira Issue<br>
+    <strong>Sanitizer 阻断</strong>: CI build 同时产出 ASan+UBSan 版本 → 运行时检测 → exit code != 0 → 阻断合入</p>
+  </div>
+</div>
+
+<!-- ══ Ch7: 工具速查 ══ -->
+<h2 class="sh">7. 工具速查矩阵 &amp; 决策指南</h2>
+<p class="ss">根据问题类型选择正确的工具 · 编译参数 → 运行工具 → 分析输出</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>问题类型</th><th>首选工具</th><th>编译参数</th><th>运行方式</th></tr></thead>
+  <tbody>
+    <tr><td>段错误 / 崩溃</td><td class="g"><strong>GDB + core dump</strong></td><td><code>-g</code></td><td><code>gdb binary core; bt full</code></td></tr>
+    <tr><td>内存泄漏</td><td class="g"><strong>Valgrind Memcheck</strong></td><td><code>-g -O0</code></td><td><code>valgrind --leak-check=full</code></td></tr>
+    <tr><td>缓冲区溢出 / UAF</td><td class="g"><strong>ASan</strong></td><td><code>-fsanitize=address -g</code></td><td>直接运行</td></tr>
+    <tr><td>数据竞争</td><td class="g"><strong>TSan / Helgrind</strong></td><td><code>-fsanitize=thread -g</code></td><td>直接运行</td></tr>
+    <tr><td>整数溢出 / UD 行为</td><td class="g"><strong>UBSan</strong></td><td><code>-fsanitize=undefined -g</code></td><td>直接运行</td></tr>
+    <tr><td>文件/网络 I/O 问题</td><td class="g"><strong>strace</strong></td><td>无需重编译</td><td><code>strace -e trace=file ./myapp</code></td></tr>
+    <tr><td>CPU 性能热点</td><td class="g"><strong>perf + 火焰图</strong></td><td><code>-g -fno-omit-frame-pointer</code></td><td><code>perf record -g -F 99 ./myapp</code></td></tr>
+    <tr><td>库函数调用追踪</td><td class="g"><strong>ltrace</strong></td><td>无需重编译</td><td><code>ltrace -e malloc+free ./myapp</code></td></tr>
+    <tr><td>磁盘 I/O 延迟</td><td class="g"><strong>iostat / blktrace</strong></td><td>无需重编译</td><td><code>iostat -x 1</code></td></tr>
+    <tr><td>栈溢出</td><td class="g"><strong>GDB + /proc/PID/maps</strong></td><td><code>-g</code></td><td>检查 rsp 是否接近栈边界</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 实用一行命令汇集 ===== */</span>
+<span class="cm"># 批量分析 core (自动提取回溯)</span>
+gdb -batch -ex <span class="st">"thread apply all bt full"</span> -ex <span class="st">"quit"</span> ./myapp core.xxx
+
+<span class="cm"># 查看 core 的崩溃信号和线程数</span>
+readelf -n core.xxx | grep -E <span class="st">'Sig|NT_PRSTATUS'</span>
+
+<span class="cm"># 查看 core 中包含的内存映射 (VMA 列表)</span>
+readelf -l core.xxx | grep <span class="st">'LOAD'</span>
+
+<span class="cm"># 崩溃地址 → 源代码行 (无需 GDB)</span>
+addr2line -e ./myapp -f -C 0x402a3b
+
+<span class="cm"># 查看 ELF 的 DWARF 调试段</span>
+readelf -S ./myapp | grep debug
+
+<span class="cm"># 快速检查一个二进制的 sanitizer</span>
+readelf -d ./myapp | grep sanitize</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux Debugging &amp; Crash Analysis — 系统化知识体系 · 2026-06 · GDB 15+ · GCC 14+ · ASan/TSan/UBSan
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

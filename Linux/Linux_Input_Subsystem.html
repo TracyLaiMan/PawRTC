@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux Input 子系统 — 系统化知识体系</title>
+<link rel="stylesheet" href="../../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:160px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux Input 子系统</h2>
+  <p class="sec-sub">系统化知识体系 — input_dev · evdev · 事件协议 · 多点触控 · GPIO 按键 · uinput</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Hardware</strong><br><small>键盘/鼠标/触摸屏/GPIO</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Driver</strong><br><small>input_dev · 上报事件</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>Core</strong><br><small>input.c · 事件分发</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Handler</strong><br><small>evdev · joydev · mousedev</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Userspace</strong><br><small>/dev/input/eventX</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">drivers/input/</div><div class="l">内核路径</div></div>
+    <div class="stat"><div class="n">EV_KEY/REL/ABS</div><div class="l">核心事件类型</div></div>
+    <div class="stat"><div class="n">evdev</div><div class="l">通用事件接口</div></div>
+    <div class="stat"><div class="n">uinput</div><div class="l">用户态注入</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1 ── -->
+<h2 class="sh">1. Input 子系统架构总览</h2>
+<p class="ss">Linux Input 子系统是内核中<strong>最成熟、最统一</strong>的设备驱动框架之一——键盘、鼠标、触摸屏、游戏手柄、电源键、GPIO 按键，全都通过同一套接口向用户态报告事件</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>三层架构</h4>
+    <div class="lbl">Driver → Core → Handler</div>
+    <p><strong>Driver 层</strong>：硬件驱动，分配 <code>input_dev</code>，设置支持的事件类型/编码，在中断/轮询中调用 <code>input_report_*()</code> 上报事件。<br>
+    <strong>Core 层</strong>（<code>drivers/input/input.c</code>）：事件路由中枢——将驱动上报的事件分发给所有注册的 Handler。<br>
+    <strong>Handler 层</strong>：将内核事件转换为用户态接口——evdev（通用，/dev/input/eventX）、joydev（游戏杆）、mousedev（鼠标）、leds（键盘 LED）。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>核心数据结构</h4>
+    <div class="lbl">input_dev · input_handler · input_handle</div>
+    <p><strong>input_dev</strong>：描述一个输入设备——支持的 event type、key/abs/rel bitmaps、设备名称/ID/phys 路径。<br>
+    <strong>input_handler</strong>：事件消费者——evdev_handler、joydev_handler 等。<br>
+    <strong>input_handle</strong>：连接 dev 和 handler 的<strong>桥梁</strong>——当 driver 注册 input_dev 时，Core 遍历所有 handler，为匹配的 handler 创建 handle 建立连接。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>源码路径</h4>
+    <div class="lbl">drivers/input/ · include/linux/input.h · include/uapi/linux/input.h</div>
+    <p><code>drivers/input/input.c</code> — Core 层（input_register_device / input_event）<br>
+    <code>drivers/input/evdev.c</code> — evdev Handler（最常用）<br>
+    <code>drivers/input/keyboard/</code> — 键盘驱动<br>
+    <code>drivers/input/touchscreen/</code> — 触摸屏驱动<br>
+    <code>drivers/input/misc/</code> — gpio_keys, gpio_matrix 等杂项<br>
+    <code>include/uapi/linux/input.h</code> — 用户态 API（事件类型/编码常量）<br>
+    <code>include/uapi/linux/input-event-codes.h</code> — KEY_*/BTN_*/ABS_* 等编码定义（~1200 行）</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">用户态 (/dev/input/)</span><span class="b c4">App / GUI</span><span class="n">open / read / ioctl → struct input_event</span></div>
+  <div class="r"><span class="a">Handler 层</span><span class="b c3">evdev / joydev / mousedev</span><span class="n">→ 创建字符设备 /dev/input/eventX → 用户态可读</span></div>
+  <div class="r"><span class="a">Core 层</span><span class="b c2">input.c (input_event)</span><span class="n">→ 事件分发：遍历 dev->h_list → handler->event()</span></div>
+  <div class="r"><span class="a">Driver 层</span><span class="b c1">input_report_key/abs/rel</span><span class="n">→ 封装 input_event → input_sync → 进入 Core</span></div>
+  <div class="r"><span class="a">Hardware</span><span class="b c5">ISR / 轮询 / 工作队列</span><span class="n">GPIO 中断 → i2c/spi 读取 → 去抖动 → 上报事件</span></div>
+</div>
+
+<!-- ── Ch2 ── -->
+<h2 class="sh">2. 事件类型与编码体系</h2>
+<p class="ss">所有输入事件通过 <code>type + code + value</code> 三元组描述——这是 Input 子系统的通用语言</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>EV_KEY — 按键事件</h4>
+    <div class="lbl">value: 0=抬起 1=按下 2=长按(重复)</div>
+    <p>最常用的事件类型。涵盖 <strong>键盘所有按键</strong>（KEY_A~KEY_Z、KEY_0~KEY_9）、<strong>鼠标按钮</strong>（BTN_LEFT/MIDDLE/RIGHT）、<strong>功能键</strong>（KEY_POWER/KEY_VOLUMEUP/KEY_MUTE）、<strong>自定义按键</strong>（BTN_0~BTN_9, BTN_TRIGGER）。<br>
+    代码定义在 <code>input-event-codes.h</code>，共 700+ 个 KEY_ 编码。<br>
+    驱动中：<code>input_report_key(dev, KEY_POWER, 1); input_sync(dev);</code></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>EV_REL — 相对位移</h4>
+    <div class="lbl">value: 相对偏移量 (正/负)</div>
+    <p>鼠标/轨迹球/滚轮的<strong>增量移动</strong>。常用轴：<code>REL_X</code>（水平）、<code>REL_Y</code>（垂直）、<code>REL_WHEEL</code>（滚轮）、<code>REL_HWHEEL</code>（水平滚轮）。值是<strong>相对偏移</strong>而非绝对坐标——每次上报的是"移动了多少"。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>EV_ABS — 绝对坐标</h4>
+    <div class="lbl">value: 绝对位置 (需先设置 min/max/fuzz/flat)</div>
+    <p>触摸屏/触摸板/摇杆的<strong>绝对位置</strong>。常用轴：<code>ABS_X/Y</code>（主坐标）、<code>ABS_MT_POSITION_X/Y</code>（多点触控）、<code>ABS_PRESSURE</code>（压力）、<code>ABS_DISTANCE</code>（悬浮距离）。<br>
+    <strong>必须先设置</strong>：<code>input_set_abs_params(dev, ABS_X, 0, 4095, 0, 0);</code></p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>其他事件类型速查</h4>
+    <div class="lbl">EV_SW · EV_LED · EV_SND · EV_REP · EV_MSC</div>
+    <p><strong>EV_SW</strong>（Switch）：物理开关——SW_LID（笔记本盖子）、SW_HEADPHONE_INSERT（耳机插入检测）、SW_RFKILL_ALL（飞行模式）。<br>
+    <strong>EV_LED</strong>：键盘 LED——LED_CAPSL/NUML/SCROLLL。<br>
+    <strong>EV_SND</strong>（Sound）：蜂鸣器——SND_BELL/SND_TONE。<br>
+    <strong>EV_REP</strong>：自动重复参数——REP_DELAY（首次延迟）/REP_PERIOD（重复间隔）。<br>
+    <strong>EV_MSC</strong>（Misc）：杂项——MSC_SCAN（原始扫描码）、MSC_TIMESTAMP。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>struct input_event</h4>
+    <div class="lbl">用户态读取的通用格式 — 24 字节</div>
+    <p>所有 Handler 最终都以 <code>struct input_event</code> 格式向用户态传递事件：<br>
+    <code>timeval time</code> — 事件时间戳（秒+微秒）<br>
+    <code>__u16 type</code> — 事件类型（EV_KEY/EV_REL/EV_ABS...）<br>
+    <code>__u16 code</code> — 事件编码（具体按键/轴）<br>
+    <code>__s32 value</code> — 事件值（按下/抬起/坐标值）<br>
+    <code>sizeof(struct input_event) == 24</code> 字节。用户态 read(fd, &ev, sizeof(ev)) 循环读取。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:12px">
+  <div class="ct">EV_SYN — 事件分隔符（最容易忽视的重要事件）</div>
+  <strong>SYN_REPORT</strong>（type=EV_SYN, code=SYN_REPORT, value=0）：标记<strong>一组事件的结束</strong>——相当于"帧分隔符"。一次完整的硬件事件（如触摸一下屏幕）可能产生多个 input_event（ABS_X + ABS_Y + ABS_PRESSURE + BTN_TOUCH），最后以 SYN_REPORT 收尾。用户态<strong>应以 SYN_REPORT 为边界</strong>处理事件组，而非收到一个事件就立刻响应。还有一个 SYN_MT_REPORT 用于多点触控的每个触点分隔。调用 <code>input_sync(dev)</code> 自动发送 SYN_REPORT。
+</div>
+
+<!-- ── Ch3 ── -->
+<h2 class="sh">3. 驱动开发：input_dev 的注册与事件上报</h2>
+<p class="ss">编写 Input 驱动是 Linux 驱动开发中最简单、最规范化的流程——核心只需四步</p>
+
+<div class="sg" style="margin-top:20px">
+  <div class="st"><b>1</b> &nbsp; <code>input_allocate_device()</code><br>分配 input_dev</div>
+  <div class="st"><b>2</b> &nbsp; 设置 evbit/keybit/absbit<br>声明设备支持的事件</div>
+  <div class="st"><b>3</b> &nbsp; <code>input_register_device()</code><br>注册到 Input 子系统</div>
+  <div class="st"><b>4</b> &nbsp; <code>input_report_*()</code><br>在中断中上报事件</div>
+  <div class="st"><b>5</b> &nbsp; <code>input_sync()</code><br>发送 SYN_REPORT 帧边界</div>
+  <div class="st"><b>6</b> &nbsp; <code>input_unregister_device()</code><br>模块卸载时注销</div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>GPIO 按键驱动 — 最简示例</h4>
+    <div class="lbl">不需要手写——内核已提供 gpio_keys.c 通用驱动</div>
+    <p>Linux 内核内置 <code>drivers/input/keyboard/gpio_keys.c</code>——只需在<strong>设备树</strong>中描述按键即可，无需写一行 C 代码。每个按键可指定：GPIO 编号、KEY 编码（如 KEY_POWER）、触发边沿、去抖时间、标签。Device Tree 示例：<br>
+    <code>gpio-keys { compatible = "gpio-keys"; power { label = "Power"; gpios = <&gpio0 12 GPIO_ACTIVE_LOW>; linux,code = <KEY_POWER>; debounce-interval = <30>; } };</code></p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>自定义驱动模板 — 核心步骤</h4>
+    <div class="lbl">allocate → set capability → register → report</div>
+    <p>① <code>input_dev *idev = devm_input_allocate_device(&pdev->dev);</code><br>
+    ② <code>__set_bit(EV_KEY, idev->evbit); __set_bit(KEY_POWER, idev->keybit);</code><br>
+    ③ <code>idev->name = "My Button"; idev->phys = "gpio-keys/input0"; input_register_device(idev);</code><br>
+    ④ 在中断处理函数中：<code>input_report_key(idev, KEY_POWER, gpiod_get_value(desc)); input_sync(idev);</code><br>
+    用 <code>devm_*</code> 系列函数可自动管理资源释放（无需手动 free/unregister）。</p>
+  </div>
+</div>
+
+<details style="margin-top:14px">
+  <summary>完整 GPIO 按键驱动骨架代码</summary>
+  <div class="cb"><span class="kw">#include</span> <span class="st">&lt;linux/input.h&gt;</span>
+<span class="kw">#include</span> <span class="st">&lt;linux/gpio/consumer.h&gt;</span>
+<span class="kw">#include</span> <span class="st">&lt;linux/interrupt.h&gt;</span>
+
+<span class="kw">struct</span> my_button {
+    <span class="kw">struct</span> input_dev *input;
+    <span class="kw">struct</span> gpio_desc *gpio;
+    <span class="kw">int</span> irq;
+};
+
+<span class="kw">static irqreturn_t</span> <span class="fn">button_isr</span>(<span class="kw">int</span> irq, <span class="kw">void</span> *dev_id)
+{
+    <span class="kw">struct</span> my_button *btn = dev_id;
+    <span class="kw">int</span> state = <span class="fn">gpiod_get_value</span>(btn->gpio);
+
+    <span class="cm">// 上报按键事件 (1=按下, 0=抬起)</span>
+    <span class="fn">input_report_key</span>(btn->input, KEY_POWER, state);
+    <span class="fn">input_sync</span>(btn->input);    <span class="cm">// 发送 SYN_REPORT 帧边界</span>
+
+    <span class="kw">return</span> IRQ_HANDLED;
+}
+
+<span class="kw">static int</span> <span class="fn">my_button_probe</span>(<span class="kw">struct</span> platform_device *pdev)
+{
+    <span class="kw">struct</span> my_button *btn;
+    <span class="kw">int</span> error;
+
+    btn = <span class="fn">devm_kzalloc</span>(&amp;pdev->dev, <span class="kw">sizeof</span>(*btn), GFP_KERNEL);
+
+    <span class="cm">// 1. 分配 input_dev</span>
+    btn->input = <span class="fn">devm_input_allocate_device</span>(&amp;pdev->dev);
+
+    <span class="cm">// 2. 设置设备属性和支持的事件</span>
+    btn->input->name = <span class="st">"IPC Reset Button"</span>;
+    btn->input->phys = <span class="st">"gpio-keys/input0"</span>;
+    <span class="fn">__set_bit</span>(EV_KEY, btn->input->evbit);
+    <span class="fn">__set_bit</span>(KEY_POWER, btn->input->keybit);
+
+    <span class="cm">// 3. 获取 GPIO 和 IRQ</span>
+    btn->gpio = <span class="fn">devm_gpiod_get</span>(&amp;pdev->dev, <span class="st">"reset"</span>, GPIOD_IN);
+    btn->irq = <span class="fn">gpiod_to_irq</span>(btn->gpio);
+
+    <span class="cm">// 4. 注册中断（双边沿触发：按下+抬起都响应）</span>
+    <span class="fn">devm_request_irq</span>(&amp;pdev->dev, btn->irq, button_isr,
+                      IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
+                      <span class="st">"ipc-reset-btn"</span>, btn);
+
+    <span class="cm">// 5. 注册 input 设备</span>
+    error = <span class="fn">input_register_device</span>(btn->input);
+    <span class="kw">if</span> (error) <span class="kw">return</span> error;
+
+    <span class="kw">return</span> <span class="nu">0</span>;
+}</div>
+</details>
+
+<!-- ── Ch4 ── -->
+<h2 class="sh">4. evdev — 用户态通用事件接口</h2>
+<p class="ss">evdev 是 Input 子系统最常用的 Handler——将内核事件以 <code>/dev/input/eventX</code> 字符设备暴露给用户态，支持阻塞 read + poll/select + ioctl</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>读取事件的三种方式</h4>
+    <div class="lbl">阻塞 read · poll/epoll · libinput</div>
+    <p><strong>阻塞 read</strong>：最简单——<code>read(fd, &ev, sizeof(ev))</code>，无事件时阻塞。<br>
+    <strong>poll/epoll</strong>：将 evdev fd 加入 event loop，与 socket/timer 统一调度——嵌入式主循环的标准做法。<br>
+    <strong>libinput</strong>：Weston/Wayland 使用的用户态库，封装了 evdev 的细节（去抖、触摸屏校准、手势识别）。Weston 独占 evdev fd（设置 EVIOCGRAB），应用不应直接读。<br>
+    <strong>evtest</strong>：命令行调试工具——<code>evtest /dev/input/event0</code> 实时打印所有事件。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>关键 ioctl 命令</h4>
+    <div class="lbl">查询设备能力 · 独占抓取 · 获取信息</div>
+    <p><strong>EVIOCGVERSION</strong>：获取 evdev 协议版本号。<br>
+    <strong>EVIOCGID</strong>：获取 <code>struct input_id</code>（bustype/vendor/product/version）。<br>
+    <strong>EVIOCGBIT(ev, len)</strong>：查询设备支持的 evbit/keybit/absbit 等——判断设备类型的标准方法。<br>
+    <strong>EVIOCGABS(abs)</strong>：获取 ABS_* 轴的参数（min/max/fuzz/flat/resolution）。<br>
+    <strong>EVIOCGRAB</strong>：<strong>独占抓取</strong>——阻止其他进程接收该设备的事件（Weston 使用）。<br>
+    <strong>EVIOCSREP</strong>：设置自动重复参数（delay/period）。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>识别设备类型的标准流程</h4>
+    <div class="lbl">EVIOCGBIT → 读取 capability bits → 判定角色</div>
+    <p>① <code>ioctl(fd, EVIOCGBIT(0, EV_MAX), evbit)</code> 获取支持的事件类型<br>
+    ② 如果 evbit 包含 <code>EV_REL</code> 且 包含 <code>REL_X/REL_Y</code> → 鼠标类设备<br>
+    ③ 如果 evbit 包含 <code>EV_ABS</code> 且 包含 <code>ABS_X/ABS_Y</code> 且 包含 <code>BTN_TOUCH</code> → 触摸屏<br>
+    ④ 如果 evbit 仅包含 <code>EV_KEY</code> → 键盘/按键类设备<br>
+    ⑤ 可以用 <code>libevdev</code> 库封装上述逻辑，避免手动解析 bitmask。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>用户态读取示例</h4>
+    <div class="lbl">最小的 evdev 事件循环</div>
+    <div class="cb"><span class="kw">struct</span> input_event ev;
+<span class="kw">int</span> fd = <span class="fn">open</span>(<span class="st">"/dev/input/event0"</span>, O_RDONLY);
+
+<span class="kw">while</span> (<span class="fn">read</span>(fd, &amp;ev, <span class="kw">sizeof</span>(ev)) == <span class="kw">sizeof</span>(ev)) {
+    <span class="kw">if</span> (ev.type == EV_KEY &amp;&amp; ev.code == KEY_POWER) {
+        <span class="kw">if</span> (ev.value == <span class="nu">1</span>)  <span class="fn">printf</span>(<span class="st">"Power key pressed\n"</span>);
+        <span class="kw">if</span> (ev.value == <span class="nu">0</span>)  <span class="fn">printf</span>(<span class="st">"Power key released\n"</span>);
+        <span class="kw">if</span> (ev.value == <span class="nu">2</span>)  <span class="fn">printf</span>(<span class="st">"Power key auto-repeat\n"</span>);
+    }
+}</div>
+  </div>
+</div>
+
+<!-- ── Ch5 ── -->
+<h2 class="sh">5. 多点触控协议 (Multi-Touch Protocol)</h2>
+<p class="ss">Linux 定义了两种多点触控协议——Type A（无状态，简单）和 Type B（有状态，追踪触点 ID）</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Type A (无状态)</h4>
+    <div class="lbl">每次上报全部触点 — 驱动不需要跟踪触点 ID</div>
+    <p>每次上报<strong>所有当前活动的触点</strong>的完整坐标。用户态无法直接区分"哪个触点对应哪个手指"——需要上层根据上一帧的位置做<strong>最近邻匹配</strong>。<br>
+    事件序列：<code>ABS_MT_POSITION_X/Y[0] → SYN_MT_REPORT → ABS_MT_POSITION_X/Y[1] → SYN_MT_REPORT → SYN_REPORT</code>。<br>
+    <strong>优点</strong>：驱动极简单。<strong>缺点</strong>：上层需要复杂匹配算法，触点快速移动/交叉时易混淆。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Type B (有状态)</h4>
+    <div class="lbl">每个触点有唯一 Tracking ID — 驱动负责追踪</div>
+    <p>每个触点分配一个<strong>唯一的 Tracking ID</strong>（0~最大值）。通过 <code>ABS_MT_TRACKING_ID</code> 上报触点的<strong>生命周期</strong>：新触点出现 → 上报 ID+坐标 → SYN_REPORT → 每次移动更新坐标 → 触点抬起时上报 <code>ABS_MT_TRACKING_ID=-1</code> 表示触点消失。用户态可以<strong>精确追踪每个触点</strong>从按下到抬起的完整轨迹。<br>
+    <strong>优点</strong>：上层处理简单精确。<strong>缺点</strong>：驱动需要维护触点状态、分配/回收 ID。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:12px">
+  <div class="ct">Type B 事件序列示例 — 两指触控</div>
+  <div class="cb"><span class="cm">// 触点 0 按下</span>
+ABS_MT_TRACKING_ID  <span class="nu">0</span>
+ABS_MT_POSITION_X   <span class="nu">1200</span>
+ABS_MT_POSITION_Y   <span class="nu">800</span>
+ABS_MT_PRESSURE     <span class="nu">80</span>
+SYN_MT_REPORT
+
+<span class="cm">// 触点 1 按下</span>
+ABS_MT_TRACKING_ID  <span class="nu">1</span>
+ABS_MT_POSITION_X   <span class="nu">2400</span>
+ABS_MT_POSITION_Y   <span class="nu">600</span>
+SYN_MT_REPORT
+
+SYN_REPORT              <span class="cm">← 这一帧有两个触点</span>
+
+<span class="cm">// 下一帧：触点 0 移动</span>
+ABS_MT_TRACKING_ID  <span class="nu">0</span>
+ABS_MT_POSITION_X   <span class="nu">1250</span>  <span class="cm">向右滑了 50</span>
+ABS_MT_POSITION_Y   <span class="nu">790</span>
+SYN_MT_REPORT
+
+<span class="cm">// 触点 1 抬起</span>
+ABS_MT_TRACKING_ID  <span class="nu">1</span>
+ABS_MT_TRACKING_ID  -<span class="nu">1</span>      <span class="cm">← -1 = 触点消失</span>
+SYN_MT_REPORT
+
+SYN_REPORT              <span class="cm">← 这一帧只有触点 0 活动</span></div>
+</div>
+
+<!-- ── Ch6 ── -->
+<h2 class="sh">6. uinput — 用户态输入设备</h2>
+<p class="ss">uinput 允许<strong>用户态程序创建虚拟输入设备</strong>并向内核注入事件——自动化测试、虚拟键盘/鼠标、IR 遥控转发的核心技术</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>uinput 的工作原理</h4>
+    <div class="lbl">/dev/uinput → write input_event → 内核 → evdev → 用户态</div>
+    <p>用户态程序通过 <code>/dev/uinput</code> 字符设备创建虚拟 input_dev。设置支持的事件类型（与内核驱动一样设置 evbit/keybit），内核为其分配 eventX 节点。之后程序通过 write() 发送 <code>struct input_event</code>，内核 Core 层将其视为<strong>普通硬件事件</strong>分发给所有 Handler。<strong>GUI 程序无法区分</strong>事件来自真实硬件还是 uinput——这正是它的价值。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>典型应用场景</h4>
+    <div class="lbl">IR 遥控 · 触摸屏模拟 · 自动化测试</div>
+    <p><strong>IR 遥控转发</strong>：IR 接收驱动(LIRC)读红外码 → 查表转 KEY 事件 → uinput 注入 → Android/Linux GUI 响应。<br>
+    <strong>自动化测试</strong>：注入触摸/点击事件模拟用户操作——不需要机械手/机械臂。<br>
+    <strong>虚拟键盘</strong>：屏幕键盘（on-screen keyboard）通过 uinput 注入按键。<br>
+    <strong>GPIO 扩展</strong>：用户态 GPIO 轮询（不适合内核中断的场景）→ uinput 上报按键。</p>
+  </div>
+</div>
+
+<details style="margin-top:14px">
+  <summary>uinput 创建虚拟按键设备的完整代码</summary>
+  <div class="cb"><span class="kw">#include</span> <span class="st">&lt;linux/uinput.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">create_virtual_button</span>() {
+    <span class="kw">int</span> fd = <span class="fn">open</span>(<span class="st">"/dev/uinput"</span>, O_WRONLY | O_NONBLOCK);
+
+    <span class="cm">// 1. 声明设备能力</span>
+    <span class="fn">ioctl</span>(fd, UI_SET_EVBIT, EV_KEY);
+    <span class="fn">ioctl</span>(fd, UI_SET_KEYBIT, KEY_POWER);
+    <span class="fn">ioctl</span>(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
+
+    <span class="cm">// 2. 配置设备信息</span>
+    <span class="kw">struct</span> uinput_setup usetup = {
+        .name = <span class="st">"IPC Virtual Buttons"</span>,
+        .id = { .bustype = BUS_VIRTUAL }
+    };
+    <span class="fn">ioctl</span>(fd, UI_DEV_SETUP, &amp;usetup);
+
+    <span class="cm">// 3. 创建虚拟设备</span>
+    <span class="fn">ioctl</span>(fd, UI_DEV_CREATE);
+
+    <span class="kw">return</span> fd;  <span class="cm">// 此后 write(fd, &ev, sizeof(ev)) 注入事件</span>
+}
+
+<span class="kw">void</span> <span class="fn">inject_key</span>(<span class="kw">int</span> uinput_fd, <span class="kw">int</span> key_code) {
+    <span class="kw">struct</span> input_event ev;
+
+    <span class="cm">// 按下</span>
+    <span class="fn">memset</span>(&amp;ev, <span class="nu">0</span>, <span class="kw">sizeof</span>(ev));
+    ev.type = EV_KEY;  ev.code = key_code;  ev.value = <span class="nu">1</span>;
+    <span class="fn">write</span>(uinput_fd, &amp;ev, <span class="kw">sizeof</span>(ev));
+
+    <span class="cm">// 同步</span>
+    ev.type = EV_SYN;  ev.code = SYN_REPORT;  ev.value = <span class="nu">0</span>;
+    <span class="fn">write</span>(uinput_fd, &amp;ev, <span class="kw">sizeof</span>(ev));
+
+    <span class="cm">// 抬起</span>
+    ev.type = EV_KEY;  ev.code = key_code;  ev.value = <span class="nu">0</span>;
+    <span class="fn">write</span>(uinput_fd, &amp;ev, <span class="kw">sizeof</span>(ev));
+
+    <span class="cm">// 同步</span>
+    ev.type = EV_SYN;  ev.code = SYN_REPORT;  ev.value = <span class="nu">0</span>;
+    <span class="fn">write</span>(uinput_fd, &amp;ev, <span class="kw">sizeof</span>(ev));
+}</div>
+</details>
+
+<!-- ── Ch7 ── -->
+<h2 class="sh">7. 设备树配置 — 声明即驱动的 Input 设备</h2>
+<p class="ss">大量 Input 设备<strong>无需编写驱动</strong>——内核已内置通用驱动（gpio_keys, input_leds, pwm-vibrator），只需在设备树中声明</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>gpio-keys — GPIO 按键</h4>
+    <div class="lbl">drivers/input/keyboard/gpio_keys.c</div>
+    <div class="cb"><span class="cm">// 设备树：定义两个 GPIO 按键</span>
+gpio-keys {
+    compatible = <span class="st">"gpio-keys"</span>;
+    autorepeat;     <span class="cm">// 支持长按自动重复</span>
+
+    reset {
+        label = <span class="st">"Reset Button"</span>;
+        gpios = <span class="kw">&lt;</span>&amp;pio <span class="nu">12</span> GPIO_ACTIVE_LOW<span class="kw">&gt;</span>;
+        linux,code = <span class="kw">&lt;</span>KEY_RESTART<span class="kw">&gt;</span>;
+        debounce-interval = <span class="kw">&lt;</span><span class="nu">30</span><span class="kw">&gt;</span>;  <span class="cm">// 30ms 去抖</span>
+    };
+
+    wps {
+        label = <span class="st">"WPS Button"</span>;
+        gpios = <span class="kw">&lt;</span>&amp;pio <span class="nu">14</span> GPIO_ACTIVE_LOW<span class="kw">&gt;</span>;
+        linux,code = <span class="kw">&lt;</span>KEY_WPS_BUTTON<span class="kw">&gt;</span>;
+    };
+};</div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>gpio-keys-polled — 轮询模式 GPIO 按键</h4>
+    <div class="lbl">用于不支持中断的 GPIO 或消抖需求复杂时</div>
+    <p>有些 GPIO 控制器不支持中断（或 GPIO 用于矩阵键盘、ADC 按键等无法直接用中断的场景）。<code>gpio_keys_polled.c</code> 用内核定时器<strong>周期轮询</strong> GPIO 状态。每轮检测到变化→上报事件。设备树类似，但 compatible 为 <code>"gpio-keys-polled"</code>，额外的 <code>poll-interval</code> 指定轮询间隔（通常 20-50ms）。注意：轮询消耗 CPU，仅在中断不可用时作为 fallback。</p>
+  </div>
+</div>
+
+<!-- ── Ch8 ── -->
+<h2 class="sh">8. 调试与诊断工具</h2>
+<p class="ss">Input 子系统调试非常方便——从确认设备被识别到追踪每一个输入事件</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>evtest — 事件实时监控</h4>
+    <div class="lbl">apt install evtest / 嵌入式: 交叉编译</div>
+    <p><code>evtest</code>：列出所有 /dev/input/eventX 设备 → 选择 → 实时打印每个 input_event（type/code/value 全部解析为可读名称）。<br>
+    <code>evtest --grab /dev/input/event0</code>：独占抓取模式（EVIOCGRAB），其他进程收不到事件——调试时避免事件被 GUI 消费。<br>
+    最常用的调试命令：<code>evtest /dev/input/event0 2>&1 | grep -v "SYN_REPORT"</code></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>getevent — Android 通用</h4>
+    <div class="lbl">Android 内置，无需安装</div>
+    <p><code>getevent -l</code>：列出所有输入设备及详细能力（key/abs/rel bitmaps）。<br>
+    <code>getevent -lt /dev/input/event0</code>：实时监控，-l 是文字模式（否则是十六进制原始数据）。<br>
+    <code>getevent -i</code>：显示设备信息（vendor/product/version/bustype）。<br>
+    输出格式：<code>[time] /dev/input/event0: EV_KEY KEY_POWER DOWN</code></p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>sysfs · proc · 其他</h4>
+    <div class="lbl">/sys/class/input/ · /proc/bus/input/</div>
+    <p><strong>/proc/bus/input/devices</strong>：列出系统所有注册的 input 设备及属性（name/phys/sysfs/handlers/bits）。比 sysfs 更易读。<br>
+    <strong>/sys/class/input/eventX/device/</strong>：设备属性（name、phys、id/vendor、capabilities/）。<br>
+    <strong>input-utils</strong> 包：<code>input-kbd</code>（键盘映射）、<code>lsinput</code>（简洁设备列表）。<br>
+    <strong>dmesg | grep input</strong>：查看设备注册/注销日志，每个 input device 注册/注销都会打印一条 kernel log。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>调试场景</th><th>命令</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>列出所有输入设备</td><td><code>cat /proc/bus/input/devices</code></td><td>查看 N: Name, H: Handlers, B: Bits</td></tr>
+    <tr><td>监控某个设备的事件</td><td><code>evtest /dev/input/event0</code></td><td>实时打印每个 input_event</td></tr>
+    <tr><td>Android 设备监控</td><td><code>getevent -lt /dev/input/event0</code></td><td>文字模式实时输出</td></tr>
+    <tr><td>确认驱动是否注册成功</td><td><code>dmesg | grep "input:"</code></td><td>内核日志中的设备注册信息</td></tr>
+    <tr><td>查看设备能力位</td><td><code>evtest --query /dev/input/event0 EV_KEY</code></td><td>检查是否支持特定事件类型</td></tr>
+    <tr><td>测试按键事件（无 GUI）</td><td><code>evtest --grab /dev/input/event0</code></td><td>独占抓取+实时打印，避免被 GUI 消费</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch9 ── -->
+<h2 class="sh">9. IPC 实战：嵌入式设备的 Input 整合</h2>
+<p class="ss">IPC 相机中 Input 子系统的典型应用——复位按键、IR 遥控、GPIO 报警输入、触摸屏调试口</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>硬件复位按键</h4>
+    <div class="lbl">GPIO 按键 → KEY_RESTART → 用户态监听</div>
+    <p>IPC 外壳上的物理复位按钮：GPIO 连接到 SoC → gpio-keys 驱动 → <code>/dev/input/eventX</code> → 用户态守护进程 poll 监听 → 检测到长按 5 秒 → 触发恢复出厂设置或重启。比直接硬件复位（拉 RST 引脚）更好——可以先安全关闭录像文件、清理 SD 卡写入缓存、通知云端下线。<br>
+    内核配置：<code>CONFIG_KEYBOARD_GPIO=y</code> + 设备树配置 gpio-keys 节点。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>IR 遥控接收</h4>
+    <div class="lbl">IR Receiver → LIRC / gpio-ir-recv → uinput → KEY 事件</div>
+    <p>IPC 配套的 IR 遥控器：红外接收头（HS0038 等）输出解调后的方波 → GPIO 捕获 → Linux 内核有<strong>内置 IR 解码驱动</strong>（<code>drivers/media/rc/gpio-ir-recv.c</code>，设备树声明即可）→ 解码出 NEC/RC5/RC6 等协议 → 查表转换为 KEY_* 事件 → 通过 <code>rc-core</code> 子系统或 uinput 注入 evdev → 用户态 GUI 或守护进程响应。无需手写解码算法。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>报警输入 (Alarm IN)</h4>
+    <div class="lbl">外部传感器 → GPIO 中断 → 事件上报</div>
+    <p>IPC 的报警输入端子（Alarm IN）：外部 PIR 传感器/门磁/烟感 → 干接点闭合 → GPIO 上拉/下拉变化 → 中断触发 → 守护进程检测到事件 → 触发录像/抓图/推送报警。实现方式：① gpio-keys 将报警 GPIO 映射为 KEY 事件 ② 用户态 epoll 等待事件 ③ 或直接使用 gpio 子系统 + libgpiod 进行边沿检测（更灵活但需要更多代码）。<strong>推荐 gpio-keys</strong>——零代码开销，Systemd 可以直接配置为触发条件。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机 Input 设备整合 CheckList</div>
+  □ GPIO 复位按键 → gpio-keys → KEY_RESTART → 守护进程监听长按 5s → 安全重启<br>
+  □ IR 遥控 → gpio-ir-recv → rc-core/mapping → uinput → Android/Linux GUI 响应<br>
+  □ Alarm IN → gpio-keys 或 libgpiod → 边沿触发 → 录像/推送通知<br>
+  □ 调试串口 → 可选注册为 tty + input 复合设备（console + 按键输入）<br>
+  □ 确保所有 gpio-keys 设置了 <code>debounce-interval</code>（硬件抖动 5-30ms）<br>
+  □ 使用 <code>devm_*</code> 系列函数管理 input_dev 生命周期（驱动模块卸载时自动清理）
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux Input 子系统 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div><!-- /.doc -->
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>
