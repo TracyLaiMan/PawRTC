@@ -63,12 +63,12 @@
   <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
 
   <h2 class="sec-title" style="font-size:clamp(26px,5vw,40px);font-weight:900">Linux 调试与崩溃分析</h2>
-  <p class="sec-sub">系统化知识体系 — Core Dump · GDB · 编译参数 · Sanitizer · Valgrind · perf · strace · 方法论</p>
+  <p class="sec-sub">系统化知识体系 — Core Dump · GDB · Sanitizer · Valgrind · jemalloc · mimalloc · perf · strace</p>
 
   <div class="flow-row" style="margin:24px 0">
     <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>编译期</strong><br><small>-g · sanitizers</small></span>
     <span class="flow-arr">→</span>
-    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>运行期</strong><br><small>strace · perf · valgrind</small></span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>运行期</strong><br><small>strace · perf · valgrind · jemalloc</small></span>
     <span class="flow-arr">→</span>
     <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>崩溃时</strong><br><small>Core Dump · signal</small></span>
     <span class="flow-arr">→</span>
@@ -339,6 +339,176 @@ $ ./myapp
   <code>ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:log_path=/tmp/asan.log ./tests</code><br>
   检查退出码 (ASan 检测到错误 → exit code = 1) + 收集 log 文件用于事后分析。<br>
   Valgrind 使用 <code>--error-exitcode=1</code> 确保 CI 检测到问题。
+</div>
+
+<!-- ══ Ch4b: 应用层内存分配器调试 ══ -->
+<h2 class="sh">4+. 应用层内存分配器 — jemalloc · mimalloc 调试实战</h2>
+<p class="ss">替换 glibc malloc — LD_PRELOAD 无侵入接入 · 内置 Heap Profiling · 内存统计 · 泄漏检测 · 碎片分析</p>
+
+<div class="callout info" style="margin-bottom:18px">
+  <div class="ct">💡 为什么需要关注应用层内存分配器？</div>
+  ASan/Valgrind 需要<strong>重新编译</strong>或在测试环境运行 (<em>10-20× 慢</em>)；而 jemalloc/mimalloc 可通过 <strong>LD_PRELOAD</strong> 在<strong>生产环境</strong>中无侵入接入，自带 heap profiling、内存统计和泄漏检测能力，<em>性能反而优于</em> glibc 默认分配器。
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4+.1 jemalloc — Facebook 的通用内存分配器</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>jemalloc 调试特性</h4>
+    <div class="lbl">Heap Profiling · 统计 · 泄漏检测 · 碎片控制</div>
+    <p>
+    <strong>Heap Profiling</strong>: <code>--enable-prof</code> 编译后，通过 <code>MALLOC_CONF=prof:true</code> 环境变量开启。周期性 dump heap 快照到 <code>jeprof.*.heap</code> 文件。<br>
+    <strong>jeprof 分析工具</strong>:<br>
+    • <code>jeprof --text myapp jeprof.123.heap</code> — 文本总览<br>
+    • <code>jeprof --pdf myapp jeprof.123.heap > prof.pdf</code> — 调用图可视化<br>
+    • <code>jeprof --gif myapp jeprof.123.heap > prof.gif</code> — 火焰图<br>
+    <strong>内存统计 API</strong>: <code>malloc_stats_print()</code> — 运行时打印详细分配统计（arena、bin、huge 等各层指标）。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>生产环境接入 — 零修改</h4>
+    <div class="lbl">LD_PRELOAD · 环境变量控制</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># 编译 jemalloc (带 profiling 支持)</span>
+git clone https://github.com/jemalloc/jemalloc.git
+<span class="kw">cd</span> jemalloc
+./autogen.sh
+./configure <span class="se">\</span>
+    --enable-prof <span class="se">\</span>          <span class="cm"># Heap profiling</span>
+    --enable-stats <span class="se">\</span>         <span class="cm"># 统计信息</span>
+    --enable-debug <span class="se">\</span>         <span class="cm"># 断言 + 额外检查</span>
+    --prefix=/usr/local
+make -j$(nproc) && sudo make install
+
+<span class="cm"># LD_PRELOAD 接入 — 无需重新编译应用</span>
+<span class="kw">export</span> LD_PRELOAD=/usr/local/lib/libjemalloc.so
+./myapp
+
+<span class="cm"># 开启所有调试特性</span>
+<span class="kw">export</span> MALLOC_CONF=<span class="st">"prof:true,prof_prefix:jeprof.out,\
+lg_prof_interval:30,prof_leak:true,\
+stats_print:true"</span>
+./myapp
+
+<span class="cm"># 强制全面检查 (类似 valgrind 但快得多)</span>
+<span class="kw">export</span> MALLOC_CONF=<span class="st">"junk:true,quarantine:1024,\
+redzone:true,abort:true"</span></div>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>MALLOC_CONF 选项</th><th>作用</th><th>适用场景</th></tr></thead>
+  <tbody>
+    <tr><td><code>prof:true</code></td><td class="g">启用 heap profiling，周期性 dump 内存分配快照</td><td>定位内存泄漏、分析内存占用增长趋势</td></tr>
+    <tr><td><code>prof_leak:true</code></td><td class="g">进程退出时 dump 尚未释放的分配 — <strong>内置泄漏检测</strong></td><td>CI 集成自动化泄漏检查</td></tr>
+    <tr><td><code>lg_prof_interval:30</code></td><td>每当分配量达到 2<sup>30</sup> (1GB) 时 dump 一次</td><td>长期运行服务的增量分析</td></tr>
+    <tr><td><code>prof_active:false</code></td><td>启动时不激活 profiling，运行时通过 API 动态开启</td><td>按需诊断，减少常态开销</td></tr>
+    <tr><td><code>junk:true</code></td><td>分配时填充 <code>0xa5</code>，释放时填充 <code>0x5a</code></td><td class="y">检测 use-after-free、未初始化内存使用</td></tr>
+    <tr><td><code>quarantine:1024</code></td><td>释放后延迟 1024 字节才真正回收——加长 use-after-free 检测窗口</td><td class="y">类似 ASan 的 quarantine zone</td></tr>
+    <tr><td><code>redzone:true</code></td><td>在每个分配块前后加保护页 (红区)，检测堆缓冲区溢出</td><td class="y">类似 ASan 的 redzone</td></tr>
+    <tr><td><code>stats_print:true</code></td><td>进程退出时打印完整内存统计</td><td>了解内存使用模式、碎片率</td></tr>
+    <tr><td><code>abort:true</code></td><td>检测到内存错误时立即 abort() — 获取 core dump</td><td>CI 中强制 Early Abort</td></tr>
+    <tr><td><code>confirm_conf:true</code></td><td>启动时打印实际生效的配置</td><td>确认配置是否成功应用</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4+.2 mimalloc — Microsoft 的紧凑型安全分配器</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>mimalloc 调试特性</h4>
+    <div class="lbl">内置安全检测 · 极低碎片 · 快速</div>
+    <p>
+    <strong>安全模式</strong>: 编译时 <code>-DMI_SECURE=ON</code>，运行时<strong>编码 (encode) 所有指针</strong>、在 free 块填充随机 canary 值、对所有 free 操作验证指针有效性。<br>
+    <strong>Guard Pages</strong>: 每个 page 后跟保护页——越界访问立即 SIGSEGV。<br>
+    <strong>Heap 一致性检查</strong>: <code>mi_heap_check_all()</code> — 运行时验证所有内部数据结构的完整性。<br>
+    <strong>Verbose 日志</strong>: <code>MIMALLOC_VERBOSE=1</code> — 打印每个 alloc/free 操作 + 调用栈。<br>
+    <strong>统计 API</strong>: <code>mi_stats_print(NULL)</code> / <code>mi_stats_print_out(mi_main_heap(), stderr)</code>。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>快速接入 + 安全加固</h4>
+    <div class="lbl">LD_PRELOAD · 环境变量 · API 替换</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># 编译 mimalloc (安全模式)</span>
+git clone https://github.com/microsoft/mimalloc.git
+<span class="kw">cd</span> mimalloc &amp;&amp; mkdir build &amp;&amp; <span class="kw">cd</span> build
+cmake .. -DMI_SECURE=ON -DCMAKE_BUILD_TYPE=Debug
+make -j$(nproc) &amp;&amp; sudo make install
+
+<span class="cm"># LD_PRELOAD 零修改接入</span>
+<span class="kw">export</span> LD_PRELOAD=/usr/local/lib/libmimalloc.so
+./myapp
+
+<span class="cm"># 开启 verbose 详细日志</span>
+<span class="kw">export</span> MIMALLOC_VERBOSE=<span class="nu">1</span>
+<span class="kw">export</span> MIMALLOC_SHOW_STATS=<span class="nu">1</span>
+./myapp
+
+<span class="cm"># 开启安全检测 + 错误时 abort</span>
+<span class="kw">export</span> MIMALLOC_SHOW_ERRORS=<span class="nu">1</span>
+<span class="kw">export</span> MIMALLOC_ABORT_ON_ERROR=<span class="nu">1</span>
+<span class="kw">export</span> MIMALLOC_PAGE_RESET=<span class="nu">1</span>  <span class="cm"># 释放后立即归还 OS</span></div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4+.3 jemalloc vs mimalloc vs glibc vs ASan/Valgrind — 调试能力对比</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>能力</th><th>glibc malloc</th><th>jemalloc</th><th>mimalloc</th><th>ASan</th><th>Valgrind</th></tr></thead>
+  <tbody>
+    <tr><td>接入方式</td><td>默认</td><td class="g">LD_PRELOAD</td><td class="g">LD_PRELOAD</td><td>重新编译</td><td>命令行</td></tr>
+    <tr><td>性能开销</td><td>基准</td><td class="g">≈ 1× (通常更快)</td><td class="g">≈ 1× (通常更快)</td><td class="y">~2×</td><td class="r">~10-20×</td></tr>
+    <tr><td>Heap Profiling</td><td class="r">无内置</td><td class="g">jeprof</td><td class="y">需外部 (heaptrack)</td><td class="r">无 (仅泄漏)</td><td class="y">massif</td></tr>
+    <tr><td>泄漏检测</td><td class="r">无</td><td class="g">prof_leak:true</td><td class="y">需外部工具</td><td class="g">内置</td><td class="g">内置</td></tr>
+    <tr><td>缓冲区溢出检测</td><td class="r">无</td><td class="y">redzone:true</td><td class="g">Guard Pages</td><td class="g">Redzone</td><td class="g">内置</td></tr>
+    <tr><td>Use-After-Free 检测</td><td class="r">无</td><td class="y">junk+quarantine</td><td class="y">canary 编码</td><td class="g">Quarantine</td><td class="g">内置</td></tr>
+    <tr><td>内存统计</td><td>mallinfo()</td><td class="g">malloc_stats_print()</td><td class="g">mi_stats_print()</td><td class="r">无</td><td class="r">无</td></tr>
+    <tr><td>碎片分析</td><td class="r">无</td><td class="g">arena 级统计</td><td class="g">heap 级统计</td><td class="r">无</td><td class="r">无</td></tr>
+    <tr><td>生产环境可用</td><td class="g">是</td><td class="g">★ 推荐</td><td class="g">★ 推荐</td><td class="r">不推荐</td><td class="r">不推荐</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4+.4 实战：用 jemalloc 定位生产环境内存泄漏</h3>
+
+<div class="cb">
+<span class="cm"># === 场景: 长期运行的服务进程内存持续增长 (RSS 上涨) ===</span>
+
+<span class="cm"># 1. 接入 jemalloc (带 profiling)</span>
+<span class="kw">export</span> LD_PRELOAD=/usr/local/lib/libjemalloc.so
+<span class="kw">export</span> MALLOC_CONF=<span class="st">"prof:true,prof_prefix:jeprof.out,\
+lg_prof_interval:26,prof_leak:true,\
+stats_print:true"</span>
+./my_service
+
+<span class="cm"># 2. 运行一段时间后，触发一次 heap dump (发 SIGUSR1)</span>
+kill -USR1 $(pidof my_service)
+<span class="cm"># 或者通过代码调用: mallctl("prof.dump", NULL, NULL, NULL, 0);</span>
+
+<span class="cm"># 3. 用 jeprof 分析增量</span>
+jeprof --text --inuse_space my_service jeprof.out.*.heap <span class="se">\</span>
+  | head -<span class="nu">30</span>
+<span class="cm"># 输出示例:</span>
+<span class="cm"># Total: 512.3 MB</span>
+<span class="cm">#   245.1 MB (47.8%): FrameProcessor::process</span>
+<span class="cm">#   120.7 MB (23.6%): VideoEncoder::encode</span>
+<span class="cm">#    68.3 MB (13.3%): AudioCapture::read</span>
+
+<span class="cm"># 4. 对比两次 dump 的差异 (定位增量泄漏)</span>
+jeprof --text --base=jeprof.out.001.heap my_service jeprof.out.002.heap
+
+<span class="cm"># 5. 生成调用图 PDF</span>
+jeprof --pdf --base=jeprof.out.001.heap my_service jeprof.out.002.heap <span class="se">\</span>
+  > leak_graph.pdf</div>
+
+<div class="callout success">
+  <div class="ct">✅ jemalloc/mimalloc 调试选型建议</div>
+  <strong>jemalloc 更适合</strong>: 需要 <em>heap profiling</em> + 内存泄漏追溯的生产环境，尤其是多线程服务 (jemalloc 的 arena 模型减少了锁竞争)；jeprof 工具成熟，与 pprof 生态兼容。<br>
+  <strong>mimalloc 更适合</strong>: 需要 <em>安全加固</em> 的场景 (Guard Pages 防溢出、指针编码防 corruption)；对<em>碎片率</em>和<em>分配延迟</em>要求极致的实时系统。<br>
+  <strong>组合使用</strong>: 开发/测试阶段用 <em>ASan + Valgrind</em> (全覆盖)，预发布/生产环境加 <em>jemalloc LD_PRELOAD + prof_leak</em> (性能友好 + 最后防线)。<br>
+  <strong>注意</strong>: jemalloc/mimalloc<strong>不能</strong>替代 ASan/Valgrind——它们检测不了栈溢出、全局变量越界、未初始化栈变量。它们是<strong>互补</strong>而非替代关系。
 </div>
 
 <!-- ══ Ch5: strace & perf ══ -->
