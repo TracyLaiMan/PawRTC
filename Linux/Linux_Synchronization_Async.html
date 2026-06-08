@@ -846,54 +846,115 @@ perf lock contention <span class="cm"># 竞争热图</span></div>
 })();
 </script>
 
-<!-- SMP Canvas -->
+<!-- SMP Canvas — CPU / Cache / MESI / Interconnect -->
 <script>
 (function(){
   var c=document.getElementById('smpCanvas');
   if(!c)return;
   var dpr=window.devicePixelRatio||1;
   var W=c.parentElement.clientWidth-40;
-  var H=280;
+  var H=330;
   c.style.width=W+'px'; c.style.height=H+'px';
   c.width=W*dpr; c.height=H*dpr;
   var ctx=c.getContext('2d');
   ctx.scale(dpr,dpr);
 
-  function rbox(x,y,w,h,txt,color){
+  function box(x,y,w,h,line1,line2,color,textColor){
     ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
-    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
-    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
-    ctx.fillText(txt,x+w/2,y+h/2+4);
+    ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle=textColor||'#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(line1,x+w/2,y+h/2-5);
+    if(line2){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(line2,x+w/2,y+h/2+14); }
   }
-  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+  function arrow(x1,y1,x2,y2,color,dashed){
+    ctx.strokeStyle=color; ctx.lineWidth=2; if(dashed)ctx.setLineDash([5,4]); else ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.setLineDash([]);
+    var ang=Math.atan2(y2-y1,x2-x1), sz=7;
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-sz*Math.cos(ang-Math.PI/6),y2-sz*Math.sin(ang-Math.PI/6)); ctx.lineTo(x2-sz*Math.cos(ang+Math.PI/6),y2-sz*Math.sin(ang+Math.PI/6)); ctx.closePath(); ctx.fill();
+  }
 
-  var y=24, bw=130, bh=70, gap=30;
-  var cx=W/2;
+  var m=14;
+  // Split: left 58% for diagram, right 42% for explanation
+  var leftW=W*0.56, rightX=leftW+12;
+  var leftCx=leftW/2;
 
-  // CPU0
-  rbox(cx-bw-gap, y, bw, bh, 'CPU 0\nL1 Cache','rgba(56,189,248,0.2)');
-  // CPU1
-  rbox(cx+gap, y, bw, bh, 'CPU 1\nL1 Cache','rgba(56,189,248,0.2)');
+  var cpuW=130, cpuH=50, cacheH=38, interH=36;
 
-  // Shared L3/Interconnect
-  var ly=y+bh+20;
-  ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.fillRect(cx-bw-gap-10, ly, bw*2+gap*2+20, 36);
-  ctx.strokeStyle='rgba(108,99,255,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-bw-gap-10, ly, bw*2+gap*2+20, 36);
-  ctx.fillStyle='#a78bfa'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('Coherent Interconnect (MESI Protocol)', cx, ly+23);
+  // === Left side: CPU + Cache + Interconnect + DRAM ===
+  var cpuY=16;
+  box(leftCx-cpuW-16, cpuY, cpuW, cpuH, 'CPU 0', 'Cortex-A / x86','rgba(56,189,248,0.22)');
+  box(leftCx+16, cpuY, cpuW, cpuH, 'CPU 1', 'Cortex-A / x86','rgba(56,189,248,0.22)');
 
-  // Memory
-  var my=ly+50;
-  ctx.fillStyle='rgba(251,191,36,0.12)'; ctx.fillRect(cx-100, my, 200, 32);
-  ctx.strokeStyle='rgba(251,191,36,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-100, my, 200, 32);
-  ctx.fillStyle='#fbbf24'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('DRAM (Main Memory)', cx, my+22);
+  // L1 cache
+  var l1Y=cpuY+cpuH+4;
+  box(leftCx-cpuW-16, l1Y, cpuW, cacheH, 'L1 Cache', 'I+D 32K+32K','rgba(56,189,248,0.12)','#7dd3fc');
+  box(leftCx+16, l1Y, cpuW, cacheH, 'L1 Cache', 'I+D 32K+32K','rgba(56,189,248,0.12)','#7dd3fc');
 
-  // Annotations
-  ctx.fillStyle='#f87171'; ctx.font='11px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('Cache Line Bouncing:', cx-bw/2-10, y+bh+10);
-  ctx.fillText('CPU0 写 Shared line → Invalidate CPU1', cx-bw/2-10, y+bh+26);
-  ctx.fillText('→ CPU1 读同 line → Miss → 从 CPU0 获取', cx-bw/2-10, y+bh+40);
+  // MESI labels inside L1 boxes
+  ctx.fillStyle='rgba(251,191,36,0.85)'; ctx.font='bold 10px "JetBrains Mono",monospace'; ctx.textAlign='center';
+  ctx.fillText('State: M', leftCx-cpuW-16+cpuW/2, l1Y+cacheH-8);
+
+  // Vertical arrows L1 → Interconnect
+  var interY=l1Y+cacheH+16;
+  arrow(leftCx-cpuW-16+cpuW/2, l1Y+cacheH, leftCx-cpuW-16+cpuW/2, interY, 'rgba(108,99,255,0.4)');
+  arrow(leftCx+16+cpuW/2, l1Y+cacheH, leftCx+16+cpuW/2, interY, 'rgba(108,99,255,0.4)');
+
+  // Interconnect
+  var interBW=leftW-m*2;
+  box(m, interY, interBW, interH, 'Coherent Interconnect  (MESI Protocol)',null,'rgba(108,99,255,0.18)','#a78bfa');
+  // MESI hint inside
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='9px "JetBrains Mono",monospace'; ctx.textAlign='center';
+  ctx.fillText('Modified → Exclusive → Shared → Invalid', leftCx, interY+interH-10);
+
+  // Arrow Interconnect → DRAM
+  var dramY=interY+interH+16;
+  arrow(leftCx, interY+interH, leftCx, dramY, 'rgba(251,191,36,0.45)');
+
+  // DRAM
+  box(leftCx-100, dramY, 200, interH, 'DRAM', 'Main Memory  (DDR4/LPDDR4)','rgba(251,191,36,0.15)','#fbbf24');
+
+  // Left-side explanation
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ 两个 CPU 核通过 MESI 协议保持缓存一致性', leftCx, dramY+interH+20);
+
+  // === Right side: Cache Line Bouncing Explanation ===
+  var rx=rightX, ry=16, rw=W-rightX-m;
+
+  ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.fillRect(rx, ry, rw, H-ry-14);
+  ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1; ctx.strokeRect(rx, ry, rw, H-ry-14);
+
+  ctx.fillStyle='#f87171'; ctx.font='bold 13px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Cache Line', rx+14, ry+22);
+  ctx.fillText('Bouncing', rx+14, ry+38);
+
+  ctx.fillStyle='#ccccee'; ctx.font='11px sans-serif';
+  var lines=[
+    '① CPU0 writes line',
+    '   → Invalidate CPU1',
+    '② CPU1 reads same line',
+    '   → Cache Miss!',
+    '③ CPU1 fetches from CPU0',
+    '   (not from DRAM!)',
+    '④ Line bounces between',
+    '   L1 caches endlessly',
+    '',
+    'Result: ~100ns latency',
+    'per access (vs ~1ns hit)',
+    '',
+    '→ spinlock 争用导致',
+    'cache line bouncing',
+    '→ 单核性能也受影响',
+    '→ 用 per-CPU / RCU',
+    '   可避免此问题'
+  ];
+  var ly=ry+52;
+  lines.forEach(function(l,i){
+    var isHdr=l.indexOf('→')===0||l.indexOf('Result')===0;
+    ctx.fillStyle=isHdr?'#fbbf24':'#ccccee'; ctx.font=(isHdr?'bold ':'')+'11px sans-serif';
+    ctx.fillText(l, rx+14, ly+i*18);
+  });
 })();
 </script>
 
@@ -910,35 +971,36 @@ perf lock contention <span class="cm"># 竞争热图</span></div>
   var ctx=c.getContext('2d');
   ctx.scale(dpr,dpr);
 
-  function node(x,y,label,color){
-    ctx.fillStyle=color; ctx.fillRect(x,y,60,44);
-    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,60,44);
+  function node(x,y,label1,label2,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,72,52);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,72,52);
     ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
-    ctx.fillText(label,x+30,y+28);
+    ctx.fillText(label1,x+36,y+22);
+    if(label2){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(label2,x+36,y+40); }
   }
 
-  var y=70, cx=W/2;
+  var y=74, cx=W/2;
   // Lock word
-  ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.fillRect(cx-100, 20, 200, 36);
-  ctx.strokeStyle='rgba(251,191,36,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-100, 20, 200, 36);
+  ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.fillRect(cx-110, 18, 220, 40);
+  ctx.strokeStyle='rgba(251,191,36,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-110, 18, 220, 40);
   ctx.fillStyle='#fbbf24'; ctx.font='bold 12px "JetBrains Mono",monospace'; ctx.textAlign='center';
-  ctx.fillText('lock word: [tail=2 | pend=0 | locked=1]', cx, 43);
+  ctx.fillText('Lock Word:  [ tail=2 | pend=0 | locked=1 ]', cx, 43);
 
   // Owner
-  node(cx-30, y, 'CPU 0\nOwner','rgba(52,211,153,0.25)');
-  // MCS queue
+  node(cx-36, y, 'CPU 0','Owner','rgba(52,211,153,0.25)');
+  // MCS queue waiting nodes
   ctx.fillStyle='#9999bb'; ctx.font='11px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('MCS 等待队列 (每个节点在自己的 cache line 上自旋)', cx, y+60);
-  ctx.fillText('CPU 2 自旋在自己的 MCS node 上', cx-100, y+90);
-  ctx.fillText('CPU 3 自旋在自己的 MCS node 上', cx+100, y+90);
+  ctx.fillText('MCS 等待队列  (每个节点在自己的 cache line 上自旋)', cx, y+64);
+  ctx.fillText('CPU 2 自旋', cx-110, y+88);
+  ctx.fillText('CPU 3 自旋', cx+110, y+88);
 
-  node(cx-130, y+70, 'CPU 2\nWaiter','rgba(248,113,113,0.18)');
-  node(cx+70, y+95, 'CPU 3\nWaiter','rgba(248,113,113,0.14)');
+  node(cx-146, y+68, 'CPU 2','Waiter','rgba(248,113,113,0.18)');
+  node(cx+74, y+98, 'CPU 3','Waiter','rgba(248,113,113,0.14)');
 
-  // Arrows
-  ctx.strokeStyle='rgba(108,99,255,0.4)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(cx-70,y+70+22); ctx.lineTo(cx-30,y+10); ctx.stroke(); // waiter→owner link
-  ctx.beginPath(); ctx.moveTo(cx+70,y+95+22); ctx.lineTo(cx-70,y+70+22); ctx.stroke(); // CPU3→CPU2 link
+  // Arrows between nodes
+  ctx.strokeStyle='rgba(108,99,255,0.45)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(cx-74, y+68+26); ctx.lineTo(cx-36, y+10); ctx.stroke(); // CPU2 → Owner
+  ctx.beginPath(); ctx.moveTo(cx+74, y+98+26); ctx.lineTo(cx-74, y+68+26); ctx.stroke(); // CPU3 → CPU2
 
   ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
   ctx.fillText('qspinlock: 只有 locked byte 在各 CPU 间 bouncing，tail 和 pending 不变 → 大幅降低 cache 流量', W/2, H-10);
