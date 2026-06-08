@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 同步·异步·资源竞争 — 内核并发编程全景</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+/* ── document layout ── */
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+
+/* ── section heading ── */
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+/* ── code block ── */
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+  font-family: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+  font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; }
+.cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; }
+.cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; }
+.cb .ma { color: #fbbf24; font-weight: 600; }
+.cb .fn { color: #d2a8ff; }
+.cb .err { color: #f87171; font-weight: 600; }
+
+/* ── card grid ── */
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; }
+.cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.cg.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3,.cg.c4 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc, #6c63ff); background: rgba(255,255,255,.04); transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc, #6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; }
+.cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+.cd ul { margin: 6px 0 0 16px; font-size: 12px; color: #9999bb; line-height: 1.8; }
+
+/* ── hero ── */
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+/* ── hr ── */
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+/* ── canvas wrapper ── */
+.freq-wrap { width: 100%; background: rgba(0,0,0,.15); border-radius: 12px; padding: 20px; margin: 16px 0;
+  border: 1px solid rgba(255,255,255,.04); text-align: center; }
+.freq-wrap canvas { max-width: 100%; }
+
+/* ── tag ── */
+.tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 5px; margin-right: 4px; }
+.tag.g { background: rgba(52,211,153,.1); color: #34d399; border: 1px solid rgba(52,211,153,.25); }
+.tag.b { background: rgba(56,189,248,.1); color: #38bdf8; border: 1px solid rgba(56,189,248,.25); }
+.tag.y { background: rgba(251,191,36,.1); color: #fbbf24; border: 1px solid rgba(251,191,36,.25); }
+.tag.p { background: rgba(167,139,250,.1); color: #a78bfa; border: 1px solid rgba(167,139,250,.25); }
+.tag.r { background: rgba(248,113,113,.1); color: #f87171; border: 1px solid rgba(248,113,113,.25); }
+
+/* ── comparison table highlight ── */
+.row-hl td { background: rgba(108,99,255,.06) !important; }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 同步 · 异步 · 资源竞争</h2>
+  <p class="sec-sub">内核并发编程全景 — spinlock / mutex / RCU / memory barrier / workqueue / io_uring / lockdep</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.08)"><strong>同步原语</strong><br><small>spinlock · mutex · RCU</small></span>
+    <span class="flow-arr">↔</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>内存屏障</strong><br><small>smp_mb · READ_ONCE</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>异步机制</strong><br><small>workqueue · io_uring</small></span>
+    <span class="flow-arr">↔</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>调试诊断</strong><br><small>lockdep · ftrace</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>并发根源</h4><div class="sub">SMP 多核 + 中断 + 抢占</div>
+      <p>多个 CPU 核同时访问共享数据、中断打断当前上下文、内核抢占导致的隐式切换。理解并发的<em>三重来源</em>是选择正确同步机制的前提。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>锁的代价</h4><div class="sub">cache line bouncing &middot; 上下文切换</div>
+      <p>spinlock 在争用时 <em>空转等待</em> 浪费 CPU 周期，mutex 在争用时 <em>睡眠让出 CPU</em> 但上下文切换开销大。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>设计哲学</h4><div class="sub">选择正确的工具</div>
+      <p>能不用锁就不用锁 (RCU / lock-free)；必须用锁则<em>选睡眠锁 (mutex)</em> 而非自旋锁 (spinlock)；锁粒度<em>越小越好</em>但一致性难维护。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1: 并发基础 ── -->
+<h2 class="sh">1. 并发编程基础 — CPU 如何看内存</h2>
+<p class="ss">SMP 架构 · 缓存一致性 · 内存模型 · 并发的三重来源</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>并发的三重来源</h4>
+    <div class="lbl">为什么内核需要这么多同步机制？</div>
+    <p>
+    <strong>1. SMP (多核并行)</strong>: 两个 CPU 核心<em>同时</em>执行不同任务，可能同时访问同一变量。<br>
+    <strong>2. 中断上下文</strong>: 硬中断/软中断可以在任何时刻<em>打断</em>进程上下文。中断处理函数与被打断的代码可能操作同一数据。<br>
+    <strong>3. 内核抢占</strong>: <code>CONFIG_PREEMPT=y</code> 时，高优先级任务可以<em>抢占</em>当前在内核态运行的任务。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>MESI 缓存一致性协议</h4>
+    <div class="lbl">硬件层面如何保证 cache line 一致性</div>
+    <p>
+    每个 CPU 核心有自己的 L1/L2 cache，共享数据通过 <em>MESI</em> 协议保持一致性：<br>
+    <strong>M</strong>odified — 本核独占，已修改 (dirty)<br>
+    <strong>E</strong>xclusive — 本核独占，与内存一致 (clean)<br>
+    <strong>S</strong>hared — 多核共享，只读<br>
+    <strong>I</strong>nvalid — 失效，需从其他核/内存重新获取<br>
+    当 CPU0 写一个 Shared 行 → 需要先 Invalidate 其他核的副本 → <em>cache line bouncing</em> → 性能杀手。
+    </p>
+  </div>
+</div>
+
+<div class="freq-wrap">
+<canvas id="smpCanvas"></canvas>
+</div>
+
+<div class="callout info">
+  <div class="ct">🔬 理解乱序执行与编译器优化</div>
+  <strong>CPU 乱序执行</strong>: 现代 CPU (x86 OoO、ARM) 会重排指令执行顺序以获得更高的 ILP (指令级并行)。例如 store 可能先于前面的 load 对其他核可见。<br>
+  <strong>编译器优化</strong>: <code>gcc -O2</code> 可能会重排代码、将变量缓存在寄存器中、甚至优化掉看起来"无意义"的读操作。<br>
+  <strong>后果</strong>: 你写的 C 代码执行顺序 ≠ CPU 实际执行顺序 ≠ 其他核看到的顺序。这就是为什么需要 <em>内存屏障</em> 和 <em>READ_ONCE/WRITE_ONCE</em>。
+</div>
+
+<!-- ── Ch2: 原子操作 ── -->
+<h2 class="sh">2. 原子操作 — 锁的基石</h2>
+<p class="ss">atomic_t · READ_ONCE/WRITE_ONCE · cmpxchg · 内存顺序语义</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>atomic_t — 不可分割的整数操作</h4>
+    <div class="lbl">&lt;linux/atomic.h&gt; — 架构无关的原子 API</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 声明与初始化</span>
+<span class="ty">atomic_t</span> v = <span class="fn">ATOMIC_INIT</span>(<span class="nu">0</span>);
+
+<span class="cm">// 读/写/加减 (全原子，无锁)</span>
+<span class="fn">atomic_read</span>(&amp;v);          <span class="cm">// 原子读</span>
+<span class="fn">atomic_set</span>(&amp;v, <span class="nu">1</span>);        <span class="cm">// 原子写</span>
+<span class="fn">atomic_inc</span>(&amp;v);            <span class="cm">// 原子自增 (LOCK incl on x86)</span>
+<span class="fn">atomic_dec</span>(&amp;v);            <span class="cm">// 原子自减</span>
+<span class="fn">atomic_add</span>(<span class="nu">5</span>, &amp;v);         <span class="cm">// 原子加</span>
+
+<span class="cm">// 原子读-改-写 (RMW — Read-Modify-Write)</span>
+<span class="fn">atomic_inc_return</span>(&amp;v);     <span class="cm">// 自增并返回新值</span>
+<span class="fn">atomic_cmpxchg</span>(&amp;v, old, new); <span class="cm">// CAS 原子比较交换</span>
+<span class="fn">atomic_xchg</span>(&amp;v, new);      <span class="cm">// 原子交换</span></div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>READ_ONCE / WRITE_ONCE</h4>
+    <div class="lbl">阻止编译器"自作聪明"地优化</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 不良示例 — 编译器可能优化掉循环读</span>
+<span class="kw">while</span> (flag == <span class="nu">0</span>)        <span class="cm">// 被优化为 if (flag==0) loop_forever</span>
+    cpu_relax();
+
+<span class="cm">// 正确 — READ_ONCE 禁止编译器缓存该变量</span>
+<span class="kw">while</span> (<span class="fn">READ_ONCE</span>(flag) == <span class="nu">0</span>)
+    cpu_relax();
+
+<span class="cm">// WRITE_ONCE — 确保写入对其他 CPU 可见</span>
+<span class="fn">WRITE_ONCE</span>(shared_var, value);
+
+<span class="cm">// 作用: 1. 禁止编译器优化掉该次读写</span>
+<span class="cm">//       2. 禁止编译器将该读写与其他操作重排</span>
+<span class="cm">//       3. 确保以单次指令完成 (非拆分访问)</span></div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.1 atomic 的返回值语义 — 什么时候需要 memory ordering</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>API (非 RMW)</th><th>内存序</th><th>API (RMW + 返回)</th><th>内存序</th></tr></thead>
+  <tbody>
+    <tr><td><code>atomic_read()</code></td><td>无屏障 (relaxed)</td><td><code>atomic_inc_return()</code></td><td class="g">全屏障 (fully ordered)</td></tr>
+    <tr><td><code>atomic_set()</code></td><td>无屏障 (relaxed)</td><td><code>atomic_dec_return()</code></td><td class="g">全屏障</td></tr>
+    <tr><td><code>atomic_read_acquire()</code></td><td class="g">acquire 语义</td><td><code>atomic_fetch_add()</code></td><td class="g">全屏障</td></tr>
+    <tr><td><code>atomic_set_release()</code></td><td class="g">release 语义</td><td><code>atomic_cmpxchg()</code></td><td class="g">全屏障</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ atomic_t 不是万能锁</div>
+  <code>atomic_t</code> 只能保护<strong>单个变量</strong>的原子访问。它不保护多个变量之间的复合操作。例如：<br>
+  <code>if (atomic_read(&amp;v) > 0) atomic_dec(&amp;v);</code> — 这不是原子的！Read 和 dec 之间另一核可能也读到 v>0 并 dec，导致 v 变成 -1。<br>
+  <strong>解决方案</strong>: 用 <code>atomic_dec_if_positive()</code> 或改用 mutex/spinlock 保护复合操作。
+</div>
+
+<!-- ── Ch3: 自旋锁 ── -->
+<h2 class="sh">3. 自旋锁 (Spinlock) — 忙等的艺术</h2>
+<p class="ss">raw_spinlock · spin_lock_irqsave · ticket spinlock · qspinlock · 使用规则</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>spinlock 数据结构</h4>
+    <div class="lbl">include/linux/spinlock_types.h</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="kw">typedef struct</span> <span class="ty">spinlock</span> {
+    <span class="kw">union</span> {
+        <span class="kw">struct</span> <span class="ty">raw_spinlock</span> rlock;
+        <span class="cm">// qspinlock 内部结构 (x86-64 / ARM64):</span>
+        <span class="cm">// ┌──────┬─────────┬──────────┐</span>
+        <span class="cm">// │ tail │ pending │  locked  │</span>
+        <span class="cm">// │ 16b  │   8b    │    8b    │</span>
+        <span class="cm">// └──────┴─────────┴──────────┘</span>
+        <span class="cm">// locked: 当前持有者</span>
+        <span class="cm">// pending: 有一个等待者 (自旋)</span>
+        <span class="cm">// tail: MCS 队列尾部索引</span>
+    };
+} <span class="ty">spinlock_t</span>;</div>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>核心 API — 记住这些变体</h4>
+    <div class="lbl">保护场景决定使用哪个变体</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 1. 纯进程上下文 (无中断竞争)</span>
+<span class="fn">spin_lock</span>(&amp;lock);
+<span class="fn">spin_unlock</span>(&amp;lock);
+
+<span class="cm">// 2. 共享数据会被中断处理函数访问</span>
+<span class="cm">//    → 必须关本地中断! 防止死锁</span>
+<span class="fn">spin_lock_irqsave</span>(&amp;lock, flags);
+<span class="fn">spin_unlock_irqrestore</span>(&amp;lock, flags);
+
+<span class="cm">// 3. 共享数据会被 softirq/tasklet 访问</span>
+<span class="fn">spin_lock_bh</span>(&amp;lock);   <span class="cm">// 关 bottom half</span>
+<span class="fn">spin_unlock_bh</span>(&amp;lock);
+
+<span class="cm">// 4. 仅关中断 (不保存 flags，已知中断已关)</span>
+<span class="fn">spin_lock_irq</span>(&amp;lock);
+<span class="fn">spin_unlock_irq</span>(&amp;lock);</div>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ spinlock 三大铁律</div>
+  <strong>1. 持锁期间不能睡眠</strong> — 不能调用 <code>copy_from_user()</code>、<code>kmalloc(GFP_KERNEL)</code>、<code>schedule()</code> 等任何可能睡眠的函数。违反 → kernel panic.<br>
+  <strong>2. 持锁时间越短越好</strong> — spinlock 是忙等，长时间持锁会让其他 CPU 空转。临界区应只有几十条指令。<br>
+  <strong>3. 不可递归</strong> — spin_lock 不支持同一 CPU 递归获取。重复 lock 会<strong>死锁自己</strong>。<br>
+  <strong>4. 中断上下文必须用 _irqsave</strong> — 如果中断处理函数也拿同一把锁，进程上下文不关中断就 lock → 中断到来 → 中断上下文再 lock → <em>本核死锁</em>。
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">3.1 qspinlock — 现代 Linux 的队列自旋锁</h3>
+
+<div class="freq-wrap">
+<canvas id="qspinCanvas"></canvas>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>架构</th><th>spinlock 实现</th><th>特点</th></tr></thead>
+  <tbody>
+    <tr><td>x86 (老)</td><td><code>ticket spinlock</code></td><td>FIFO 排队号 + 当前服务号。公平但 cache line bouncing 严重</td></tr>
+    <tr><td class="row-hl"><td>x86-64 / ARM64 (新)</td><td><code>queued spinlock (qspinlock)</code></td><td class="g">MCS 队列锁。等待者在自己的 cache line 上自旋，降低总线流量</td></tr>
+    <tr><td>UP (单核)</td><td>编译为空操作</td><td><code>!CONFIG_SMP</code> 时 spin_lock 只是关抢占</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch4: 互斥锁与信号量 ── -->
+<h2 class="sh">4. 互斥锁 (Mutex) &amp; 信号量 (Semaphore)</h2>
+<p class="ss">睡眠锁 — 争用时让出 CPU · rt_mutex · PI 协议 · counting semaphore</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>struct mutex</h4>
+    <div class="lbl">include/linux/mutex.h</div>
+    <p>
+    <strong>最常用的睡眠锁</strong>。争用时调用者进入 <code>TASK_UNINTERRUPTIBLE</code> 睡眠。<br>
+    <strong>优化路径 (fastpath)</strong>: 无竞争时只需一次原子 <code>cmpxchg</code> — 与 spinlock 一样快。<br>
+    <strong>慢路径 (slowpath)</strong>: 有竞争时走入 <code>__mutex_lock_slowpath()</code>，将任务加入等待队列，调用 <code>schedule()</code> 让出 CPU。<br>
+    <strong>DEBUG_MUTEXES</strong>: 开启后跟踪持有者、检测死锁、检测释放非持有锁。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>rt_mutex — 实时互斥锁</h4>
+    <div class="lbl">PREEMPT_RT 补丁的核心依赖</div>
+    <p>
+    普通 mutex 有<em>优先级反转</em>问题。rt_mutex 实现 <strong>PI (Priority Inheritance，优先级继承)</strong>：<br>
+    当高优先级任务等待锁时，<em>临时提升</em>锁持有者的优先级 → 持有者尽快执行完临界区 → 释放锁 → 高优先级任务立即获得锁。<br>
+    <code>futex(FUTEX_LOCK_PI)</code> 用户态 PI mutex 的内核实现即基于 rt_mutex。<br>
+    PREEMPT_RT 将<strong>所有 spinlock 替换为 rt_mutex</strong>，使内核完全可抢占。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>struct semaphore</h4>
+    <div class="lbl">计数信号量 — 允许多个持有者</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 声明 + 初始化 (count=N)</span>
+<span class="fn">DEFINE_SEMAPHORE</span>(sem);
+
+<span class="cm">// 获取 (count--, 若 count&lt;0 则睡眠)</span>
+<span class="fn">down</span>(&amp;sem);             <span class="cm">// UNINTERRUPTIBLE</span>
+<span class="fn">down_interruptible</span>(&amp;sem); <span class="cm">// 可被信号唤醒</span>
+<span class="fn">down_killable</span>(&amp;sem);     <span class="cm">// 可被 fatal signal 唤醒</span>
+
+<span class="cm">// 释放 (count++)</span>
+<span class="fn">up</span>(&amp;sem);
+
+<span class="cm">// 典型场景: 生产者-消费者、有限资源池</span></div>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>特性</th><th>spinlock</th><th>mutex</th><th>semaphore</th><th>rt_mutex</th></tr></thead>
+  <tbody>
+    <tr><td>争用时行为</td><td class="r">忙等 (自旋)</td><td class="g">睡眠 (让出 CPU)</td><td class="g">睡眠</td><td class="g">睡眠 + 优先级继承</td></tr>
+    <tr><td>可睡眠上下文</td><td class="r">不可</td><td class="g">是</td><td class="g">是</td><td class="g">是</td></tr>
+    <tr><td>中断上下文</td><td class="g">是 (_irqsave)</td><td class="r">不可</td><td class="r">不可</td><td class="r">不可</td></tr>
+    <tr><td>递归获取</td><td class="r">不可</td><td class="r">不可</td><td class="g">可 (计数)</td><td class="r">不可</td></tr>
+    <tr><td>多个持有者</td><td class="r">不可 (1)</td><td class="r">不可 (1)</td><td class="g">可 (count=N)</td><td class="r">不可 (1)</td></tr>
+    <tr><td>优先级继承</td><td class="r">N/A</td><td class="r">无 (普通版)</td><td class="r">无</td><td class="g">是</td></tr>
+    <tr><td>典型持锁时间</td><td class="y">&lt; 10µs</td><td class="g">µs ~ ms</td><td class="g">任意</td><td class="g">µs ~ ms</td></tr>
+    <tr><td>PREEMPT_RT 行为</td><td class="y">→ rt_mutex</td><td class="g">→ rt_mutex</td><td>不变</td><td class="g">不变</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ── Ch5: 读写锁 ── -->
+<h2 class="sh">5. 读写锁与 RCU — 读多写少的优化</h2>
+<p class="ss">rwlock · rwsem · RCU — 三种不同的"读优化"策略</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>rwlock_t (自旋读写锁)</h4>
+    <div class="lbl">允许多个读者并发，写者独占</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="fn">read_lock</span>(&amp;rwlock);      <span class="cm">// 读者获取 (多读者可共存)</span>
+<span class="fn">read_unlock</span>(&amp;rwlock);
+
+<span class="fn">write_lock</span>(&amp;rwlock);     <span class="cm">// 写者获取 (独占)</span>
+<span class="fn">write_unlock</span>(&amp;rwlock);
+
+<span class="cm">// 同样有 _irqsave / _bh 变体</span>
+<span class="fn">read_lock_irqsave</span>(&amp;rwlock, flags);
+<span class="fn">write_lock_irqsave</span>(&amp;rwlock, flags);
+
+<span class="cm">// 限制: 1. 同样是自旋锁，不能睡眠</span>
+<span class="cm">//       2. 若读者持续到来，写者可能饿死</span>
+<span class="cm">//       3. 开销比 spinlock 大 (需维护读者计数)</span>
+<span class="cm">// 适用: 读比例 > 90%，临界区极短</span></div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>rwsem (读写信号量)</h4>
+    <div class="lbl">睡眠版读写锁 — 适用于长临界区</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="fn">down_read</span>(&amp;rwsem);       <span class="cm">// 读者获取 (可睡眠)</span>
+<span class="fn">up_read</span>(&amp;rwsem);
+
+<span class="fn">down_write</span>(&amp;rwsem);      <span class="cm">// 写者获取 (独占，可睡眠)</span>
+<span class="fn">up_write</span>(&amp;rwsem);
+
+<span class="cm">// 也支持: down_read_interruptible()</span>
+<span class="cm">//        down_write_killable()</span>
+<span class="cm">//        downgrade_write() — 写锁降级为读锁</span>
+
+<span class="cm">// 适用: 文件系统 (struct super_block-&gt;s_umount)</span>
+<span class="cm">//      内存管理 (mmap_lock，原 mmap_sem)</span></div>
+  </div>
+</div>
+
+<!-- ── 5.1 RCU ── -->
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">5.1 RCU — Read-Copy-Update · 完全无锁读</h3>
+
+<div class="freq-wrap">
+<canvas id="rcuCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>RCU 核心思想</h4>
+    <div class="lbl">读不加锁 · 写复制替换 · 宽限期</div>
+    <p>
+    <strong>1. 读者</strong>: 通过 <code>rcu_read_lock()</code> / <code>rcu_read_unlock()</code> 标记临界区 — 但在大多数架构上 <em>这两个是空操作</em>！仅是禁止抢占的编译器屏障。<br>
+    <strong>2. 写者</strong>: 不直接修改旧数据。先<em>复制</em>一份 → 修改副本 → 用副本<em>替换</em>指针 → 等待宽限期 → 释放旧数据。<br>
+    <strong>3. 宽限期 (Grace Period)</strong>: 等待<em>所有 CPU 核都至少经历一次上下文切换</em>（即确认没有任何读者还在引用旧数据）。<br>
+    <strong>关键</strong>: 读者永远感知不到"半更新"的数据——指针替换是原子的。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>RCU API 三件套</h4>
+    <div class="lbl">读者 · 写者 · 回收</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// ── 读者 ──</span>
+<span class="fn">rcu_read_lock</span>();
+obj = <span class="fn">rcu_dereference</span>(global_ptr);
+<span class="kw">if</span> (obj) {
+    val = obj->data;  <span class="cm">// 安全：保证 obj 不会被释放</span>
+}
+<span class="fn">rcu_read_unlock</span>();
+
+<span class="cm">// ── 写者 (更新) ──</span>
+new_obj = <span class="fn">kmalloc</span>(...);
+*new_obj = *old_obj;               <span class="cm">// 复制</span>
+new_obj->data = new_value;         <span class="cm">// 修改副本</span>
+old = <span class="fn">rcu_replace_pointer</span>(&amp;global_ptr, new_obj,
+                        <span class="fn">lock_is_held</span>(&amp;my_lock));
+<span class="cm">// 或: rcu_assign_pointer(global_ptr, new_obj);</span>
+
+<span class="cm">// ── 回收旧数据 ──</span>
+<span class="fn">synchronize_rcu</span>();  <span class="cm">// 阻塞等宽限期 (可睡眠)</span>
+<span class="fn">kfree</span>(old);          <span class="cm">// 现在安全了</span>
+
+<span class="cm">// 或异步回收:</span>
+<span class="fn">call_rcu</span>(&amp;old->rcu_head, my_callback); <span class="cm">// 非阻塞</span></div>
+  </div>
+</div>
+
+<div class="callout success">
+  <div class="ct">✅ RCU 适用场景</div>
+  <strong>完美适用</strong>: 读极多 (>99%)、写极少、读者不能阻塞、数据结构以指针链接。<br>
+  <strong>内核典型用例</strong>: 路由表 (fib_lookup)、文件描述符表 (fdtable)、内核模块列表、audit 规则、网络过滤规则 (netfilter)。<br>
+  <strong>不适合</strong>: 写频繁 (>10%) — synchronize_rcu 的开销不可忽略；读者需要阻塞 — rcu_read_lock 内不能睡眠。
+</div>
+
+<!-- ── Ch6: 其他同步机制 ── -->
+<h2 class="sh">6. 其他同步机制 — 工具箱补完</h2>
+<p class="ss">Completion · seqlock · wait_queue · Per-CPU · local_lock · memory barriers</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Completion</h4>
+    <div class="lbl">一次性同步 — "我好了，你继续"</div>
+    <p>
+    <strong>场景</strong>: 线程 A 等线程 B 完成某个初始化后再继续。<br>
+    <code>init_completion()</code> / <code>reinit_completion()</code><br>
+    <code>wait_for_completion()</code> — 等待<br>
+    <code>complete()</code> / <code>complete_all()</code> — 通知<br>
+    异步 API: <code>wait_for_completion_interruptible()</code>、<code>wait_for_completion_timeout()</code><br>
+    典型应用: 内核模块初始化等待固件加载、设备探测完成信号。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>seqlock (顺序锁)</h4>
+    <div class="lbl">写者优先 — 读者检测重试</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 读者:</span>
+<span class="kw">do</span> {
+    seq = <span class="fn">read_seqbegin</span>(&amp;seqlock);
+    <span class="cm">// ... 读取数据 ...</span>
+} <span class="kw">while</span> (<span class="fn">read_seqretry</span>(&amp;seqlock, seq));
+
+<span class="cm">// 写者:</span>
+<span class="fn">write_seqlock</span>(&amp;seqlock);
+<span class="cm">// ... 修改数据 ...</span>
+<span class="fn">write_sequnlock</span>(&amp;seqlock);
+
+<span class="cm">// 读者无锁，但检测到写冲突时重试</span>
+<span class="cm">// 典型: jiffies, timekeeping, 统计计数</span></div>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Wait Queue</h4>
+    <div class="lbl">等待条件满足 — 睡眠/唤醒</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="kw">DECLARE_WAIT_QUEUE_HEAD</span>(wq);
+
+<span class="cm">// 等待方:</span>
+<span class="fn">wait_event</span>(wq, condition);
+<span class="fn">wait_event_interruptible</span>(wq, cond);
+<span class="fn">wait_event_timeout</span>(wq, cond, timeout);
+
+<span class="cm">// 唤醒方:</span>
+<span class="fn">wake_up</span>(&amp;wq);
+<span class="fn">wake_up_interruptible</span>(&amp;wq);
+<span class="cm">// 唤醒所有 vs 唤醒一个:</span>
+<span class="fn">wake_up_all</span> / <span class="fn">wake_up_interruptible_all</span></div>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Per-CPU 变量</h4>
+    <div class="lbl">消除 cache line 争用的终极武器</div>
+    <p>
+    每个 CPU 一份独立副本 → <em>完全无锁访问</em>。<br>
+    <code>DEFINE_PER_CPU(type, name)</code><br>
+    <code>get_cpu_var()</code> / <code>put_cpu_var()</code> — 访问并关抢占<br>
+    <code>this_cpu_ptr()</code> — 本核指针<br>
+    <code>per_cpu()</code> — 跨核访问 (需要额外同步)<br>
+    <strong>限制</strong>: 内存开销 × CPU 数、跨核汇总需要遍历所有核、不能用于需要全局一致视图的场景。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>local_lock</h4>
+    <div class="lbl">PREEMPT_RT 时代的 per-CPU 锁</div>
+    <p>
+    传统的 <code>preempt_disable()</code> + per-CPU 在 PREEMPT_RT 上不够 (spinlock 变成了可睡眠的 rt_mutex)。<br>
+    <code>local_lock()</code> 显式声明"我在操作 per-CPU 数据，不要把我迁移到其他 CPU"。<br>
+    <code>local_lock_irqsave()</code> / <code>local_unlock_irqrestore()</code><br>
+    内核 5.16+ 推荐使用 local_lock 替代手动 preempt_disable。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内存屏障 (Memory Barrier)</h4>
+    <div class="lbl">最底层的顺序保证</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 全屏障: 前后所有读写不跨越</span>
+<span class="fn">smp_mb</span>();     <span class="cm">// StoreLoad barrier</span>
+
+<span class="cm">// 单向屏障:</span>
+<span class="fn">smp_rmb</span>();    <span class="cm">// 读不跨越</span>
+<span class="fn">smp_wmb</span>();    <span class="cm">// 写不跨越</span>
+
+<span class="cm">// 编译屏障 (仅约束编译器，不约束 CPU):</span>
+<span class="fn">barrier</span>();</div>
+  </div>
+</div>
+
+<!-- ── Ch7: 中断上下文同步 ── -->
+<h2 class="sh">7. 中断上下文与同步 — 最容易踩的坑</h2>
+<p class="ss">top half / bottom half · tasklet · softirq · 经典死锁模式</p>
+
+<div class="freq-wrap">
+<canvas id="irqCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>经典死锁场景 #1: 进程 vs 中断</h4>
+    <div class="lbl">本核死锁 — 最隐蔽的 bug</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// CPU0 上的进程上下文:</span>
+<span class="fn">spin_lock</span>(&amp;my_lock);           <span class="cm">// (1) 获取锁</span>
+<span class="cm">// ... 临界区 ...</span>
+<span class="cm">// &lt;&lt;&lt; 硬中断到达 CPU0! &gt;&gt;&gt;</span>
+<span class="cm">// 中断处理函数:</span>
+<span class="fn">spin_lock</span>(&amp;my_lock);           <span class="cm">// (2) 等待锁 → 永远等不到!</span>
+<span class="cm">// 因为持有者 (进程) 在同一个 CPU 上被中断抢占</span>
+<span class="cm">// 持有者永远不会运行，直到中断返回</span>
+<span class="cm">// 但中断返回要等 spin_lock 完成...</span>
+<span class="err">// ★ 死锁!</span>
+
+<span class="cm">// 正确写法:</span>
+<span class="cm">// 进程上下文:</span>
+<span class="fn">spin_lock_irqsave</span>(&amp;my_lock, flags); <span class="cm">// 关中断!</span></div>
+  </div>
+  <div class="cd" style="--cc:#fbbf24">
+    <h4>正确的中断同步策略</h4>
+    <div class="lbl">根据数据共享场景选择</div>
+    <div class="ptbl" style="margin:10px 0 0;font-size:10px">
+    <table>
+    <thead><tr><th>共享方</th><th>锁</th></tr></thead>
+    <tbody>
+    <tr><td>进程 ↔ 进程</td><td class="g">spin_lock</td></tr>
+    <tr><td>进程 ↔ softirq</td><td class="g">spin_lock_bh</td></tr>
+    <tr><td>进程 ↔ hardirq</td><td class="g">spin_lock_irqsave</td></tr>
+    <tr><td>softirq ↔ softirq (同核)</td><td>无需 (不可抢占)</td></tr>
+    <tr><td>softirq ↔ hardirq</td><td class="g">spin_lock_irqsave</td></tr>
+    <tr><td>hardirq ↔ hardirq</td><td class="g">spin_lock_irqsave</td></tr>
+    <tr><td>tasklet ↔ tasklet (同类)</td><td>无需 (同类型不并发)</td></tr>
+    <tr><td>tasklet ↔ tasklet (异类)</td><td class="g">spin_lock</td></tr>
+    </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ch8: 异步机制 ── -->
+<h2 class="sh">8. 异步执行机制 — 推迟到"以后"</h2>
+<p class="ss">Workqueue (cmwq) · tasklet · softirq · AIO · io_uring</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">8.1 执行上下文层次</h3>
+
+<div class="stack">
+  <div class="ly app" style="font-size:12px">用户态异步: AIO / io_uring / epoll / signals</div>
+  <div class="arrow">▼ system call</div>
+  <div class="ly host" style="font-size:12px">进程上下文: workqueue (cmwq) / kthread / async system calls</div>
+  <div class="arrow">♦</div>
+  <div class="ly ctrl" style="font-size:12px">软中断上下文: tasklet / softirq (TIMER, NET, BLOCK…)</div>
+  <div class="arrow">▼</div>
+  <div class="ly link" style="font-size:12px">硬中断上下文: hardirq handler (top half)</div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#34d399">
+    <h4>Workqueue (cmwq)</h4>
+    <div class="lbl">Concurrency-Managed Workqueue</div>
+    <p>
+    <strong>最常用的异步机制</strong> — 在<em>进程上下文</em>中延迟执行工作。<br>
+    <code>schedule_work()</code> → system_wq (全局共享)<br>
+    <code>schedule_delayed_work()</code> — 延迟执行<br>
+    <code>alloc_workqueue()</code> — 创建专用队列<br>
+    <strong>cmwq 亮点</strong>: 自动管理 kthread 池，根据负载动态增减线程数。避免线程爆炸。<br>
+    <strong>特点</strong>: 可睡眠！适合需要调用 <code>kmalloc(GFP_KERNEL)</code>、<code>mutex_lock()</code> 的延迟工作。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Tasklet</h4>
+    <div class="lbl">轻量级软中断 · 已逐渐被 workqueue 取代</div>
+    <p>
+    在<em>软中断上下文</em>执行，<strong>不可睡眠</strong>。<br>
+    <code>DECLARE_TASKLET()</code> 声明<br>
+    <code>tasklet_schedule()</code> 调度<br>
+    <strong>特性</strong>: 同一 tasklet 不会同时在多核运行（简化同步），但不同类型 tasklet 可并行。<br>
+    <strong>衰减</strong>: 内核 5.15+ 开始将 tasklet 迁移到 BH workqueue — tasklet 正在慢慢退出历史舞台。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>Softirq</h4>
+    <div class="lbl">内核预定义的延迟处理类型</div>
+    <p>
+    比 tasklet 更底层 — <em>静态编译</em>，只有 10 种 (HI, TIMER, NET_TX, NET_RX, BLOCK, IRQ_POLL, TASKLET, SCHED, HRTIMER, RCU)。<br>
+    同一 softirq 可在<em>多核同时运行</em> → 需自备同步。<br>
+    <strong>网络栈核心</strong>: NET_RX softirq (NAPI) 是 Linux 高性能网络的基础。<br>
+    用户不能自定义 softirq — 用 tasklet 或 workqueue 替代。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">8.2 io_uring — 新一代异步 I/O</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>io_uring 架构</h4>
+    <div class="lbl">共享内存环形队列 — 零拷贝提交/完成</div>
+    <p>
+    <strong>Submission Queue (SQ)</strong>: 用户态写提交请求 → 无需 syscall (用 <code>IORING_SETUP_SQPOLL</code>)<br>
+    <strong>Completion Queue (CQ)</strong>: 内核写完成事件 → 用户态轮询读取<br>
+    <strong>共享内存</strong>: SQ + CQ 位于<em>内核-用户态共享的 mmap 区域</em> — 零拷贝！<br>
+    <strong>Fixed Files/Buffers</strong>: 预注册 fd 和 buffer，消除每次 I/O 的 <code>fget()</code> 和 buffer 映射开销<br>
+    对比 AIO: io_uring 支持 <em>所有 I/O 类型</em> (不仅 O_DIRECT)，延迟低至 ~2µs (AIO 约 10µs)<br>
+    对比 SPDK: 不需要用户态驱动，通用性强。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>io_uring 使用示例</h4>
+    <div class="lbl">liburing — 用户态封装库</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="kw">struct</span> <span class="ty">io_uring</span> ring;
+<span class="fn">io_uring_queue_init</span>(<span class="nu">256</span>, &amp;ring, <span class="nu">0</span>);
+
+<span class="cm">// 获取一个 SQE</span>
+<span class="kw">struct</span> <span class="ty">io_uring_sqe</span> *sqe;
+sqe = <span class="fn">io_uring_get_sqe</span>(&amp;ring);
+<span class="fn">io_uring_prep_read</span>(sqe, fd, buf, nbytes, <span class="nu">0</span>);
+<span class="fn">io_uring_sqe_set_data</span>(sqe, user_data);
+
+<span class="cm">// 提交 (可批量提交多个 SQE)</span>
+<span class="fn">io_uring_submit</span>(&amp;ring);
+
+<span class="cm">// 等待完成</span>
+<span class="kw">struct</span> <span class="ty">io_uring_cqe</span> *cqe;
+<span class="fn">io_uring_wait_cqe</span>(&amp;ring, &amp;cqe);
+<span class="cm">// 处理 cqe->res (返回值) 和 cqe->user_data</span>
+<span class="fn">io_uring_cqe_seen</span>(&amp;ring, cqe);</div>
+  </div>
+</div>
+
+<!-- ── Ch9: 资源竞争与死锁 ── -->
+<h2 class="sh">9. 资源竞争 — 死锁、优先级反转与惊群</h2>
+<p class="ss">ABBA 死锁 · 优先级反转 · 惊群 · lock contention 分析</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">9.1 死锁的四要素与三种经典模式</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>死锁四要素 (Coffman)</h4>
+    <div class="lbl">四者缺一不可破</div>
+    <p>
+    <strong>1. 互斥 (Mutual Exclusion)</strong>: 资源不能共享<br>
+    <strong>2. 持有并等待 (Hold &amp; Wait)</strong>: 持锁 A 等锁 B<br>
+    <strong>3. 不可剥夺 (No Preemption)</strong>: 锁不能被强制拿走<br>
+    <strong>4. 循环等待 (Circular Wait)</strong>: A→B→C→A 循环依赖<br>
+    <strong>预防</strong>: 破坏任一条件即可。Linux 内核通过 <em>lockdep</em> 在运行时检测循环等待——不等死锁发生就报警。
+    </p>
+  </div>
+  <div class="cd" style="--cc:#fbbf24">
+    <h4>三种经典内核死锁模式</h4>
+    <div class="lbl">代码正确 ≠ 不死锁</div>
+    <p>
+    <strong>类型 1 — ABBA 死锁</strong>:<br>
+    线程 A: lock(L1) → lock(L2) vs 线程 B: lock(L2) → lock(L1)<br>
+    <strong>预防</strong>: 定义全局锁序，始终按同一顺序获取。<br><br>
+    <strong>类型 2 — 本核递归死锁</strong>:<br>
+    CPU0: spin_lock(L) → … → spin_lock(L) (不小心又拿同一把)<br>
+    <strong>预防</strong>: 代码审查 + lockdep 检测。<br><br>
+    <strong>类型 3 — 中断上下文死锁</strong>:<br>
+    进程锁 L → 中断到达同核 → 中断处理函数尝试锁 L<br>
+    <strong>预防</strong>: 永远用 <code>spin_lock_irqsave()</code> 而非 <code>spin_lock()</code>。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">9.2 优先级反转 — RT 系统的头号杀手</h3>
+
+<div class="freq-wrap">
+<canvas id="piCanvas"></canvas>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">9.3 惊群效应 (Thundering Herd)</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>什么是惊群</h4>
+    <div class="lbl">多个等待者同时被唤醒 → 只有一个能拿到资源</div>
+    <p>
+    <strong>经典场景</strong>: 多个进程/线程 <code>epoll_wait()</code> 在同一个 listening socket 上。新连接到达时<em>所有等待者都被唤醒</em>，但只有一个能 <code>accept()</code> 成功——其余白白做了上下文切换。<br>
+    <strong>accept() 惊群</strong>: Linux 4.5+ 通过 <code>SO_REUSEPORT</code> + <code>EPOLLEXCLUSIVE</code> 解决。<br>
+    <strong>futex 惊群</strong>: <code>FUTEX_WAKE</code> 用 <code>FUTEX_WAITERS</code> 标志优化——如果只有一个等待者，走 fast-path 避免不必要的唤醒。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>内核中的惊群场景与解决</h4>
+    <div class="lbl">wake_up vs wake_up_one — 选择正确的 API</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 不好的写法 — 唤醒所有等待者</span>
+<span class="fn">wake_up_all</span>(&amp;wq);    <span class="cm">// 惊群!</span>
+
+<span class="cm">// 通常更好的写法 — 只唤醒一个</span>
+<span class="fn">wake_up</span>(&amp;wq);         <span class="cm">// 唤醒一个 (exclusive)</span>
+
+<span class="cm">// 但需要确保所有等待者行为一致</span>
+<span class="cm">// 若资源池有 N 个可用资源:</span>
+<span class="fn">wake_up_nr</span>(&amp;wq, N);  <span class="cm">// 精确唤醒 N 个</span>
+
+<span class="cm">// 现代解决方案: rw_semaphore + handoff</span>
+<span class="cm">// 写者优先传递锁给下一个等待者，避免随机唤醒</span></div>
+  </div>
+</div>
+
+<!-- ── Ch10: 调试与诊断 ── -->
+<h2 class="sh">10. 调试与诊断工具</h2>
+<p class="ss">lockdep · lockstat · ftrace · perf lock · KCSAN · 实战排错流程</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>lockdep</h4>
+    <div class="lbl">Lock Dependency Validator — 死锁预防之王</div>
+    <p>
+    <strong>原理</strong>: 运行时记录所有锁的获取顺序，构建<em>锁依赖图</em>。检测图中是否存在环路 (ABBA 死锁)。<br>
+    <strong>输出</strong>: 一旦检测到潜在死锁，立即打印详细的锁获取历史和调用栈。<br>
+    <code>CONFIG_PROVE_LOCKING=y</code> 开启。<br>
+    <strong>限制</strong>: 仅检测曾被"交叉获取"的锁对 → 未走过的代码路径可能漏报；有性能开销 (~10-20%)；不能检测中断上下文死锁的全模式。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>lockstat / perf lock</h4>
+    <div class="lbl">锁竞争度量 — 谁在等谁</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm"># lockstat — 内核锁统计</span>
+<span class="kw">echo</span> <span class="nu">1</span> &gt; /proc/sys/kernel/lock_stat
+cat /proc/lock_stat
+
+<span class="cm"># 输出: 锁名 / 等待次数 / 等待总时间 / 持有者</span>
+
+<span class="cm"># perf lock — 基于 perf event 的锁分析</span>
+perf lock record &lt;command&gt;
+perf lock report     <span class="cm"># 总览</span>
+perf lock contention <span class="cm"># 竞争热图</span></div>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>KCSAN</h4>
+    <div class="lbl">Kernel Concurrency Sanitizer</div>
+    <p>
+    <strong>数据竞争检测器</strong> — 类似用户态的 ThreadSanitizer (TSAN)。<br>
+    <code>CONFIG_KCSAN=y</code><br>
+    <strong>原理</strong>: 在关键内存访问点插入<em>watchpoint</em>。检测到没有合适同步保护的并发访问时报告。<br>
+    <strong>特点</strong>: 低开销 (仅 ~1-3% CPU 开销 vs KASAN 的 ~2-5x)，可在生产环境采样。<br>
+    <code>KCSAN_REPORT_RACE_SIGNAL=y</code> 可通过信号实时通知。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">10.1 实战: 死锁排错流程</h3>
+
+<div class="sg">
+  <div class="st"><b>1. 重现</b><br>开启 lockdep (CONFIG_PROVE_LOCKING=y) 运行触发场景</div>
+  <div class="st"><b>2. 读 lockdep 报告</b><br>lockdep 打印潜在死锁环路：谁持有什么、等什么、在哪行代码</div>
+  <div class="st"><b>3. 确认锁序</b><br>确定问题锁对的"正确获取顺序"，找出违反顺序的代码路径</div>
+  <div class="st"><b>4. 修复方案</b><br>方案A: 统一锁序 · 方案B: 减少锁粒度 · 方案C: 改用 trylock+回退</div>
+  <div class="st"><b>5. 验证</b><br>重新运行，确认 lockdep 不再报警</div>
+  <div class="st"><b>6. 性能回归</b><br>用 perf lock contention 检查修复是否引入新的锁竞争热点</div>
+</div>
+
+<div class="callout warning" style="margin-top:16px">
+  <div class="ct">⚠️ 常见锁错误排查清单</div>
+  <strong>1. spin_lock 内调用了可能睡眠的函数?</strong> → CONFIG_DEBUG_ATOMIC_SLEEP 开启，会在 dmesg 打印 <code>"scheduling while atomic"</code><br>
+  <strong>2. 中断上下文用了 spin_lock 而非 spin_lock_irqsave?</strong> → lockdep 会报告 <code>"possible irq lock inversion dependency"</code><br>
+  <strong>3. 释放了未持有的锁?</strong> → CONFIG_DEBUG_SPINLOCK 开启，释放时检查 <code>lock-&gt;owner == current</code><br>
+  <strong>4. 持锁时间过长?</strong> → <code>perf lock contention</code> 查看每个锁的平均/最大等待时间<br>
+  <strong>5. 内存顺序问题导致的"看不见"bug?</strong> → KCSAN + <code>CONFIG_WEAK_MEMORY_ORDERING=y</code> (ARM/PowerPC)
+</div>
+
+<!-- ── Ch11: 快速决策矩阵 ── -->
+<h2 class="sh">11. 锁选择速查 — 我该用什么？</h2>
+<p class="ss">一张表决定用哪种同步机制，内含所有决策条件</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>场景</th><th>推荐</th><th>备选</th><th>不推荐</th></tr></thead>
+  <tbody>
+    <tr class="row-hl"><td>临界区 < 1µs, 不可睡眠</td><td class="g">spinlock</td><td>atomic_t (单变量)</td><td>mutex (睡眠开销大)</td></tr>
+    <tr class="row-hl"><td>临界区 > 10µs, 可睡眠</td><td class="g">mutex</td><td>rwsem (读多时)</td><td>spinlock (忙等浪费)</td></tr>
+    <tr class="row-hl"><td>读 99%+, 写 < 1%</td><td class="g">RCU</td><td>rwsem (可睡眠) / rwlock (不可睡)</td><td>mutex (读者互斥)</td></tr>
+    <tr class="row-hl"><td>进程 ↔ 硬中断共享数据</td><td class="g">spin_lock_irqsave</td><td>local_lock_irqsave</td><td class="r">spin_lock (死锁!)</td></tr>
+    <tr class="row-hl"><td>进程 ↔ softirq/tasklet 共享数据</td><td class="g">spin_lock_bh</td><td>local_lock_bh</td><td class="r">spin_lock (可能死锁)</td></tr>
+    <tr class="row-hl"><td>等待事件发生</td><td class="g">wait_event / completion</td><td>semaphore</td><td>spinlock + 轮询标志</td></tr>
+    <tr class="row-hl"><td>一次性同步 (A 等 B 完成初始化)</td><td class="g">completion</td><td>mutex + 条件变量</td><td>spinlock + 忙等</td></tr>
+    <tr class="row-hl"><td>延迟执行 (可睡眠)</td><td class="g">workqueue (cmwq)</td><td>kthread</td><td>tasklet (不可睡)</td></tr>
+    <tr class="row-hl"><td>延迟执行 (不可睡眠, 极短)</td><td class="g">tasklet / irq_work</td><td>softirq</td><td>workqueue (太慢)</td></tr>
+    <tr class="row-hl"><td>每个 CPU 独立计数/统计</td><td class="g">per-CPU 变量</td><td>local_lock + array</td><td>atomic_t (cache bouncing)</td></tr>
+    <tr class="row-hl"><td>保护链表/树/哈希表 (读多写少)</td><td class="g">RCU + spinlock (写)</td><td>rwsem</td><td>mutex (读也互斥)</td></tr>
+    <tr class="row-hl"><td>用户态高性能异步 I/O</td><td class="g">io_uring</td><td>epoll (网络) / AIO (磁盘)</td><td>同步阻塞 I/O</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+
+<p style="text-align:center;color:#555577;font-size:11px;margin-top:32px">
+  Reference: Linux Kernel Documentation (locking/) · Linux Weekly News (LWN) · kernel.org/doc · Linux source code<br>
+  Linux Sync · Async · Resource Contention — made with immersive dark style
+</p>
+
+</div><!-- /doc -->
+
+<!-- Scroll reveal -->
+<script>
+(function(){
+  var els=document.querySelectorAll('.g-card,.cd,.sec-title,.sec-sub,.cv-wrap,.gap-card');
+  var ob=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('vis'); } });
+  },{rootMargin:'0px 0px -40px 0px'});
+  els.forEach(function(el){ el.classList.add('will-observe'); ob.observe(el); });
+})();
+</script>
+
+<!-- SMP Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('smpCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=280;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function rbox(x,y,w,h,txt,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(txt,x+w/2,y+h/2+4);
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+
+  var y=24, bw=130, bh=70, gap=30;
+  var cx=W/2;
+
+  // CPU0
+  rbox(cx-bw-gap, y, bw, bh, 'CPU 0\nL1 Cache','rgba(56,189,248,0.2)');
+  // CPU1
+  rbox(cx+gap, y, bw, bh, 'CPU 1\nL1 Cache','rgba(56,189,248,0.2)');
+
+  // Shared L3/Interconnect
+  var ly=y+bh+20;
+  ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.fillRect(cx-bw-gap-10, ly, bw*2+gap*2+20, 36);
+  ctx.strokeStyle='rgba(108,99,255,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-bw-gap-10, ly, bw*2+gap*2+20, 36);
+  ctx.fillStyle='#a78bfa'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Coherent Interconnect (MESI Protocol)', cx, ly+23);
+
+  // Memory
+  var my=ly+50;
+  ctx.fillStyle='rgba(251,191,36,0.12)'; ctx.fillRect(cx-100, my, 200, 32);
+  ctx.strokeStyle='rgba(251,191,36,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-100, my, 200, 32);
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('DRAM (Main Memory)', cx, my+22);
+
+  // Annotations
+  ctx.fillStyle='#f87171'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Cache Line Bouncing:', cx-bw/2-10, y+bh+10);
+  ctx.fillText('CPU0 写 Shared line → Invalidate CPU1', cx-bw/2-10, y+bh+26);
+  ctx.fillText('→ CPU1 读同 line → Miss → 从 CPU0 获取', cx-bw/2-10, y+bh+40);
+})();
+</script>
+
+<!-- qspinlock Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('qspinCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=260;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function node(x,y,label,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,60,44);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,60,44);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(label,x+30,y+28);
+  }
+
+  var y=70, cx=W/2;
+  // Lock word
+  ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.fillRect(cx-100, 20, 200, 36);
+  ctx.strokeStyle='rgba(251,191,36,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-100, 20, 200, 36);
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 12px "JetBrains Mono",monospace'; ctx.textAlign='center';
+  ctx.fillText('lock word: [tail=2 | pend=0 | locked=1]', cx, 43);
+
+  // Owner
+  node(cx-30, y, 'CPU 0\nOwner','rgba(52,211,153,0.25)');
+  // MCS queue
+  ctx.fillStyle='#9999bb'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('MCS 等待队列 (每个节点在自己的 cache line 上自旋)', cx, y+60);
+  ctx.fillText('CPU 2 自旋在自己的 MCS node 上', cx-100, y+90);
+  ctx.fillText('CPU 3 自旋在自己的 MCS node 上', cx+100, y+90);
+
+  node(cx-130, y+70, 'CPU 2\nWaiter','rgba(248,113,113,0.18)');
+  node(cx+70, y+95, 'CPU 3\nWaiter','rgba(248,113,113,0.14)');
+
+  // Arrows
+  ctx.strokeStyle='rgba(108,99,255,0.4)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(cx-70,y+70+22); ctx.lineTo(cx-30,y+10); ctx.stroke(); // waiter→owner link
+  ctx.beginPath(); ctx.moveTo(cx+70,y+95+22); ctx.lineTo(cx-70,y+70+22); ctx.stroke(); // CPU3→CPU2 link
+
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('qspinlock: 只有 locked byte 在各 CPU 间 bouncing，tail 和 pending 不变 → 大幅降低 cache 流量', W/2, H-10);
+})();
+</script>
+
+<!-- RCU Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('rcuCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=320;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var pad=20, y=20;
+
+  // Timeline
+  ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(pad, y+50); ctx.lineTo(W-pad, y+50); ctx.stroke();
+
+  // CPU Readers
+  var ry=y+70;
+  ctx.fillStyle='#9999bb'; ctx.font='11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Reader CPU 0', pad, ry+10);
+  ctx.fillText('Reader CPU 1', pad, ry+40);
+  ctx.fillText('Writer CPU 2', pad, ry+70);
+
+  // Reader bars
+  ctx.fillStyle='rgba(52,211,153,0.25)'; ctx.fillRect(pad+130,ry-8,200,18);
+  ctx.fillText('rcu_read_lock() ──── 临界区 ──── rcu_read_unlock()', pad+140, ry+5);
+  ctx.fillRect(pad+200,ry+22,160,18);
+  ctx.fillText('rcu_read_lock() ──── 临界区 ────', pad+210, ry+35);
+
+  // Writer
+  ctx.fillStyle='rgba(248,113,113,0.2)'; ctx.fillRect(pad+250,ry+52,120,18);
+  ctx.fillText('copy+update+replace', pad+260, ry+65);
+  ctx.fillStyle='rgba(251,191,36,0.2)'; ctx.fillRect(pad+250+120+10,ry+52,180,18);
+  ctx.fillText('synchronize_rcu() 等待...', pad+380, ry+65);
+
+  // Grace Period marker
+  ctx.strokeStyle='rgba(251,191,36,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(pad+250+120+10, ry-20); ctx.lineTo(pad+250+120+10, ry+100); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad+250+120+10+180, ry-20); ctx.lineTo(pad+250+120+10+180, ry+100); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Grace Period', pad+250+120+10+90, ry-6);
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif';
+  ctx.fillText('确认所有 CPU 都离开了 rcu_read_lock 临界区 → kfree(old)', pad+250+120+10+90, ry+100);
+
+  // Free
+  ctx.fillStyle='rgba(52,211,153,0.2)'; ctx.fillRect(pad+250+120+10+190,ry+52,70,18);
+  ctx.fillText('kfree', pad+250+120+10+195, ry+65);
+
+  ctx.fillStyle='#8888aa'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('RCU 核心: 写者不阻塞读者 · 读者永远看到一致的数据 · 旧数据在宽限期后安全释放', W/2, H-15);
+})();
+</script>
+
+<!-- IRQ Context Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('irqCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=300;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function box(x,y,w,h,txt,sub,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(txt,x+w/2,y+h/2-3);
+    if(sub){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(sub,x+w/2,y+h/2+14); }
+  }
+
+  var pad=24, py=16, pw=W-pad*2;
+  var y=16;
+
+  // Process context
+  box(pad, y, pw, 42, '进程上下文 (Process Context)',
+    '可以睡眠 · mutex / completion / wait_event · 被中断和抢占打断',
+    'rgba(52,211,153,0.18)');
+  y+=52;
+  // Arrow down
+  ctx.strokeStyle='rgba(248,113,113,0.3)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W/2, y-4); ctx.lineTo(W/2, y+8); ctx.stroke();
+  ctx.fillText('中断到达 → 硬件保存上下文 → 跳转 ISR', W/2+10, y+6, '#f87171'); ctx.font='10px sans-serif'; ctx.textAlign='left';
+
+  y+=16;
+  // Top half
+  box(pad, y, pw, 32, 'Top Half (硬中断 Hardirq)',
+    '不可睡眠 · spin_lock_irqsave · 越短越好 · 调度 Bottom Half',
+    'rgba(248,113,113,0.2)');
+  y+=40;
+  ctx.strokeStyle='rgba(251,191,36,0.3)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W/2, y-4); ctx.lineTo(W/2, y+8); ctx.stroke();
+  ctx.fillStyle='#fbbf24'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('中断返回前 → 检查 pending softirq', W/2+10, y+6);
+
+  y+=16;
+  // Bottom half
+  box(pad, y, pw/2-12, 32, 'Softirq (NET_RX…)',
+    '不可睡眠 · 可多核并行',
+    'rgba(251,191,36,0.18)');
+  box(pad+pw/2+12, y, pw/2-12, 32, 'Tasklet',
+    '不可睡眠 · 同类型不并发',
+    'rgba(251,191,36,0.14)');
+
+  y+=42;
+  ctx.strokeStyle='rgba(167,139,250,0.3)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W/2, y-4); ctx.lineTo(W/2, y+8); ctx.stroke();
+  ctx.fillStyle='#a78bfa'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('softirq 可调度 workqueue → 进程上下文', W/2+10, y+6);
+
+  y+=16;
+  box(pad, y, pw, 32, 'Workqueue (cmwq) — 进程上下文',
+    '可以睡眠 · mutex · kmalloc(GFP_KERNEL) · 适合大部分延迟工作',
+    'rgba(167,139,250,0.18)');
+
+  ctx.fillStyle='#8888aa'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ 执行优先级: Hardirq > Softirq > Tasklet > Workqueue/Process    |    越往上层越灵活、越适合放慢逻辑', W/2, H-10);
+})();
+</script>
+
+<!-- Priority Inversion Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('piCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=360;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var pad=20, w=W-2*pad;
+  var tlY=24, laneH=48;
+
+  // Labels
+  ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('高优先级 H', pad, tlY+18);
+  ctx.fillText('中优先级 M', pad, tlY+laneH+18);
+  ctx.fillText('低优先级 L', pad, tlY+2*laneH+18);
+
+  // Lane backgrounds
+  ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fillRect(pad+100,tlY,w-100,laneH);
+  ctx.fillRect(pad+100,tlY+laneH,w-100,laneH);
+  ctx.fillRect(pad+100,tlY+2*laneH,w-100,laneH);
+
+  // Scenario WITHOUT PI (left half)
+  var cx=pad+100+(w-100)*0.45;
+
+  // L: acquires lock, runs
+  ctx.fillStyle='rgba(248,113,113,0.3)'; ctx.fillRect(pad+110,tlY+2*laneH+10,100,28);
+  ctx.fillStyle='#fff'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('L 持锁运行', pad+110+50, tlY+2*laneH+30);
+
+  // H: preempts L, tries to lock → blocks
+  ctx.fillStyle='rgba(52,211,153,0.3)'; ctx.fillRect(pad+110+50, tlY+10, 60, 28);
+  ctx.fillText('H 等锁', pad+110+50+30, tlY+30);
+  ctx.fillStyle='rgba(167,139,250,0.25)'; ctx.fillRect(pad+110+50+60, tlY+10, 80, 28);
+  ctx.fillText('H 被阻塞!', pad+110+50+60+40, tlY+30);
+
+  // M: preempts L
+  ctx.fillStyle='rgba(56,189,248,0.3)'; ctx.fillRect(pad+110+100,tlY+laneH+10,100,28);
+  ctx.fillText('M 运行 (抢占 L)', pad+110+100+50, tlY+laneH+30);
+
+  // Annotations
+  ctx.fillStyle='#f87171'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('✘ 无 PI: H 被 M 无限期阻塞', cx+60, tlY+3*laneH+20);
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif';
+  ctx.fillText('L 持有锁 → H 等锁 → M 抢占 L → H 等 M 完成 → H 被中优先级 M 阻塞', cx+60, tlY+3*laneH+38);
+
+  // Divider
+  ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(W-140, tlY-4); ctx.lineTo(W-140, tlY+3*laneH+54); ctx.stroke();
+
+  // Scenario WITH PI (right side)
+  var rx=W-140+20;
+  // L acquires, H arrives, L inherits H's priority
+  ctx.fillStyle='rgba(248,113,113,0.3)'; ctx.fillRect(rx,tlY+2*laneH+10, 80, 28);
+  ctx.fillText('L 持锁', rx+40, tlY+2*laneH+30);
+  ctx.fillStyle='rgba(52,211,153,0.6)'; ctx.fillRect(rx+80,tlY+2*laneH+10, 50, 28);
+  ctx.fillStyle='#fff'; ctx.font='9px sans-serif';
+  ctx.fillText('L↗H', rx+105, tlY+2*laneH+30);
+  ctx.fillText('优先', rx+105, tlY+2*laneH+42);
+
+  ctx.fillStyle='rgba(52,211,153,0.3)'; ctx.fillRect(rx,tlY+10, 130, 28);
+  ctx.fillStyle='#fff'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('H 获取锁，快速完成', rx+65, tlY+30);
+
+  ctx.fillStyle='#34d399'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('✔ 有 PI: L 临时继承 H 的优先级', rx+70, tlY+3*laneH+20);
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif';
+  ctx.fillText('L 持锁 → H 等锁 → L 优先级 ↗ H → M 无法抢占 → L 快速释放 → H 获取锁', rx+70, tlY+3*laneH+38);
+})();
+</script>
+
+</body>
+</html>
