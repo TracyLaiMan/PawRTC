@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux NAND Flash — 从硬件到文件系统</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.55; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; text-decoration:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,38px);font-weight:900">Linux NAND Flash</h2>
+  <p class="sec-sub">系统化知识体系 — 硬件特性 · MTD 子系统 · UBI 磨损均衡 · UBIFS 文件系统 · 设备树 · 调试工具</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>NAND Flash<br>Hardware</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>MTD Subsystem<br>mtd_info · nand_chip</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>UBI Layer<br>PEB·LEB · WL</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>UBIFS<br>File System</strong></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>User Space<br>/mnt/data</strong></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>NAND Flash 硬件</h4><div class="sub">Cell · Page · Block · Plane · ECC</div>
+      <p><em>SLC/MLC/TLC/QLC</em> 四种存储密度。Page=最小读写单元 (4~16KB)，Block=最小擦除单元 (64~512页)。<strong>擦前写</strong> 和 <strong>顺序页编程</strong> 是核心约束。ECC 从 BCH 演进到 LDPC 应对日益增长的误码率。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Linux MTD + UBI</h4><div class="sub">内存技术设备 · 非排序块镜像</div>
+      <p><em>MTD</em> 提供原始 Flash 访问抽象。 <em>UBI</em> 在其上实现 <strong>PEB/LEB 映射</strong>、<strong>磨损均衡</strong> (WL)、<strong>坏块管理</strong> (BBM)、<strong>数据擦洗</strong> (Scrubbing)。Fastmap 加速启动时的设备扫描。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>UBIFS 文件系统</h4><div class="sub">非排序块镜像文件系统</div>
+      <p>专为 UBI 设计的<em>日志结构文件系统</em>。写时复制 + 回滚日志。支持<strong>压缩</strong> (zlib/lzo/zstd)、<strong>快速恢复</strong> (无需 fsck)、<strong>动态 resize</strong>。直接从 MTD 设备运行，无需 FTL 层。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 硬件 ══ -->
+<h2 class="sh">1. NAND Flash 硬件基础</h2>
+<p class="ss">四种存储单元 · 层次结构 (Package→Die→Plane→Block→Page) · ONFI 标准 · ECC 需求演进</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>SLC · MLC · TLC · QLC</h4><div class="lbl">每 Cell 存储 1/2/3/4 bits</div>
+    <p><strong>SLC</strong> (1bit/cell): ~100K P/E 周期 — 工业/关键任务<br>
+    <strong>MLC</strong> (2bit/cell): ~3K–10K P/E — 企业级<br>
+    <strong>TLC</strong> (3bit/cell): ~300–3K P/E — 消费级 SSD/SD 卡<br>
+    <strong>QLC</strong> (4bit/cell): ~500–1K P/E — 冷存/归档<br>
+    bit 数 ↑ → 密度 ↑ 成本 ↓ → <strong>寿命 ↓ 误码率 ↑</strong><br>
+    当前主流: 3D TLC 堆叠 128~232 层。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>存储层次 — Page 与 Block</h4><div class="lbl">Package→Die→Plane→Block→Page</div>
+    <p><strong>Page</strong> (4KB~16KB): <strong>最小读写单元</strong>。含 Data Area + Spare Area (OOB — 存 ECC/坏块标记/元数据)。<br>
+    <strong>Block</strong> (64~512 Pages): <strong>最小擦除单元</strong>。擦除时整块归 1 (0xFF)。<br>
+    <strong>Plane</strong>: 多个 Block 组成 — 允许并行操作。<br>
+    <strong>Die/LUN</strong>: 独立芯片 — 可并行 I/O。<br>
+    <strong>核心约束</strong>: 擦前写 · 页内顺序编程 · MLC/TLC 不允许部分页编程。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ECC — 纠错码演进</h4><div class="lbl">BCH → LDPC · 软判决</div>
+    <p><strong>SLC (老制程)</strong>: 1~4 bit/512B → <strong>Hamming</strong><br>
+    <strong>MLC (3x nm)</strong>: 8~15 bit/1KB → <strong>BCH</strong><br>
+    <strong>MLC (2x nm)</strong>: 15~24 bit/1KB → BCH<br>
+    <strong>TLC / 3D-TLC</strong>: 40~84+ bit/1KB → <strong>LDPC</strong> + 软判决<br>
+    <strong>QLC</strong>: 80+ bit/1KB → LDPC + RAID 恢复<br>
+    OOB 区存储 ECC 校验字节: 每 8 bit 可纠错 ≈ 13 字节开销 (BCH)。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>接口标准</th><th>类型</th><th>数据宽度</th><th>最大速率</th><th>主要厂商</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ONFI</strong> (1.0→5.x)</td><td>开放标准</td><td>x8 / x16</td><td>NVDDR-3: 最高 ~533 MT/s</td><td>Intel/Micron, SK Hynix</td></tr>
+    <tr><td><strong>Toggle NAND</strong></td><td>专有 (Samsung/Toshiba)</td><td>x8 / x16</td><td>Toggle 5.0: 最高 ~800 MT/s</td><td>Samsung, Kioxia</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch2: MTD ══ -->
+<h2 class="sh">2. Linux MTD 子系统 — 原始 Flash 抽象层</h2>
+<p class="ss">mtd_info · nand_chip · nand_controller · 分区 · OOB · ECC 引擎 · NAND 控制器驱动模型</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>MTD 核心数据结构</h4><div class="lbl">drivers/mtd/ · include/linux/mtd/</div>
+    <p><strong>mtd_info</strong>: 每个 MTD 设备一个 — <code>type/size/erasesize/writesize/oobsize</code>。提供统一的 <code>_read/_write/_erase/_read_oob</code> 等回调。<br>
+    <strong>nand_chip</strong>: NAND 芯片的私有数据结构 — 包含 <code>nand_controller</code> 指针、<code>nand_ecc_ctrl</code> (ECC 引擎)、<code>options</code> (芯片特性 BIT 掩码)、<code>bbt</code> (坏块表)。<br>
+    <strong>nand_controller</strong>: 硬件 NAND 控制器抽象 — <code>exec_op()</code> 执行 NAND 命令序列。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>NAND 驱动开发核心</h4><div class="lbl">nand_scan → 注册 mtd_device</div>
+    <p>① 分配 <code>nand_chip</code> — 填充 ops 回调<br>
+    ② 配置 <strong>ECC 引擎</strong> (硬件 BCH / 软件 BCH / 无 ECC / on-die ECC)<br>
+    ③ 调用 <code>nand_scan()</code> — 自动探测 NAND 芯片参数 (ID→size/page/block/OOB)<br>
+    ④ 调用 <code>mtd_device_register()</code> — 注册 MTD 设备 + 创建分区<br>
+    ⑤ 驱动通过 <code>nand_controller-&gt;exec_op()</code> 发送 ONFI/Toggle 命令序列到硬件寄存器。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ Linux NAND Flash 软件栈 ═══ */</span>
+<span class="cm">┌─────────────────────────────────────────────┐</span>
+<span class="cm">│  User Space  │ 应用程序 (open/read/write)    │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  VFS         │ UBIFS  /  JFFS2  /  YAFFS2   │  ← Flash 专用文件系统</span>
+<span class="cm">│              │ (或通过 mtdblock → ext4 等)    │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│              │ <i>UBI (Unsorted Block Images)</i> │  ← 磨损均衡 + 坏块管理 + 卷管理</span>
+<span class="cm">│              │   PEB↔LEB 映射 · WL · Scrubbing│</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  MTD Core    │ <i>mtd_info</i> — 统一抽象          │  ← 字符设备 /dev/mtdX</span>
+<span class="cm">│              │ <i>mtdpart</i> — 分区管理           │    块设备 /dev/mtdblockX</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  NAND Core   │ <i>nand_chip</i> · nand_ecc_ctrl    │  ← nand_scan() 芯片探测</span>
+<span class="cm">│              │ nand_controller (exec_op)      │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  NAND Driver │ 硬件寄存器操作 · DMA · 中断     │  ← 平台/SoC 特定</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  Hardware    │ NAND Flash 芯片 (ONFI/Toggle)  │</span>
+<span class="cm">└─────────────────────────────────────────────┘</span></div>
+
+<div class="cb">
+<span class="cm">/* ===== 设备树 MTD NAND 分区绑定 ===== */</span>
+&amp;nand_controller {
+    nand@<span class="nu">0</span> {
+        reg = &lt;<span class="nu">0</span>&gt;;                              <span class="cm">// CS 编号</span>
+        nand-bus-width = &lt;<span class="nu">8</span>&gt;;                <span class="cm">// 8-bit 或 16-bit 数据总线</span>
+        nand-ecc-strength = &lt;<span class="nu">8</span>&gt;;             <span class="cm">// ECC 纠错能力 (bit/512B)</span>
+        nand-ecc-step-size = &lt;<span class="nu">512</span>&gt;;          <span class="cm">// ECC 步长</span>
+        nand-on-flash-bbt;                   <span class="cm">// 坏块表存储在 Flash 上 (推荐)</span>
+
+        partitions {
+            compatible = <span class="st">"fixed-partitions"</span>;
+            <span class="kw">#address-cells</span> = &lt;<span class="nu">1</span>&gt;; <span class="kw">#size-cells</span> = &lt;<span class="nu">1</span>&gt;;
+
+            uboot@<span class="nu">0</span> {
+                label = <span class="st">"u-boot"</span>;
+                reg = &lt;<span class="nu">0x0 0x80000</span>&gt;;            <span class="cm">// 512KB</span>
+            };
+            kernel@<span class="nu">80000</span> {
+                label = <span class="st">"kernel"</span>;
+                reg = &lt;<span class="nu">0x80000 0x800000</span>&gt;;       <span class="cm">// 8MB</span>
+            };
+            rootfs@<span class="nu">880000</span> {
+                label = <span class="st">"rootfs"</span>;
+                reg = &lt;<span class="nu">0x880000 0x0</span>&gt;;          <span class="cm">// 剩余全部空间</span>
+            };
+        };
+    };
+};</div>
+
+<!-- ══ Ch3: UBI ══ -->
+<h2 class="sh">3. UBI — 非排序块镜像层</h2>
+<p class="ss">PEB/LEB 映射 · 磨损均衡 (WL) · 坏块管理 (BBM) · 数据擦洗 (Scrubbing) · Fastmap 加速启动</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>PEB ↔ LEB 映射</h4><div class="lbl">ubi->eba_table[vol_id][lnum] = pnum</div>
+    <p><strong>PEB</strong> (Physical Erase Block): 物理擦除块，编号 pnum。每个 PEB 头含 <strong>EC (Erase Counter)</strong> + <strong>VID (Volume ID)</strong>。<br>
+    <strong>LEB</strong> (Logical Erase Block): 卷内的逻辑块，编号 lnum。UBI 维护 <strong>EBA 表</strong> 将 (vol_id, lnum) → pnum。<br>
+    <strong>写时复制</strong>: LEB 更新时分配新 PEB → 拷贝数据 → 更新 EBA → 旧 PEB 擦除回收。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>磨损均衡 (Wear Leveling)</h4><div class="lbl">红黑树管理 PEB 按 EC 排序</div>
+    <p><strong>free 树</strong>: 已擦除可用的 PEB (按 EC 升序)<br>
+    <strong>used 树</strong>: 持有有效数据的 PEB (按 EC 升序)<br>
+    <strong>scrub 树</strong>: 检测到 bit-flip 的 PEB — 需紧急迁移<br>
+    <strong>err 树</strong>: 坏块 — 永久排除<br>
+    WL 线程取 <strong>used 中 EC 最高</strong> 和 <strong>free 中 EC 最低</strong> 的 PEB 做数据迁移 → EC 差 < UBI_WL_THRESHOLD 时跳过。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Scrubbing — 数据擦洗</h4><div class="lbl">比磨损均衡更高优先级的数据抢救</div>
+    <p>MTD 读返回 <code>-EUCLEAN</code> (检测到可纠正 bit-flip) → UBI 将该 PEB 移入 <strong>scrub 树</strong> → WL 线程<strong>优先</strong>迁移 scrub PEB 的数据到健康 PEB → 防止 bit-flip 累积为不可纠正错误。<br>
+    <strong>主动 scrubbing</strong>: UBI 后台周期性读取 used PEB 检测早期退化。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ UBI: 从 Attach 到正常运行 ═══ */</span>
+<b>ubi_attach()</b>  (启动时 — 或 Fastmap 加速)
+  ├── 扫描 <em>所有 PEB</em> — 读 EC header + VID header
+  ├── 重建 EBA 表: (vol_id, lnum) → pnum
+  ├── 重建红黑树: free / used / scrub / err
+  ├── 恢复可能的中断操作 (power-cut recovery)
+  └── 初始化 Fastmap (缓存 EBA 表到 anchor PEB)
+
+<b>ubi_leb_write()</b>  (LEB 写入请求)
+  ├── EBA 表查找 (vol_id, lnum) → 当前 pnum
+  ├── 从 free 树取最低 EC 的 PEB → 新 pnum'
+  ├── <em>ubi_eba_copy_leb()</em>  — 复制数据到新 PEB
+  ├── 原子更新 EBA 表: map[pnum'] = 新数据, map[pnum] = 无效
+  └── 旧 PEB → 擦除 → 重新加入 free 树
+
+<b>wear_leveling_worker()</b>  (后台 WL 线程)
+  ├── used 树中取 EC 最高的 PEB → src
+  ├── free 树中取 EC 最低的 PEB → dst
+  ├── <em>if EC(dst) - EC(src) &lt; WL_THRESHOLD → 跳过</em> (不需 WL)
+  ├── 迁移 src 数据到 dst → 原子更新 EBA
+  └── 旧 src PEB → 擦除 → 重新加入 free 树</div>
+
+<div class="cb">
+<span class="cm">/* ===== UBI 配置与操作 ===== */</span>
+<span class="cm"># 在 MTD 分区上创建 UBI 设备</span>
+ubiformat /dev/mtd2                     <span class="cm">// 格式化 (保留工厂坏块标记)</span>
+ubiattach -m <span class="nu">2</span>                          <span class="cm">// 挂载 MTD2 为 UBI 设备</span>
+
+<span class="cm"># 创建 UBI 卷</span>
+ubimkvol /dev/ubi0 -N <span class="st">"rootfs"</span> -s <span class="nu">100</span>MiB    <span class="cm">// 静态大小卷</span>
+ubimkvol /dev/ubi0 -N <span class="st">"data"</span> -m            <span class="cm">// 最大可用空间卷</span>
+
+<span class="cm"># 查看 UBI 设备信息</span>
+ubinfo -a                               <span class="cm">// 所有 UBI 设备</span>
+ubinfo /dev/ubi0                        <span class="cm">// 查看某设备详情 + 每个卷</span>
+
+<span class="cm">/* ===== 内核模块参数 (UBI) ===== */</span>
+<span class="cm"># Fastmap 池保留 PEB 数 (默认 256)</span>
+modprobe ubi fm_reserved_pebs=<span class="nu">128</span>
+<span class="cm"># Fastmap 池大小 (默认 10% of total)</span>
+modprobe ubi fm_pool_size=<span class="nu">64</span></div>
+
+<!-- ══ Ch4: UBIFS ══ -->
+<h2 class="sh">4. UBIFS — UBI 专用日志结构文件系统</h2>
+<p class="ss">写时复制 · 回滚日志 · 透明压缩 · 快速恢复 · 无需 FTL 层</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>UBIFS 核心设计</h4><div class="lbl">日志结构 + 回滚 + COW</div>
+    <p><strong>日志 (Journal)</strong>: 所有写入先进入日志 → 后台提交 (commit) 将日志合并到主数据区。<br>
+    <strong>回滚 (Roll-back)</strong>: 未提交的日志在断电后自动丢弃 → <strong>无需 fsck</strong>。<br>
+    <strong>写时复制 (COW)</strong>: UBIFS → UBI → 新 PEB → 旧 PEB 擦除回收。数据永不被原地覆盖。<br>
+    <strong>B+ 树索引</strong>: 用于快速文件查找和空间分配。<br>
+    <strong>透明压缩</strong>: 支持 <code>zlib/lzo/zstd</code> — 在写入时压缩，读取时解压，对应用透明。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>垃圾回收 (GC)</h4><div class="lbl">后台合并有效数据 → 释放 PEB</div>
+    <p>UBIFS 与 UBI 协同 GC: UBIFS 标记无效 LEB → UBI 擦除对应 PEB → PEB 回到 free 树。<br>
+    <strong>B+ 树 GC</strong>: UBIFS 内部整理索引节点，回收被删除文件占用的空间。<br>
+    <strong>后台线程</strong>: UBI WL 线程 + UBIFS GC 线程协作，保持足够的可写空间。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== UBIFS 使用命令 ===== */</span>
+<span class="cm"># 在 UBI 卷上创建 UBIFS</span>
+mkfs.ubifs -r /path/to/rootfs -m <span class="nu">2048</span> -e <span class="nu">126976</span> -c <span class="nu">2048</span> -o rootfs.ubi
+<span class="cm"># -m: 最小 I/O 大小 (page size)</span>
+<span class="cm"># -e: 逻辑擦除块大小 (PEB size - UBI 开销)</span>
+<span class="cm"># -c: 最大 LEB 数量</span>
+
+<span class="cm"># 挂载 UBIFS</span>
+mount -t ubifs ubi0:rootfs /mnt/rootfs
+<span class="cm"># 或:</span>
+mount -t ubifs ubi0_0 /mnt/rootfs       <span class="cm">// vol_id=0</span>
+
+<span class="cm"># 查看 UBIFS 统计信息</span>
+cat /sys/kernel/debug/ubifs/ubi0_0/stats
+
+<span class="cm">/* ===== 设备树中标记 UBI 分区 ===== */</span>
+<span class="cm"># 内核命令行: ubi.mtd=2  (MTD2 作为 UBI 设备, 3=vol_id)</span>
+<span class="cm"># 完整启动参数示例:</span>
+<span class="kw">console</span>=ttyS0,115200 <span class="kw">root</span>=ubi0:rootfs <span class="kw">rootfstype</span>=ubifs <span class="kw">ubi.mtd</span>=<span class="nu">2</span> <span class="kw">rootwait</span></div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 关键实践: 一个 UBI 设备 → 多个 UBI 卷</div>
+  <strong>推荐</strong>: 一个 MTD 分区 → 一个 UBI 设备 → 多个 UBI 卷 (rootfs + data + config)<br>
+  <strong>不推荐</strong>: 每个 UBI 卷一个独立 UBI 设备<br>
+  原因: UBI 的<strong>磨损均衡跨所有卷</strong>共享 PEB 池。将多个卷放在同一 UBI 设备下 → 读写频繁的卷可以从只读卷的 PEB 池中受益 → 全局磨损更均衡。
+</div>
+
+<!-- ══ Ch5: SquashFS on NAND ══ -->
+<h2 class="sh">5. SquashFS on NAND — 只读根文件系统方案</h2>
+<p class="ss">通过 ubiblock 将 UBI 卷导出为只读块设备 → SquashFS 挂载 · 与 UBIFS 互补 · 嵌入式固件最佳实践</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>SquashFS 是什么？</h4><div class="lbl">高压缩只读文件系统 — 嵌入式固件首选</div>
+    <p><strong>SquashFS</strong> 是 Linux 内核原生的<strong>只读压缩文件系统</strong>。特点:<br>
+    <strong>极高压缩比</strong>: 支持 zlib/lzo/xz/zstd/lz4，xz 压缩率最高 (~50% 原始大小)。<br>
+    <strong>只读 = 天然安全</strong>: 不可篡改的根文件系统 — 断电/意外重启不会损坏。<br>
+    <strong>块设备依赖</strong>: SquashFS 需要<strong>块设备</strong>作为底层存储。NAND 不是块设备 → 需要中间层桥接。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ubiblock — UBI 到 SquashFS 的桥梁</h4><div class="lbl">将 UBI 静态卷导出为只读块设备</div>
+    <p><code>ubiblock -c /dev/ubi0_0</code> 将 UBI 静态卷 <strong>ubi0_0</strong> 导出为 <code>/dev/ubiblock0_0</code> 只读块设备。<br>
+    <strong>原理</strong>: ubiblock 驱动将 UBI LEB 线性映射为连续块设备扇区，读取时由 UBI 透明处理坏块跳过和 ECC。<br>
+    <strong>优势</strong>: ① UBI 层的<strong>坏块管理</strong> + <strong>bit-flip 纠正</strong> 保护 SquashFS ② SquashFS 无需感知底层是 NAND ③ 压缩镜像体积小 → 节省 Flash 空间 + 更快的烧录速度。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ SquashFS on NAND: 软件栈 ═══ */</span>
+<span class="cm">┌─────────────────────────────────────────────┐</span>
+<span class="cm">│  User Space  │ 应用程序 (open/read)          │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  VFS         │ <i>SquashFS</i> (只读, xz/zstd压)  │  ← mount -t squashfs</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  Block Layer │ /dev/ubiblock0_0              │  ← ubiblock 驱动导出</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│              │ <i>UBI (Unsorted Block Images)</i> │  ← UBI Static Volume</span>
+<span class="cm">│              │   坏块管理 · ECC · WL(只读卷)  │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  MTD Core    │ <i>mtd_info / mtdpart</i>          │</span>
+<span class="cm">├──────────────┼──────────────────────────────┤</span>
+<span class="cm">│  NAND Chip   │ Raw NAND Flash                │</span>
+<span class="cm">└─────────────────────────────────────────────┘</span></div>
+
+<div class="cg c2" style="margin-top:16px">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>SquashFS vs UBIFS — 如何选择？</h4><div class="lbl">嵌入式 NAND Flash 的两大文件系统对比</div>
+    <p><strong>SquashFS 适用</strong>: ① 根文件系统 (rootfs) — 只读 ② 固件镜像 — 不可篡改 ③ OTA 时整卷替换 ④ 需要最高压缩比节省 Flash<br>
+    <strong>UBIFS 适用</strong>: ① 需要<strong>可写</strong>持久存储 (配置、日志、用户数据) ② 需要<strong>磨损均衡</strong>保护的可写分区 ③ 需要原子更新的关键数据<br>
+    <strong>经典组合</strong>: UBI vol0=SquashFS (rootfs, 只读) + UBI vol1=UBIFS (data, 可写) + UBI vol2=UBIFS (config, 可写)</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>UBI 静态卷 vs 动态卷</h4><div class="lbl">SquashFS 必须使用静态卷</div>
+    <p><strong>静态卷 (Static Volume)</strong>: <code>-t static</code> (ubimkvol 默认)。支持<strong>CRC 完整性校验</strong>，UBI 读取时自动检测数据损坏。内容不可变 — UBI 不对其做 WL (只读)。<br>
+    <strong>动态卷 (Dynamic Volume)</strong>: <code>-t dynamic</code>。无 CRC 保护 (由上层 UBIFS 负责)。支持 WL 和 COW 写更新。<br>
+    <strong>SquashFS 必须用静态卷</strong>: 只读性质 + UBI 层 CRC 保护 + 避免不必要的 WL 开销。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== SquashFS on NAND: 完整制作与部署流程 ===== */</span>
+<span class="cm"># 1. 制作 SquashFS 镜像</span>
+mksquashfs /path/to/rootfs rootfs.squashfs     -comp xz -b <span class="nu">256</span>K -noappend -always-use-fragments
+<span class="cm"># -comp xz:  使用 xz 压缩 (最高压缩比, 嵌入式首选)</span>
+<span class="cm"># -comp zstd: 使用 zstd (更快解压, 较新内核)</span>
+<span class="cm"># -b 256K:   块大小 (更大 = 更高压缩率, 但内存占用大)</span>
+
+<span class="cm"># 2. 制作 UBI 镜像 (含 SquashFS rootfs 卷 + UBIFS data 卷)</span>
+<span class="cm"># a) 先创建 UBIFS 可写卷的镜像</span>
+mkfs.ubifs -r /path/to/data -m <span class="nu">2048</span> -e <span class="nu">126976</span> -c <span class="nu">400</span> -o data.ubifs
+
+<span class="cm"># b) 用 ubinize 将 SquashFS + UBIFS 打包为完整 UBI 镜像</span>
+<span class="cm"># ubinize.cfg:</span>
+<span class="kw">[rootfs]</span>
+mode=ubi
+image=rootfs.squashfs         <span class="cm">// SquashFS 镜像作为卷内容</span>
+vol_id=<span class="nu">0</span>
+vol_type=static               <span class="cm">// ★ 静态卷 — SquashFS 必需</span>
+vol_name=<span class="st">"rootfs"</span>
+vol_size=<span class="nu">50</span>MiB
+
+<span class="kw">[data]</span>
+mode=ubi
+image=data.ubifs
+vol_id=<span class="nu">1</span>
+vol_type=dynamic              <span class="cm">// ★ 动态卷 — 可写数据</span>
+vol_name=<span class="st">"data"</span>
+vol_size=<span class="nu">100</span>MiB
+
+<span class="cm"># c) 生成最终 UBI 镜像</span>
+ubinize -o ubi.img -m <span class="nu">2048</span> -p <span class="nu">128</span>KiB ubinize.cfg
+
+<span class="cm"># 3. 烧录 UBI 镜像到 NAND</span>
+ubiformat /dev/mtd2
+nandwrite /dev/mtd2 ubi.img
+
+<span class="cm"># 4. 启动时挂载 (手动)</span>
+ubiblock -c /dev/ubi0_0              <span class="cm">// → /dev/ubiblock0_0</span>
+mount -t squashfs /dev/ubiblock0_0 /mnt/rootfs
+
+<span class="cm"># 5. 完整的 kernel bootargs (自动挂载根文件系统)</span>
+<span class="kw">console</span>=ttyS0,115200 <span class="kw">root</span>=/dev/ubiblock0_0 <span class="kw">rootfstype</span>=squashfs   <span class="kw">ubi.mtd</span>=<span class="nu">2</span> <span class="kw">ubi.block</span>=<span class="nu">0</span>,rootfs <span class="kw">rootwait</span>
+<span class="cm"># ubi.block=0,rootfs → 内核自动: rootfs 卷 → /dev/ubiblock0_0</span></div>
+
+<div class="callout success">
+  <div class="ct">🔧 SquashFS + UBIFS 组合 — 嵌入式黄金搭档</div>
+  <strong>经典布局</strong>: MTD2 → UBI0 → vol0=SquashFS(static,rootfs,50MB) + vol1=UBIFS(dynamic,data,100MB) + vol2=UBIFS(dynamic,config,10MB)<br>
+  <strong>OTA 升级</strong>: 新固件写入 vol0(新 SquashFS 镜像) → 原子替换 → 重启后运行新版本。vol1(用户数据) 不受影响。<br>
+  <strong>工厂恢复</strong>: vol0 是只读 SquashFS → 即使 vol1/vol2 损坏，系统仍可启动到恢复模式。<br>
+  <strong>安全</strong>: rootfs 不可篡改 + dm-verity 可选 → 完整的启动链完整性保护。
+</div>
+
+<!-- ══ Ch6: 工具与调试 ══ -->
+<h2 class="sh">6. 工具链与调试</h2>
+<p class="ss">mtd-utils · ubi-utils · /sys/class/mtd · /sys/class/ubi · debugfs · 常见问题速查</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>命令</th><th>包</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>mtdinfo /dev/mtd0</code></td><td>mtd-utils</td><td>查看 MTD 设备详细信息 (type/size/erasesize/oobsize)</td></tr>
+    <tr><td><code>flash_erase /dev/mtd0 0 0</code></td><td>mtd-utils</td><td>擦除整个 MTD 分区</td></tr>
+    <tr><td><code>nanddump -o -f dump.bin /dev/mtd0</code></td><td>mtd-utils</td><td>dump NAND 内容 (含 OOB)</td></tr>
+    <tr><td><code>nandwrite /dev/mtd0 image.bin</code></td><td>mtd-utils</td><td>写入镜像到 NAND (自动跳过坏块)</td></tr>
+    <tr><td><code>nandtest /dev/mtd0</code></td><td>mtd-utils</td><td>NAND 压力测试 (写→读→校验+坏块标记)</td></tr>
+    <tr><td><code>ubiformat /dev/mtd0</code></td><td>mtd-utils</td><td>格式化 MTD 分区为 UBI</td></tr>
+    <tr><td><code>ubiattach/ubidetach</code></td><td>mtd-utils</td><td>挂载/卸载 UBI 设备</td></tr>
+    <tr><td><code>ubinfo -a</code></td><td>mtd-utils</td><td>查看所有 UBI 设备和卷的详细信息</td></tr>
+    <tr><td><code>ubiblock -c /dev/ubi0_0</code></td><td>mtd-utils</td><td>将 UBI 卷导出为只读块设备 (用于 squashfs)</td></tr>
+    <tr><td><code>cat /sys/class/mtd/mtd0/name</code></td><td>sysfs</td><td>MTD 设备名</td></tr>
+    <tr><td><code>cat /sys/class/ubi/ubi0/avail_eraseblocks</code></td><td>sysfs</td><td>UBI 可用擦除块数</td></tr>
+	    <tr><td><code>mksquashfs dir/ rootfs.sqfs -comp xz</code></td><td>squashfs-tools</td><td>创建 SquashFS 只读压缩镜像</td></tr>
+	    <tr><td><code>unsquashfs -l rootfs.sqfs</code></td><td>squashfs-tools</td><td>列出 SquashFS 镜像内容</td></tr>
+    <tr><td><code>cat /sys/kernel/debug/ubifs/ubi0_0/stats</code></td><td>debugfs</td><td>UBIFS 文件系统统计</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>现象</th><th>可能原因</th><th>诊断</th></tr></thead>
+  <tbody>
+    <tr><td>nand_scan 失败</td><td>ONFI 读取超时 / NAND 未就绪 / 引脚配置错误</td><td>示波器测 CE/CLE/ALE/WE/RE 时序</td></tr>
+    <tr><td>ECC 不可纠正错误 (EBADMSG)</td><td>Bit-flip 超出 ECC 能力 / NAND 寿命耗尽</td><td><code>nanddump -o</code> 检查 OOB ECC 字节 · 更换芯片</td></tr>
+    <tr><td>UBI attach 极慢 (数秒+)</td><td>大容量 · 无 Fastmap → 需扫描全部 PEB</td><td>启用 UBI Fastmap (CONFIG_MTD_UBI_FASTMAP)</td></tr>
+    <tr><td>UBI "no free PEBs" 错误</td><td>坏块过多 / 保留池不足 / WL 无法找到目标 PEB</td><td><code>ubinfo</code> 查看 reserved/free PEB 数量</td></tr>
+    <tr><td>UBIFS 写性能骤降</td><td>GC 无法跟上写入速度 / 日志已满</td><td><code>/sys/kernel/debug/ubifs/.../stats</code></td></tr>
+    <tr><td>挂载失败 "UBI error: no UBI devices found"</td><td>内核未加载 UBI 模块 / mtd 分区未标记为 UBI</td><td>确认 <code>ubi.mtd=N</code> 内核参数或 DT 绑定正确</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 快速诊断: UBI + UBIFS 状态一览 ===== */</span>
+<span class="cm"># 1. MTD 设备列表</span>
+cat /proc/mtd
+<span class="cm"># dev:    size   erasesize  name</span>
+
+<span class="cm"># 2. UBI 设备 + 卷信息</span>
+ubinfo -a
+<span class="cm"># ubi0: Volumes count: 2, PEB size: 262144 bytes (256 KiB)</span>
+<span class="cm">#   Vol 0: rootfs (static), 200 LEBs</span>
+<span class="cm">#   Vol 1: data (dynamic), 50 LEBs</span>
+
+<span class="cm"># 3. UBI 坏块统计</span>
+cat /sys/class/ubi/ubi0/bad_peb_count
+cat /sys/class/ubi/ubi0/min_io_size
+cat /sys/class/ubi/ubi0/total_eraseblocks
+
+<span class="cm"># 4. UBIFS 存储统计</span>
+df -h /mnt/data
+<span class="cm"># Filesystem      Size  Used Avail Use% Mounted on</span>
+<span class="cm"># ubi0:data       200M   50M  150M  25% /mnt/data</span></div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux NAND Flash — 系统化知识体系 · 2026-06 · Linux Kernel v6.x · MTD · UBI · UBIFS
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

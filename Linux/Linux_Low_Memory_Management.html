@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 低内存管理 — OOM · 碎片 · 回收 · 调优</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:155px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,44px);font-weight:900">低内存系统的内存管理</h2>
+  <p class="sec-sub">系统化知识体系 — 水位线 · 碎片化 · 内存回收 · OOM Killer · CMA · 调优实战 · IPC 相机案例</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Buddy</strong><br><small>伙伴分配器</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>Watermark</strong><br><small>水位线触发</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>kswapd</strong><br><small>后台回收</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>Direct Reclaim</strong><br><small>直接回收</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>OOM Killer</strong><br><small>最后手段</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">3 级水位线</div><div class="l">min / low / high</div></div>
+    <div class="stat"><div class="n">外部碎片</div><div class="l">OOM 真凶 #1</div></div>
+    <div class="stat"><div class="n">CMA</div><div class="l">连续内存分配器</div></div>
+    <div class="stat"><div class="n">oom_score_adj</div><div class="l">OOM 调优核心</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1 ═══ -->
+<h2 class="sh">1. 低内存系统的困境全景</h2>
+<p class="ss">嵌入式 IPC 相机通常只有 64MB-512MB DDR——而其中 CMA 要占掉 64-128MB 给 ISP/编码器，实际留给内核和应用的内存极其紧张。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>困境 1: 物理内存绝对不足</h4>
+    <div class="lbl">总内存 256MB → 内核+驱动 ~40MB → CMA 128MB → 应用只剩 ~88MB</div>
+    <p>IPC 相机的内存分配极不均衡：ISP 需要大块物理连续内存用于视频帧 buffer（通常通过 CMA 预留 64-128MB），编码器输出 buffer 也需要 DMA 可访问的连续内存。扣除内核自身（~20-40MB），留给用户态应用（LinkricAI、LiveKit SDK、AI 推理）的内存可能只有 50-80MB。任何模块的微小内存泄漏都会在数小时内触发 OOM。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>困境 2: 外部碎片 — "内存够但分配失败"</h4>
+    <div class="lbl">空闲总量 50MB 但无法分配 4 个连续页(16KB)</div>
+    <p>这是低内存系统<strong>最反直觉的现象</strong>：<code>free</code> 显示空闲 50MB，但驱动调用 <code>dma_alloc_coherent()</code> 分配 16KB 连续物理内存时返回 -ENOMEM。根因：<strong>内存被碎片化为大量 4KB 小页</strong>，没有 contiguous order-2(16KB) 或 order-3(32KB) 的连续块。页面虽空但无法合并——这就是 <strong>外部碎片（External Fragmentation）</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>困境 3: OOM 在内存"用完"之前就触发</h4>
+    <div class="lbl">空闲 30MB，但 OOM Killer 弹出来杀了进程</div>
+    <p>这是内核设计决定的——不是 bug。当 free 内存降到<strong>水位线(min)</strong>以下且 kswapd 回收速度跟不上分配速度时，内核进入 <strong>Direct Reclaim</strong>——分配者自己被阻塞去做内存回收。如果回收失败（无可回收页或时间过长），分配失败。当<strong>高阶分配(order>0)失败</strong>时，即使空闲内存总量还很多，OOM Killer 也会被触发——因为内核判定"无法满足当前分配请求"。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">256MB DDR 典型布局</span><span class="b c4">CMA 128MB</span><span class="n">ISP 视频帧 DMA buffer — 不可被内核/page cache 使用</span></div>
+  <div class="r"><span class="a"></span><span class="b c3">Page Cache 30MB</span><span class="n">文件缓存 (可回收)——低内存时首先被 kswapd 回收</span></div>
+  <div class="r"><span class="a"></span><span class="b c2">Slab 25MB</span><span class="n">内核数据结构 (dentry/inode/kmalloc-xxx)——部分可回收</span></div>
+  <div class="r"><span class="a"></span><span class="b c1">Anon Pages 35MB</span><span class="n">用户态匿名页 (堆/栈)——可 swap 但嵌入式通常无 swap</span></div>
+  <div class="r"><span class="a"></span><span class="b c5">内核代码/数据 20MB</span><span class="n">不可回收——内核自身的 text/data/bss + 模块</span></div>
+  <div class="r"><span class="a"></span><span class="b c4">空闲 (Unused) 18MB</span><span class="n">"真正空闲"——但严重碎片化，大多为 order-0(4KB) 小页</span></div>
+</div>
+
+<!-- ═══ Ch2 ═══ -->
+<h2 class="sh">2. 水位线 (Watermark) — 内核的"内存预警"机制</h2>
+<p class="ss">内核不等到内存耗尽才行动——通过三级水位线实现<strong>渐进式的内存压力响应</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>三级水位线模型</h4>
+    <div class="lbl">min → low → high — 每级触发不同行为</div>
+    <p><strong>high</strong>：高于此线 = 内存充足。kswapd 睡眠，不做任何回收。<br>
+    <strong>low</strong>：低于此线 = 内存偏紧。唤醒 <strong>kswapd</strong> 开始<strong>后台异步回收</strong>（不影响分配者的延迟）。kswapd 持续回收直到水位回到 high 以上。<br>
+    <strong>min</strong>：低于此线 = 内存危急。分配者自身进入 <strong>Direct Reclaim</strong>——<strong>同步阻塞回收</strong>。分配调用被阻塞数十毫秒到数秒，等待回收完成。这是导致"系统突然变慢"的常见原因。<br>
+    <strong>min 以下</strong>：所有回收手段（包括 OOM Killer）都可能被触发。对于高阶分配(order>0)，即使空闲总量在 min 以上也可能触发——因为水位线是<strong>按 order 独立计算</strong>的。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>水位线计算公式</h4>
+    <div class="lbl">由 min_free_kbytes 推导，/proc/sys/vm/min_free_kbytes</div>
+    <p><code>watermark[min] = min_free_kbytes</code>（直接由用户设置或内核根据内存总量自动计算）。<br>
+    <code>watermark[low] = min × 1.25</code><br>
+    <code>watermark[high] = min × 1.5</code><br>
+    <strong>内核默认值</strong>：min_free_kbytes = sqrt(16 × total_ram_kb)（近似）。128MB 系统 → ~14MB min。512MB 系统 → ~28MB min。<br>
+    <strong>嵌入式问题</strong>：14MB 对于 128MB 系统占比高达 11%——这 14MB 是<strong>紧急储备不可用于正常分配</strong>（仅 GFP_ATOMIC 或 PF_MEMALLOC 标志的分配可以动用）。实际可用内存 = total - min_free。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 水位线状态转换 — 从正常到 OOM 的完整路径</span>
+
+<span class="cm">空闲页数量 (从高到低)</span>
+
+  <span class="st">[========HIGH========]</span>        <span class="cm">high 水位线以上</span>
+  ---------------------------------       kswapd 睡眠 · 内存充足 · 正常分配
+  ~~~~~~~~~~~~~~~~~~~~~~~~~
+  ---------------------------------
+  <span class="st">[=====LOW=====]</span>                 <span class="cm">low 水位线以上</span>
+  ---------------------------------       kswapd 被唤醒 · 后台异步回收页缓存
+  ~~~~~~~~~~~~~~~~~~~~~~~~~
+  ---------------------------------
+  <span class="st">[===MIN===]</span>                      <span class="cm">min 水位线以上</span>
+  ---------------------------------       分配者进入 Direct Reclaim · 同步阻塞
+  ~~~~~~~~~~~~~~~~~~~~~~~~~
+  ---------------------------------
+  <span class="st">[=MIN=]</span>                            <span class="cm">min 水位线以下</span>
+                                         OOM Killer 被触发 · 选择进程杀掉
+
+<span class="cm">系统响应链:</span>
+  free > high    -> 无动作，休眠
+  free < low     -> kswapd 异步回收 (不阻塞分配者)
+  free < min     -> Direct Reclaim (阻塞分配者，同步回收)
+  Direct Reclaim 反复失败 -> OOM Killer 选择并杀死进程
+  杀进程后释放内存 -> 水位回升 -> 系统继续运行</div>
+
+<!-- ═══ Ch3 ═══ -->
+<h2 class="sh">3. 内存碎片 — 为什么空闲 30MB 却分配失败？</h2>
+<p class="ss">这是嵌入式系统内存问题中<strong>最容易被误判</strong>的场景——free 显示大量空闲，但应用或驱动分配失败。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>外部碎片 — Buddy 系统的结构性缺陷</h4>
+    <div class="lbl">大量 order-0 小页散落各地 → 无法合并 → 无法满足高阶分配</div>
+    <p>Buddy 分配器将物理内存按<strong>2^order 个页</strong>组织（order-0=4KB, order-1=8KB, order-3=32KB, order-9=2MB）。分配时找最小能满足的 order，释放时尝试与相邻的"buddy"页合并升级到更高 order。<br>
+    <strong>碎片化场景</strong>：100 次 order-0 分配散布在内存各处 → 释放其中 80 次 → 剩下 20 个孤立页（每个被夹在两个已分配页之间）→ 这些 20 个页的 buddy 都还处于"已分配"状态 → 无法合并 → 永远停留在 order-0 → 当有人请求 order-2(16KB, 4个连续页)时 → <strong>有 20×4KB=80KB 空闲但无法满足</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>诊断：/proc/buddyinfo — 碎片化的 X 光片</h4>
+    <div class="lbl">每个 order 的空闲块数量 — 一眼看出碎片化程度</div>
+    <p><code>cat /proc/buddyinfo</code> 输出每行代表一个内存 zone，每列代表一个 order（0~10）。<br>
+    <strong>健康状态</strong>：<code>Node 0, zone Normal ... 120 85 40 20 8 4 2 1 1 0 0</code>——各 order 都有空闲块，呈递减分布。<br>
+    <strong>严重碎片化</strong>：<code>... 5000 3 0 0 0 0 0 0 0 0 0</code>——order-0 有 5000 个空闲页(20MB)，但<strong>order-2 及以上全是 0</strong>——无法满足任何 ≥16KB 的连续分配请求。这就是"free 20MB 但 -ENOMEM"的直接证据。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>内存压缩 (Compaction) — 内核的碎片整理</h4>
+    <div class="lbl">/proc/sys/vm/compact_memory — 手动触发</div>
+    <p>内核的 <strong>Memory Compaction</strong> 机制将可移动页（Page Cache、匿名页）迁移到连续区域，腾出连续的大块物理内存。类似磁盘碎片整理——但操作对象是物理页。<br>
+    <strong>触发方式</strong>：① kcompactd 守护线程在后台自动运行（当某个 order 的空闲块太少时）② <code>echo 1 > /proc/sys/vm/compact_memory</code> 手动强制全量压缩。<br>
+    <strong>限制</strong>：不可移动页（内核代码、kmalloc 分配、DMA coherent buffer）<strong>无法被迁移</strong>——它们是碎片化的固定锚点。嵌入式系统大量使用 dma_alloc_coherent → 产生大量不可移动页 → Compaction 效果有限。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>CMA — 为 DMA 预留的连续内存池</h4>
+    <div class="lbl">Contiguous Memory Allocator — IPC 相机的标配</div>
+    <p>CMA 在启动时<strong>预留一大块物理连续内存</strong>——在不需要 DMA 时，CMA 区域可以被<strong>可移动页</strong>（Page Cache、用户态匿名页）"借用"。当驱动需要 DMA 连续内存时 → CMA 将借用者迁移走 → 归还连续区域 → 分配给驱动。<br>
+    <strong>CMA 是碎片化问题的终极方案</strong>——它为 DMA 需求提供了"无论如何都能满足"的最后保障。没有 CMA：碎片化后分配失败 → 驱动报错 → 录像中断。有 CMA：碎片化后从 CMA 区域分配 → 成功。<br>
+    内核参数：<code>cma=128M</code>（预留 128MB）或设备树中 <code>linux,cma</code> 属性。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ CMA 的代价 —— 了解后才知道权衡</div>
+  CMA 区域虽然可以被 Page Cache/匿名页"借用"，但<strong>借用的页必须可迁移</strong>——任何不可移动的分配（如 kmalloc 的 slab 页）无法进入 CMA。如果系统做大量不可移动的小分配 → CMA 区域实际上大部分<strong>空闲但不可用</strong> → 形成"虚假的空闲内存"——free 显示的 128MB CMA 实际上只有 Page Cache 能临时使用，DMA 之外的普通分配用不了。同时 CMA 减少了普通 Zone 的大小——加剧了碎片化问题在剩余 Zone 中的严重程度。
+</div>
+
+<!-- ═══ Ch4 ═══ -->
+<h2 class="sh">4. 为什么内存没"用完"也 OOM？</h2>
+<p class="ss">这是低内存系统开发中<strong>困惑最多的问题</strong>——free 还显示 20-30MB，但内核已经触发 OOM Killer 杀进程。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>原因 1: 高阶分配失败</h4>
+    <div class="lbl">最隐蔽 — 总量够但不连续</div>
+    <p>内核驱动通过 <code>__get_free_pages(GFP_KERNEL, order=3)</code> 请求 32KB 连续物理内存。Buddy 查看 order-3 空闲块 = 0（碎片化导致）。尽管 order-0 总计有 5000 个空闲页(20MB)，但<strong>无法合并成 order-3</strong> → 分配失败。在 GFP_KERNEL 标志下会触发 Direct Reclaim——回收失败 → OOM Killer 被唤醒。即使 free 显示 20MB。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>原因 2: 水位线阻止了分配</h4>
+    <div class="lbl">free 在 min 水位线以下 → 即使是 order-0 也拒绝</div>
+    <p>正常 GFP_KERNEL 分配需要 free > watermark[low]。如果当前空闲刚好在 low 和 min 之间 → kswapd 已被唤醒但尚未回收足够内存 → 分配被阻塞在 Direct Reclaim。如果 Direct Reclaim 也回收不到足够内存（Page Cache 全被刷出、匿名页无 swap、slab 不可回收）→ OOM。<br>
+    <strong>关键</strong>：OOM 触发时 free 可能恰好等于 min 水位线(比如 14MB)——不是 0MB。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>原因 3: GFP_ATOMIC 的严格限制</h4>
+    <div class="lbl">中断上下文 — 不能回收不能睡眠 → 直接失败</div>
+    <p>中断 handler 中用 <code>GFP_ATOMIC</code> 分配——这种分配<strong>不允许 Direct Reclaim</strong>（不能睡眠）、<strong>不允许 OOM Killer</strong>（不能阻塞）。只能使用 free 在 watermark[min] 以下的<strong>紧急储备</strong>。如果紧急储备耗尽 → GFP_ATOMIC 分配静默失败返回 NULL → 驱动可能未检查 NULL → 空指针解引用 → kernel panic。这是低内存系统中最致命的 crash 类型之一。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 典型场景重现: 空闲 30MB 但触发 OOM —— 完整时间线</span>
+
+T+0s    free=50MB  buddy:order-0=3000  order-2=15  order-3=5   <span class="cm">一切正常</span>
+        |
+T+5s    应用 malloc 10MB (匿名页,不可回收)                 free=40MB
+        |
+T+10s   ISP驱动 dma_alloc_coherent(4MB,order-5) -> 成功     <span class="cm">消耗了大块连续内存</span>
+        |
+T+12s   SD卡写入大量文件 -> PageCache 增长 15MB             free=25MB
+        |
+T+15s   编码器 __get_free_pages(order=3, 32KB)              <span class="st">buddy order-3 = 0!</span>
+        |-- Direct Reclaim -> 回收 PageCache 10MB
+        |-- buddy order-3   仍然是 0                         <span class="cm">回收了但无法合并</span>
+        |-- OOM Killer 被触发
+        |-- 杀死 LinkricAI 进程 (oom_score 最高)
+        `-- dmesg: "Killed process LinkricAI ... free=15MB"  <span class="cm">free还有15MB!</span>
+
+<span class="cm">根因:</span> 回收的 10MB PageCache 页面全部散落在内存各处(order-0)，
+       无法合并为 order-3 的连续块。空闲总量充足但无法满足连续页请求。</div>
+
+<!-- ═══ Ch5 ═══ -->
+<h2 class="sh">5. OOM Killer 机制与调优</h2>
+<p class="ss">OOM Killer 是内核的<strong>最后防线</strong>——理解它是如何选择牺牲者的，才能保护关键进程不被误杀。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>OOM Score 的计算公式</h4>
+    <div class="lbl">oom_score = (进程内存占比) × (root 惩罚/奖励) × oom_score_adj</div>
+    <p>OOM Killer 为每个进程计算一个 <strong>badness score</strong>（坏度分数）——分数越高越先被杀：<br>
+    <code>badness = (total_vm / total_system_ram) × 1000</code>（基础：内存占比越大越该死）<br>
+    <code>+ 额外惩罚</code>：fork 了大量子进程（消耗 PID 资源）、运行时间长（累积内存泄漏概率高）<br>
+    <code>- 减免</code>：进程被标记为 <code>oom_score_adj = -1000</code>（完全豁免）、CAP_SYS_ADMIN 权限进程有微小减免<br>
+    <strong>最终决策</strong>：选择 badness 最高且可以杀（不是 init、不是内核线程、不是被豁免）的进程。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>实战：保护关键进程不被 OOM Kill</h4>
+    <div class="lbl">/proc/PID/oom_score_adj — 范围 -1000(完全豁免) ~ +1000(优先牺牲)</div>
+    <p><strong>完全豁免</strong>：<code>echo -1000 > /proc/$(pidof LinkricAI)/oom_score_adj</code>——这个进程<strong>永远不会被 OOM Killer 选中</strong>。<br>
+    <strong>调低优先级</strong>：<code>echo -500 > /proc/PID/oom_score_adj</code>——降低被杀概率。<br>
+    <strong>主动牺牲</strong>：<code>echo 1000 > /proc/PID/oom_score_adj</code>——标记为"内存低时请优先杀我"（用于非关键模块如 AI 检测、日志系统）。<br>
+    <strong>systemd 配置</strong>：<code>OOMScoreAdjust=-1000</code> 在 .service 文件中永久生效。<br>
+    <strong>查看当前分数</strong>：<code>cat /proc/PID/oom_score</code>——值越低越安全。</p>
+  </div>
+</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ OOM Killer 的三个常见误解</div>
+  <strong>误解 1："OOM Killer 是 bug，内核不该杀进程。"</strong> 事实：OOM Killer 是<strong>理性的最后选择</strong>——不杀进程，系统会完全卡死（所有内存分配被阻塞→所有进程挂起）——这比杀一个进程糟糕得多。OOM Killer 是系统自保机制。<br>
+  <strong>误解 2："关闭 OOM Killer（echo 2 > /proc/sys/vm/panic_on_oom）就不会有内存问题。"</strong> 事实：关闭 OOM Killer 后，内存耗尽时分配者被<strong>永久阻塞</strong>无法返回——内核不会自动恢复。系统表现为"假死"——无响应、无日志、无修复手段。这比 OOM Kill 更糟糕。<br>
+  <strong>误解 3："增加 swap 就不会 OOM。"</strong> 事实：swap 增加虚拟内存总量，但不解决<strong>高阶分配失败</strong>的问题——因为 swap 只换出匿名页(4KB)，不能解决 order-3 连续物理内存的需求。交换出的页面回来时仍然散落在碎片化的物理地址空间中。
+</div>
+
+<!-- ═══ Ch6 ═══ -->
+<h2 class="sh">6. 低内存调优 — /proc/sys/vm/ 关键参数</h2>
+<p class="ss">嵌入式系统的默认内核参数是为服务器/桌面优化的——低内存 IPC 设备必须调整。</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>参数</th><th>默认值</th><th>低内存建议</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td class="g">min_free_kbytes</td><td>自动计算 (~14MB@128M)</td><td class="y">降低到 4-8MB</td><td>水位线基准——越小 = 留给应用的可用内存越多，但 Direct Reclaim 越频繁</td></tr>
+    <tr><td>vfs_cache_pressure</td><td>100</td><td class="y">200-500</td><td>控制回收 dentry/inode cache 的激进程度——越大越优先回收 VFS 缓存</td></tr>
+    <tr><td>swappiness</td><td>60</td><td class="y">0-10 (无 swap 则无影响)</td><td>回收时优先 swap 出匿名页 vs 回收 Page Cache——嵌入式无 swap 时此参数无效</td></tr>
+    <tr><td class="g">dirty_ratio / dirty_background_ratio</td><td>20 / 10</td><td class="y">5 / 2</td><td>脏页比例上限——降低以避免大量突发写回导致 Direct Reclaim</td></tr>
+    <tr><td>overcommit_memory</td><td>0 (启发式)</td><td class="y">2 (严格)</td><td>控制 malloc 是否允许超额承诺——嵌入式应设为 2 避免 OOM 突然降临</td></tr>
+    <tr><td class="g">overcommit_ratio</td><td>50</td><td class="y">80-95</td><td>overcommit_memory=2 时允许分配的上限%——设太低浪费内存，设太高触发 OOM</td></tr>
+    <tr><td>compact_memory</td><td>自动 (kcompactd)</td><td>手动周期触发</td><td>定时 echo 1 手动触发内存压缩——适合长期运行的系统</td></tr>
+    <tr><td>oom_kill_allocating_task</td><td>0</td><td>0（保持默认）</td><td>=1 时直接杀触发 OOM 的进程而非选择 badness 最高者——简单粗暴但不推荐</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb"><span class="cm">#!/bin/sh — 嵌入式 IPC 推荐的内存调优脚本</span>
+<span class="cm"># 在 /etc/init.d/rcS 或 systemd service 中启动时执行</span>
+
+<span class="cm"># 1. 降低水位线 — 释放更多内存给应用</span>
+<span class="fn">echo</span> <span class="nu">4096</span> <span class="kw">&gt;</span> /proc/sys/vm/min_free_kbytes       <span class="cm"># 4MB (vs 默认 ~14MB)</span>
+
+<span class="cm"># 2. 过度提交策略 — 防止 malloc 欺骗导致的 OOM</span>
+<span class="fn">echo</span> <span class="nu">2</span> <span class="kw">&gt;</span> /proc/sys/vm/overcommit_memory       <span class="cm"># 严格模式</span>
+<span class="fn">echo</span> <span class="nu">80</span> <span class="kw">&gt;</span> /proc/sys/vm/overcommit_ratio        <span class="cm"># 允许分配 = RAM*80% + swap</span>
+
+<span class="cm"># 3. 激进回收 VFS 缓存 — dentry/inode 在嵌入式上不如让给应用</span>
+<span class="fn">echo</span> <span class="nu">300</span> <span class="kw">&gt;</span> /proc/sys/vm/vfs_cache_pressure
+
+<span class="cm"># 4. 降低脏页上限 — SD 卡写入慢，避免突发大量脏页</span>
+<span class="fn">echo</span> <span class="nu">5</span>  <span class="kw">&gt;</span> /proc/sys/vm/dirty_ratio
+<span class="fn">echo</span> <span class="nu">2</span>  <span class="kw">&gt;</span> /proc/sys/vm/dirty_background_ratio
+
+<span class="cm"># 5. 保护关键进程 — 永远不杀 LinkricAI</span>
+<span class="fn">echo</span> -<span class="nu">1000</span> <span class="kw">&gt;</span> /proc/$(pidof LinkricAI)/oom_score_adj
+
+<span class="cm"># 6. 周期性内存压缩 — 对抗碎片化 (cron 每 30 分钟)</span>
+<span class="cm"># */30 * * * * echo 1 > /proc/sys/vm/compact_memory</span></div>
+
+<!-- ═══ Ch7 ═══ -->
+<h2 class="sh">7. IPC 相机内存实战 — 从 panic 到稳定</h2>
+<p class="ss">以下案例来自真实 IPC 产品调试——从内存相关问题到解决方案的完整路径。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>案例 1: 夜间 OOM 总是凌晨 3 点触发</h4>
+    <div class="lbl">根因: 定时任务触发 SD 卡文件扫描 → 大量 dentry cache → Page Cache 膨胀</div>
+    <p>用户反馈每天凌晨 3 点 IPC 自动重启。排查发现：cron 定时任务在凌晨 3 点执行 <code>find /data/record/ -mtime +7 -delete</code>（清理 7 天前录像）。<code>find</code> 遍历数千个 MP4 文件 → 每个文件在内核中创建 dentry + inode cache → slab 增长 20MB → free 内存从 35MB 骤降到 5MB 以下 → 低于 min 水位线 → 编码器下次 dma_alloc 触发 Direct Reclaim → 回收不够 → OOM Kill。解决：① 清理脚本优化为<strong>仅删除文件不递归 stat</strong>（<code>find ... -delete</code> 仍会 stat 每个文件）→ 改为按目录删除 ② vfs_cache_pressure 提高到 500→dentry 缓存被更快回收 ③ 清理完成后 <code>echo 2 > /proc/sys/vm/drop_caches</code> 释放 slab。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>案例 2: 运行 48 小时后必然 kernel panic</h4>
+    <div class="lbl">根因: ISP 驱动的 GFP_ATOMIC 分配 + 碎片化 = 返回 NULL = 未检查 = panic</div>
+    <p>IPC 运行 48 小时后出现 <code>Unable to handle kernel NULL pointer dereference</code> panic。排查：① 分析 panic 日志——崩溃点在 ISP 驱动中断 handler 中 ② 代码审查——中断中调用 <code>dma_alloc_coherent()</code> 但未检查返回值 NULL ③ 为什么分配会失败：运行 48 小时内存严重碎片化——GFP_ATOMIC 无法做 Direct Reclaim → 紧急储备耗尽 → 返回 NULL。<br>
+    解决：① 驱动改为<strong>启动时预分配 buffer</strong>，中断中只用预分配的 buffer——消除运行时分配 ② 添加 NULL 检查并记录错误日志 ③ CMA 增大到 128MB 确保 ISP buffer 永远有连续内存可用。</p>
+  </div>
+</div>
+
+<!-- ═══ 案例 3: Pageblock 迁移类型污染 ═══ -->
+<div class="cg c2" style="margin-top:0">
+  <div class="cd" style="--gc:#f87171">
+    <h4>案例 3: 概率性 OOM — CONFIG_FORCE_MAX_ZONEORDER 从 16 降到 10</h4>
+    <div class="lbl">根因: 巨型 pageblock 被单个不可移动页"污染" → 整个块变为不可移动 → 可移动分配无内存可用</div>
+    <p>问题现象：系统<strong>概率性</strong>OOM——几小时到几天随机触发。dmesg 显示 free 还有 20-30MB 但 OOM Killer 被激活。<br>
+    <strong>排查过程</strong>：① <code>cat /proc/pagetypeinfo</code> → Movable 类型的空闲页极少，但 Unmovable 和 Reclaimable 类型有大量空闲页 ② 进一步发现：大量 order-9/10 的 pageblock 被标记为 Unmovable——因为其中<strong>混入了少量不可移动页</strong>（如内核 slab 对象、DMA coherent buffer）③ 用户态 malloc 分配的是 Movable 类型 → Buddy 只在 Movable 类型的空闲列表中查找 → 虽然 Unmovable 列表中有大量空闲页，但<strong>不能跨类型分配</strong> → 可移动分配无页可用 → OOM。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Pageblock 迁移类型污染机制</h4>
+    <div class="lbl">单个不可移动页 → 污染整个 pageblock → 该 block 所有空闲页对 Movable 分配不可见</div>
+    <p><strong>Linux 的 pageblock 规则</strong>：内核将物理内存按<strong>固定大小的 pageblock</strong>（通常是 MAX_ORDER-1 阶，即 2^(MAX_ORDER-1) 页）分组，每个 pageblock 有一个<strong>迁移类型</strong>（MIGRATE_UNMOVABLE / RECLAIMABLE / MOVABLE / CMA）。<strong>关键规则</strong>：如果一个 pageblock 中<strong>任何一页</strong>被分配为 Unmovable 类型，且该 pageblock 中的空闲页不足以让该分配"搬出去"，<strong>整个 pageblock 被标记为 Unmovable</strong>——后续即使该 pageblock 中 99% 的页都被释放，这些空闲页只能用于 Unmovable 类型的分配（如内核 slab），<strong>不能用于 Movable 分配（如用户态 malloc、Page Cache）</strong>。<br>
+    <strong>order=16 的放大效应</strong>：pageblock 大小 = 2^15×4KB = <strong>128MB</strong>。一个 4KB 的 kmalloc 分配落在某个 128MB pageblock 中 → 该 pageblock 被永久标记为 Unmovable → 即使用户态释放了 100MB 内存，如果这 100MB 都在这个被污染的 128MB pageblock 中 → 它们对新的 Movable 分配<strong>不可见</strong> → Buddy 从 Movable 视角看是"内存耗尽" → OOM。</p>
+  </div>
+</div>
+
+<div class="stage-card" style="max-width:960px;--sc:#f87171;margin-top:12px">
+  <div class="stage-num" style="background:#f87171">!</div>
+  <div class="stage-body">
+    <h4>核心原理：为什么 order=10 能解决而 order=16 不能</h4>
+    <div class="en">pageblock = 2^(MAX_ORDER-1) 页。order=16 → pageblock=128MB。order=10 → pageblock=2MB。一个不可移动页的污染半径 = 一个 pageblock 的大小。</div>
+  </div>
+</div>
+
+<div class="cg c2" style="margin-top:0">
+  <div class="cd" style="--gc:#f87171">
+    <h4>order=16: pageblock = 128MB</h4>
+    <div class="lbl">最大连续块 256MB · 污染半径 128MB · 256MB DDR 仅 2 个 pageblock</div>
+    <p>一个 4KB 的 kmalloc 不可移动页落在 Pageblock#0 中 → 整个 128MB 被标记为 Unmovable → 即使用户态释放了 100MB 内存在这个 pageblock 中 → 这些空闲页<strong>对 Movable 分配完全不可见</strong>。<br>
+    仅剩 Pageblock#1 (~128MB) 可用于 Movable 分配 → 扣除 CMA 64MB + 内核 ~20MB → <strong>实际留给用户态和 Page Cache 的 Movable 内存不到 40MB</strong> → 应用启动 + Page Cache 正常波动 → 随时触发 OOM。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>order=10: pageblock = 2MB</h4>
+    <div class="lbl">最大连续块 4MB · 污染半径 2MB · 256MB DDR 有 128 个 pageblock</div>
+    <p>同样一个不可移动页只污染 2MB → 剩余的 127 个 pageblock (254MB) 保持 Movable 类型 → 用户态 malloc 和 Page Cache 有<strong>充足的 Movable 空闲页</strong>。<br>
+    即使多个 pageblock 陆续被污染（内核运行中正常的 slab 分配散布各处），每个仅损失 2MB → 累计损失可控。内核的 <strong>fallback 机制</strong>也可在 Movable 紧张时临时从 Unmovable 列表借用——pageblock 越小，fallback 触发频率越低、compaction 迁移成功率越高。</p>
+  </div>
+</div>
+
+<div class="cb" style="margin-top:14px"><span class="cm">// Pageblock 迁移类型污染 — order=16 vs order=10</span>
+
+<span class="cm">order=16: pageblock = 128MB, 总内存 256MB = 仅 2 个 pageblock</span>
+
+  Pageblock#0 [128MB, 被污染为 Unmovable]    Pageblock#1 [128MB, Movable]
+  +--------------------------------------+   +---------------------------+
+  | 用户态匿名页(Movable) 已全部释放       |   | CMA 64MB + 内核 + 应用     |
+  | 100MB 空闲页 但因混入一个 kmalloc 4KB |   | 正常使用中                 |
+  | 整个 Pageblock 被标记为 Unmovable     |   |                           |
+  | -> 这 100MB 空闲页对 Movable 分配不可见 |   | 仅剩 ~40MB 可用于用户态     |
+  | -> Movable 分配只能从 Pageblock#1 取   |   | -> 随时触发 OOM            |
+  +--------------------------------------+   +---------------------------+
+        污染源: 1 个不可移动页                         仅有的 Movable 来源
+
+<span class="cm">order=10: pageblock = 2MB, 总内存 256MB = 128 个 pageblock</span>
+
+  [M][M][U][M][M][R][M][M] ... (128 个 pageblock, M=Movable R=Reclaimable U=Unmovable)
+       ^^  只有这 2 个被污染 (各含 1 个不可移动页, 各损失 2MB = 共 4MB)
+       其余 126 个 pageblock 保持 Movable, 完全正常
+       -> Movable 分配有 250MB+ 可用内存, 系统稳定</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ CONFIG_FORCE_MAX_ZONEORDER 的真正影响 — pageblock 大小决定污染半径</div>
+  <strong>核心公式</strong>：<code>pageblock_size = 2^(MAX_ORDER - 1) × PAGE_SIZE</code>。MAX_ORDER 越大 → pageblock 越大 → 单个不可移动页的"污染半径"越大 → 可移动内存的浪费越严重。<br>
+  <strong>推荐值</strong>：嵌入式 IPC → <u>10</u> (pageblock=2MB, 最大连续分配=4MB)；桌面/服务器 → <u>11</u> (pageblock=4MB, 默认)；大内存服务器 → <u>13</u> (pageblock=16MB)。128MB DDR 用 order=16 → <strong>只有 2 个 pageblock → 一个被污染就损失一半内存</strong>。<br>
+  <strong>设置原则</strong>：<code>2^(MAX_ORDER-1) × 4KB</code> 应 <strong>≪ 总内存 / 16</strong>（至少 16 个 pageblock）。256MB 系统 → pageblock 应 ≤ 16MB → MAX_ORDER ≤ 13。<br>
+  <strong>验证方法</strong>：<code>cat /proc/pagetypeinfo</code> 查看各迁移类型的空闲页分布。Movable 类型的空闲页总量才是<strong>用户态真正可用的内存</strong>——比 <code>free</code> 更准确。
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机低内存 Checklist</div>
+  □ <strong>CMA</strong>：启动参数 cma=128M 或设备树 linux,cma — 确保 ISP/编码器 DMA buffer 有连续内存<br>
+  □ <strong>水位线</strong>：min_free_kbytes 降到 4-8MB — 释放更多内存给应用，接受偶尔的 Direct Reclaim<br>
+  □ <strong>预分配</strong>：所有频繁使用的 DMA buffer 在<strong>模块初始化时一次性分配</strong>——运行时不再做高阶分配<br>
+  □ <strong>oom_score_adj</strong>：LinkricAI 设为 -1000，AI 推理进程设为 500（优先牺牲）<br>
+  □ <strong>碎片监控</strong>：<code>/proc/buddyinfo</code> order-2/3 列低于 5 时<strong>主动触发 compaction</strong>（echo 1 > /proc/sys/vm/compact_memory）<br>
+  □ <strong>drop_caches</strong>：重大内存压力后（如 SD 卡大量写入）手动 <code>echo 1 > /proc/sys/vm/drop_caches</code> 回收 Page Cache<br>
+  □ <strong>swap 决策</strong>：<strong>不要启用 swap</strong>——IPC 无磁盘 swap 空间（SD 卡随机写延迟 10-200ms，做 swap 会让系统完全不可用）<br>
+  □ <strong>内存泄漏检测</strong>：24 小时压测后对比 /proc/meminfo 和 /proc/buddyinfo——空闲总量应在 ±5MB 范围内稳定
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 低内存管理 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

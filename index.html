@@ -319,7 +319,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 6. Linux 内核与驱动 ═══════ -->
 <section class="sec" id="linux-kernel">
-  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">18 篇</span></h2>
+  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">21 篇</span></h2>
   <p class="col-desc">进程管理 · 内存管理 · 文件系统 · 设备驱动 · 调试诊断 — 嵌入式 Linux 系统全栈</p>
   <div class="col-grid">
 
@@ -336,6 +336,12 @@ html{scroll-behavior:smooth}
       <h3>内存管理 (MM)</h3>
       <span class="cnt">完整</span>
       <p>虚拟地址空间、页表、slab/slub、CMA、OOM killer、内存碎片化</p>
+    </a>
+    <a class="col-card" style="--cc:#f97316" href="Linux/Linux_Low_Memory_Management.html">
+      <span class="icon">&#x1F4C9;</span>
+      <h3>低内存管理 &amp; OOM</h3>
+      <span class="cnt">完整</span>
+      <p>水位线触发 · 外部碎片 · OOM Killer · CMA调优 · IPC 内存crash案例</p>
     </a>
     <a class="col-card" style="--cc:#f97316" href="Linux/Linux_Memory_Allocators.html">
       <span class="icon">&#x1F4E6;</span>
@@ -393,6 +399,18 @@ html{scroll-behavior:smooth}
       <h3>MIPI CSI-2 接口</h3>
       <span class="cnt">完整</span>
       <p>CSI-2 协议层、D-PHY/C-PHY、虚拟通道、RAW/ YUV 数据格式</p>
+    </a>
+    <a class="col-card" style="--cc:#fb923c" href="Linux/Linux_DMA_Engine_Framework.html">
+      <span class="icon">&#x1F680;</span>
+      <h3>DMA 引擎与零拷贝</h3>
+      <span class="cnt">完整</span>
+      <p>DMA API · Cache 一致性 · DMA Engine · SG · DMA-BUF · IPC 全链路</p>
+    </a>
+    <a class="col-card" style="--cc:#fb923c" href="Linux/Linux_AV_RingBuffer.html">
+      <span class="icon">&#x1F504;</span>
+      <h3>AV Ring Buffer</h3>
+      <span class="cnt">完整</span>
+      <p>SPSC 无锁环形缓冲 · vb2_queue · ALSA · DMA-BUF fd 队列 · IPC 四管线</p>
     </a>
 
     <!-- Sub: 存储 & 文件系统 -->

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CMOS Image Sensor — 从像素到驱动 · 系统化知识体系</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.55; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,36px);font-weight:900">CMOS Image Sensor</h2>
+  <p class="sec-sub">系统化知识体系 — 像素光电原理 · 传感器架构 · 关键参数 · Bayer/CFA · V4L2 驱动 · 3A 算法</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>光子 → 电子</strong><br><small>光电转换</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>模拟 → 数字</strong><br><small>ADC 量化</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>RAW → RGB</strong><br><small>ISP 处理</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>MIPI CSI-2</strong><br><small>数据传输</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>V4L2</strong><br><small>/dev/videoX</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>传感器硬件原理</h4><div class="sub">光电效应 · Bayer CFA · 像素架构</div>
+      <p><em>光电二极管</em> 将光子转为电子 → Floating Diffusion 收集电荷 → ADC 量化为数字值。Bayer 彩色滤镜阵列实现单传感器彩色成像。<strong>BSI 背照式</strong> 提升量子效率。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>关键性能参数</h4><div class="sub">QE · SNR · DR · 噪声模型</div>
+      <p><em>量子效率 (QE)</em> 衡量光电转换效率。<em>动态范围 (DR)</em> = 满阱容量/读出噪声。HDR 技术: 多重曝光/DCG/LOFIC 实现 120dB+。噪声源: 光子散粒噪声、暗电流、读出噪声、FPN。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Linux 驱动开发</h4><div class="sub">V4L2 subdev · DT 绑定 · 寄存器表</div>
+      <p>传感器驱动注册为 <em>v4l2_subdev</em>，通过 I2C/CCI 配置寄存器。Device Tree 描述 MIPI lane 数、时钟频率、电源。常见传感器: IMX219/IMX477/OV5640/AR0234。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 光电原理 ══ -->
+<h2 class="sh">1. CMOS 图像传感器 — 从光子到数字</h2>
+<p class="ss">光电转换原理 · 像素架构 (3T/4T/5T) · Rolling Shutter vs Global Shutter · BSI/FSI · 堆叠式传感器</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>像素工作原理</h4><div class="lbl">光电二极管 → Floating Diffusion → ADC</div>
+    <p>① <strong>曝光 (Integration)</strong>: 光子击中光电二极管 → 产生电子-空穴对 → 电子收集在 PD 中。光强越强 → 电子越多。<br>
+    ② <strong>转移 (Transfer)</strong>: TX 栅极导通 → 电子从 PD 转移到 <strong>Floating Diffusion (FD)</strong> 节点。<br>
+    ③ <strong>读出 (Readout)</strong>: FD 电压变化 = Q/C → 源跟随器 (SF) 缓冲 → 列 ADC 量化 → 数字像素值。<br>
+    ④ <strong>复位 (Reset)</strong>: RST 栅极导通 → FD 复位到 VDD → 准备下一次曝光。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>4T 像素架构 (主流)</h4><div class="lbl">Transfer Gate + 相关双采样 (CDS)</div>
+    <p><strong>4T = 4 个晶体管</strong> (TX/RST/SF/SEL) + 1 个光电二极管。<br>
+    <strong>CDS 相关双采样</strong>: 先读复位电压 (暗电平) → 再读信号电压 → 相减消除 <strong>kTC 噪声</strong> 和 FPN。<br>
+    <strong>3T 像素</strong>: 无 TX 栅极 — 噪声大，已淘汰。<br>
+    <strong>5T 像素</strong>: 额外晶体管用于 <strong>全局快门</strong> (GS) — 每个像素有模拟存储电容，所有像素同时曝光。</p>
+  </div>
+</div>
+
+<div class="cg c3" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Rolling Shutter (RS)</h4><div class="lbl">逐行曝光 · 逐行读出</div>
+    <p>每行像素依次开始积分 → 逐行读出。不同行曝光时刻不同 → 快速运动产生<strong>果冻效应</strong> (skew/wobble)。<br>
+    <strong>优点</strong>: 像素简单、成本低、填充因子高。<br>
+    <strong>缺点</strong>: 运动伪影、LED 闪烁条带。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Global Shutter (GS)</h4><div class="lbl">所有像素同时曝光</div>
+    <p>所有像素<strong>同时开始和结束</strong>曝光 → 像素内有模拟存储节点暂存电荷 → 逐行读出。<br>
+    <strong>优点</strong>: 零运动伪影 — 工业检测/自动驾驶必需。<br>
+    <strong>缺点</strong>: 像素复杂 (5T+)、额外存储电容降低填充因子、更高的暗电流。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>BSI 背照式 vs FSI 前照式</h4><div class="lbl">光从背面进入 vs 正面进入</div>
+    <p><strong>FSI</strong> (传统): 光线穿过金属布线层到达 PD → 反射/吸收损失→ 低 QE (~40-60%)。<br>
+    <strong>BSI</strong> (现代): 晶圆翻转减薄 → 光从背面直接照射 PD → 无金属遮挡 → 高 QE (~80-90%)。<br>
+    <strong>堆叠式 (Stacked)</strong>: PD 层 + 逻辑层分别制造 → Cu-Cu 键合 → 极致性能。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ 4T 像素读出时序 (Rolling Shutter) ═══ */</span>
+<span class="cm">          ┌── 曝光时间 ──┐</span>
+<span class="cm">  Row 0:  [RST─TX──...──TX─SF─ADC]  ← 先复位, 曝光, 再转移读出</span>
+<span class="cm">  Row 1:     [RST─TX──...──TX─SF─ADC]</span>
+<span class="cm">  Row 2:        [RST─TX──...──TX─SF─ADC]</span>
+<span class="cm">  ...                                        ← 逐行错开 = Rolling Shutter</span>
+<span class="cm"></span>
+<span class="cm">/* ═══ 5T 像素 (Global Shutter) ═══ */</span>
+<span class="cm">  All Rows: [同时 RST─TX──存储到 Memory Node] ← 全局同时曝光</span>
+<span class="cm">  Row 0:    [SF─ADC] ← 逐行读出存储的电荷</span>
+<span class="cm">  Row 1:       [SF─ADC]</span>
+<span class="cm">  ...                             ← 无运动伪影!</span></div>
+
+<!-- ══ Ch2: 关键参数 ══ -->
+<h2 class="sh">2. 关键性能参数 — QE · SNR · DR · 噪声模型</h2>
+<p class="ss">量子效率 · 信噪比 · 动态范围 · 满阱容量 · 读出噪声 · 暗电流 · 光电响应非均匀性</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>参数</th><th>符号</th><th>定义</th><th>典型值</th><th>影响因素</th></tr></thead>
+  <tbody>
+    <tr><td><strong>量子效率</strong></td><td>QE</td><td>转换为电子的光子比例</td><td class="g">FSI: 40~60%<br>BSI: 80~95%</td><td>微透镜、抗反射层、波长、填充因子</td></tr>
+    <tr><td><strong>满阱容量</strong></td><td>FWC</td><td>单个像素可容纳的最大电子数</td><td>小 pixel (1.1μm): ~3K e⁻<br>大 pixel (3.4μm): ~24K e⁻</td><td>像素面积、FD 电容、电压摆幅</td></tr>
+    <tr><td><strong>读出噪声</strong></td><td>RN</td><td>信号链路引入的电子噪声</td><td class="g">高端: 1~2 e⁻<br>消费: 3~8 e⁻</td><td>SF 晶体管、ADC 精度、时序</td></tr>
+    <tr><td><strong>暗电流</strong></td><td>—</td><td>无光照时的热生成电子</td><td>室温: ~10-100 e⁻/s<br>每升高 6°C 翻倍</td><td>温度、工艺缺陷、偏置电压</td></tr>
+    <tr><td><strong>动态范围</strong></td><td>DR</td><td>DR = 20×log₁₀(FWC/RN)</td><td>标准: ~60-70 dB<br>HDR: 120 dB+</td><td>FWC 和 RN 共同决定</td></tr>
+    <tr><td><strong>信噪比</strong></td><td>SNR</td><td>SNR = 20×log₁₀(S/N)</td><td>亮场: ~40-45 dB<br>暗场: 受光子散粒噪声限制</td><td>光子数 (散粒噪声 = √S)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>噪声源模型</h4><div class="lbl">总噪声 = √(σ²_photon + σ²_dark + σ²_read + σ²_FPN)</div>
+    <p><strong>光子散粒噪声</strong> (Photon Shot Noise): 光的量子本质 → 光子到达时间的泊松分布 → <strong>σ² = S (信号电子数)</strong>。物理极限 — 无法消除。<br>
+    <strong>暗电流散粒噪声</strong>: 热生电子的泊松分布 → 长曝光 + 高温时显著。<br>
+    <strong>读出噪声</strong>: 像素源跟随器 + ADC 的热噪声和 1/f 噪声 → <strong>暗场景的 SNR 瓶颈</strong>。<br>
+    <strong>固定模式噪声 (FPN)</strong>: 像素间增益/偏移差异 → CDS 消除 offset FPN，但 gain FPN 需 ISP 校正。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SNR 曲线 — 光强 vs 信噪比</h4><div class="lbl">三个区域: 读出噪声限制 → 散粒噪声限制 → 饱和</div>
+    <p><strong>低光区</strong>: 信号 < 读出噪声 → SNR 由读出噪声决定 → <strong>RN 越低越好</strong>。<br>
+    <strong>中光区</strong>: 信号 > RN → SNR ∝ √S (散粒噪声主导) → <strong>QE 越高 SNR 越高</strong>。<br>
+    <strong>饱和区</strong>: 信号 = FWC → SNR 达到最大值 SNR_max = 20log₁₀(√FWC)。<br>
+    提升 SNR 路径: ① 增大像素 (FWC↑) ② 降低 RN ③ 提高 QE。</p>
+  </div>
+</div>
+
+<!-- ══ Ch3: Bayer + HDR ══ -->
+<h2 class="sh">3. Bayer 彩色滤波阵列 &amp; HDR 技术</h2>
+<p class="ss">Bayer CFA → 去马赛克 · RGB-IR · RCCB · 多重曝光 HDR · DCG · LOFIC · 2024 前沿</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Bayer Pattern (RGGB)</h4><div class="lbl">2×2 重复单元 — 50% G, 25% R, 25% B</div>
+    <p><strong>设计哲学</strong>: 人眼对绿色最敏感 → 绿色像素数加倍。<br>
+    <strong>常见变体</strong>: RGGB (最常用)、BGGR、GBRG、GRBG (起始位置不同)。<br>
+    <strong>去马赛克 (Demosaic)</strong>: 从 Bayer RAW 恢复全分辨率 RGB → 双线性/边缘自适应/深度学习。<br>
+    <strong>Quad Bayer (4-cell)</strong>: 2×2 同色像素 → 暗光下合并为 1 个大像素 (2×2 binning) → 亮光下全分辨率 Remosaic。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>HDR — 120dB 动态范围</h4><div class="lbl">三种主流 HDR 技术路线</div>
+    <p><strong>多重曝光 (eHDR)</strong>: 长/中/短曝光各一帧 → ISP 合成 → 运动伪影 (鬼影)。<br>
+    <strong>DCG (双转换增益)</strong>: 单次曝光中切换 FD 电容 → HCG (高增益, 暗部) + LCG (低增益, 亮部) → <strong>无运动伪影</strong>。<br>
+    <strong>LOFIC</strong>: 横向溢出积分电容 → PD 饱和后电荷溢入额外电容 → <strong>单帧 130dB</strong>。<br>
+    <strong>LI-HDR</strong>: 行交错长短曝光 → 单帧 HDR，垂直分辨率部分损失。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>传感器型号</th><th>分辨率</th><th>像素尺寸</th><th>快门</th><th>HDR 方式</th><th>接口</th><th>驱动</th></tr></thead>
+  <tbody>
+    <tr><td>Sony IMX219</td><td>8MP (3280×2464)</td><td>1.12μm</td><td>RS</td><td>—</td><td>MIPI 2-lane</td><td>imx219.c</td></tr>
+    <tr><td>Sony IMX477</td><td>12.3MP (4056×3040)</td><td>1.55μm</td><td>RS</td><td>—</td><td>MIPI 4-lane</td><td>imx477.c</td></tr>
+    <tr><td>OV5640</td><td>5MP (2592×1944)</td><td>1.4μm</td><td>RS</td><td>—</td><td>MIPI 2-lane / DVP</td><td>ov5640.c</td></tr>
+    <tr><td>onsemi AR0234</td><td>2.3MP (1920×1200)</td><td>3.0μm</td><td class="g"><strong>GS</strong></td><td>—</td><td>MIPI 4-lane</td><td>ar0234.c</td></tr>
+    <tr><td>onsemi AR0246</td><td>2MP (1920×1080)</td><td>2.0μm</td><td>RS+GRR</td><td class="g">eHDR 120dB</td><td>MIPI</td><td>—</td></tr>
+    <tr><td>OV OG09A10</td><td>9MP</td><td>3.45μm</td><td class="g"><strong>GS</strong></td><td class="g">DCG HDR</td><td>MIPI</td><td>—</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch4: 曝光三要素 + 3A ══ -->
+<h2 class="sh">4. 曝光三要素与 3A 算法</h2>
+<p class="ss">光圈 (Aperture) · 快门 (Shutter) · 增益 (Gain/ISO) · AE/AWB/AF 的基本原理</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>曝光三要素</h4><div class="lbl">亮度 = 光圈 × 快门 × 增益</div>
+    <p><strong>光圈 (Aperture)</strong>: 镜头通光孔径 → 影响景深和进光量。固定光圈镜头 (手机/嵌入式) → 不可调。<br>
+    <strong>快门 (Exposure Time)</strong>: 积分时间 → 电子收集时长。范围: ~10μs ~ 1s。<br>
+    <strong>增益 (Gain / ISO)</strong>: 模拟增益 (放大器) + 数字增益 (乘法) → 放大信号也放大噪声。<br>
+    三者共同决定曝光量 — <strong>AE 自动曝光算法</strong> 的目标是协调三者使图像达到目标亮度。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>AE — 自动曝光</h4><div class="lbl">目标亮度 → 调整积分时间 + 增益</div>
+    <p><strong>测光</strong>: 统计图像亮度直方图 → 计算均值/中值/加权均值。<br>
+    <strong>策略</strong>: ① 优先延长积分时间 (降低噪声) ② 积分时间够长后仍暗 → 加增益 ③ 太亮 → 先减增益再减时间。<br>
+    <strong>防闪烁 (Anti-Flicker)</strong>: 检测 50/60Hz 频闪 → 积分时间锁定为电网周期的整数倍 (10ms/8.33ms)。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>AWB — 自动白平衡</h4><div class="lbl">消除光源色温偏色</div>
+    <p><strong>灰度世界假设</strong>: 场景的平均颜色是灰色 → R/G/B 均值应相等 → 计算增益使 R=B=G。<br>
+    <strong>色温估计</strong>: 在 R/G vs B/G 色彩空间中定位最接近的黑体辐射曲线点。<br>
+    <strong>常用方法</strong>: 灰度世界 + 完美反射 + 色温映射 + 机器学习。</p>
+  </div>
+</div>
+
+<!-- ══ Ch5: Linux V4L2 驱动 ══ -->
+<h2 class="sh">5. Linux V4L2 传感器驱动开发</h2>
+<p class="ss">v4l2_subdev · I2C/CCI 寄存器配置 · 模式表 (Mode Table) · Device Tree 绑定 · 异步注册</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>传感器驱动架构</h4><div class="lbl">v4l2_subdev_ops — pad · video · core</div>
+    <p><strong>I2C/CCI 控制</strong>: 传感器通过 I2C 或 CCI 接口配置寄存器 (分辨率/帧率/曝光/增益/MIPI lane 数)。<br>
+    <strong>v4l2_subdev</strong>: 注册为 V4L2 子设备，提供 pad ops (<code>get_fmt/set_fmt</code>)、video ops (<code>s_stream/g_frame_interval</code>)、core ops (<code>s_power</code>)。<br>
+    <strong>模式表</strong>: 每个传感器有一组预定义的模式 (分辨率+帧率+link_freq+像素格式组合) — 驱动在 <code>enum_frame_size</code> 中遍历。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>V4L2 Async 异步注册</h4><div class="lbl">跨总线 probe 顺序协调</div>
+    <p>传感器 (I2C) 和 CSI 控制器 (Platform) 独立 probe → <strong>V4L2 Async 框架</strong> 通过 <code>v4l2_async_notifier</code> 协调:<br>
+    ① Sensor probe → <code>v4l2_async_register_subdev()</code><br>
+    ② CSI 控制器 probe → <code>v4l2_async_notifier_register()</code><br>
+    ③ Notifier 等待 DT 中 <code>remote-endpoint</code> 关联的 sensor subdev 就绪<br>
+    ④ <code>.bound()</code> 回调 → <code>.complete()</code> 回调 (所有子设备就绪)</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== IMX219 传感器驱动 — 关键结构 ===== */</span>
+<span class="kw">static const struct</span> <span class="ty">imx219_mode</span> supported_modes[] = {
+    {   <span class="cm">/* 3280x2464 @ 15fps, 2-lane MIPI */</span>
+        <span class="op">.width</span>  = <span class="nu">3280</span>,  <span class="op">.height</span> = <span class="nu">2464</span>,
+        <span class="op">.code</span>   = <span class="ma">MEDIA_BUS_FMT_SRGGB10_1X10</span>,  <span class="cm">// Bayer RGGB, 10-bit RAW</span>
+        <span class="op">.fps</span>    = <span class="nu">15</span>,
+        <span class="op">.link_freq</span> = <span class="nu">456000000</span>,    <span class="cm">// 456 MHz MIPI 链路频率</span>
+        <span class="op">.reg_list</span>  = mode_3280x2464_regs,  <span class="cm">// 寄存器序列 (数百条 I2C 写)</span>
+    },
+    {   <span class="cm">/* 1920x1080 @ 30fps */</span>
+        <span class="op">.width</span>  = <span class="nu">1920</span>,  <span class="op">.height</span> = <span class="nu">1080</span>,
+        <span class="op">.code</span>   = <span class="ma">MEDIA_BUS_FMT_SRGGB10_1X10</span>,
+        <span class="op">.fps</span>    = <span class="nu">30</span>,
+        <span class="op">.link_freq</span> = <span class="nu">456000000</span>,
+        <span class="op">.reg_list</span>  = mode_1920x1080_regs,
+    },
+};
+
+<span class="cm">/* ===== V4L2 subdev 操作 — pad ops (格式协商) ===== */</span>
+<span class="kw">static int</span> <span class="fn">imx219_set_fmt</span>(<span class="kw">struct</span> <span class="ty">v4l2_subdev</span> *sd,
+                          <span class="kw">struct</span> <span class="ty">v4l2_subdev_state</span> *state,
+                          <span class="kw">struct</span> <span class="ty">v4l2_subdev_format</span> *fmt)
+{
+    <span class="kw">struct</span> <span class="ty">v4l2_mbus_framefmt</span> *mbus_fmt = &amp;fmt-&gt;format;
+
+    <span class="cm">/* 从 supported_modes[] 找最匹配的分辨率 */</span>
+    mode = <span class="fn">imx219_find_best_mode</span>(mbus_fmt-&gt;width, mbus_fmt-&gt;height);
+    mbus_fmt-&gt;width  = mode-&gt;width;
+    mbus_fmt-&gt;height = mode-&gt;height;
+    mbus_fmt-&gt;code   = mode-&gt;code;
+    <span class="kw">return</span> <span class="nu">0</span>;
+}
+
+<span class="kw">static const struct</span> <span class="ty">v4l2_subdev_pad_ops</span> imx219_pad_ops = {
+    <span class="op">.get_fmt</span> = imx219_get_fmt,
+    <span class="op">.set_fmt</span> = imx219_set_fmt,
+};
+
+<span class="cm">/* ===== s_stream — 启动/停止数据流 ===== */</span>
+<span class="kw">static int</span> <span class="fn">imx219_start_streaming</span>(<span class="kw">struct</span> <span class="ty">imx219</span> *priv)
+{
+    <span class="cm">// 写入数百个寄存器配置当前模式</span>
+    <span class="kw">for</span> (i = <span class="nu">0</span>; i &lt; mode-&gt;num_regs; i++)
+        <span class="fn">imx219_write_reg</span>(priv, mode-&gt;reg_list[i].addr,
+                            mode-&gt;reg_list[i].val);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}</div>
+
+<div class="cb">
+<span class="cm">/* ===== 设备树 — IMX219 绑定 ===== */</span>
+&amp;i2c1 {
+    imx219: sensor@<span class="nu">10</span> {
+        compatible = <span class="st">"sony,imx219"</span>;
+        reg = &lt;<span class="nu">0x10</span>&gt;;                          <span class="cm">// I2C 地址</span>
+
+        clocks = &lt;&amp;clk_cam&gt;;                 <span class="cm">// 主时钟源 (通常 24MHz)</span>
+        clock-names = <span class="st">"xclk"</span>;
+
+        vana-supply = &lt;&amp;vcc_2v8&gt;;            <span class="cm">// 模拟电源 2.8V</span>
+        vdig-supply = &lt;&amp;vcc_1v2&gt;;            <span class="cm">// 数字核心 1.2V</span>
+        vddl-supply = &lt;&amp;vcc_1v8&gt;;            <span class="cm">// I/O 接口 1.8V</span>
+
+        reset-gpios = &lt;&amp;gpio1 <span class="nu">5</span> GPIO_ACTIVE_LOW&gt;;
+
+        port {
+            imx219_ep: endpoint {
+                remote-endpoint = &lt;&amp;csi_ep&gt;;  <span class="cm">// 连接到 CSI 控制器</span>
+                clock-lanes = &lt;<span class="nu">0</span>&gt;;            <span class="cm">// Clock lane</span>
+                data-lanes  = &lt;<span class="nu">1 2</span>&gt;;          <span class="cm">// 2 Data lanes</span>
+                link-frequencies = /bits/ <span class="nu">64</span> &lt;<span class="nu">456000000</span>&gt;;
+            };
+        };
+    };
+};</div>
+
+<div class="callout info">
+  <div class="ct">传感器寄存器表 — 驱动的核心数据</div>
+  一个典型的 8MP 传感器驱动中, <strong>寄存器配置表</strong> 占据 ~80% 的代码量。每个分辨率模式对应 200~800 条寄存器写入 — 包括 PLL 时钟配置、像素阵列窗口裁剪、MIPI 时序、模拟电路偏置等。这些值来自传感器厂商的<strong>datasheet 和 tuning guide</strong> — 驱动开发本质上是将硬件手册翻译为 C 结构体。
+</div>
+
+<!-- ══ Ch6: 调优 ══ -->
+<h2 class="sh">6. 图像质量调优与调试</h2>
+<p class="ss">黑电平校正 · 镜头阴影校正 · 坏点校正 · 颜色校正矩阵 · Gamma · 调试工具</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>ISP 模块</th><th>功能</th><th>输入</th><th>输出</th></tr></thead>
+  <tbody>
+    <tr><td><strong>BLC</strong> (黑电平校正)</td><td>减去光学黑像素的平均值 → 消除暗电流偏移</td><td>RAW (含黑电平)</td><td>RAW (零基准)</td></tr>
+    <tr><td><strong>LSC</strong> (镜头阴影校正)</td><td>补偿镜头边缘亮度衰减 (cos⁴ 定律) + 颜色偏差</td><td>RAW</td><td>均匀亮度 RAW</td></tr>
+    <tr><td><strong>DPC</strong> (坏点校正)</td><td>检测并替换异常像素 (亮点/暗点)</td><td>RAW</td><td>RAW (无坏点)</td></tr>
+    <tr><td><strong>Demosaic</strong> (去马赛克)</td><td>Bayer CFA → 全分辨率 RGB</td><td>Bayer RAW</td><td>RGB 三通道</td></tr>
+    <tr><td><strong>CCM</strong> (颜色校正矩阵)</td><td>3×3 矩阵变换 — 校正传感器光谱响应到 sRGB/Rec.709</td><td>RGB</td><td>校正 RGB</td></tr>
+    <tr><td><strong>AWB</strong> (自动白平衡)</td><td>补偿光源色温 → 白色物体呈现白色</td><td>RGB</td><td>R=G=B 白平衡 RGB</td></tr>
+    <tr><td><strong>Gamma</strong> (伽马校正)</td><td>补偿显示器的非线性响应 + 提升暗部可见度</td><td>线性 RGB</td><td>伽马编码 RGB</td></tr>
+    <tr><td><strong>NR</strong> (降噪)</td><td>2D/3D 降噪 — 空间/时域滤波</td><td>RGB / YUV</td><td>去噪图像</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 调试工具 ===== */</span>
+<span class="cm"># 查看 sensor 当前配置</span>
+media-ctl -p -d /dev/media0               <span class="cm">// Media topology</span>
+v4l2-ctl -d /dev/v4l-subdev2 --list-formats-ext  <span class="cm">// 支持的模式</span>
+
+<span class="cm"># 抓取 RAW 帧用于离线分析</span>
+v4l2-ctl -d /dev/video0 --set-fmt-video width=<span class="nu">1920</span>,height=<span class="nu">1080</span>,pixelformat=RG10 \\
+  --stream-mmap --stream-count=<span class="nu">1</span> --stream-to=frame.raw
+
+<span class="cm"># 用 rawpy / dcraw 解析 Bayer RAW</span>
+rawpy.imread(<span class="st">'frame.raw'</span>).postprocess(output_bps=<span class="nu">8</span>)
+
+<span class="cm"># I2C 寄存器读写 (调试时)</span>
+i2ctransfer -y <span class="nu">0</span> w2@<span class="nu">0x10</span> <span class="nu">0x01</span> <span class="nu">0x00</span> r2   <span class="cm">// 读 reg 0x0100</span>
+i2ctransfer -y <span class="nu">0</span> w4@<span class="nu">0x10</span> <span class="nu">0x01</span> <span class="nu">0x00</span> <span class="nu">0x05</span> <span class="nu">0x00</span>  <span class="cm">// 写 reg 0x0100 = 0x0500</span></div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  CMOS Image Sensor — 系统化知识体系 · 2026-06 · Sony · OmniVision · onsemi · Linux V4L2
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

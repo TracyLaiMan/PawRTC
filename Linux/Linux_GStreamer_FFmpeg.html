@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GStreamer 与 FFmpeg — 多媒体框架深度对比</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.6; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; text-decoration:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,40px);font-weight:900">GStreamer 与 FFmpeg</h2>
+  <p class="sec-sub">多媒体框架深度对比 — 架构 · Pipeline · API · 命令行 · 硬件加速 · 选型决策</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>GStreamer</strong><br><small>Pipe & Filter 框架</small></span>
+    <span class="flow-arr">vs</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>FFmpeg</strong><br><small>工具集 / 库集合</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>GStreamer — 媒体框架</h4><div class="sub">Elements · Pads · Caps · Bus</div>
+      <p><em>管道-过滤器架构</em>。每个 Element 是一个处理单元，通过 Pad 连接形成 Pipeline。<strong>框架自动管理</strong>线程、时钟同步、QoS、背压。适合<em>动态实时流媒体</em>和<em>交互式应用</em>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>FFmpeg — 工具集</h4><div class="sub">libavcodec · libavformat · libavfilter</div>
+      <p>7 个独立库组成的<em>多媒体瑞士军刀</em>。400+ 编解码器、所有主流容器格式。开发者<strong>手动编排</strong>数据流。适合<em>批处理转码</em>、<em>CLI 脚本</em>、<em>嵌入式</em>场景。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>互补共存</h4><div class="sub">gst-libav 桥接</div>
+      <p>GStreamer 通过 <code>gst-libav</code> 插件<strong>包装 FFmpeg 的全部编解码器</strong>，在 GStreamer Pipeline 中使用 FFmpeg 的编码/解码能力。实际项目中两者常组合使用：GStreamer 做实时流，FFmpeg 做录制/归档。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: GStreamer 架构 ══ -->
+<h2 class="sh">1. GStreamer — Pipeline-Filter 架构</h2>
+<p class="ss">Elements · Pads · Caps 协商 · Bins/Pipeline · Bus 异步消息 · Buffer 管理 · 状态机</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#34d399">
+    <h4>Element — 处理单元</h4><div class="lbl">Source · Filter · Codec · Sink</div>
+    <p>GStreamer 的最小功能单元。<strong>Source</strong> (数据源: filesrc/v4l2src) → <strong>Filter</strong> (处理: videoconvert) → <strong>Encoder/Decoder</strong> (编解码: x264enc/avdec_h264) → <strong>Sink</strong> (输出: autovideosink/filesink)。<br>每个 Element 有 <strong>Pad</strong> (接头) — Src Pad 输出数据，Sink Pad 接收数据。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Caps 协商 — 格式协商</h4><div class="lbl">GstCaps = MIME + 属性键值对</div>
+    <p>连接两个 Element 时，通过 <strong>Caps Negotiation</strong> 协商双方都支持的格式:<br>
+    ① Pad Template 检查 → ② Caps Query (交集计算) → ③ 上游选定固定格式 → ④ <strong>CAPS Event</strong> 推向下游<br>
+    Caps 字符串示例: <code>video/x-raw,format=I420,width=1920,height=1080,framerate=30/1</code></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>State — 元素状态机</h4><div class="lbl">NULL → READY → PAUSED → PLAYING</div>
+    <p><strong>NULL</strong>: 未初始化 · <strong>READY</strong>: 资源已分配<br>
+    <strong>PAUSED</strong>: 就绪但不处理数据 (preroll 完成)<br>
+    <strong>PLAYING</strong>: 数据流动中<br>
+    状态切换由父 Bin 协调 — 上转: 父→子；下转: 子→父。<br>
+    异步元素 (网络源) 返回 <code>GST_STATE_CHANGE_ASYNC</code>。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Bus — 异步消息通知</h4><div class="lbl">Pipeline → Application 的事件通道</div>
+    <p><strong>ERROR</strong>: 致命错误 (gerror + debug 字符串)<br>
+    <strong>EOS</strong>: 流结束 · <strong>STATE_CHANGED</strong>: 状态变化<br>
+    <strong>BUFFERING</strong>: 缓冲百分比 (0~100)<br>
+    <strong>STREAM_START</strong>: 新流开始<br>
+    <strong>ASYNC_DONE</strong>: 异步状态切换完成<br>
+    <strong>TAG</strong>: 元数据标签<br>
+    <strong>QOS</strong>: 服务质量事件 (丢帧/降质通知)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Buffer — 数据传输单元</h4><div class="lbl">GstBuffer + GstMemory (零拷贝)</div>
+    <p><strong>PTS/DTS</strong>: 显示/解码时间戳 · <strong>Duration</strong>: 持续时长<br>
+    <strong>Flags</strong>: DISCONT/DELTA_UNIT/MARKER/CORRUPTED/DROPPABLE<br>
+    <strong>零拷贝</strong>: <code>GstMemory</code> 引用计数 + <code>gst_memory_share()</code> 轻量共享<br>
+    <strong>BufferPool</strong>: 预分配+回收 — 避免频繁 alloc/free<br>
+    <strong>DMA-Buf</strong>: 跨硬件加速器零拷贝<br>
+    <strong>写时复制</strong>: refcount>1 时不可变，<code>gst_buffer_make_writable()</code> 创建副本</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== GStreamer: C API — 构建 Pipeline ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;gst/gst.h&gt;</span>
+
+<span class="ty">int</span> <span class="fn">main</span>(<span class="ty">int</span> argc, <span class="ty">char</span> *argv[]) {
+    <span class="fn">gst_init</span>(&amp;argc, &amp;argv);
+
+    <span class="cm">/* 1. 方法一: 字符串描述 Pipeline (最简单) */</span>
+    <span class="kw">GstElement</span> *pipe = <span class="fn">gst_parse_launch</span>(
+        <span class="st">"filesrc location=input.mp4 ! qtdemux ! h264parse ! "</span>
+        <span class="st">"avdec_h264 ! videoconvert ! autovideosink"</span>, <span class="ma">NULL</span>);
+
+    <span class="cm">/* 2. 方法二: 手动构建 Pipeline (精细控制) */</span>
+    <span class="kw">GstElement</span> *src  = <span class="fn">gst_element_factory_make</span>(<span class="st">"filesrc"</span>, <span class="st">"src"</span>);
+    <span class="kw">GstElement</span> *demux = <span class="fn">gst_element_factory_make</span>(<span class="st">"qtdemux"</span>, <span class="st">"demux"</span>);
+    <span class="kw">GstElement</span> *sink = <span class="fn">gst_element_factory_make</span>(<span class="st">"autovideosink"</span>, <span class="st">"sink"</span>);
+    <span class="fn">gst_bin_add_many</span>(<span class="ma">GST_BIN</span>(pipe), src, demux, sink, <span class="ma">NULL</span>);
+    <span class="fn">gst_element_link</span>(src, demux);
+
+    <span class="cm">/* 3. 监听 Bus 消息 */</span>
+    <span class="kw">GstBus</span> *bus = <span class="fn">gst_element_get_bus</span>(pipe);
+    <span class="kw">GstMessage</span> *msg = <span class="fn">gst_bus_timed_pop_filtered</span>(bus, <span class="ma">GST_CLOCK_TIME_NONE</span>,
+            <span class="ma">GST_MESSAGE_ERROR</span> | <span class="ma">GST_MESSAGE_EOS</span>);
+
+    <span class="kw">if</span> (<span class="ma">GST_MESSAGE_TYPE</span>(msg) == <span class="ma">GST_MESSAGE_ERROR</span>) {
+        <span class="kw">GError</span> *err; <span class="ty">gchar</span> *dbg;
+        <span class="fn">gst_message_parse_error</span>(msg, &amp;err, &amp;dbg);
+        <span class="fn">g_error</span>(<span class="st">"GStreamer error: %s (%s)"</span>, err-&gt;message, dbg);
+    }
+
+    <span class="cm">/* 4. 控制 Pipeline 状态 */</span>
+    <span class="fn">gst_element_set_state</span>(pipe, <span class="ma">GST_STATE_PLAYING</span>);    <span class="cm">// 开始播放</span>
+    <span class="fn">gst_element_set_state</span>(pipe, <span class="ma">GST_STATE_NULL</span>);      <span class="cm">// 停止并回收资源</span>
+}</div>
+
+<div class="callout info">
+  <div class="ct">gst-launch — GStreamer 命令行工具</div>
+  <code>gst-launch-1.0 filesrc location=test.mp4 ! qtdemux ! h264parse ! avdec_h264 ! videoconvert ! autovideosink</code><br>
+  <code>gst-inspect-1.0 avdec_h264</code> — 查看 Element 的 Pad/Caps/属性<br>
+  <code>gst-discoverer-1.0 file.mp4</code> — 分析媒体文件信息<br>
+  <code>!</code> = 连接符 (link) · Element 之间用空格+!分隔
+</div>
+
+<!-- ══ Ch2: FFmpeg 架构 ══ -->
+<h2 class="sh">2. FFmpeg — 模块化工具集架构</h2>
+<p class="ss">libavcodec · libavformat · libavfilter · libswscale · libswresample · 线性处理流水线</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>libavcodec — 编解码库</h4><div class="lbl">400+ 编解码器 · Send/Receive 模型</div>
+    <p>FFmpeg 的心脏。包含所有编码器和解码器 (H.264/265, VP9, AV1, AAC, Opus...)。<br>
+    <strong>Send/Receive API</strong> (FFmpeg 3.1+):<br>
+    <code>avcodec_send_packet()</code> — 推送压缩数据<br>
+    <code>avcodec_receive_frame()</code> — 获取解码帧<br>
+    解耦的输入/输出允许解码器<strong>内部缓冲多包</strong>，支持硬件加速器流水线。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>libavformat — 容器库</h4><div class="lbl">Demux · Mux · I/O Protocols</div>
+    <p><strong>Demuxer</strong>: 解析容器 (MP4/MKV/TS/FLV...) → 提取 <code>AVPacket</code> 数据流<br>
+    <strong>Muxer</strong>: 将编码后的 <code>AVPacket</code> → 写入容器 + 生成索引<br>
+    <strong>I/O Protocols</strong>: 统一的 URL 抽象 — <code>file://</code> <code>rtmp://</code> <code>udp://</code> <code>tcp://</code><br>
+    <code>avformat_open_input()</code> → <code>av_read_frame()</code> → <code>av_interleaved_write_frame()</code></p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>libavfilter — 滤镜图</h4><div class="lbl">200+ 滤镜 · 有向无环图</div>
+    <p>音频/视频滤镜的<strong>有向图</strong>引擎。滤镜通过 <strong>filtergraph</strong> 连接:<br>
+    <strong>简单图</strong>: <code>[in] → filter1 → filter2 → [out]</code><br>
+    <strong>复杂图</strong>: 多输入多输出 — 拼接/画中画/混音<br>
+    描述语法: <code>[0:v]scale=1280:720,unsharp[out]</code><br>
+    支持 <strong>AVFrame</strong> 零拷贝传递 — 引用计数共享 buffer。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ FFmpeg 处理流水线 — 从输入文件到输出文件 ═══ */</span>
+<b>[File/URL]</b>
+    │  avformat_open_input()           <span class="cm">// 打开容器，读取头信息</span>
+    ▼
+<b>DEMUXER</b> (libavformat)
+    │  av_read_frame()                 <span class="cm">// 逐包读取 AVPacket</span>
+    ▼
+<b>AVPacket</b>  (压缩数据包, 含 PTS/DTS)
+    │  avcodec_send_packet()           <span class="cm">// 送入解码器</span>
+    ▼
+<b>DECODER</b> (libavcodec)
+    │  avcodec_receive_frame()         <span class="cm">// 获取解码帧</span>
+    ▼
+<b>AVFrame</b>  (原始像素/PCM 数据)
+    │  av_buffersrc_add_frame()        <span class="cm">// 送入滤镜图</span>
+    ▼
+<b>FILTER GRAPH</b> (libavfilter)
+    │  av_buffersink_get_frame()       <span class="cm">// 从滤镜图取出</span>
+    ▼
+<b>AVFrame</b>  (处理后的原始帧)
+    │  avcodec_send_frame()            <span class="cm">// 送入编码器</span>
+    ▼
+<b>ENCODER</b> (libavcodec)
+    │  avcodec_receive_packet()        <span class="cm">// 获取编码包</span>
+    ▼
+<b>AVPacket</b>  (编码后的压缩包)
+    │  av_interleaved_write_frame()    <span class="cm">// 写入容器</span>
+    ▼
+<b>MUXER</b> (libavformat)
+    │  av_write_trailer()              <span class="cm">// 写文件尾 + 索引</span>
+    ▼
+<b>[Output File]</b></div>
+
+<div class="cb">
+<span class="cm">/* ===== FFmpeg: C API — 解封装→解码→编码→封装 ===== */</span>
+<span class="cm">// 1. 打开输入</span>
+<span class="kw">AVFormatContext</span> *fmt_ctx;
+<span class="fn">avformat_open_input</span>(&amp;fmt_ctx, <span class="st">"input.mp4"</span>, <span class="ma">NULL</span>, <span class="ma">NULL</span>);
+<span class="fn">avformat_find_stream_info</span>(fmt_ctx, <span class="ma">NULL</span>);
+
+<span class="cm">// 2. 找到视频流 + 解码器</span>
+<span class="ty">int</span> vid = <span class="fn">av_find_best_stream</span>(fmt_ctx, <span class="ma">AVMEDIA_TYPE_VIDEO</span>, -<span class="nu">1</span>, -<span class="nu">1</span>, <span class="ma">NULL</span>, <span class="nu">0</span>);
+<span class="kw">AVCodec</span> *dec = <span class="fn">avcodec_find_decoder</span>(fmt_ctx-&gt;streams[vid]-&gt;codecpar-&gt;codec_id);
+<span class="kw">AVCodecContext</span> *dec_ctx = <span class="fn">avcodec_alloc_context3</span>(dec);
+<span class="fn">avcodec_open2</span>(dec_ctx, dec, <span class="ma">NULL</span>);
+
+<span class="cm">// 3. 解码循环</span>
+<span class="kw">AVPacket</span> *pkt = <span class="fn">av_packet_alloc</span>();
+<span class="kw">AVFrame</span> *frame = <span class="fn">av_frame_alloc</span>();
+<span class="kw">while</span> (<span class="fn">av_read_frame</span>(fmt_ctx, pkt) &gt;= <span class="nu">0</span>) {
+    <span class="fn">avcodec_send_packet</span>(dec_ctx, pkt);
+    <span class="kw">while</span> (<span class="fn">avcodec_receive_frame</span>(dec_ctx, frame) &gt;= <span class="nu">0</span>) {
+        <span class="cm">// frame-&gt;data[0~3] = 像素 plane</span>
+        <span class="cm">// frame-&gt;width / height / pts</span>
+        <span class="fn">process_frame</span>(frame);
+    }
+    <span class="fn">av_packet_unref</span>(pkt);
+}
+
+<span class="cm">// 4. 编码写入 (略 — 类似反向过程)</span>
+
+<span class="cm">/* ===== FFmpeg CLI — 命令行转码示例 ===== */</span>
+<span class="cm"># 基本转码: H.264 → H.265, CRF=23</span>
+ffmpeg -i input.mp4 -c:v libx265 -crf <span class="nu">23</span> -c:a aac -b:a <span class="nu">128</span>k output.mkv
+
+<span class="cm"># 缩放 + 裁剪 + 滤镜</span>
+ffmpeg -i input.mp4 -vf <span class="st">"scale=1280:720,crop=1200:680:40:20"</span> output.mp4
+
+<span class="cm"># 硬件加速 (VAAPI)</span>
+ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i input.mp4 \
+  -c:v h264_vaapi -b:v 2M output.mp4</div>
+
+<!-- ══ Ch3: 对比 ══ -->
+<h2 class="sh">3. 核心差异深度对比</h2>
+<p class="ss">框架 vs 工具集 · 自动管理 vs 手动编排 · 动态 Pipeline vs 静态线性 · 同步 vs 异步</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:18%">维度</th><th style="width:41%">GStreamer</th><th style="width:41%">FFmpeg</th></tr></thead>
+  <tbody>
+    <tr><td><strong>设计哲学</strong></td><td><strong>框架</strong> — 你组装积木，框架管理流程</td><td><strong>工具集</strong> — 你手动编排每一步</td></tr>
+    <tr><td><strong>Pipeline 模型</strong></td><td class="g">有向无环图 — 可在运行时<strong>动态修改</strong></td><td>静态线性 — 启动时确定，运行时较难变更</td></tr>
+    <tr><td><strong>线程管理</strong></td><td class="g"><strong>自动</strong> — 框架按 pipeline 阶段自动调度</td><td>手动 — 开发者负责 pthread/线程池</td></tr>
+    <tr><td><strong>时钟同步</strong></td><td class="g"><strong>内置</strong> — GstClock + NetClock + 音视频同步</td><td>手动 — PTS 由开发者计算和对齐</td></tr>
+    <tr><td><strong>QoS / 背压</strong></td><td class="g"><strong>原生</strong> — GstFlowReturn + QoS Event</td><td>手动实现</td></tr>
+    <tr><td><strong>内存模型</strong></td><td>框架管理 — BufferPool + 引用计数</td><td class="g">开发者管理 — 更低开销</td></tr>
+    <tr><td><strong>编解码器数量</strong></td><td>自有 + gst-libav 包装 FFmpeg</td><td class="g"><strong>400+</strong> — 业界最全</td></tr>
+    <tr><td><strong>API 稳定性</strong></td><td class="g"><strong>稳定</strong> — 强向后兼容</td><td>不稳定 — 版本间可能 Breaking</td></tr>
+    <tr><td><strong>语言绑定</strong></td><td class="g">C + GObject Introspection (Python/JS/Rust/Vala)</td><td>C + 社区封装 (Python/Java)</td></tr>
+    <tr><td><strong>启动时间</strong></td><td class="g">快 — 按需加载插件</td><td>慢 — 初始化全部编解码器</td></tr>
+    <tr><td><strong>内存占用</strong></td><td>较高 — 插件隔离 + 内部缓冲</td><td class="g">较低 — 共享编解码器状态</td></tr>
+    <tr><td><strong>硬加速支持</strong></td><td>VAAPI/V4L2/NVENC/DMA-Buf</td><td class="g">CUDA/NVENC/VAAPI/Vulkan/Metal/AMF/DXVA2</td></tr>
+    <tr><td><strong>学习曲线</strong></td><td>陡峭 — 概念多 (Pad/Caps/Bin/Bus)</td><td class="g">较平缓 — CLI 上手快，C API 中等</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">一句话区分</div>
+  <strong>GStreamer</strong>: 你描述"<em>要做什么</em>" — 框架自动管理线程/同步/背压/状态。<br>
+  <strong>FFmpeg</strong>: 你编写"<em>怎么做</em>" — 完全控制每一步，但需要自己处理所有工程细节。<br>
+  类比: GStreamer = 自动驾驶，FFmpeg = 手动挡赛车。
+</div>
+
+<!-- ══ Ch4: 硬件加速 ══ -->
+<h2 class="sh">4. 硬件加速支持</h2>
+<p class="ss">GPU 编解码 · DMA-Buf 零拷贝 · VAAPI/V4L2/NVENC/CUDA/Vulkan · 两种框架的实现方式</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>GStreamer 硬件加速</h4><div class="lbl">通过专用 Element + DMA-Buf 零拷贝</div>
+    <p><strong>VAAPI</strong>: <code>vaapih264dec</code> / <code>vaapih265enc</code> (Intel GPU)<br>
+    <strong>V4L2</strong>: <code>v4l2h264dec</code> / <code>v4l2h264enc</code> (嵌入式 SoC)<br>
+    <strong>NVIDIA</strong>: <code>nvv4l2decoder</code> / <code>nvv4l2h264enc</code> (Jetson/DeepStream)<br>
+    <strong>DMA-Buf</strong>: 跨 Element 共享 GPU 内存 — <strong>零拷贝</strong><br>
+    <strong>特性</strong>: GStreamer 的 Buffer 体系天然支持 DMA-Buf 传递 — 解码→推理→编码全零拷贝。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>FFmpeg 硬件加速</h4><div class="lbl">通过 hwaccel + hw_device_ctx 配置</div>
+    <p><strong>VAAPI</strong>: <code>-hwaccel vaapi -c:v h264_vaapi</code> (Intel/AMD)<br>
+    <strong>NVENC/NVDEC</strong>: <code>-c:v h264_nvenc</code> (NVIDIA GPU)<br>
+    <strong>CUDA</strong>: <code>-hwaccel cuda</code> (NVIDIA 通用计算)<br>
+    <strong>Vulkan</strong>: <code>-hwaccel vulkan</code> (跨平台新后端)<br>
+    <strong>DXVA2/D3D11VA</strong>: Windows 平台<br>
+    <strong>特性</strong>: 覆盖面更广 — 支持 Metal (Apple)、AMF (AMD)、QSV (Intel QuickSync)、MediaCodec (Android)。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>硬件后端</th><th>厂商</th><th>GStreamer 支持</th><th>FFmpeg 支持</th></tr></thead>
+  <tbody>
+    <tr><td><strong>VAAPI</strong></td><td>Intel / AMD</td><td><code>vaapi*</code> Elements</td><td><code>h264_vaapi</code> / <code>hevc_vaapi</code></td></tr>
+    <tr><td><strong>V4L2 Stateless</strong></td><td>嵌入式 SoC</td><td><code>v4l2*codec</code></td><td><code>h264_v4l2m2m</code></td></tr>
+    <tr><td><strong>NVENC/NVDEC</strong></td><td>NVIDIA</td><td><code>nvv4l2*</code> (Jetson)</td><td><code>h264_nvenc</code> / <code>h264_cuvid</code></td></tr>
+    <tr><td><strong>CUDA</strong></td><td>NVIDIA</td><td>有限</td><td class="g"><code>-hwaccel cuda</code> + 滤镜</td></tr>
+    <tr><td><strong>Vulkan Video</strong></td><td>跨平台</td><td>开发中</td><td class="g"><code>-hwaccel vulkan</code></td></tr>
+    <tr><td><strong>AMF</strong></td><td>AMD</td><td>—</td><td class="g"><code>h264_amf</code></td></tr>
+    <tr><td><strong>QSV</strong></td><td>Intel</td><td>—</td><td class="g"><code>h264_qsv</code></td></tr>
+    <tr><td><strong>MediaCodec</strong></td><td>Android</td><td><code>amc*</code></td><td class="g"><code>h264_mediacodec</code></td></tr>
+    <tr><td><strong>VideoToolbox</strong></td><td>Apple</td><td><code>vtdec</code></td><td class="g"><code>h264_videotoolbox</code></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch5: 选型指南 ══ -->
+<h2 class="sh">5. 选型决策指南</h2>
+<p class="ss">根据应用场景选择正确的工具 — 批处理 vs 实时流 · CLI vs API · 静态 vs 动态 · 简易 vs 灵活</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:42%">你的场景</th><th>推荐</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td>批量转码 10000 个视频 → H.265</td><td class="g"><strong>FFmpeg</strong></td><td>CLI 脚本逐文件处理 — 最适合批处理</td></tr>
+    <tr><td>RTMP 推流 转 HLS 自适应码率</td><td class="g"><strong>FFmpeg</strong></td><td>线性: 输入→多路编码→分片→输出</td></tr>
+    <tr><td>WebRTC / 视频会议 MCU</td><td class="g"><strong>GStreamer</strong></td><td>动态参与者 + 实时同步 + 背压控制</td></tr>
+    <tr><td>AI 推理摄像头 (检测→跟踪→报警)</td><td class="g"><strong>GStreamer</strong></td><td>pipeline 内嵌推理 — DeepStream/NvInfer</td></tr>
+    <tr><td>简单的播放/转码/截图脚本</td><td class="g"><strong>FFmpeg</strong></td><td>一条命令即可完成</td></tr>
+    <tr><td>媒体播放器内置引擎</td><td>GStreamer (桌面)<br>FFmpeg (嵌入式)</td><td>GStreamer 有 playbin 高级 Element<br>FFmpeg 内存占用更低</td></tr>
+    <tr><td>Live Streaming Server</td><td class="g"><strong>GStreamer</strong></td><td>时钟同步 + 动态比特率 + 拥塞控制</td></tr>
+    <tr><td>视频编辑/合成软件</td><td class="g"><strong>GStreamer</strong></td><td>动态 filter graph + 非线编能力</td></tr>
+    <tr><td>ARM Linux 嵌入式录像</td><td class="g"><strong>FFmpeg</strong></td><td>低开销 + 丰富的嵌入式编码器支持</td></tr>
+    <tr><td>浏览器 WebCodecs 后端</td><td class="g"><strong>FFmpeg</strong></td><td>WASM 编译 + 纯工具库模型</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 常见 GStreamer Pipeline 示例 ===== */</span>
+<span class="cm"># 摄像头 → RTSP 推流</span>
+gst-launch-<span class="nu">1.0</span> v4l2src device=/dev/video0 ! video/x-raw,width=<span class="nu">1280</span>,height=<span class="nu">720</span> \
+  ! x264enc tune=zerolatency bitrate=<span class="nu">2000</span> ! rtph264pay ! udpsink host=<span class="nu">192.168</span>.<span class="nu">1.100</span> port=<span class="nu">5000</span>
+
+<span class="cm"># 播放 RTSP 流</span>
+gst-launch-<span class="nu">1.0</span> rtspsrc location=rtsp://<span class="nu">192.168</span>.<span class="nu">1.100</span>:<span class="nu">8554</span>/stream \
+  ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
+
+<span class="cm"># 视频拼接 (两个源并排)</span>
+gst-launch-<span class="nu">1.0</span> videomixer name=mix sink_0::xpos=<span class="nu">0</span>   sink_1::xpos=<span class="nu">640</span> \
+  ! videoconvert ! autovideosink \
+  videotestsrc pattern=snow ! video/x-raw,width=<span class="nu">640</span>,height=<span class="nu">480</span> ! mix. \
+  videotestsrc pattern=ball  ! video/x-raw,width=<span class="nu">640</span>,height=<span class="nu">480</span> ! mix.
+
+<span class="cm">/* ===== 常见 FFmpeg CLI 示例 ===== */</span>
+<span class="cm"># 转码 + 烧录字幕</span>
+ffmpeg -i input.mkv -vf <span class="st">"subtitles=subtitle.srt"</span> -c:a copy output.mkv
+
+<span class="cm"># 截图: 第 10 秒处截取一帧</span>
+ffmpeg -ss <span class="nu">00</span>:<span class="nu">00</span>:<span class="nu">10</span> -i input.mp4 -vframes <span class="nu">1</span> -q:v <span class="nu">2</span> screenshot.jpg
+
+<span class="cm"># 提取音频</span>
+ffmpeg -i input.mp4 -vn -c:a libmp3lame -q:a <span class="nu">2</span> output.mp3
+
+<span class="cm"># 生成 HLS 自适应码率</span>
+ffmpeg -i input.mp4 \
+  -map <span class="nu">0</span>:v -c:v:0 libx264 -b:v:0 <span class="nu">2000</span>k \
+  -map <span class="nu">0</span>:v -c:v:1 libx264 -b:v:1 <span class="nu">6000</span>k \
+  -map <span class="nu">0</span>:a -c:a aac -b:a <span class="nu">128</span>k \
+  -f hls -hls_time <span class="nu">4</span> -hls_playlist_type vod \
+  -master_pl_name master.m3u8 stream_%v.m3u8</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  GStreamer &amp; FFmpeg — 多媒体框架深度对比 · 2026-06 · GStreamer 1.24+ · FFmpeg 7.0+
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

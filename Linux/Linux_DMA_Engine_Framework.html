@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux DMA 引擎与零拷贝 — 系统化知识体系</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:155px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux DMA 引擎与零拷贝</h2>
+  <p class="sec-sub">系统化知识体系 — DMA 原理 · Cache 一致性 · DMA API · DMA Engine · Scatter-Gather · DMA-BUF · IPC 实战</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>CPU</strong><br><small>发起传输</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>DMA Controller</strong><br><small>总线主设备</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>DDR Memory</strong><br><small>源/目标</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Peripheral</strong><br><small>外设 FIFO</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>完成中断</strong><br><small>通知 CPU</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">PIO vs DMA</div><div class="l">CPU 搬 vs 硬件搬</div></div>
+    <div class="stat"><div class="n">Cache 一致性</div><div class="l">DMA 最大陷阱</div></div>
+    <div class="stat"><div class="n">DMA-BUF</div><div class="l">跨设备零拷贝</div></div>
+    <div class="stat"><div class="n">SG 聚合</div><div class="l">不连续页链式传输</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: DMA 基础 ═══ -->
+<h2 class="sh">1. DMA 的本质：为什么要 DMA？</h2>
+<p class="ss">在没有 DMA 的时代，所有外设与内存之间的数据传输都由 CPU 逐字节搬运——每一个字节都消耗 CPU 周期。DMA 将 CPU 从"搬运工"角色中解放出来。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>PIO — 编程 I/O (无 DMA)</h4>
+    <div class="lbl">CPU 逐字搬运 — 100% CPU 占用</div>
+    <p><strong>流程</strong>：外设 FIFO 有数据 → 触发中断 → CPU 进入 ISR → <code>readl()</code> 读外设寄存器 → <code>writel()</code> 写内存 → 重复直到传输完成。<br>
+    <strong>代价</strong>：传输 1MB 数据 = CPU 执行 ~262,144 次 readl+writel 循环——每次 ~50ns → 总 CPU 时间 ~13ms。如果每秒需要传输 30MB（1080p YUV 帧）→ CPU 390ms/s 被占用 → 单个 CPU 核心 40% 时间在搬运数据。DMA 将这一切降到接近 0%。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>DMA — 直接存储器访问</h4>
+    <div class="lbl">硬件自动搬运 — CPU 仅发起和收尾</div>
+    <p><strong>流程</strong>：CPU 配置 DMA 控制器（源地址、目标地址、传输长度）→ 启动 DMA → <strong>CPU 去做其他事</strong> → DMA 控制器接管总线，直接从外设读数据写入 DDR → 传输完成 → DMA 控制器发中断通知 CPU。<br>
+    <strong>收益</strong>：同样的 1MB 传输，CPU 仅需 ~1μs 配置 DMA 寄存器 + ~1μs 处理完成中断。CPU 利用率从 40% 降到 ~0.01%。这就是为什么<strong>DMA 是一切高性能 I/O 的基石</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>DMA 控制器 — 总线主设备</h4>
+    <div class="lbl">DMA Controller / DMAC — 第三方总线控制器</div>
+    <p>DMA 控制器是挂在系统总线（AXI/AHB）上的<strong>独立硬件模块</strong>——它可以像 CPU 一样发起总线读写事务（bus master）。CPU 通过 <strong>DMA 通道寄存器</strong>告诉 DMAC 三个核心参数：<strong>源地址</strong>（从哪里读）、<strong>目标地址</strong>（写到哪里）、<strong>传输长度</strong>（多少字节）。现代 SoC 的 DMAC 有多个物理通道（8/16/32 个），可同时进行多路 DMA 传输。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// PIO vs DMA 传输 1MB 数据的对比</span>
+                    <b>PIO (Programmed I/O)</b>            <b>DMA (Direct Memory Access)</b>
+<i>发起者</i>            CPU (逐字循环读写)               DMA 控制器 (硬件状态机)
+<i>CPU 参与</i>          每个字节都需要 CPU 执行指令      仅配置参数 + 处理完成中断
+<i>CPU 耗时</i>          ~13ms (262K 次循环)             ~2μs (配置 + ISR)
+<i>总线占用</i>          CPU 持续占用总线                 DMA 控制器独立占用总线
+<i>并行性</i>            CPU 被完全占用无法做其他事       CPU 可同时执行其他任务
+<i>适用场景</i>          配置/状态寄存器（几个字节）        大数据块: 视频帧·音频·网络包·存储</div>
+
+<!-- ═══ Ch2: Cache 一致性 ═══ -->
+<h2 class="sh">2. Cache 一致性 — DMA 编程的最大陷阱</h2>
+<p class="ss">这是 DMA 编程中<strong>最常见、最隐蔽、后果最严重</strong>的 bug 来源——CPU 看到的数据和 DMA 设备看到的数据<strong>不是同一份</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>问题根源：CPU Cache 与 DDR 的不一致</h4>
+    <div class="lbl">CPU 写到了 Cache 里，DMA 从 DDR 上读——读到的是旧数据</div>
+    <p><strong>场景 1：CPU 写 → DMA 读</strong><br>
+    CPU 填充数据 buffer → 数据暂存在 CPU L1/L2 Cache 中（<strong>尚未写回 DDR</strong>）→ CPU 启动 DMA 从该 buffer 读取 → DMA 直接从 DDR 读 → <strong>读到了旧数据</strong>（甚至全零，如果该页从未被写过）。<br>
+    <strong>解决</strong>：DMA 启动前，CPU 必须 <strong>Cache Flush/Clean</strong>——将 dirty cache line 强制写回 DDR。<br><br>
+    <strong>场景 2：DMA 写 → CPU 读</strong><br>
+    DMA 将数据写入 DDR → CPU 读同一地址 → CPU 从 Cache 中命中（因为之前读取过该地址）→ <strong>读到了 DMA 写入前的旧数据</strong>。<br>
+    <strong>解决</strong>：DMA 完成后、CPU 读取前，CPU 必须 <strong>Cache Invalidate</strong>——使对应的 cache line 失效，下次访问强制从 DDR 读取。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>硬件 Cache Coherency (IOMMU/SMMU)</h4>
+    <div class="lbl">硬件自动维护一致性 — 无需软件 flush/invalidate</div>
+    <p>现代 SoC 的 <strong>IOMMU/SMMU</strong>（ARM System MMU）或 ACP（Accelerator Coherency Port）可以在<strong>硬件层面</strong>维护 DMA 与 CPU Cache 的一致性。DMA 设备通过 IOMMU 访问内存时，IOMMU 自动查询 CPU Cache 控制器——如果数据在 Cache 中，直接从 Cache 取（无需 flush）；如果数据不在 Cache 中，从 DDR 取。<br>
+    <strong>代价</strong>：硬件复杂度增加，AC Port 带宽有限。并非所有 SoC 都支持。<br>
+    <strong>软件方案</strong>（Linux DMA API）在无硬件一致性支持时通过 <code>dma_map_*()/dma_unmap_*()</code> 自动做 flush/invalidate——对驱动开发者透明。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">CPU 写 → DMA 读</span><span class="b c4">必须先 Cache Flush</span><span class="n">dma_map_single(TO_DEVICE) → 自动 flush dirty cache lines</span></div>
+  <div class="r"><span class="a">DMA 写 → CPU 读</span><span class="b c3">必须先 Cache Invalidate</span><span class="n">dma_unmap_single(FROM_DEVICE) → 自动 invalidate 对应 cache lines</span></div>
+  <div class="r"><span class="a">Bidirectional</span><span class="b c2">Flush + Invalidate 都要</span><span class="n">dma_sync_single_for_cpu/device → 手动同步（streaming 模式）</span></div>
+  <div class="r"><span class="a">硬件一致性 (IOMMU)</span><span class="b c1">无需软件操作</span><span class="n">dma_alloc_coherent → 映射为 non-cacheable 或 write-through</span></div>
+</div>
+
+<!-- ═══ Ch3: DMA API ═══ -->
+<h2 class="sh">3. Linux DMA API：Coherent vs Streaming</h2>
+<p class="ss">Linux 内核提供两套 DMA 内存管理 API——Coherent（一致性）和 Streaming（流式）。选择哪一套取决于<strong>性能要求和 buffer 使用模式</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Coherent DMA — 永远一致</h4>
+    <div class="lbl">dma_alloc_coherent / dma_free_coherent</div>
+    <p><strong>特性</strong>：分配的 buffer <strong>自动保持 CPU 和设备之间的一致性</strong>——CPU 写入后设备立即可见，设备写入后 CPU 立即可见，<strong>无需手动 flush/invalidate</strong>。<br>
+    <strong>实现</strong>：内核将这片内存映射为<strong>non-cacheable</strong>或<strong>write-through</strong>——CPU 每次读写都绕过/穿透 Cache 直达 DDR。<br>
+    <strong>代价</strong>：CPU 访问速度极慢（~100ns vs cached ~5ns）——不适合 CPU 频繁读写的 buffer。<br>
+    <strong>适用场景</strong>：① DMA 描述符环（CPU 偶尔写，DMA 频繁读）② 小尺寸的控制结构体（几十到几百字节）③ 设备固件加载区域。<br>
+    <code>void *cpu_addr = dma_alloc_coherent(dev, size, &dma_handle, GFP_KERNEL);</code>——返回 CPU 虚拟地址 + DMA 总线地址。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Streaming DMA — 手动同步</h4>
+    <div class="lbl">dma_map_single / dma_unmap_single / dma_sync_single_*</div>
+    <p><strong>特性</strong>：buffer 可以是<strong>任何 kmalloc/vmalloc 分配的普通内存</strong>（享受 CPU Cache 加速）。仅在 DMA 传输前后显式调用同步操作。<br>
+    <strong>方向标记</strong>：<br>
+    • <code>DMA_TO_DEVICE</code>：CPU 写 → 设备读 → map 时 flush cache<br>
+    • <code>DMA_FROM_DEVICE</code>：设备写 → CPU 读 → unmap 时 invalidate cache<br>
+    • <code>DMA_BIDIRECTIONAL</code>：双向——map flush + unmap invalidate<br>
+    <strong>适用场景</strong>：① 视频帧 buffer（CPU 需要高带宽读写 YUV 数据）② 网络包 buffer（sk_buff 使用 streaming DMA）③ 大块应用数据（MB 级别）<br>
+    <strong>性能</strong>：CPU 侧访问享受全速 Cache，DMA 侧通过 flush/invalidate 保证正确性——<strong>这是高性能 DMA 的标准选择</strong>。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ Streaming DMA 的 4 条铁律（违反任何一条 = 数据损坏）</div>
+  <strong>1. 在 dma_map 和 dma_unmap 之间，CPU 绝对不能访问 buffer。</strong>这段时间 buffer 属于设备。dma_sync_single_for_cpu 可以临时交还 CPU 访问权。<br>
+  <strong>2. 永远检查 dma_mapping_error()。</strong>某些平台（如使用 swiotlb 的 32bit DMA 设备 + 64bit 系统）映射可能失败——忽略检查 = 使用 0x00000000 地址 DMA = 静默损坏数据。<br>
+  <strong>3. dma_map 返回的是 DMA 地址（总线地址），不是物理地址。</strong>IOMMU 存在时 DMA 地址 ≠ 物理地址——<strong>绝对不能</strong>用 virt_to_phys 算 DMA 地址。<br>
+  <strong>4. unmap 的方向必须与 map 一致。</strong>如果 map 时标记 TO_DEVICE 但实际设备也写入了数据 → unmap 时不会 invalidate → CPU 读到旧数据。
+</div>
+
+<!-- ═══ Ch4: DMA Engine ═══ -->
+<h2 class="sh">4. DMA Engine 框架 — 统一的 DMA 驱动模型</h2>
+<p class="ss">Linux 的 <code>dmaengine</code> 子系统抽象了不同厂商的 DMA 控制器硬件——提供统一的 API 让外设驱动请求和使用 DMA 通道，屏蔽底层 DMAC 差异。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>核心概念</h4>
+    <div class="lbl">dma_device · dma_chan · dma_async_tx_descriptor</div>
+    <p><strong>dma_device</strong>：一个 DMA 控制器实例（SoC 中的 DMAC IP 块）。通过 <code>dma_async_device_register()</code> 注册到 dmaengine 核心。提供 <code>device_alloc_chan_resources</code>、<code>device_prep_dma_memcpy/slave_sg/cyclic</code> 等回调。<br>
+    <strong>dma_chan</strong>：DMA 控制器的一条物理/逻辑通道——外设驱动通过 <code>dma_request_chan()</code> 获取通道。<br>
+    <strong>dma_async_tx_descriptor</strong>：一次 DMA 传输的描述符——包含源/目标地址、长度、完成回调。<code>dmaengine_submit() → dma_async_issue_pending()</code> 提交并启动。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>传输类型</h4>
+    <div class="lbl">Mem-to-Mem · Slave-DMA · Cyclic · Interleaved</div>
+    <p><strong>Mem-to-Mem</strong>（<code>device_prep_dma_memcpy</code>）：内存到内存拷贝——CPU 完全解放。用于加速 memcpy 操作（如 GPU 纹理上传）。<br>
+    <strong>Slave-DMA</strong>（<code>device_prep_slave_sg</code>）：<strong>外设 ↔ 内存</strong>——最常见。用于 MMC/SD 读写、SPI Flash DMA、UART DMA、I2S 音频 DMA。<br>
+    <strong>Cyclic</strong>（<code>device_prep_dma_cyclic</code>）：<strong>环形缓冲自动循环</strong>——I2S 音频播放/录音的核心模式。DMA 自动从环尾回到环首。<br>
+    <strong>Interleaved</strong>：用于 2D/3D 图形——支持 stride（行间距）的非连续传输。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Scatter-Gather (SG)</h4>
+    <div class="lbl">多个不连续的内存片段 → 一次 DMA 传输</div>
+    <p><strong>问题</strong>：应用程序的 buffer 可能由多个<strong>物理上不连续</strong>的页组成（通过 mmap 或 ION 分配）。CPU 看到连续的虚拟地址，但 DMA 需要物理上连续的地址。<br>
+    <strong>SG 解决方案</strong>：构建一个 <code>scatterlist</code>——每个条目描述一段连续的物理内存（page + offset + length）。DMA 控制器自动遍历 SG 表——一段传完自动跳到下一段——<strong>对应用程序透明</strong>。<br>
+    <code>dma_map_sg()</code> 遍历 scatterlist，为每段生成 DMA 地址，处理 Cache 一致性——是 <code>dma_map_single</code> 的 SG 版本。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 外设驱动使用 DMA Engine 的典型流程（Slave-DMA 模式）</span>
+<span class="cm">// 1. 请求 DMA 通道</span>
+<span class="kw">struct</span> dma_chan *chan = <span class="fn">dma_request_chan</span>(dev, <span class="st">"tx"</span>);  <span class="cm">// 设备树 dmas 属性解析</span>
+
+<span class="cm">// 2. 准备 slave 配置（外设 FIFO 地址、突发大小、方向）</span>
+<span class="kw">struct</span> dma_slave_config cfg = {
+    .direction     = DMA_MEM_TO_DEV,
+    .src_addr      = <span class="nu">0</span>,                          <span class="cm">// 内存地址由 scatterlist 提供</span>
+    .dst_addr      = fifo_phys_addr,            <span class="cm">// 外设 FIFO 寄存器物理地址</span>
+    .src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES,
+    .dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES,
+    .src_maxburst   = <span class="nu">16</span>,                        <span class="cm">// 一次突发传输 16×4=64 字节</span>
+    .dst_maxburst   = <span class="nu">16</span>,
+};
+<span class="fn">dmaengine_slave_config</span>(chan, &amp;cfg);
+
+<span class="cm">// 3. 映射 scatterlist + 准备传输描述符</span>
+<span class="kw">int</span> nents = <span class="fn">dma_map_sg</span>(dev, sg, sg_len, DMA_TO_DEVICE);
+<span class="kw">struct</span> dma_async_tx_descriptor *tx = <span class="fn">dmaengine_prep_slave_sg</span>(chan, sg, nents,
+                                                      DMA_MEM_TO_DEV,
+                                                      DMA_PREP_INTERRUPT);
+
+<span class="cm">// 4. 设置完成回调 + 提交传输</span>
+tx->callback = my_dma_callback;
+tx->callback_param = my_data;
+<span class="fn">dmaengine_submit</span>(tx);
+<span class="fn">dma_async_issue_pending</span>(chan);  <span class="cm">// 启动！</span>
+
+<span class="cm">// 5. 传输完成 → 回调中 unmap + 通知上层</span>
+<span class="kw">static void</span> <span class="fn">my_dma_callback</span>(<span class="kw">void</span> *data) {
+    <span class="fn">dma_unmap_sg</span>(dev, sg, nents, DMA_TO_DEVICE);
+    <span class="fn">complete</span>(&amp;done);  <span class="cm">// 唤醒等待的线程</span>
+}</div>
+
+<!-- ═══ Ch5: DMA-BUF ═══ -->
+<h2 class="sh">5. DMA-BUF — 跨设备零拷贝共享</h2>
+<p class="ss">DMA-BUF 是 Linux 内核的<strong>跨设备、跨驱动、跨进程</strong> buffer 共享框架——一块物理内存，ISP 写入、编码器读取、GPU 渲染、网络发送，全程零 memcpy。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Exporter-Importer 模型</h4>
+    <div class="lbl">Exporter 分配并导出 → Importer 导入并访问</div>
+    <p><strong>Exporter（导出者）</strong>：拥有 buffer 的驱动。调用 <code>dma_buf_export()</code> 创建一个 <code>struct dma_buf</code> 对象，绑定一组 <code>dma_buf_ops</code>（attach/detach/map/unmap/mmap/vmap）。返回一个 fd（文件描述符）——通过 Unix Socket/ioctl 传递给其他进程。<br>
+    <strong>Importer（导入者）</strong>：使用 buffer 的驱动。通过 <code>dma_buf_get(fd)</code> 从 fd 获取 dma_buf 对象 → <code>dma_buf_attach()</code> 注册自己的设备 → <code>dma_buf_map_attachment()</code> 获取<strong>自己设备可见的 DMA 地址</strong>（不同设备可能看到不同的总线地址——IOMMU 各自映射）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>IPC 相机 DMA-BUF 全链路</h4>
+    <div class="lbl">Sensor → ISP → DMA-BUF → Encoder → DMA-BUF → Network</div>
+    <p>① <strong>ISP 驱动 (Exporter)</strong>：分配 3 块 DMA buffer 做轮转缓冲 → ISP 硬件完成一帧后，DMA 写入 buffer → ISP 驱动调用 <code>dma_buf_export()</code> 导出 fd → 通过 V4L2 <code>VIDIOC_EXPBUF</code> ioctl 传给用户态。<br>
+    ② <strong>用户态 LinkricAI 进程</strong>：拿到 fd → 通过 Unix Socket SCM_RIGHTS 传给编码进程。<br>
+    ③ <strong>编码驱动 (Importer)</strong>：<code>dma_buf_get(fd) → attach → map</code> → 配置编码器硬件从该 DMA 地址读取 YUV 帧 → 硬件编码 → 编码输出写入另一个 DMA-BUF → 导出新 fd。<br>
+    ④ <strong>网络进程</strong>：导入编码输出的 DMA-BUF fd → sendmsg 直接引用 DMA buffer → 网卡 DMA 从 buffer 读取发送。<br>
+    <strong>全程零 CPU memcpy</strong>——所有数据搬移都在硬件 DMA 层面完成。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// IPC 相机零拷贝视频管线 — DMA-BUF 串联全链路</span>
+Sensor ──MIPI──→ <b>ISP</b> ──DMA──→ [DMA-BUF#0: YUV 帧]
+                                    │ fd=5 (export)
+                                    ▼
+                           用户态拿到 fd=5
+                           fd=5 ──SCM_RIGHTS──→ 编码进程 (fd=7)
+                                                        │
+                    <b>H.264 Encoder</b> ←──DMA read── [DMA-BUF#0] (import)
+                         │
+                         ──DMA write──→ [DMA-BUF#1: 编码帧]
+                                              │ fd=8 (export)
+                                              ▼
+                                   <b>Network (GMAC)</b> ──DMA read── [DMA-BUF#1] (import)
+                                   sendmsg(fd=8) → RTP → UDP → 网卡 DMA 发送
+<span class="cm">// 总计 CPU 参与: 0 次 memcpy，全程硬件 DMA 搬运</span></div>
+
+<!-- ═══ Ch6: 设备树 ═══ -->
+<h2 class="sh">6. 设备树 — DMA 资源描述</h2>
+<p class="ss">DMA 通道和请求信号的分配通过设备树描述——内核驱动通过标准 API 解析，无需硬编码通道号。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>DMA 控制器节点</h4>
+    <div class="lbl">dma-controller · #dma-cells · dma-channels</div>
+    <p>SoC 的 DMA 控制器在设备树中声明自己有多少通道以及 <code>#dma-cells</code>（客户端引用时需要多少个参数）。DMA 引擎驱动 probe 时解析这些属性，分配通道资源。常见 DMAC IP：<strong>ARM PL330</strong>（<code>arm,pl330</code>）、<strong>Synopsys DesignWare</strong>（<code>snps,dma-spear1340</code>）、<strong>Intel IDMA</strong>、<strong>Freescale eDMA</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>客户端引用</h4>
+    <div class="lbl">dmas · dma-names — 声明需要的 DMA 通道</div>
+    <p>外设节点通过 <code>dmas</code> 属性引用 DMA 控制器 + 请求信号编号：<br>
+    <code>dmas = <&dmac0 12>, <&dmac0 13>;</code><br>
+    <code>dma-names = "tx", "rx";</code><br>
+    驱动通过 <code>dma_request_chan(dev, "tx")</code> 获取——内核自动解析设备树找到对应的 DMA 控制器和请求信号号。<br>
+    <strong>dma_request_slave_channel_compat()</strong> 兼容旧设备树写法（基于 channel index 而非 name）。现代驱动应使用 dma_request_chan。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 设备树示例: PL330 DMA 控制器 + UART 作为客户端</span>
+<span class="cm">// 1. DMA 控制器节点</span>
+dmac: dma-controller@<span class="nu">101f0000</span> {
+    compatible = <span class="st">"arm,pl330"</span>;
+    reg = <span class="kw">&lt;</span><span class="nu">0x101f0000</span> <span class="nu">0x1000</span><span class="kw">&gt;</span>;
+    interrupts = <span class="kw">&lt;</span><span class="nu">0</span> <span class="nu">75</span> IRQ_TYPE_LEVEL_HIGH<span class="kw">&gt;</span>;
+    #dma-cells = <span class="kw">&lt;</span><span class="nu">1</span><span class="kw">&gt;</span>;          <span class="cm">// 客户端引用时需 1 个参数: 请求信号号</span>
+    dma-channels = <span class="kw">&lt;</span><span class="nu">8</span><span class="kw">&gt;</span>;        <span class="cm">// 共 8 个物理通道</span>
+    clocks = <span class="kw">&lt;</span>&amp;clk_dmac<span class="kw">&gt;</span>;
+};
+
+<span class="cm">// 2. UART 客户端节点 — 声明需要 TX + RX 两条 DMA 通道</span>
+uart0: serial@<span class="nu">101f1000</span> {
+    compatible = <span class="st">"arm,pl011"</span>;
+    reg = <span class="kw">&lt;</span><span class="nu">0x101f1000</span> <span class="nu">0x1000</span><span class="kw">&gt;</span>;
+    interrupts = <span class="kw">&lt;</span><span class="nu">0</span> <span class="nu">12</span> IRQ_TYPE_LEVEL_HIGH<span class="kw">&gt;</span>;
+    dmas = <span class="kw">&lt;</span>&amp;dmac <span class="nu">12</span><span class="kw">&gt;</span>, <span class="kw">&lt;</span>&amp;dmac <span class="nu">13</span><span class="kw">&gt;</span>;  <span class="cm">// 请求信号 12(TX) 和 13(RX)</span>
+    dma-names = <span class="st">"tx"</span>, <span class="st">"rx"</span>;
+};</div>
+
+<!-- ═══ Ch7: 调试 ═══ -->
+<h2 class="sh">7. DMA 调试与常见问题</h2>
+<p class="ss">DMA 问题的排查比普通驱动更难——错误通常表现为"数据偶尔不对"而非 crash，且难以复现。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>问题 1: Cache 不一致</h4>
+    <div class="lbl">最常见 — 症状：数据偶尔错、部分字节对、部分字节旧</div>
+    <p><strong>典型症状</strong>：视频帧上半部分正常、下半部分是上一帧的内容（Cache line 64 字节边界效应）。<br>
+    <strong>排查</strong>：① 确认 dma_map/dma_unmap 调用正确且方向匹配 ② 检查 dma_map 和 unmap 之间 CPU 是否访问了 buffer ③ 尝试将 buffer 改为 dma_alloc_coherent（排除 Cache 问题）。<br>
+    <strong>预防</strong>：驱动 review 时逐行检查 map→unmap 区间内所有 buffer 访问——这条是 DMA review 的最核心检查项。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>问题 2: DMA 地址错误</h4>
+    <div class="lbl">dma_map 失败 · 地址越界 · 32bit DMA 碰 64bit 内存</div>
+    <p><strong>典型症状</strong>：DMA 传输完成后目标 buffer 是空的/全0/随机数据。<br>
+    <strong>根因</strong>：① <code>dma_mapping_error()</code> 未检查——映射失败返回 DMA_MAPPING_ERROR ② 在 IOMMU 存在时误用 virt_to_phys 作为 DMA 地址——必须用 dma_map 返回的地址 ③ 32bit DMA 设备 + 4GB 以上物理内存 → 需要 swiotlb 反弹缓冲（性能骤降但不报错）。<br>
+    <strong>工具</strong>：<code>cat /sys/kernel/debug/dma-api/dump</code> 查看所有活跃的 DMA 映射。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>问题 3: 传输未完成</h4>
+    <div class="lbl">DMA 中断丢失 · 描述符配置错误 · 传输静默停止</div>
+    <p><strong>典型症状</strong>：驱动程序等待完成事件超时，或 buffer 部分有数据、部分没有。<br>
+    <strong>排查</strong>：① <code>/proc/interrupts</code> 确认 DMA 通道中断计数是否增加 ② 检查描述符链是否正确——interrupt flag 是否设置 ③ 确认 DMA 控制器时钟是否被 pm_runtime 意外关闭 ④ 检查突发大小/对齐是否符合硬件限制（如 DMA 要求 4 字节对齐但 buf 是 2 字节对齐）。<br>
+    <strong>CONFIG_DMA_API_DEBUG=y</strong>：内核编译该选项后，自动检测 DMA API 的违反使用规则（如 map 两次、unmap 未映射的地址、方向不匹配）。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>DMA 调试工具/方法</th><th>命令/配置</th><th>检测内容</th></tr></thead>
+  <tbody>
+    <tr><td>DMA API Debug</td><td><code>CONFIG_DMA_API_DEBUG=y</code></td><td>API 使用错误：double map、方向不匹配、地址越界</td></tr>
+    <tr><td>DMA 映射 dump</td><td><code>cat /sys/kernel/debug/dma-api/dump</code></td><td>当前所有活跃的 dma_map 及其设备/大小/方向</td></tr>
+    <tr><td>ftrace dma 事件</td><td><code>trace-cmd record -e dma:*</code></td><td>每次 dma_map/unmap 的时间线 + CPU ID + 地址</td></tr>
+    <tr><td>中断计数</td><td><code>cat /proc/interrupts | grep dma</code></td><td>确认 DMA 中断是否正常触发</td></tr>
+    <tr><td>swiotlb 检查</td><td><code>dmesg | grep swiotlb</code></td><td>是否需要反弹缓冲（32bit DMA + 64bit 系统）</td></tr>
+    <tr><td>Cache 问题验证</td><td>改用 dma_alloc_coherent 替代 streaming</td><td>问题消失 = 确认是 Cache 一致性问题</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ═══ Ch8: IPC 实战 ═══ -->
+<h2 class="sh">8. IPC 相机 DMA 全景实战</h2>
+<p class="ss">从 Sensor MIPI 到网络发送——IPC 相机中<strong>每一跳数据搬移</strong>都应该通过 DMA 完成。以下是从硬件上电到网络发包的完整 DMA 链路。</p>
+
+<div class="mb">
+  <div class="r"><span class="a">Sensor 曝光完毕</span><span class="b c5">MIPI CSI-2 RX</span><span class="n">Sensor → MIPI D-PHY → CSI-2 Controller → DMA 写入 DDR (RAW Bayer)</span></div>
+  <div class="r"><span class="a">ISP 读取 RAW</span><span class="b c3">ISP DMA Read</span><span class="n">ISP 硬线模块通过 AXI Master 从 DDR 读取 RAW Bayer → 内部管线处理</span></div>
+  <div class="r"><span class="a">ISP 输出 YUV</span><span class="b c2">ISP DMA Write</span><span class="n">ISP 管线输出 → AXI Master 写入 DDR → 通知 CPU (中断) → V4L2 DQBUF</span></div>
+  <div class="r"><span class="a">编码器读取 YUV</span><span class="b c1">DMA-BUF Import</span><span class="n">编码器通过 DMA-BUF fd 共享同一块 YUV buffer → 硬件编码器 AXI Read</span></div>
+  <div class="r"><span class="a">编码器输出 H.264</span><span class="b c2">DMA-BUF Export</span><span class="n">编码器输出写入另一块 DMA-BUF → 导出 fd → 网络进程获取</span></div>
+  <div class="r"><span class="a">RTP 打包发送</span><span class="b c4">GMAC DMA Send</span><span class="n">sendmsg(fd) → 内核网络栈引用 DMA-BUF → GMAC 控制器 DMA read → MII/RGMII → PHY</span></div>
+  <div class="r"><span class="a">SD 卡录像写入</span><span class="b c3">MMC DMA Write</span><span class="n">编码帧 → MMC 控制器 DMA → eMMC/SD Card（通过 ADMA 或 Internal DMA）</span></div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>IPC DMA 设计决策 1: ISP Buffer 数量</h4>
+    <div class="lbl">3 vs 4 vs 6 buffer — 延迟 vs 安全的权衡</div>
+    <p><strong>最少 3 块</strong>：一块 ISP 正在写入、一块编码器正在读取、一块在排队。<br>
+    <strong>推荐 4-6 块</strong>：编码速度不稳定时（I 帧比 P 帧慢 2-5×），多余的 buffer 吸收瞬时抖动——避免 ISP 因没有空闲 buffer 而丢帧。<br>
+    <strong>DMA-BUF 方式分配</strong>：ISP 驱动通过 <code>dma_alloc_coherent</code> 或 CMA 分配物理连续内存（ISP 的 AXI Master 可能不支持 SG），导出 DMA-BUF fd 给编码器。比 ION 更标准、更通用。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>IPC DMA 设计决策 2: 轮转策略</h4>
+    <div class="lbl">Fence 同步 vs 信号量 vs 无锁轮转</div>
+    <p><strong>DMA Fence</strong>（dma_fence / sync_file）：内核 DMA 框架提供的同步原语——ISP 的 DMA 完成后 signal fence → 编码器 import fence → 编码器 DMA 等待 fence 才启动。<strong>硬件级精确同步</strong>，比用户态信号量可靠且低延迟。<br>
+    <strong>简单轮转</strong>（适用于无 fence 支持的旧硬件）：Buffer 状态标记（FREE/FILLING/READY/READING）→ 生产者和消费者各自维护读/写指针 → <strong>必须使用多 buffer</strong>（≥3）防止读写冲突。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机 DMA 配置 Checklist</div>
+  □ <strong>内核配置</strong>：<code>CONFIG_DMA_ENGINE=y</code> · <code>CONFIG_DMA_SHARED_BUFFER=y</code> · <code>CONFIG_DMA_CMA=y</code>（Contiguous Memory Allocator——为 ISP 分配大块物理连续内存）<br>
+  □ <strong>设备树</strong>：MIPI CSI 控制器的 dmas/dma-names、ISP 节点的 dmas/dma-names、MMC 控制器的 dmas/dma-names<br>
+  □ <strong>CMA 大小</strong>：内核命令行 <code>cma=128M</code>——为 ISP/编码器预留足够连续内存（1080p YUV420 单帧 ~3MB，6 块 buffer = 18MB，再加编码输出 buffer）<br>
+  □ <strong>IOMMU</strong>：如果 SoC 支持 SMMU，为 ISP 和编码器配置 IOMMU domain——每个设备看到独立的 DMA 地址空间，即使物理内存不连续也能 DMA（IOMMU 做虚拟 DMA 地址→物理地址映射）<br>
+  □ <strong>DMA-BUF 权限</strong>：确保 buffer fd 可以在进程间传递——/dev/dma_heap 或 ION 兼容接口<br>
+  □ <strong>验证方法</strong>：<code>cat /sys/kernel/debug/dma-api/dump</code> 确认每层的 DMA 映射都正确创建；对比 CPU 利用率的 <code>memcpy</code> 占比——理想情况下 &lt;1%
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux DMA 引擎与零拷贝 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 音视频 Ring Buffer — 设计与实现</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:165px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">音视频 Ring Buffer 设计与实现</h2>
+  <p class="sec-sub">系统化知识体系 — 环形缓冲原理 · 无锁 CAS · 共享内存 · vb2_queue · ALSA ringbuf · 零拷贝 · IPC 实战</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Producer</strong><br><small>ISP / Encoder / mic</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>write ptr</strong><br><small>原子递增</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>[Ring Buffer]</strong><br><small>固定大小 · 循环覆盖</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>read ptr</strong><br><small>原子递增</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Consumer</strong><br><small>App / Encoder / speaker</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">O(1)</div><div class="l">读写复杂度</div></div>
+    <div class="stat"><div class="n">无锁</div><div class="l">CAS 原子操作</div></div>
+    <div class="stat"><div class="n">零拷贝</div><div class="l">共享内存 mmap</div></div>
+    <div class="stat"><div class="n">4种</div><div class="l">内核 AV ringbuf</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: 基础 ═══ -->
+<h2 class="sh">1. 为什么音视频管线必须用 Ring Buffer？</h2>
+<p class="ss">音视频数据是<strong>持续流式产生和消费</strong>的——ISP 每秒 30 帧、麦克风每秒 48000 采样。生产者和消费者的速度<strong>天然不匹配</strong>——Ring Buffer 是吸收这种不匹配的标准方案。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>问题：生产-消费速度不匹配</h4>
+    <div class="lbl">ISP 30fps vs Encoder 29.97fps vs Network 带宽波动</div>
+    <p>ISP 严格按 Sensor 时钟产生帧（精确 33.33ms/帧），但编码器的编码耗时因帧类型波动（I 帧 15ms、P 帧 3ms），网络发送因 TCP/UDP 拥塞而抖动（5ms~200ms）。<strong>生产者和消费者运行在不同的时钟域、不同的线程/进程、不同的优先级</strong>——没有缓冲，消费者任何微小的延迟都会导致生产者阻塞或丢帧。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>方案：Ring Buffer 吸收速度差</h4>
+    <div class="lbl">固定大小 · 循环使用 · FIFO 语义</div>
+    <p>Ring Buffer 是<strong>固定大小</strong>的循环数组——生产者写入后递增 write 指针（自动回绕），消费者读取后递增 read 指针。当 write 追上 read → buffer 满 → 生产者可选择：<strong>阻塞等待</strong>（适合不可丢帧的场景，如录像存储）或<strong>覆盖最老数据</strong>（适合可丢帧的场景，如实时预览）。当 read 追上 write → buffer 空 → 消费者阻塞等待新数据。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>AV 场景的独特需求</h4>
+    <div class="lbl">大块数据 · 零拷贝 · 跨进程 · 实时性</div>
+    <p>音视频 Ring Buffer 与普通数据结构的环形缓冲有本质区别：① <strong>单帧数据量大</strong>（YUV 帧 ~3MB，远非几个字节）→ 不能复制，必须零拷贝共享 ② <strong>跨进程</strong>（ISP 驱动→编码进程→网络进程）→ 需要内核态共享内存机制 ③ <strong>多 buffer 轮转</strong>而非单 ring——读写一帧的时间太长，不能用简单的单字节/单元素 ring ④ <strong>实时性要求</strong>——不能阻塞时间不确定的操作。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// Ring Buffer 的核心状态：两个指针 + 一个数组</span>
+<b>struct</b> ring_buffer {
+    <b>uint8_t</b>  *buf;          <span class="cm">// 底层存储（DMA-BUF / 共享内存 / kmalloc）</span>
+    <b>uint32_t</b>  size;         <span class="cm">// buffer 总大小（必须是 2 的幂，用于位掩码取模）</span>
+    <b>atomic_t</b>  write_idx;   <span class="cm">// 生产者写指针（原子操作，% size 回绕）</span>
+    <b>atomic_t</b>  read_idx;    <span class="cm">// 消费者读指针（原子操作）</span>
+};
+
+<span class="cm">// 可用空间</span>
+<i>avail_write</i> = size - (write_idx - read_idx)   <span class="cm">// 还能写入多少</span>
+<i>avail_read</i>  = write_idx - read_idx              <span class="cm">// 还能读取多少</span>
+
+<span class="cm">// 单生产者 + 单消费者 (SPSC)：无需锁，仅需内存屏障保证可见性</span>
+<span class="cm">// 多生产者或多消费者：需要 CAS 保护 write_idx/read_idx 的竞争</span></div>
+
+<!-- ═══ Ch2: 内核态 ═══ -->
+<h2 class="sh">2. 内核态 Ring Buffer：kfifo</h2>
+<p class="ss">Linux 内核提供 <code>kfifo</code>——一个经过充分验证的、高性能的、支持无锁 SPSC 的环形缓冲区实现。但音视频场景需要的是<strong>多 buffer 轮转</strong>而非字节流 kfifo。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>kfifo 的设计精要</h4>
+    <div class="lbl">include/linux/kfifo.h — 宏生成 · 类型安全</div>
+    <p><strong>核心思想</strong>：in/out 偏移量<strong>永远递增不回绕</strong>——通过 <code>offset & (size-1)</code> 位掩码计算实际数组下标。这消除了"满"和"空"状态难以区分的问题（in==out=空；in-out==size=满）以及指针回绕的边界条件。<br>
+    <strong>声明宏</strong>：<code>DECLARE_KFIFO_PTR(fifo, struct video_frame)</code>（动态分配）或 <code>DEFINE_KFIFO(fifo, struct video_frame, 16)</code>（静态 16 个元素）。<br>
+    <strong>无锁保证</strong>：单生产者+单消费者场景下<strong>不需要任何锁</strong>——in 只由生产者写、out 只由消费者读，各自独立递增。内存屏障（smp_wmb/smp_rmb）保证指针更新和数据的可见顺序。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>kfifo 对 AV 场景的限制</h4>
+    <div class="lbl">字节流拷贝——不适合大帧零拷贝</div>
+    <p>kfifo 的 put/get 操作<strong>将数据拷贝进/出 fifo 的内部 buffer</strong>——对于 3MB 的 YUV 帧，这意味着每帧 2 次 memcpy（put 时拷贝入、get 时拷贝出）= 每帧 6MB 内存带宽消耗 = 每秒 30 帧 × 6MB = 180MB/s 浪费在拷贝上。<br>
+    <strong>AV 场景的正确做法</strong>：kfifo 存储<strong>指针/索引/offset</strong>而非帧数据本身。帧数据存放在<strong>固定大小的轮转 buffer 池</strong>中，kfifo 只记录"哪个 buffer 可用/就绪"。这样 kfifo 的元素是 8 字节（指针+长度），而非 3MB 的帧——零拷贝。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:12px">
+  <div class="ct">AV 场景 kfifo 的最佳实践：存储 Buffer Index 而非数据</div>
+  <div class="cb"><span class="cm">// 帧 buffer 池 — 4 块独立的大 buffer，每块存一帧 YUV</span>
+<span class="kw">struct</span> frame_pool {
+    <span class="kw">struct</span> frame_buffer bufs[<span class="nu">4</span>];  <span class="cm">// 4 块 DMA-BUF：FREE / FILLING / READY / READING</span>
+    DECLARE_KFIFO(free_fifo,  <span class="kw">int</span>, <span class="nu">4</span>);  <span class="cm">// 空闲 buffer 的 index 队列</span>
+    DECLARE_KFIFO(ready_fifo, <span class="kw">int</span>, <span class="nu">4</span>);  <span class="cm">// 就绪 buffer 的 index 队列</span>
+};
+
+<span class="cm">// Producer (ISP 驱动): 从 free_fifo 取 index → 填帧 → 放入 ready_fifo</span>
+<span class="kw">int</span> idx;
+<span class="kw">if</span> (<span class="fn">kfifo_get</span>(&amp;pool->free_fifo, &amp;idx)) {
+    <span class="fn">fill_frame</span>(&amp;pool->bufs[idx]);       <span class="cm">// DMA 写入该 buffer</span>
+    <span class="fn">kfifo_put</span>(&amp;pool->ready_fifo, idx); <span class="cm">// 通知消费者</span>
+}
+
+<span class="cm">// Consumer (编码驱动): 从 ready_fifo 取 index → 编码 → 放回 free_fifo</span>
+<span class="kw">if</span> (<span class="fn">kfifo_get</span>(&amp;pool->ready_fifo, &amp;idx)) {
+    <span class="fn">encode_frame</span>(&amp;pool->bufs[idx]);     <span class="cm">// 硬件编码器 DMA 读取</span>
+    <span class="fn">kfifo_put</span>(&amp;pool->free_fifo, idx);  <span class="cm">// 归还给生产者</span>
+}</div>
+</div>
+
+<!-- ═══ Ch3: V4L2 vb2 ═══ -->
+<h2 class="sh">3. V4L2 vb2_queue — 视频 Buffer 管理的标准答案</h2>
+<p class="ss"><code>videobuf2</code> (vb2) 是 V4L2 框架的<strong>核心 buffer 管理子系统</strong>——它内置了 Ring Buffer 的所有要素：多 buffer 轮转、DMA-BUF 支持、mmap 零拷贝、流控制。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>vb2 的三层内存模型</h4>
+    <div class="lbl">MMAP · USERPTR · DMABUF — 三种分配方式</div>
+    <p><strong>V4L2_MEMORY_MMAP</strong>：驱动分配 buffer（通常 CMA 或 dma_alloc），用户态通过 <code>mmap</code> 映射到进程地址空间——零拷贝访问。最简单、最常用。<br>
+    <strong>V4L2_MEMORY_USERPTR</strong>：用户态分配 buffer（malloc/mmap），将指针传给驱动。驱动需要 scatter-gather DMA 能力。<br>
+    <strong>V4L2_MEMORY_DMABUF</strong>：跨设备零拷贝——buffer 由另一个驱动分配（如 ISP），通过 DMA-BUF fd 导入到当前驱动（如编码器）。<strong>这是 IPC 多级管线的标准模式</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>buffer 状态机</h4>
+    <div class="lbl">QUEUED → ACTIVE → DONE → DEQUEUED → QUEUED ...</div>
+    <p>vb2 为每个 buffer 维护精确的状态：① 用户态 <code>QBUF</code>（入队）→ buffer 进入 QUEUED 状态 ② 驱动从队列取 buffer 填充（stream ON 后）→ ACTIVE ③ 驱动填充完毕（DMA 完成中断）→ DONE ④ 用户态 <code>DQBUF</code>（出队）→ DEQUEUED ⑤ 用户态处理完后再 QBUF。<br>
+    <strong>这就是一个完善的 Ring Buffer</strong>——QUEUED = ring 中的空闲槽位，DONE = ring 中的就绪数据。<strong>最少 3 个 buffer</strong>才能流水线不阻塞（一个被 ISP 写、一个被编码器读、一个在排队）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>vb2 的流控制</h4>
+    <div class="lbl">min_buffers_needed · 阻塞/非阻塞 DQBUF</div>
+    <p><strong>min_buffers_needed</strong>：驱动声明开始 stream 前<strong>至少需要多少个 buffer 入队</strong>——确保硬件启动时不会因没有 buffer 而 stall。<br>
+    <strong>阻塞 DQBUF</strong>（默认）：buffer 未就绪时阻塞等待——适合帧率稳定的预览场景。<br>
+    <strong>非阻塞 DQBUF</strong>（O_NONBLOCK）：buffer 未就绪时立即返回 -EAGAIN——适合与 select/poll 配合使用的 event loop。<br>
+    <strong>select/poll 支持</strong>：vb2 队列可被 poll——有 buffer 就绪时 fd 变为可读。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// V4L2 vb2_queue buffer 轮转——消费者视角（用户态 V4L2 应用）</span>
+<span class="cm">// 1. 请求 buffer（通过 ioctl 分配或导入 DMA-BUF）</span>
+<i>ioctl</i>(fd, VIDIOC_REQBUFS, &amp;reqbuf);   <span class="cm">// count=4, memory=V4L2_MEMORY_MMAP</span>
+
+<span class="cm">// 2. 将所有 buffer 入队（QBUF）——告知驱动"这些 buffer 你可以用了"</span>
+<b>for</b> (i = <u>0</u>; i < <u>4</u>; i++)  <i>ioctl</i>(fd, VIDIOC_QBUF, &amp;bufs[i]);
+
+<span class="cm">// 3. 启动 stream — 驱动开始填充 buffer</span>
+<i>ioctl</i>(fd, VIDIOC_STREAMON, &amp;type);
+
+<span class="cm">// 4. 主循环: 出队 → 处理 → 入队 (Ring Buffer 轮转)</span>
+<b>while</b> (running) {
+    <i>ioctl</i>(fd, VIDIOC_DQBUF, &amp;v4l2_buf);  <span class="cm">// 阻塞等待就绪的 buffer</span>
+    <i>process_frame</i>(v4l2_buf.index);         <span class="cm">// 处理: 编码 / 显示 / 网络发送</span>
+    <i>ioctl</i>(fd, VIDIOC_QBUF, &amp;v4l2_buf);   <span class="cm">// 归还 buffer → 驱动继续填充</span>
+}</div>
+
+<!-- ═══ Ch4: ALSA ═══ -->
+<h2 class="sh">4. ALSA Ring Buffer — 音频的环形缓冲</h2>
+<p class="ss">ALSA 的 PCM 中间层管理着一个<strong>内核态 ring buffer</strong>——应用通过 <code>snd_pcm_readi/writei</code> 与这个 ring buffer 交互。理解其指针机制是解决音频卡顿、爆音、xrun 的关键。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ALSA Ring Buffer 的三指针模型</h4>
+    <div class="lbl">hardware_ptr · appl_ptr · boundary — 无符号回绕</div>
+    <p>ALSA 使用 <strong>三指针</strong>而非传统的二指针模型——这是为了处理<strong>应用层和硬件层位于环形缓冲的不同位置</strong>这一独特场景：<br>
+    <strong>appl_ptr</strong>（应用指针）：应用程序<strong>已写入/已读取</strong>的位置。由用户态通过 <code>snd_pcm_avail_update()</code> 或 <code>mmap</code> 后直接更新。<br>
+    <strong>hw_ptr</strong>（硬件指针）：DMA 引擎<strong>已传输到声卡/已从声卡接收</strong>的位置。由驱动在 DMA 完成中断中更新。<br>
+    <strong>boundary</strong>：溢出回绕边界——通常是 2^N，远大于 buffer_size。指针只在跨越 boundary 时才回绕到 0。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>xrun — Ring Buffer 的溢出/欠载</h4>
+    <div class="lbl">overrun(录音) · underrun(播放) — 实时音频的头号敌人</div>
+    <p><strong>Overrun（录音时）</strong>：硬件 DMA 写入速度 > 应用读取速度 → hw_ptr 追上了 appl_ptr → 新数据覆盖了应用尚未读取的旧数据 → 丢失一段音频。<br>
+    <strong>Underrun（播放时）</strong>：应用写入速度 < 硬件 DMA 消费速度 → appl_ptr 被 hw_ptr 追上 → 声卡没有新数据可播 → 发出爆音（pop/click）或静音。<br>
+    <strong>解决</strong>：① 增大 buffer_size（更多缓冲吸收抖动）② 增大 period_size（减少中断频率，降低 CPU 开销）③ 提高应用线程的调度优先级（SCHED_FIFO）④ 使用 <code>snd_pcm_sw_params_set_stop_threshold</code> 设置 xrun 自动停止阈值。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">环形 buffer 开头</span><span class="b c1">[=======]</span><span class="n">起始位置 buffer_start = 0</span></div>
+  <div class="r"><span class="a">应用已处理区</span><span class="b c4">[-------]</span><span class="n">0 ~ appl_ptr：应用程序已读(录音)或已写(播放)</span></div>
+  <div class="r"><span class="a">DMA 正在传输区</span><span class="b c2">[=======]</span><span class="n">appl_ptr ~ hw_ptr：硬件正在 DMA 的数据区域</span></div>
+  <div class="r"><span class="a">空闲区域</span><span class="b c5">[.......]</span><span class="n">hw_ptr ~ buffer_end - 1：尚未使用的 buffer 空间</span></div>
+  <div class="r"><span class="a">可用空间</span><span class="b c3">avail = hw_ptr - appl_ptr</span><span class="n">（播放）/ appl_ptr - hw_ptr（录音）——未回绕时的简化公式</span></div>
+</div>
+
+<!-- ═══ Ch5: 无锁设计 ═══ -->
+<h2 class="sh">5. 无锁 SPSC Ring Buffer — 极致性能</h2>
+<p class="ss">在音视频管线中，生产者和消费者通常<strong>各自独占一个线程/进程</strong>——这是 SPSC（Single Producer Single Consumer）的理想场景。利用无锁设计实现 &lt;10ns 的 push/pop 延迟。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>SPSC 无锁 Ring Buffer 的核心原理</h4>
+    <div class="lbl">每个指针只有一个写入者 → 无需 CAS → 只需内存屏障</div>
+    <p><strong>关键洞察</strong>：<code>write_idx</code> 只有生产者写入（消费者只读），<code>read_idx</code> 只有消费者写入（生产者只读）。两个指针<strong>没有并发写入冲突</strong>——不需要 CAS、不需要锁、不需要原子 RMW 操作——只需<strong>内存屏障</strong>保证写入对其他 CPU 核心可见。<br>
+    <strong>生产者的 push</strong>：① 读 read_idx（普通 load）→ 判断空间 ② 写数据到 buffer ③ <strong>smp_wmb()</strong>（写内存屏障——保证数据写入先于指针更新）④ 写 write_idx（atomic store with release）。<br>
+    <strong>消费者的 pop</strong>：① 读 write_idx（atomic load with acquire）② <strong>smp_rmb()</strong>（读内存屏障）③ 读数据 ④ 写 read_idx。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Cache Line 对齐 — 避免 False Sharing</h4>
+    <div class="lbl">write_idx 和 read_idx 必须在不同的 cache line 上</div>
+    <p>如果 write_idx 和 read_idx 落在<strong>同一个 64 字节 cache line</strong> 上——生产者每次写 write_idx 会导致消费者 CPU 的 cache line 被 invalidate（即使消费者只读 read_idx）。消费者每次写 read_idx 也会 invalidate 生产者 CPU 的 cache line。这就是 <strong>False Sharing</strong>——每次指针更新都触发跨 CPU 的 cache 同步（~30-100ns），即使它们操作的是不同的变量。<br>
+    <strong>解决</strong>：用 <code>__attribute__((aligned(64)))</code> 强制 write_idx 和 read_idx 各自占据独立的 cache line——中间用 padding 填充。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 高性能 SPSC Ring Buffer（存储帧指针/索引，非帧数据本身）</span>
+<span class="kw">struct</span> spsc_ring {
+    <span class="kw">uint32_t</span>  size;                          <span class="cm">// buffer 数量，必须是 2 的幂</span>
+    <span class="kw">uint32_t</span>  mask;                          <span class="cm">// size - 1，用于位运算取模</span>
+
+    <span class="cm">// 关键：两个指针分别对齐到独立的 cache line —— 消除 False Sharing</span>
+    <span class="kw">alignas</span>(<span class="nu">64</span>) <span class="kw">atomic_uint</span> write_idx;    <span class="cm">// 仅生产者写入（release store）</span>
+    <span class="kw">alignas</span>(<span class="nu">64</span>) <span class="kw">atomic_uint</span> read_idx;     <span class="cm">// 仅消费者写入（release store）</span>
+    <span class="kw">alignas</span>(<span class="nu">64</span>) <span class="kw">char</span> padding[<span class="nu">48</span>];           <span class="cm">// 确保下一个字段从新 cache line 开始</span>
+
+    <span class="kw">struct</span> frame_buffer *bufs[];              <span class="cm">// 灵活数组：帧 buffer 池</span>
+};
+
+<span class="cm">// Producer push: 返回可写入的 buffer index，无空闲时返回 -1</span>
+<span class="kw">int</span> <span class="fn">spsc_push</span>(<span class="kw">struct</span> spsc_ring *r) {
+    <span class="kw">uint32_t</span> w = <span class="fn">atomic_load_explicit</span>(&amp;r->write_idx, memory_order_relaxed);
+    <span class="kw">uint32_t</span> r = <span class="fn">atomic_load_explicit</span>(&amp;r->read_idx,  memory_order_acquire);
+
+    <span class="kw">if</span> (w - r >= r->size) <span class="kw">return</span> -<span class="nu">1</span>;       <span class="cm">// buffer 满</span>
+
+    <span class="cm">// 数据在指针更新之前写入 — smp_wmb 保证顺序</span>
+    <span class="fn">atomic_thread_fence</span>(memory_order_release);
+    <span class="fn">atomic_store_explicit</span>(&amp;r->write_idx, w + <span class="nu">1</span>, memory_order_release);
+    <span class="kw">return</span> w &amp; r->mask;                     <span class="cm">// 返回 buffer index</span>
+}
+
+<span class="cm">// Consumer pop: 返回可读取的 buffer index，无数据时返回 -1</span>
+<span class="kw">int</span> <span class="fn">spsc_pop</span>(<span class="kw">struct</span> spsc_ring *r) {
+    <span class="kw">uint32_t</span> r = <span class="fn">atomic_load_explicit</span>(&amp;r->read_idx,  memory_order_relaxed);
+    <span class="kw">uint32_t</span> w = <span class="fn">atomic_load_explicit</span>(&amp;r->write_idx, memory_order_acquire);
+
+    <span class="kw">if</span> (r == w) <span class="kw">return</span> -<span class="nu">1</span>;                 <span class="cm">// buffer 空</span>
+
+    <span class="cm">// 指针更新之前先读数据 — acquire 保证顺序</span>
+    <span class="fn">atomic_thread_fence</span>(memory_order_acquire);
+    <span class="kw">uint32_t</span> idx = r &amp; r->mask;
+    <span class="fn">atomic_store_explicit</span>(&amp;r->read_idx, r + <span class="nu">1</span>, memory_order_release);
+    <span class="kw">return</span> idx;
+}</div>
+
+<!-- ═══ Ch6: DMA-BUF ═══ -->
+<h2 class="sh">6. DMA-BUF Ring Buffer — 跨进程零拷贝</h2>
+<p class="ss">当 Ring Buffer 的<strong>生产者和消费者在不同进程中</strong>时，普通的指针传递失效——每个进程有独立的虚拟地址空间。DMA-BUF 是跨进程共享物理内存的标准方案。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>方案 A: 共享内存 + 信号量</h4>
+    <div class="lbl">shm_open → mmap → sem_t — 最简跨进程 Ring</div>
+    <p><strong>实现</strong>：① 创建者 <code>shm_open("/av_ring", O_CREAT|O_RDWR)</code> → <code>ftruncate</code> 设置大小 → <code>mmap</code> 映射 ② 共享内存布局：前 128 字节放 spsc_ring 控制结构（write_idx/read_idx/size/mask），后面是 frame_buffer 数组 ③ 配合 POSIX 命名信号量（<code>sem_open</code>）做生产者-消费者同步。<br>
+    <strong>优势</strong>：简单、零内核代码、跨任意进程。<br>
+    <strong>局限</strong>：frame_buffer 中的数据仍然在共享内存中——如果需要传给硬件编码器，需要额外的 DMA-BUF 导入。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>方案 B: DMA-BUF fd 队列</h4>
+    <div class="lbl">Exporter 导出 fd → Unix Socket SCM_RIGHTS → Importer 导入</div>
+    <p><strong>实现</strong>：① ISP 驱动（Exporter）创建 DMA-BUF → 导出 fd ② 通过 Unix Socket + <code>SCM_RIGHTS</code> 将 fd 传给编码进程 ③ 编码进程通过 <code>dma_buf_get(fd)</code> 获取 buffer 访问权 ④ 编码器硬件通过 DMA 直接读取——<strong>全程零拷贝</strong>。<br>
+    <strong>Ring 语义</strong>：用 kfifo 或 spsc_ring 存储"就绪的 fd"而非帧数据本身。生产者往 ring 中 push fd → 消费者 pop fd → 处理完后 close(fd)（减少引用计数）。<br>
+    <strong>局限</strong>：fd 传递有开销（Unix Socket sendmsg ~5μs），不适合每帧都传（30fps 可以接受）。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>方案 C: ION / dma-heap</h4>
+    <div class="lbl">Android ION → 上游 dma-heap — 标准化 DMA buffer 分配器</div>
+    <p><strong>ION</strong>（Android 私有）：用户态通过 <code>/dev/ion</code> 分配 DMA buffer → ioctl 获取 fd → mmap 到用户态 → 传给其他进程/驱动。<br>
+    <strong>dma-heap</strong>（上游 Linux 替代 ION）：<code>/dev/dma_heap/</code> 下的字符设备——<code>DMA_HEAP_IOCTL_ALLOC</code> 分配 buffer → 返回 fd。系统级 heap（system）和 CMA heap（cma-uncached）两种。<br>
+    <strong>Ring Buffer 场景</strong>：用户态通过 dma-heap 预分配 N 个 buffer → 获取 fd 数组 → 通过 spsc_ring 管理 fd 的轮转 → 驱动通过 DMA-BUF attach 导入 → 硬件 DMA 直接操作。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// IPC 相机 ISP→编码器 Ring Buffer：DMA-BUF fd 队列 + 共享内存控制结构</span>
+<span class="cm">// 共享内存布局</span>
+<b>struct</b> av_dmabuf_ring {
+    <b>uint32_t</b> magic;                      <span class="cm">// 魔数，验证共享内存完整性</span>
+    <b>uint32_t</b> version;                    <span class="cm">// 版本号，升级兼容</span>
+    <b>uint32_t</b> num_bufs;                   <span class="cm">// buffer 总数 (如 4)</span>
+    <b>uint32_t</b> buf_size;                   <span class="cm">// 每个 buffer 的字节数</span>
+    <b>uint32_t</b> frame_width, frame_height;  <span class="cm">// 视频尺寸（用于验证）</span>
+    <b>uint32_t</b> fourcc;                     <span class="cm">// 像素格式 (V4L2_PIX_FMT_NV12)</span>
+
+    <span class="cm">// SPSC Ring 控制 — 分别对齐到独立 cache line</span>
+    <b>alignas</b>(<u>64</u>) <b>atomic_uint</b> write_idx;
+    <b>alignas</b>(<u>64</u>) <b>atomic_uint</b> read_idx;
+
+    <span class="cm">// buffer 元数据：帧序号、PTS、标志位 (I/P frame, 是否损坏)</span>
+    <b>struct</b> {
+        <b>uint64_t</b> frame_seq;        <span class="cm">// 帧序号，单调递增</span>
+        <b>uint64_t</b> pts_us;           <span class="cm">// PTS (微秒)</span>
+        <b>uint32_t</b> data_offset;      <span class="cm">// 有效数据在 buf 中的偏移</span>
+        <b>uint32_t</b> data_len;         <span class="cm">// 有效数据长度</span>
+        <b>uint8_t</b>  flags;            <span class="cm">// bit0: I/P frame, bit1: corrupt, bit2: eos</span>
+    } meta[<u>4</u>];
+
+    <span class="cm">// DMA-BUF fd 列表 — 由 exporter 分配并导出</span>
+    <span class="cm">// fd 不存储在共享内存中（fd 是进程私有资源）</span>
+    <span class="cm">// 而是在初始化时通过 Unix Socket 传递给 consumer</span>
+};</div>
+
+<!-- ═══ Ch7: 多 Buffer 轮转 ═══ -->
+<h2 class="sh">7. 多 Buffer 轮转策略 — 双缓冲 / 三缓冲 / N 缓冲</h2>
+<p class="ss">音视频中"一帧"的处理时间以毫秒计——不能用单 ring 逐字节操作。需要<strong>多个独立的大 buffer 轮转</strong>。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>双缓冲 (Double Buffer)</h4>
+    <div class="lbl">2 块 buffer — 最小轮转 · 延迟最低</div>
+    <p><strong>工作方式</strong>：Buffer0 被 ISP 填充时，Buffer1 被编码器读取。ISP 完成 → swap → 编码器读 Buffer0，ISP 写 Buffer1。<br>
+    <strong>优势</strong>：延迟最低——只有 1 帧的缓冲。内存占用最小。<br>
+    <strong>问题</strong>：<strong>无弹性</strong>——编码器必须在 ISP 完成下一帧之前处理完当前帧。如果编码器因 I 帧耗时增加（P 帧 3ms → I 帧 15ms），ISP 必须等待→丢帧。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>三缓冲 (Triple Buffer)</h4>
+    <div class="lbl">3 块 buffer — IPC 最常用 · 延迟与弹性的平衡</div>
+    <p><strong>工作方式</strong>：三块 buffer 轮转状态：FREE（可被 ISP 写入）→ FILLING（ISP 正在写）→ READY（等待编码器读取）→ READING（编码器正在读）→ FREE。任何时候<strong>至少有一块在 FREE 状态</strong>——ISP 总有 buffer 可用。<br>
+    <strong>优势</strong>：吸收一帧的编码延迟波动。延迟仅增加 1 帧（33ms@30fps）。内存适中（3×3MB=9MB @1080p NV12）。<br>
+    <strong>V4L2 默认最少 3 buffer</strong>——这是经过实践验证的最佳平衡点。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>N 缓冲 (N ≥ 4)</h4>
+    <div class="lbl">4-6 块 buffer — 高抖动场景 · 网络传输</div>
+    <p><strong>适用场景</strong>：① 编码器延迟波动大（软件编码、或 I/P 帧耗时差异超过 3×）② 网络发送缓冲——TCP 拥塞可能导致发送暂停数百 ms ③ 多消费者——同一帧需要被编码器和 AI 检测同时读取。<br>
+    <strong>代价</strong>：延迟增加（每多一块 buffer +33ms）、内存占用增加（6 块 × 3MB = 18MB）。<br>
+    <strong>实践经验</strong>：IPC 编码输出 buffer 建议 4-6 块——吸收 SD 卡写入的偶发慢速（Card Busy 状态可达 100ms+）。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 多 Buffer 轮转的常见陷阱</div>
+  <strong>1. Buffer 状态不一致</strong>——生产者以为 buffer 是 FREE 的，但消费者还在读。必须用<strong>原子状态机</strong>而非简单的 flag 判断。<br>
+  <strong>2. 帧数据未完整写入就标记 READY</strong>——DMA 可能还在进行中（特别是 Cache flush 未完成）。必须在<strong>DMA 完成中断中</strong>才更新状态，而非在启动 DMA 后立即更新。<br>
+  <strong>3. Buffer 泄漏</strong>——消费者异常退出后 buffer 一直处于 READING 状态，生产者最终因无 FREE buffer 而 hang。解决：<strong>看门狗超时回收</strong>——READING 状态超过 1 秒 → 强制重置为 FREE + 记录异常日志。
+</div>
+
+<!-- ═══ Ch8: IPC 实战 ═══ -->
+<h2 class="sh">8. IPC 相机 Ring Buffer 全景实战</h2>
+<p class="ss">IPC 相机内部有<strong>4 条独立的 Ring Buffer 管线</strong>——从 Sensor 到云端，每一层都需要精确的 buffer 管理。</p>
+
+<div class="mb">
+  <div class="r"><span class="a">Ring #1: ISP → 编码器</span><span class="b c1">V4L2 vb2_queue</span><span class="n">vb2 MMAP 模式 · 4 块 DMA-BUF · 30fps YUV420 → H.264 编码器</span></div>
+  <div class="r"><span class="a">Ring #2: 编码器 → 网络</span><span class="b c2">SPSC 共享内存 Ring</span><span class="n">编码输出 DMA-BUF fd 数组 · 6 块 buffer · spsc_ring 管理就绪队列</span></div>
+  <div class="r"><span class="a">Ring #3: 编码器 → SD 卡</span><span class="b c3">SPSC 共享内存 Ring</span><span class="n">同 Ring #2 的另一消费者 · nice=-5 异步写入 · 4 块 buffer 防 SD busy</span></div>
+  <div class="r"><span class="a">Ring #4: 麦克风 → 编码器</span><span class="b c5">ALSA Ring Buffer</span><span class="n">ALSA hw:0,0 · period_size=480 · 4 period buffer · 10ms/period · AAC-LC 编码</span></div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>设计决策 1: 每层独立 Ring vs 全局统一 Ring</h4>
+    <div class="lbl">推荐：每层独立 Ring — 解耦 + 隔离</div>
+    <p><strong>每层独立 Ring 的优势</strong>：① 每个 consumer 以<strong>自己的速度</strong>消费——网络发送可能很快（10ms）而 SD 卡写入可能很慢（200ms）——独立 Ring 互不阻塞 ② 每层可以独立配置 buffer 数量——网络层 6 块 vs SD 层 4 块 ③ 某一层崩溃不会污染其他层的 buffer。<br>
+    <strong>代价</strong>：需要额外的 buffer pool 和 Ring 控制结构。但在 DMA-BUF 零拷贝下<strong>数据不复制</strong>——每个 Ring 只存储 fd/指针，不存储帧数据本身。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>设计决策 2: buffer 分配位置</h4>
+    <div class="lbl">Exporter 分配 — 上游分配、下游导入</div>
+    <p><strong>ISP→编码器 Ring</strong>：ISP 驱动分配 buffer（CMA 或 dma_alloc_coherent）——因为 ISP 的 AXI Master 可能要求物理连续内存。编码器通过 DMA-BUF fd 导入。<br>
+    <strong>编码器→网络 Ring</strong>：编码器驱动分配输出 buffer（编码器硬件要求特定对齐）——网络进程通过 mmap 或 DMA-BUF 访问。<br>
+    <strong>音频 Ring</strong>：ALSA 驱动分配——应用通过 snd_pcm_readi 或 mmap 访问。<br>
+    <strong>通用原则</strong>：<strong>谁写谁分配</strong>——生产者最清楚 buffer 需要满足的对齐/连续/缓存属性。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">IPC 相机 Ring Buffer 调优 Checklist</div>
+  □ <strong>Buffer 数量</strong>：ISP→编码器 4 块 · 编码→网络 6 块 · 编码→SD 4 块 · 音频 4 periods<br>
+  □ <strong>Buffer 大小</strong>：1080p NV12 = 1920×1080×1.5 = 3.1MB → 分配 4MB/buffer（留余量给 stride padding）<br>
+  □ <strong>共享内存</strong>：/dev/shm/av_ring_* 文件 + spsc_ring 控制结构在共享内存首部<br>
+  □ <strong>内存屏障</strong>：生产者 push 时 smp_wmb 在数据写入后、write_idx 更新前；消费者 pop 时 smp_rmb 在 write_idx 读取后、数据读取前<br>
+  □ <strong>Cache Line 对齐</strong>：write_idx 和 read_idx 各占独立 64B cache line（alignas(64) + padding）<br>
+  □ <strong>状态机保护</strong>：每个 buffer 的 FREE/FILLING/READY/READING 状态用 atomic 枚举 + CAS 转换<br>
+  □ <strong>看门狗超时</strong>：READING 状态 &gt;1s → 强制回收 + 打印异常日志（定位卡死环节）<br>
+  □ <strong>性能验证</strong>：无丢帧运行 24h → <code>watch -n1 cat /sys/kernel/debug/av_ring/stats</code> 确认 write_idx 和 read_idx 差值始终在 1-3 之间
+</div>
+
+<!-- ═══ Ch9: Tuya Ring Buffer ═══ -->
+<h2 class="sh">9. 实战案例：涂鸦 (Tuya) IPC Ring Buffer 深度解析</h2>
+<p class="ss">涂鸦智能是全球最大的 IoT 云平台之一，其 IPC SDK 中实现了一套<strong>工业级、产品化验证过的 Ring Buffer 框架</strong>。这是学习真实工程中 AV Ring Buffer 设计的最佳范本。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>设计哲学</h4>
+    <div class="lbl">帧级管理 · 多生产者多消费者 · 超时机制 · 零拷贝</div>
+    <p>涂鸦 Ring Buffer 不是通用的字节流环形缓冲——它专为<strong>视频帧</strong>设计。核心设计理念：① 以<strong>帧</strong>为最小管理单元（而非字节），每个 slot 存储一个完整视频帧 ② 支持<strong>多生产者多消费者</strong>（MPMC）——ISP、AI 检测、运动检测都可以写入，编码器、网络、存储都可以读取 ③<strong>每个 buffer 独立的超时机制</strong>——防止某个消费者卡死导致 buffer 泄漏 ④ <strong>DMA-BUF fd 传递实现零拷贝</strong>——数据不复制，只传递 fd 和元数据。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>核心数据结构</h4>
+    <div class="lbl">Ring Buffer → Channel → Buffer Node — 三层抽象</div>
+    <p><strong>Ring Buffer</strong>（顶层）：管理多个 Channel——每个 Channel 代表一条独立的数据流（如主码流/子码流/音频流/AI 流）。<br>
+    <strong>Channel</strong>（中层）：固定大小的环形槽位数组（如 8-12 个 slot）。每个 slot 存储一个 Buffer Node 指针。Channel 内部维护 write_cursor 和 read_cursor（多个消费者各有独立的 read_cursor）。<br>
+    <strong>Buffer Node</strong>（底层）：一帧数据的<strong>完整描述</strong>——DMA-BUF fd、数据长度、PTS、帧类型(I/P)、序列号、引用计数、超时时间戳。Buffer Node 是<strong>堆分配的</strong>——可以从一个 Channel 取出后放入另一个 Channel（零拷贝流转）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>同步机制</h4>
+    <div class="lbl">环形锁 (Ring Lock) + 条件变量 + 引用计数</div>
+    <p><strong>环形锁 (Ring Lock)</strong>：涂鸦自己实现的轻量锁——不是 pthread_mutex。基于 <strong>futex</strong>（快速用户态互斥），无竞争时仅在用户态做一次 CAS 操作（~25ns），有竞争时才陷入内核等待。每个 Channel 一把 Ring Lock——粒度细，不同 Channel 之间不互斥。<br>
+    <strong>条件变量 + 超时</strong>：消费者 <code>ring_buffer_recv(ch, &node, timeout_ms)</code>——阻塞等待直到有新帧或超时返回。生产者 <code>ring_buffer_send(ch, node, timeout_ms)</code>——阻塞等待直到有空闲 slot 或超时返回。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>API 设计：5 个核心操作</h4>
+    <div class="lbl">alloc → send → recv → ref → free — 完整的帧生命周期</div>
+    <p><strong>① ring_buffer_alloc(channel)</strong>：从 Channel 的空闲池中分配一个空 Buffer Node。设置引用计数=1。生产者调用——获得一个可填充的帧容器。<br>
+    <strong>② ring_buffer_send(channel, node, timeout_ms)</strong>：将填充好的 Buffer Node <strong>发布</strong>到 Channel 中。写入 write_cursor 位置，递增 write_cursor，唤醒等待的消费者。<br>
+    <strong>③ ring_buffer_recv(channel, &node, timeout_ms)</strong>：消费者阻塞等待，从 Channel 中<strong>获取</strong>最早未读取的 Buffer Node。返回后 node 的引用计数+1。<br>
+    <strong>④ ring_buffer_ref(node)</strong>：增加引用计数。——多个消费者同时使用同一帧时调用（如编码器和 AI 检测同时读取同一 YUV 帧）。<br>
+    <strong>⑤ ring_buffer_unref(node)</strong>：减少引用计数。归零时 → Buffer Node 被回收到空闲池 → 生产者可以重新 alloc 使用。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>引用计数 — 多消费者的关键</h4>
+    <div class="lbl">不是读完就释放 — 而是所有消费者都读完才释放</div>
+    <p>传统 Ring Buffer 的 read_cursor 只能表示<strong>一个</strong>消费者的消费进度。但涂鸦的 IPC 场景中——一帧 YUV 数据可能同时被<strong>编码器</strong>（读后编码）、<strong>AI 检测</strong>（读后推理）、<strong>运动检测</strong>（读后比对）三个消费者使用。<br>
+    <strong>引用计数方案</strong>：每个消费者在 recv 时 ref 计数+1，完成处理后 unref 计数-1。当计数归零 → Buffer Node 自动回收到空闲池。<strong>这是多消费者场景唯一正确的方案</strong>——read_cursor 无法表达"部分消费者已读完、部分还在读"的中间状态。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 涂鸦 Ring Buffer 核心结构精简版（基于其开源 SDK 提炼）</span>
+<span class="kw">typedef struct</span> {
+    <span class="kw">int32_t</span>   fd;              <span class="cm">// DMA-BUF fd（-1 表示 heap 内存）</span>
+    <span class="kw">uint8_t</span>  *data;           <span class="cm">// mmap 后的用户态虚拟地址</span>
+    <span class="kw">uint32_t</span>  size;            <span class="cm">// buffer 总大小（字节）</span>
+    <span class="kw">uint32_t</span>  data_len;        <span class="cm">// 有效数据长度</span>
+    <span class="kw">uint64_t</span>  pts_us;          <span class="cm">// PTS (微秒)</span>
+    <span class="kw">uint64_t</span>  sequence;        <span class="cm">// 全局帧序列号（用于丢帧检测）</span>
+    <span class="kw">uint32_t</span>  frame_type;      <span class="cm">// 0=I帧 1=P帧 2=B帧</span>
+    <span class="kw">uint32_t</span>  flags;           <span class="cm">// bit0:eos bit1:corrupt bit2:sei_present</span>
+    <span class="kw">atomic_int</span> ref_count;     <span class="cm">// 原子引用计数 — 多消费者共享</span>
+    <span class="kw">int64_t</span>   deadline_us;     <span class="cm">// 超时时间戳（超过此时限强制回收）</span>
+    <span class="kw">void</span>     *channel;         <span class="cm">// 反向指针：属于哪个 Channel</span>
+    <span class="kw">struct</span> list_head list;      <span class="cm">// 用于空闲池/就绪队列的链表节点</span>
+} BufferNode;
+
+<span class="kw">typedef struct</span> {
+    <span class="kw">uint8_t</span>   num_slots;      <span class="cm">// slot 总数（通常 8-12）</span>
+    <span class="kw">atomic_int</span> write_cursor;  <span class="cm">// 生产者写入位置（原子递增）</span>
+    <span class="kw">atomic_int</span> read_cursors[<span class="nu">4</span>]; <span class="cm">// 最多 4 个消费者，各自独立的读位置</span>
+    BufferNode *slots[];        <span class="cm">// 环形槽位数组（灵活数组）</span>
+
+    <span class="kw">pthread_mutex_t</span> lock;     <span class="cm">// 保护 write/read cursor + slots 数组</span>
+    <span class="kw">pthread_cond_t</span>  cond;      <span class="cm">// 条件变量：生产者等空位 / 消费者等数据</span>
+
+    <span class="kw">struct</span> list_head free_list; <span class="cm">// 空闲 BufferNode 链表（alloc 从这里取）</span>
+    <span class="kw">uint32_t</span>  free_count;      <span class="cm">// 空闲 buffer 计数（用于快速判断）</span>
+} RingChannel;
+
+<span class="cm">// 顶层管理结构</span>
+<span class="kw">typedef struct</span> {
+    RingChannel *main_stream;   <span class="cm">// 主码流通道 (1080p H.264)</span>
+    RingChannel *sub_stream;    <span class="cm">// 子码流通道 (640x480 H.264)</span>
+    RingChannel *audio_stream;  <span class="cm">// 音频流通道 (AAC)</span>
+    RingChannel *ai_stream;     <span class="cm">// AI 元数据通道 (检测结果 JSON)</span>
+} RingBufferManager;</div>
+
+<div class="chain"><span class="cm">// 涂鸦 Ring Buffer 的完整帧生命周期流转</span>
+                              <b>空闲池 (free_list)</b>
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+            <i>ring_buffer_alloc()</i> — 从空闲池取出一个 BufferNode (ref=1)
+                    │
+                    ▼
+            <b>Producer 填充帧</b>: 设置 data/len/pts/type/flags
+                    │
+                    ▼
+            <i>ring_buffer_send()</i> — 将 BufferNode 放入 Channel slots[write_cursor]
+                    │               write_cursor++ · signal cond
+                    ▼
+    ┌───────────────────────────┐
+    │  <b>多消费者并行读取</b>         │
+    │  Consumer#0 (编码器):     │  <i>ring_buffer_recv(ch, &node, 100ms)</i> → ref=2
+    │  Consumer#1 (AI检测):     │  <i>ring_buffer_recv(ch, &node, 50ms)</i>  → ref=3
+    │  Consumer#2 (网络发送):   │  <i>ring_buffer_recv(ch, &node, 200ms)</i> → ref=4
+    └───────────────────────────┘
+                    │
+                    ▼  各自处理完成后:
+            Consumer#0: <i>ring_buffer_unref(node)</i> → ref=3
+            Consumer#1: <i>ring_buffer_unref(node)</i> → ref=2
+            Consumer#2: <i>ring_buffer_unref(node)</i> → ref=1
+                    │
+                    ▼  ref_count == 1 (仅剩生产者初始引用)
+            <b>自动回收</b>: <i>ring_buffer_unref(node)</i> → ref=0
+                    │  将 BufferNode 放回 free_list
+                    ▼  唤醒等待空闲 buffer 的生产者
+              <b>空闲池 (free_list)</b> — 循环往复</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>设计亮点 1: 引用计数 + 超时兜底</h4>
+    <div class="lbl">解决"消费者异常退出导致 buffer 泄漏"</div>
+    <p>如果消费者进程 crash（或网络断连导致发送线程卡死）——它持有的 BufferNode ref 永远不会归零 → 该 buffer 永久泄漏 → 空闲池逐渐耗尽 → 生产者最终因 alloc 失败而丢帧。<br>
+    <strong>涂鸦的解决方案</strong>：每个 BufferNode 有一个 <code>deadline_us</code> 字段。后台看门狗线程<strong>每秒扫描一次</strong>所有 BufferNode——如果 ref_count > 1 且当前时间 > deadline_us → <strong>强制回收</strong>：重置 ref_count=0，放回 free_list，打印警告日志（包含最后持有该 buffer 的消费者 PID/线程名）。ref_count = 0 后该 buffer 被视为"脏帧"——flags 位标记 discarded，消费者检测到该标记应丢弃处理结果。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>设计亮点 2: 多消费者独立游标</h4>
+    <div class="lbl">每个消费者有自己的 read_cursor — 互不干扰</div>
+    <p>传统 Ring Buffer 只有一个 read cursor——所有消费者必须<strong>以相同的速度</strong>消费。这在 IPC 场景中不成立：AI 检测可能 100ms/帧，编码器 15ms/帧。<br>
+    <strong>涂鸦的方案</strong>：<code>read_cursors[4]</code>——最多 4 个独立消费者，每个有自己的游标。Channel 维护 <code>min_read_cursor</code> = min(read_cursors[0..3])——它是<strong>最慢消费者</strong>的位置。write_cursor 不能覆盖 min_read_cursor 之前未读完的 slot（除非启用强制覆盖模式——仅用于实时预览流，允许丢帧）。<br>
+    <strong>快速消费者的清理</strong>：消费者 i 读完一帧后 read_cursors[i]++ 而 buffer 的真正释放由<strong>引用计数</strong>处理——游标主要用于判断"slot 是否可以被覆盖"，而非"buffer 何时释放"。这是游标和引用计数的<strong>正交配合</strong>。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">涂鸦 Ring Buffer vs 标准 Linux 方案的对比</div>
+  <div class="ptbl">
+  <table>
+  <thead><tr><th>维度</th><th>涂鸦 Ring Buffer</th><th>V4L2 vb2_queue</th><th>ALSA Ring Buffer</th></tr></thead>
+  <tbody>
+    <tr><td><strong>管理粒度</strong></td><td class="g">帧级 (BufferNode)</td><td class="g">帧级 (vb2_buffer)</td><td>字节/样本级 (PCM samples)</td></tr>
+    <tr><td><strong>多消费者</strong></td><td class="g">引用计数 + 独立游标</td><td class="y">仅单消费者 (DQBUF 独占)</td><td class="r">仅单消费者</td></tr>
+    <tr><td><strong>超时兜底</strong></td><td class="g">deadline_us + 看门狗扫描</td><td class="r">无内置——依赖用户态 DQBUF 不阻塞</td><td class="y">stop_threshold 间接实现</td></tr>
+    <tr><td><strong>零拷贝</strong></td><td class="g">DMA-BUF fd 传递</td><td class="g">MMAP / DMABUF 模式</td><td class="g">mmap 直接访问</td></tr>
+    <tr><td><strong>运行位置</strong></td><td>用户态（链接库）</td><td>内核态</td><td>内核态 + 用户态 mmap</td></tr>
+    <tr><td><strong>复杂度</strong></td><td class="y">中等（~3000 行 C）</td><td class="y">高（~15000 行内核代码）</td><td class="y">中等</td></tr>
+    <tr><td><strong>适用场景</strong></td><td class="g">IPC SDK 全管线（4+ 消费者）</td><td>V4L2 设备驱动 buffer 管理</td><td>PCM 音频采集/播放</td></tr>
+  </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 自实现时最容易踩的 3 个坑</div>
+  <strong>1. 锁的粒度。</strong>一整把大锁保护 Channel 的所有操作 → recv 时持锁期间可能等待 DMA 完成（几十 ms）→ 其他线程全部阻塞。正确做法：<strong>锁只保护 cursor 更新 + 链表操作</strong>（~100ns），数据填充/读取在<strong>锁外</strong>进行。<br>
+  <strong>2. ref_count 操作用普通 int + 锁 vs atomic_int。</strong>当多消费者<strong>在不同 CPU 核心上</strong>同时 ref/unref 时，普通 int + 锁需要获取同一把锁 → 竞争激烈。atomic_int 的 fetch_add/sub 是<strong>单条 CPU 指令</strong>（LOCK XADD），无需锁，延迟 ~10ns vs 锁的 ~50ns。<br>
+  <strong>3. deadline_us 的单调时钟。</strong>必须用 <code>CLOCK_MONOTONIC</code>——系统时间可能被 NTP 调整（回退或跳跃）导致 deadline 误判。在一个 IPC 产测中发现：NTP 校时导致系统时间回跳 3 秒 → 所有 buffer 瞬间"过期"→ 强制回收 → 丢帧风暴——这就是用 CLOCK_REALTIME 的教训。
+</div>
+
+<!-- ═══ Ch10: 多消费者并发读 + 跳帧策略 ═══ -->
+<h2 class="sh">10. 多消费者并发读与自动跳帧 — 核心机制深度拆解</h2>
+<p class="ss">这是涂鸦 Ring Buffer 区别于传统环形缓冲<strong>最关键的两个设计</strong>——解决了"一路视频流如何同时被多个模块消费而不互相阻塞"和"某个消费者卡顿时的优雅降级"。</p>
+
+<!-- ── 10.1 多消费者并发读 ── -->
+<h2 class="sh" style="font-size:1.35rem;margin-top:36px">10.1 一路写 · 多路并发读 — 引用计数 + 独立游标</h2>
+<p class="ss">传统 Ring Buffer 只有一个 read cursor——意味着<strong>只有一个消费者</strong>，或者所有消费者必须以<strong>相同的速度</strong>步调一致地消费。这在 IPC 场景中完全不成立。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>为什么单游标不行？</h4>
+    <div class="lbl">一个 read_cursor = 所有消费者绑在一起</div>
+    <p>假设编码器（15ms/帧）、AI 检测（100ms/帧）、网络发送（10ms/帧）共享一个 read_cursor：<br>
+    • 如果游标以<strong>最快消费者</strong>速度移动 → 慢消费者来不及读的数据被覆盖 → 数据丢失<br>
+    • 如果游标以<strong>最慢消费者</strong>速度移动 → 快消费者等慢消费者 → 编码器每帧等 85ms → 帧率暴跌<br>
+    • 如果游标取<strong>平均值</strong> → 所有消费者都不满意<br>
+    <strong>结论</strong>：单游标模型<strong>根本不适合多消费者场景</strong>——必须每个消费者有自己的独立游标。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>涂鸦的方案：独立游标 + 引用计数</h4>
+    <div class="lbl">游标控制"读不读到" · 引用计数控制"何时释放"</div>
+    <p><strong>独立游标（每个消费者一个）</strong>：Consumer[i] 有自己的 read_cursors[i]，recv 时读取自己游标位置的帧，读完递增自己的游标。消费者之间<strong>完全独立</strong>——编码器读到 seq=52 时，AI 检测可能还在读 seq=47（慢了 5 帧）。<br>
+    <strong>引用计数（每帧一个 atomic ref_count）</strong>：recv 时 ref++，unref 时 ref--。只有<strong>所有持有该帧的消费者都 unref 后</strong>（ref 归零），buffer 才回收到空闲池。<br>
+    <strong>两者正交配合</strong>：游标用于"消费者是否已经看到这一帧"（控制可读性），引用计数用于"内存何时可以安全复用"（控制生命周期）。解耦 = 灵活。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// 多消费者并发读的完整状态示例 — 同一时刻 3 个消费者在不同位置</span>
+<i>Channel slots (环形槽位, 共 8 个 slot):</i>
+
+  slot[<u>0</u>]    slot[<u>1</u>]    slot[<u>2</u>]    slot[<u>3</u>]    slot[<u>4</u>]    slot[<u>5</u>]    slot[<u>6</u>]    slot[<u>7</u>]
+┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+│ seq=48│ seq=49│ seq=50│ seq=51│ seq=52│ seq=53│ seq=54│ 空(可写)│
+│ ref=2 │ ref=1 │ ref=3 │ ref=2 │ ref=1 │ ref=0 │ ref=0 │        │
+└───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+        ▲                 ▲                 ▲
+        │                 │                 │
+  AI检测(慢)         编码器(中)        网络发送(快)
+  cursor=1           cursor=3          cursor=5
+  正在读 seq=49      正在读 seq=51      正在读 seq=53
+
+<span class="cm">// 状态解读:</span>
+<span class="cm">// seq=48: ref=2 → AI检测 + ??? 还在引用 → 不能回收 (DEBUG: 查谁没释放)</span>
+<span class="cm">// seq=50: ref=3 → 编码器+网络发送+??? 三者在读 → 可能是关键帧被多个模块引用</span>
+<span class="cm">// seq=53: ref=0 → 网络发送已 unref → 即将被回收(游标已过+引用归零)</span>
+<span class="cm">// slot[6]: 空 → 生产者下一个写入位置 (write_cursor=6)</span>
+
+<i>min_read_cursor = min(1, 3, 5) = 1 (AI检测是最慢的)</i>
+<i>write_cursor 不能覆盖 slot[0] (cursor=1 还未读过 seq=48)</i>
+<i>但如果 seq=48 的 ref=0 (所有消费者都已释放) → 仍需保留 slot[0] 给 AI 读</i></div>
+
+<div class="cb"><span class="cm">// 多消费者 recv 的核心实现（简化版）</span>
+<span class="kw">int</span> <span class="fn">ring_buffer_recv</span>(RingChannel *ch, BufferNode **out, <span class="kw">int</span> consumer_id,
+                    <span class="kw">int</span> timeout_ms)
+{
+    <span class="kw">struct</span> timespec ts;
+    <span class="fn">clock_gettime</span>(CLOCK_MONOTONIC, &amp;ts);
+    ts.tv_nsec += (timeout_ms % <span class="nu">1000</span>) * <span class="nu">1000000L</span>;
+    ts.tv_sec  += timeout_ms / <span class="nu">1000</span>;
+
+    <span class="fn">pthread_mutex_lock</span>(&amp;ch->lock);
+    <span class="kw">while</span> (<span class="nu">1</span>) {
+        <span class="kw">uint32_t</span> w = <span class="fn">atomic_load</span>(&amp;ch->write_cursor);
+        <span class="kw">uint32_t</span> r = <span class="fn">atomic_load</span>(&amp;ch->read_cursors[consumer_id]);
+
+        <span class="cm">// 有数据可读？</span>
+        <span class="kw">if</span> (r < w) {
+            <span class="kw">int</span> slot = r % ch->num_slots;
+            *out = ch->slots[slot];
+            <span class="fn">atomic_fetch_add</span>(&amp;(*out)->ref_count, <span class="nu">1</span>);  <span class="cm">// ref++</span>
+            <span class="fn">atomic_store</span>(&amp;ch->read_cursors[consumer_id], r + <span class="nu">1</span>);
+            <span class="fn">pthread_mutex_unlock</span>(&amp;ch->lock);
+            <span class="kw">return</span> <span class="nu">0</span>;  <span class="cm">// 成功 — 注意：返回时 ref 已+1，调用者用完必须 unref</span>
+        }
+
+        <span class="cm">// 无数据 — 等待生产者 send 时 signal</span>
+        <span class="kw">int</span> ret = <span class="fn">pthread_cond_timedwait</span>(&amp;ch->cond, &amp;ch->lock, &amp;ts);
+        <span class="kw">if</span> (ret == ETIMEDOUT) {
+            <span class="fn">pthread_mutex_unlock</span>(&amp;ch->lock);
+            <span class="kw">return</span> -ETIMEDOUT;
+        }
+    }
+}
+
+<span class="cm">// 关键点: 不同 consumer_id 操作不同的 read_cursors[consumer_id]</span>
+<span class="cm">// → 编码器(consumer_id=0)的进度不阻塞 AI检测(consumer_id=1)</span></div>
+
+<!-- ── 10.2 自动跳帧 ── -->
+<h2 class="sh" style="font-size:1.35rem;margin-top:48px">10.2 自动跳帧策略 — 慢消费者的优雅降级</h2>
+<p class="ss">当某个消费者处理速度跟不上生产者时（AI 推理耗时波动、网络拥塞、SD 卡写入 busy），Ring Buffer <strong>不能无限堆积、不能阻塞生产者、不能覆盖未读数据</strong>。跳帧是唯一的答案。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>问题场景</h4>
+    <div class="lbl">慢消费者拖慢全局 → 生产者阻塞 → 全链路卡死</div>
+    <p><strong>场景 1: AI 检测卡顿</strong>——AI 模型推理因复杂场景（人多/车多）从 50ms/帧 飙升到 200ms/帧。如果等待 AI 读完 → 编码器和网络发送被拖累 → 实时预览卡顿。<br>
+    <strong>场景 2: SD 卡写入延迟</strong>——Flash 磨损均衡/坏块管理导致写入从 10ms 飙升到 300ms（Card Busy）。<br>
+    <strong>场景 3: 网络拥塞</strong>——4G 弱信号导致 TCP/UDP 发送阻塞 500ms+。<br>
+    <strong>共同特征</strong>：慢消费者的 read_cursor 远远落后于 write_cursor——差值持续扩大。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>跳帧触发条件</h4>
+    <div class="lbl">距离阈值 · 时间阈值 · 帧类型感知</div>
+    <p><strong>距离阈值</strong>：<code>write_cursor - read_cursors[i] > skip_threshold</code>。当一个消费者落后超过 N 帧（如 4 帧 = 133ms@30fps）→ 触发跳帧。<br>
+    <strong>时间阈值</strong>：帧的 <code>deadline_us < now_us</code> → 该帧已"过期"——即使消费者还没读，也不应再读（读出来也没意义——实时场景中过期帧不如跳过）。<br>
+    <strong>帧类型感知</strong>：<strong>I 帧不能跳过</strong>——如果消费者需要解码视频流，丢了 I 帧会导致后续所有 P 帧无法解码（花屏直到下一个 I 帧）。P 帧可以大量跳过，I 帧强制保留。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>跳帧执行逻辑</h4>
+    <div class="lbl">快进游标 → 释放被跳过的帧 → 追上进度</div>
+    <p>当触发跳帧时，消费者的 <code>read_cursors[i]</code> 被<strong>快速推进</strong>到距离 write_cursor 只有 <code>keep_behind</code>（如 2 帧）的位置。中间被跳过的所有帧：① 检查 ref_count——如果只有该消费者持有 → unref 释放 → buffer 回池 ② 跳过期间如果遇到 I 帧 → 停在 I 帧处（保证解码连续性）。<br>
+    <strong>跳帧后效果</strong>：消费者从读取"当前帧-6"变为读取"当前帧-2"——跳过了 4 帧 P 帧，立即追上进度。编码器和其他消费者<strong>完全不受影响</strong>——它们的游标和引用计数独立运作。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// 涂鸦跳帧策略的核心实现（简化版）</span>
+<span class="kw">int</span> <span class="fn">ring_buffer_skip_frames</span>(RingChannel *ch, <span class="kw">int</span> consumer_id)
+{
+    <span class="kw">uint32_t</span> w = <span class="fn">atomic_load</span>(&amp;ch->write_cursor);
+    <span class="kw">uint32_t</span> r = <span class="fn">atomic_load</span>(&amp;ch->read_cursors[consumer_id]);
+    <span class="kw">uint32_t</span> lag = w - r;  <span class="cm">// 落后的帧数</span>
+
+    <span class="kw">uint32_t</span> skip_threshold = ch->skip_threshold;  <span class="cm">// 默认 4 帧</span>
+    <span class="kw">if</span> (lag <= skip_threshold)
+        <span class="kw">return</span> <span class="nu">0</span>;  <span class="cm">// 不需要跳帧</span>
+
+    <span class="kw">uint32_t</span> target = w - ch->keep_behind;  <span class="cm">// keep_behind 默认 2 帧</span>
+    <span class="kw">uint32_t</span> skipped = <span class="nu">0</span>;
+    <span class="kw">uint32_t</span> last_i_frame = r;  <span class="cm">// 记录最后一个 I 帧位置</span>
+
+    <span class="fn">pthread_mutex_lock</span>(&amp;ch->lock);
+
+    <span class="kw">while</span> (r < target) {
+        <span class="kw">int</span> slot = r % ch->num_slots;
+        BufferNode *node = ch->slots[slot];
+
+        <span class="cm">// I 帧保护：遇到 I 帧，停止跳帧（保证解码连续性）</span>
+        <span class="kw">if</span> (node && node->frame_type == <span class="nu">0</span>) {  <span class="cm">// FRAME_TYPE_I</span>
+            last_i_frame = r;
+            <span class="kw">break</span>;  <span class="cm">// 停在 I 帧处——消费者至少能正确解码</span>
+        }
+
+        <span class="cm">// 释放被跳过的 P 帧（仅当该消费者是唯一持有者时才释放）</span>
+        <span class="kw">if</span> (node && <span class="fn">atomic_load</span>(&amp;node->ref_count) >= <span class="nu">2</span>) {
+            <span class="fn">atomic_fetch_sub</span>(&amp;node->ref_count, <span class="nu">1</span>);  <span class="cm">// 消费者释放自己的引用</span>
+        }
+
+        r++;
+        skipped++;
+    }
+
+    <span class="cm">// 更新该消费者的游标</span>
+    <span class="fn">atomic_store</span>(&amp;ch->read_cursors[consumer_id], r);
+
+    <span class="cm">// 重新计算 min_read_cursor —— 可能释放了阻塞 write_cursor 的空间</span>
+    <span class="fn">update_min_read_cursor</span>(ch);
+
+    <span class="fn">pthread_mutex_unlock</span>(&amp;ch->lock);
+
+    <span class="kw">if</span> (skipped > <span class="nu">0</span>) {
+        <span class="fn">log_warn</span>(<span class="st">"consumer[%d] skipped %d frames (lag %d→%d, stopped at %s)"</span>,
+                  consumer_id, skipped, lag, w - r,
+                  (r == last_i_frame) ? <span class="st">"I-frame"</span> : <span class="st">"target"</span>);
+    }
+    <span class="kw">return</span> skipped;
+}
+
+<span class="cm">// 关键设计决策：</span>
+<span class="cm">// 1. I 帧不跳过 → 消费者至少能正确解码后续 P 帧</span>
+<span class="cm">// 2. 跳过的帧不是简单丢弃——是减少引用计数(可能触发回收)</span>
+<span class="cm">// 3. 跳帧后 update_min_read_cursor()——让 write_cursor 可以继续前进</span></div>
+
+<div class="chain"><span class="cm">// 跳帧前后对比 — 以 AI 检测消费者为例</span>
+
+<b>跳帧前 (AI 检测严重滞后):</b>
+  write_cursor =  <u>58</u>
+  AI read_cursor = <u>52</u>  ← 落后 6 帧 (200ms@30fps) —— 超过 skip_threshold=4
+
+  slot[0..7]:  seq50(P)  seq51(P)  seq52(I)  seq53(P)  seq54(P)  seq55(P)  seq56(P)  seq57(P)
+                   ▲                                                     ▲         ▲
+               AI cursor=52                                         write=58   AI 应读的帧
+               (已读过 seq50)
+               seq51~seq57: AI 没来得及读 ← 需要跳帧
+
+<b>跳帧执行 (AI 消费者 skip_frames):</b>
+  1. r=52 → slot[52%8]=seq52(I帧!) → <b>break, 停在 seq52</b>
+  2. 没有跳过任何 P 帧因为第一个遇到的就是 I 帧
+  3. AI cursor ← 52
+
+<b>跳帧后:</b>
+  AI read_cursor = <u>52</u>  ← 仍然落后，但已经停在最近的 I 帧上
+  下一帧 recv 时: AI 将读取 seq52(I帧) → 可以正确解码后续所有 P 帧
+  min_read_cursor = min(52, ...) → 如果其他消费者也都 >=52, seq50~51 可被覆盖
+
+<span class="cm">// 如果 seq52~seq57 全是 P 帧 (无 I 帧)：</span>
+<b>跳帧前:</b>
+  AI read_cursor = <u>52</u>, write_cursor = <u>58</u>, lag=6, target = 58-2 = 56
+
+<b>跳帧执行:</b>
+  r=52 → P → skip, unref → r=53
+  r=53 → P → skip, unref → r=54
+  r=54 → P → skip, unref → r=55
+  r=55 → P → skip, unref → r=56 → r >= target → <b>stop</b>
+  AI cursor ← 56 ← 一下子跳过了 4 帧，从落后 6 帧变成落后 2 帧
+
+<b>效果:</b>
+  AI 消费者: 跳过了 4 帧 (seq52~55)，下一帧读取 seq56
+  编码器消费者: 完全不受影响——它的 read_cursors[0] 仍然是 58</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>跳帧策略的多级配置</h4>
+    <div class="lbl">不同消费者类型 — 不同的阈值配置</div>
+    <div class="cb" style="margin-top:6px;font-size:10.5px;line-height:1.6"><span class="cm">// 典型配置</span>
+<span class="kw">struct</span> skip_config {
+    <span class="kw">uint32_t</span> skip_threshold;  <span class="cm">// 触发跳帧的落后帧数</span>
+    <span class="kw">uint32_t</span> keep_behind;     <span class="cm">// 跳帧后保留多少帧缓冲</span>
+    <span class="kw">bool</span>     skip_i_frame;    <span class="cm">// 极端情况下是否跳过 I 帧</span>
+    <span class="kw">uint32_t</span> max_consecutive; <span class="cm">// 最大连续跳帧数(超过报警)</span>
+} configs[<span class="nu">4</span>] = {
+    <span class="cm">// Consumer 0: 编码器 — 绝对不能跳 I 帧</span>
+    { .skip_threshold=<span class="nu">3</span>, .keep_behind=<span class="nu">1</span>, .skip_i=<span class="kw">false</span>, .max=<span class="nu">5</span>  },
+    <span class="cm">// Consumer 1: AI 检测 — 允许大量跳帧(推理结果不是每帧都需要)</span>
+    { .skip_threshold=<span class="nu">4</span>, .keep_behind=<span class="nu">2</span>, .skip_i=<span class="kw">false</span>, .max=<span class="nu">30</span> },
+    <span class="cm">// Consumer 2: 网络发送 — 实时预览，保守策略</span>
+    { .skip_threshold=<span class="nu">2</span>, .keep_behind=<span class="nu">1</span>, .skip_i=<span class="kw">false</span>, .max=<span class="nu">10</span> },
+    <span class="cm">// Consumer 3: SD 存储 — 严格不跳帧(录像完整性)</span>
+    { .skip_threshold=<span class="nu">6</span>, .keep_behind=<span class="nu">3</span>, .skip_i=<span class="kw">false</span>, .max=<span class="nu">0</span>  },
+    <span class="cm">// max=0 表示不跳帧: SD 存储宁愿堆积也不能丢录像</span>
+};</div>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>跳帧对音视频同步的影响与对策</h4>
+    <div class="lbl">跳视频帧 → AV 不同步？→ 需要联动</div>
+    <p>当视频消费者跳帧时——音频消费者<strong>不能独立跳帧</strong>——否则 A/V 不同步。涂鸦的策略：<br>
+    ① <strong>音频主时钟</strong>：音频流作为同步基准，<strong>从不跳帧</strong>（音频跳帧 = 爆音/断续，人耳极其敏感）。<br>
+    ② <strong>视频跟随音频</strong>：视频消费者跳帧时，不是随机跳过——而是<strong>跳到 PTS 最接近音频当前位置</strong>的那一帧。实现：视频跳帧时查询音频 Channel 的当前 PTS → 跳过所有 PTS < audio_pts - 容忍窗口（如 40ms）的视频帧 → 停留在 audio_pts 附近的第一帧。<br>
+    ③ <strong>快速追帧</strong>：如果视频落后太多（>500ms），不逐帧跳——直接 seek 到最近的 I 帧 + audio_pts 位置，<strong>瞬间恢复同步</strong>。代价是 0.5-1s 的视频空白（可用上一帧 freeze 填补）。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 跳帧策略的三大禁忌</div>
+  <strong>1. 禁止在跳帧时直接释放被其他消费者引用的 BufferNode。</strong>跳帧时调用 unref 将引用计数-1——<strong>只有计数归零时才真正回收</strong>。如果编码器还在引用 seq=52（ref=2），AI 跳帧时 unref → ref=1 → buffer 仍然有效，编码器继续使用。这是引用计数的核心价值。<br>
+  <strong>2. 禁止跳过连续的 N 个 I 帧。</strong>即使配置了 skip_i_frame=true（极端降级模式），也要保证<strong>至少保留一个 I 帧</strong>给解码器。连续跳过所有 I 帧 → 解码器无法初始化 → 花屏直到下一个 I 帧。实现：skip_i_frame 模式下记录 <code>last_i_frame_kept_seq</code>，保证两个保留的 I 帧之间不超过 GOP 的 2 倍距离。<br>
+  <strong>3. 禁止在持锁状态下做耗时操作。</strong>跳帧时释放 buffer（unref）可能触发 DMA-BUF 的 unmap 操作（需要 invalidate cache → 耗时 μs~ms 级）——<strong>必须在锁外执行</strong>。涂鸦的实现：跳帧循环在锁内只做 cursor 更新 + ref 计数减，unref 的实际释放操作<strong>延迟到锁外</strong>批量处理。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 音视频 Ring Buffer 设计与实现 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>
