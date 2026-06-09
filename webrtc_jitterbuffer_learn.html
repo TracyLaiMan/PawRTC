@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WebRTC JitterBuffer 深度剖析 — 抖动消除与自适应缓冲</title>
-<link rel="stylesheet" href="../immersive_dark_style.css">
+<link rel="stylesheet" href="immersive_dark_style.css">
 <style>
 .doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
 .sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
@@ -617,7 +617,7 @@ D(i-<span class="nu">1</span>,i) = (R_i − R_{i-<span class="nu">1</span>}) −
   }
   function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); var a=Math.atan2(y2-y1,x2-x1),s=7; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-s*Math.cos(a-Math.PI/6),y2-s*Math.sin(a-Math.PI/6)); ctx.lineTo(x2-s*Math.cos(a+Math.PI/6),y2-s*Math.sin(a+Math.PI/6)); ctx.closePath(); ctx.fill(); }
 
-  var m=14, cx=W/2, cw=(W-m2)/3-8;
+  var m=14, cx=W/2, cw=(W-m*2)/3-8;
 
   // RTP Input
   box(m+W*0.35, 16, W*0.3, 36, 'RTP Packets Arrive', '乱序 · 抖动 · 丢包', 'rgba(248,113,113,0.15)');
