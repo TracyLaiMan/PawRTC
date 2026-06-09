@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频 AGC 自动增益控制 — 从信号处理到 WebRTC 实战</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+.cd ul { margin: 6px 0 0 16px; font-size: 12px; color: #9999bb; line-height: 1.8; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+.st code { font-size: 10px; }
+
+.freq-wrap { width: 100%; background: rgba(0,0,0,.15); border-radius: 12px; padding: 20px; margin: 16px 0;
+  border: 1px solid rgba(255,255,255,.04); text-align: center; }
+.freq-wrap canvas { max-width: 100%; }
+
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.6; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+
+.formula { background:rgba(0,0,0,.2); border:1px solid rgba(108,99,255,.12); border-radius:10px;
+  padding:14px 18px; margin:12px 0; font-family:"JetBrains Mono",monospace;
+  font-size:12px; color:#d0d0e0; text-align:center; line-height:1.9; }
+.formula .hl { color:#a78bfa; font-weight:700; }
+.formula .hlg { color:#34d399; font-weight:700; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">音频 AGC 自动增益控制</h2>
+  <p class="sec-sub">从模拟电路到数字信号处理 — 电平估计 · 增益平滑 · 噪声门限 · 压缩曲线 · WebRTC 源码拆解</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>原始 PCM</strong><br><small>-60dB ~ 0dBFS</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>电平估计</strong><br><small>RMS / Peak / Envelope</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>增益计算</strong><br><small>压缩曲线 · 查表</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>平滑输出</strong><br><small>Attack/Hold/Release</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>增益后 PCM</strong><br><small>-30dB ~ -6dBFS</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>为什么需要 AGC？</h4><div class="sub">麦克风距离 · 说话音量 · 网络会议</div>
+      <p>同一场景不同人说话音量可能差 <em>30dB</em>。AGC 自动将输入电平调整到目标范围，保证下游编码器 (Opus/SILK) 接收到<strong>最优电平时</strong>的信号——不会因太轻而量化噪声大，也不会因太响而削波。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>AGC ≠ 压缩器</h4><div class="sub">时间常数决定本质区别</div>
+      <p>AGC 的 Attack/Release 以<strong>数百毫秒到秒</strong>计 — 目标是让"整句话"听起来均匀。压缩器 (Compressor) 的 Attack/Release 以<strong>微秒到毫秒</strong>计 — 目标是控制单个<em>瞬态峰值</em>。WebRTC 同时有 AGC 和 Limiter。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>三大核心指标</h4><div class="sub">Target Level · Attack · Release</div>
+      <p><strong>Target Level</strong>: 输出目标电平 (dBFS)。<strong>Attack Time</strong>: 信号变响后多快降低增益。<strong>Release Time</strong>: 信号变轻后多快提升增益。三者共同决定了 AGC 的"手感"——太快则呼吸效应，太慢则响应迟钝。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- Ch1: 信号基础 -->
+<h2 class="sh">1. 信号基础 — 电平、分贝、响度的三角关系</h2>
+<p class="ss">理解 dBFS · RMS · Peak · 人耳响度感知 (等响曲线) — AGC 处理对象的物理定义</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>分贝 (dB) — 对数世界的标尺</h4>
+    <div class="lbl">人耳感知的是比值，不是绝对值</div>
+    <p>
+    人耳可以感知 <em>20µPa ~ 20Pa</em> 的声压范围——跨度 <strong>1,000,000 倍</strong>。线性标尺不可用 → 必须用对数。<br>
+    <strong>dBFS</strong> (dB Full Scale): 数字音频的绝对电平。0 dBFS = <em>满量程</em> (不能超过，超过即削波)。所有正常信号都是负值。<br>
+    <strong>dBov</strong>: 相对于 overload point — 通话标准常用。<br>
+    <strong>dB SPL</strong>: 声压级 (物理世界) — 0dB SPL = 人耳听阈，120dB SPL = 痛阈。<br>
+    <strong>感知法则</strong>: +10dB ≈ 主观"响了一倍"；+3dB ≈ "刚能听出差异"。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>三种电平度量 — Peak vs RMS vs Envelope</h4>
+    <div class="lbl">不同度量方式决定了 AGC 的行为</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// Peak (峰值) — 10ms 帧内绝对值的最大值</span>
+Peak = <span class="fn">max</span>(|x[n]|),  n = <span class="nu">0</span>..N-<span class="nu">1</span>
+Peak_dB = <span class="nu">20</span> × <span class="fn">log₁₀</span>(Peak)
+
+<span class="cm">// RMS (均方根) — 反映信号"平均功率"</span>
+RMS = √( <span class="nu">1</span>/N × Σ x[n]² )
+RMS_dB = <span class="nu">20</span> × <span class="fn">log₁₀</span>(RMS)
+
+<span class="cm">// Crest Factor (峰值因子) = Peak/RMS</span>
+<span class="cm">// 语音: 12~18dB  |  正弦波: 3dB  |  白噪声: ~10dB</span>
+
+<span class="cm">// Envelope (包络) — 攻击快、释放慢的峰值跟踪</span>
+<span class="cm">// 更接近人耳对响度的感知</span></div>
+  </div>
+</div>
+
+<div class="freq-wrap">
+<canvas id="levelCanvas"></canvas>
+</div>
+
+<div class="callout info">
+  <div class="ct">🔑 Peak vs RMS — AGC 该用哪个？</div>
+  <strong>Peak 检测</strong>: 防止削波——但语音 crest factor 高达 18dB，纯 peak 会导致 AGC 过度压低 → 大部分信号低于目标 10~15dB → <em>听感偏轻</em>。<br>
+  <strong>RMS 检测</strong>: 与响度感知更相关——但无法及时捕捉瞬态峰值 → 有削波风险。<br>
+  <strong>最佳实践</strong>: <em>RMS 做主控 + Peak 做安全限幅</em>。RMS 决定增益值，Peak 仅用于检测是否需要硬性限幅 (limiter)。这正是 WebRTC AGC 的做法。
+</div>
+
+<!-- Ch2: AGC 架构 -->
+<h2 class="sh">2. AGC 信号处理流水线 — 五个阶段详解</h2>
+<p class="ss">电平估计 → 增益计算 → 时间平滑 → 噪声门限 → 增益应用 — 一步步拆解</p>
+
+<div class="freq-wrap">
+<canvas id="agcPipelineCanvas"></canvas>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.1 Stage ① — 电平估计 (Level Estimation)</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>滑动窗口 RMS</h4>
+    <div class="lbl">最常用的数字 AGC 电平估计方法</div>
+    <p>
+    将输入 PCM 分成 N 个采样点的帧 (典型 10ms = 480 samples @ 48kHz)，计算每帧 RMS：<br>
+    <code>rms = sqrt( Σx[n]² / N )</code><br>
+    <strong>优点</strong>: 简单、稳定、与响度相关性好。<br>
+    <strong>缺点</strong>: 帧内时间分辨率低 (10ms → 无法捕获 < 10ms 的瞬态)。<br>
+    <strong>优化</strong>: 用 <em>重叠窗口</em> (50% overlap) → 每 5ms 就能更新一次电平估计，同时保持 10ms 的积分窗口长度。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>指数平滑包络 (RC 滤波器)</h4>
+    <div class="lbl">模拟硬件的攻击/释放时间常数</div>
+    <p>
+    不用固定帧，而是用<strong>两个不同时间常数的单极点 IIR 滤波器</strong>跟踪信号包络：<br>
+    <strong>Attack (快)</strong>: 当 <code>|x[n]| > envelope[n-1]</code> → α = α_attack (小，快速跟踪)<br>
+    <strong>Release (慢)</strong>: 当 <code>|x[n]| < envelope[n-1]</code> → α = α_release (大，缓慢衰减)<br>
+    <code>envelope[n] = α × |x[n]| + (1-α) × envelope[n-1]</code><br>
+    这直接对应<strong>模拟 VU 表的指针行为</strong>——快升慢降。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>K-weighted 滤波 — 模拟人耳</h4>
+    <div class="lbl">ITU-R BS.1770 响度计量标准</div>
+    <p>
+    在做 RMS 之前，先通过<strong>K-weighting 滤波器</strong>:<br>
+    <strong>高通</strong>: 38Hz 二阶高通 (滤除次声波/风噪/空调嗡声)<br>
+    <strong>高频 shelf</strong>: +4dB @ 1.5kHz 以上 (补偿人耳对中高频更敏感)<br>
+    这样做出来的电平估计<strong>更接近人耳实际感知到的响度</strong>，而不是物理声压。ITU BS.1770 的 LUFS 响度计量就是基于 K-weighted RMS。<br>
+    WebRTC AGC 的数字模式使用了类似思路的预加重。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">2.2 Stage ② — 增益计算 (Gain Computation)</h3>
+
+<div class="formula">
+  <span class="cm">// 核心公式 — 看似简单，细节都在曲线形状里</span>
+
+  所需增益:  <span class="hl">G_dB</span> = <span class="hlg">Target_dB</span> − <span class="hl">Input_dB</span>
+
+  <span class="cm">// 但直接应用这个 G_dB 会有问题:</span>
+  <span class="cm">// 1. 太轻的信号 → G_dB 过大 → 噪声也被放大 → 需要 Noise Gate</span>
+  <span class="cm">// 2. 太响的信号 → G_dB 为负 → 需限制最大衰减量 → 需要 Limiter</span>
+  <span class="cm">// 3. G_dB 剧烈变化 → 人耳感知到"呼吸声" → 需要平滑</span>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>压缩曲线 (Compression Curve)</h4>
+    <div class="lbl">增益不是线性的 — 它是一条分段曲线</div>
+    <p>
+    <strong>Knee 下方 (低电平)</strong>: 增益随输入升高而降低——小声时多放大，大声时少放大 → 压缩动态范围。<br>
+    <strong>Knee 上方 (高电平)</strong>: 增益固定为 0dB (1:1 直通) — 已经够响了，不需要再处理。<br>
+    <strong>Noise Floor 以下</strong>: 增益设为 −∞ dB (静音) — 纯噪声，不放大。<br>
+    <strong>Compression Ratio</strong>: 比如 2:1 — 输入增加 2dB 只让输出增加 1dB。<br>
+    典型语音 AGC ratio: <em>3:1 ~ 10:1</em> (激进压缩动态范围，让音量更均匀)。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>查表法 (LUT) — 避免实时计算对数</h4>
+    <div class="lbl">WebRTC 的做法: dB → gain 预计算</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 预计算增益表 (0~255 量化)</span>
+<span class="kw">for</span> (<span class="ty">int</span> i = <span class="nu">0</span>; i &lt; <span class="nu">256</span>; i++) {
+    <span class="cm">// i = 输入电平的量化表示</span>
+    <span class="ty">float</span> input_dB = i_to_dB(i);
+    <span class="ty">float</span> target_dB = compression_curve(input_dB);
+    gain_table[i] = <span class="fn">pow</span>(<span class="nu">10</span>, (target_dB - input_dB) / <span class="nu">20</span>);
+}
+
+<span class="cm">// 运行时 O(1) 查表:</span>
+gain_linear = gain_table[level_index];
+
+<span class="cm">// 好处: 无 log/pow 浮点运算</span>
+<span class="cm">// 曲线形状可任意设计 (分段/多项式)</span></div>
+  </div>
+</div>
+
+<!-- Ch3: 时间平滑 -->
+<h2 class="sh">3. 时间平滑 — Attack · Hold · Release 三段式状态机</h2>
+<p class="ss">这 5 个参数决定了 AGC 的"手感"——太大则呼吸效应，太小则响应迟钝</p>
+
+<div class="freq-wrap">
+<canvas id="smoothingCanvas"></canvas>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Attack Time (起音时间)</h4>
+    <div class="lbl">输入突然变响 → 增益快速降低</div>
+    <p>
+    信号从<strong>轻声变到大声</strong>时，AGC 多快降低增益。<br>
+    典型值: <em>1~10ms</em> (非常快)。<br>
+    为什么这么快？因为大声信号可能<strong>立刻削波</strong>——必须在几个采样周期内把增益拉下来。<br>
+    <strong>太快的问题</strong>: 增益变化跟不上波形 — 引入可听失真。需要微小平滑 (1~3ms 过渡)。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Hold Time (保持时间)</h4>
+    <div class="lbl">增益降低后保持多长时间不变</div>
+    <p>
+    Attack 把增益拉低后，不要立即 Release — <strong>先保持一段时间</strong>。<br>
+    典型值: <em>50~200ms</em>。<br>
+    <strong>作用</strong>: 防止语音在<em>音节间隙</em>（如爆破音 p/t/k 之后的短暂停顿）时增益回升 → 下一个音节又被放大 → 增益再次降低 → <em>"泵浦感"</em>。<br>
+    语音的音节间隔约 100~200ms → hold > 200ms 可跨过大部分音节间隙。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Release Time (释放时间)</h4>
+    <div class="lbl">输入变轻 → 增益缓慢提升</div>
+    <p>
+    信号从<strong>大声变到轻声</strong>时，AGC 多快提升增益。<br>
+    典型值: <em>200~1000ms</em> (慢)。<br>
+    <strong>为什么这么慢</strong>: 语音有自然的强弱起伏 — 如果增益回升太快，正常说话的<em>句末降调</em>会被放大 → 听感不自然。<br>
+    <strong>太慢的问题</strong>: 说话者突然变小声 → 需要等很久才能恢复到正常音量。<br>
+    <strong>自适应释放</strong>: 根据信号统计 (历史峰值 vs 当前) 动态调整释放速率。
+    </p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 呼吸效应 (Breathing / Pumping) — AGC 最常见的音质问题</div>
+  <strong>现象</strong>: 背景噪声随语音的强弱而<strong>起伏</strong>——说话时噪声被压下去，停顿时噪声又升上来 → 感觉"有人在耳机里呼吸"。<br>
+  <strong>根因</strong>: Release time 太短 + Noise Gate 阈值设定不当 → AGC 在语音间隙放大背景噪声。<br>
+  <strong>解决方案</strong>: ① 增加 Hold Time → 跨过音节间隙 ② 降低 Noise Gate 阈值 → 噪声以下信号不放大 ③ 使用<strong>独立噪声估计器</strong> (WebRTC AGC 的 noise estimation 子模块) → 增益计算时自动扣除噪声分量。
+</div>
+
+<!-- Ch4: 噪声门限与静音抑制 -->
+<h2 class="sh">4. 噪声门限 (Noise Gate) — 别放大"不该放大"的东西</h2>
+<p class="ss">噪声估计 · 自适应阈值 · 软拐点 — 区分"轻声说话"和"背景噪音"的科学</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>固定阈值 vs 自适应阈值</h4>
+    <div class="lbl">噪声是会变的 — 阈值必须跟着变</div>
+    <p>
+    <strong>固定阈值</strong>: <code>若 RMS < −50 dBFS → 静音</code>。问题：安静房间里 −50dBFS 是正确的，但嘈杂咖啡厅里 −50dBFS 已经是有效语音了。<br>
+    <strong>自适应阈值</strong>: 持续估计<em>噪声底噪 (Noise Floor)</em> → <code>阈值 = NoiseFloor + margin</code> (典型 margin = 12~15dB)。<br>
+    <strong>噪声估计方法</strong>:<br>
+    • <strong>最小值统计</strong>: 过去 N 秒内 RMS 的最小值 → 近似噪声底噪。<br>
+    • <strong>语音活动检测 (VAD)</strong>: VAD=0 的帧 → 更新噪声估计。<br>
+    • <strong>分位数跟踪</strong>: 取 P10 (10th percentile) → 它就是噪声底噪 (统计上语音不太可能出现在 P10)。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>软拐点 (Soft Knee) — 消除开关感</h4>
+    <div class="lbl">不要"啪"一下关掉，要平滑过渡</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 硬门限 (Hard Gate) — 有开关声</span>
+<span class="kw">if</span> (level < threshold) gain = <span class="nu">0</span>;
+
+<span class="cm">// 软门限 (Soft Gate) — 过渡区线性渐变</span>
+<span class="kw">if</span> (level < low_knee)          gain = <span class="nu">0</span>;
+<span class="kw">else if</span> (level < high_knee)
+    gain = (level - low_knee) / (high_knee - low_knee);
+<span class="kw">else</span>                             gain = <span class="nu">1</span>;
+
+<span class="cm">// 典型: low_knee = NoiseFloor+6dB</span>
+<span class="cm">//       high_knee = NoiseFloor+15dB</span>
+<span class="cm">// 在 9dB 过渡区内, 增益从 0 平滑上升到 1</span></div>
+  </div>
+</div>
+
+<!-- Ch5: Digital AGC -->
+<h2 class="sh">5. 全数字 AGC — 定点实现与量化</h2>
+<p class="ss">对数域运算 · 定点 Q 格式 · dB → linear 转换 · SIMD 加速</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>为什么在对数域做 AGC？</h4>
+    <div class="lbl">乘法变加法 · 人耳对数感知 · 动态范围压缩</div>
+    <p>
+    <strong>线性域</strong>: <code>y[n] = x[n] × gain_linear</code><br>
+    <strong>对数域</strong>: <code>y_dB = x_dB + gain_dB</code><br>
+    对数域运算把<strong>乘法变加法</strong> → 在定点 DSP 上效率高得多。而且增益的平滑、压缩曲线、阈值判断都在对数域更自然。<br>
+    <strong>格式</strong>: 常用 Q8.8 或 Q4.12 定点格式表示 dB 值，0.1dB 精度足够。<br>
+    <strong>dB → linear 转换</strong>: 只在最后增益应用时做一次 <code>pow10(dB/20)</code> → 可用<strong>多项式近似</strong> 或<strong>查表</strong> 避免真正的 pow 计算。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>定点 AGC 完整流程</h4>
+    <div class="lbl">Q15 PCM → Q8.8 dB → 查表 → Q15 PCM 输出</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// 1. PCM → dB (对数域) — 用近似 log2</span>
+<span class="ty">int16_t</span> rms_q15 = <span class="fn">calc_rms</span>(pcm_in);
+<span class="ty">int16_t</span> level_db = <span class="fn">log2_to_db</span>(<span class="fn">approx_log2</span>(rms_q15));
+
+<span class="cm">// 2. 查压缩曲线表 → 目标增益 (dB)</span>
+<span class="ty">int16_t</span> target_gain_db = <span class="fn">compression_lut</span>[level_db_idx];
+
+<span class="cm">// 3. Attack/Hold/Release 平滑</span>
+gain_db = <span class="fn">smooth_gain</span>(gain_db, target_gain_db, state);
+
+<span class="cm">// 4. dB → linear (查表)</span>
+<span class="ty">int16_t</span> gain_q15 = <span class="fn">db_to_linear_lut</span>[gain_db_idx];
+
+<span class="cm">// 5. 应用增益</span>
+pcm_out[i] = (<span class="ty">int16_t</span>)(((<span class="ty">int32_t</span>)pcm_in[i] * gain_q15) >> <span class="nu">15</span>);</div>
+  </div>
+</div>
+
+<!-- Ch6: WebRTC AGC -->
+<h2 class="sh">6. WebRTC AGC — 源码深度解读</h2>
+<p class="ss">三个 AGC 模式 · 数字增益控制器 · 模拟增益控制器 · 关键代码路径 · 参数推荐</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">6.1 WebRTC AGC 三种模式</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>模式</th><th>枚举</th><th>处理位置</th><th>特点</th><th>适用场景</th></tr></thead>
+  <tbody>
+    <tr><td class="g"><strong>kAgcModeAdaptiveDigital</strong></td><td>3</td><td>全数字域</td><td>纯 DSP AGC — 无硬件依赖，自适应噪声门限</td><td>VoIP / 视频会议 / 通用</td></tr>
+    <tr><td class="y"><strong>kAgcModeAdaptiveAnalog</strong></td><td>2</td><td>模拟 + 数字混合</td><td>先尝试调节硬件麦克风增益 (模拟域)，再补数字增益</td><td>有硬件增益控制的设备 (手机/笔记本)</td></tr>
+    <tr><td><strong>kAgcModeFixedDigital</strong></td><td>1</td><td>全数字域</td><td>固定压缩曲线 — 无自适应，最简单的模式</td><td>电平已知的场景 (测试/回放)</td></tr>
+    <tr><td class="r"><strong>kAgcModeUnchanged</strong></td><td>0</td><td>—</td><td>不做任何处理 — 透传</td><td>调试对比</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">6.2 Adaptive Digital AGC — 核心处理链路</h3>
+
+<div class="chain">
+<span class="cm">/* ═══ WebRTC AGC 处理调用链 (modules/audio_processing/agc/) ═══ */</span>
+
+<b>输入: 10ms PCM 帧  (8/16/32 kHz, 16-bit mono)</b>
+
+<i>① 分频段 (可选, 默认关闭)</i>
+  └── <b>WebRtcAgc_Process()</b> — 入口
+        ├── 降采样到 8kHz 用于分析 (低通 + 抽取)
+        ├── <i>RMS 计算</i> (10ms 帧的短时能量)
+        ├── <i>VAD (语音活动检测)</i> — 仅语音帧参与电平估计
+        └── <b>WebRtcAgc_ComputeDigitalGains()</b>
+              ├── <i>噪声估计</i>: 非语音帧 → 更新 noise floor
+              ├── <i>目标电平计算</i>: VAD 帧的能量 → EWMA 平滑
+              ├── <i>增益计算</i>: 查压缩曲线表 → digital_gain_dB
+              ├── <i>增益平滑</i>: Attack/Hold/Release 状态机
+              └── <b>WebRtcAgc_ApplyDigitalGains()</b>
+                    ├── <i>dB → linear</i> 查表转换
+                    └── <i>增益应用</i>: PCM_out = PCM_in × gain_linear
+
+<b>输出: 增益后 10ms PCM 帧 → 编码器 (Opus/SILK)</b>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">6.3 WebRTC AGC 关键参数与推荐值</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>参数</th><th>范围</th><th>默认</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>targetLevelDbfs</code></td><td>−31 ~ 0 dBFS</td><td class="g">−3 dBFS</td><td>输出目标电平——AGC 试图把语音调节到此处</td></tr>
+    <tr><td><code>compressionGaindB</code></td><td>0 ~ 90 dB</td><td class="g">9 dB</td><td>最大可提供的增益——小声最多被放大 9dB</td></tr>
+    <tr><td><code>limiterEnable</code></td><td>true/false</td><td class="g">true</td><td>启用硬性限幅——防止输出超过 0dBFS</td></tr>
+    <tr><td><code>targetLevelDbfs for Digital</code></td><td>—</td><td class="y">−3 ~ −6</td><td>自适应数字模式建议 −6 (留余量给网络编码)</td></tr>
+    <tr><td>Attack (内部固定)</td><td>—</td><td>~10ms</td><td>不可调——WebRTC 内部硬编码</td></tr>
+    <tr><td>Release (内部固定)</td><td>—</td><td>~500ms</td><td>不可调——长时间常数避免呼吸效应</td></tr>
+    <tr><td>Noise Gate (内部自适应)</td><td>—</td><td>NoiseFloor+14dB</td><td>噪声以下不放大——基于 VAD 的噪声估计</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">📂 WebRTC AGC 源码速查</div>
+  <strong>核心文件</strong>: <code>modules/audio_processing/agc/</code><br>
+  <code>agc_manager_direct.cc</code> — AGC Manager (Digital mode 入口)<br>
+  <code>legacy/analog_agc.c</code> — 模拟增益控制器 (Adaptive Analog 模式)<br>
+  <code>legacy/digital_agc.c</code> — 数字增益控制器 (Fixed Digital 模式)<br>
+  <code>agc.cc</code> — Adaptive Digital 核心 (VAD + 噪声估计 + 增益计算)<br>
+  <code>gain_control.h</code> — AudioProcessing::GainControl 公开 API 接口<br>
+  <code>loudness_histogram.cc</code> — 响度直方图统计 (用于自适应压缩曲线)<br>
+  <strong>调用入口</strong>: <code>AudioProcessingImpl::ProcessStream()</code> → <code>GainControlImpl:: Analyze()/Process()</code>
+</div>
+
+<!-- Ch7: 常见问题 -->
+<h2 class="sh">7. AGC 常见音质问题与解决方案</h2>
+<p class="ss">泵浦感 · 削波 · 噪声放大 · 过慢响应 — 根因分析与调优</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>问题</th><th>听感描述</th><th>根因</th><th>解决方案</th></tr></thead>
+  <tbody>
+    <tr><td class="r"><strong>泵浦感 (Pumping)</strong></td><td>背景噪声随说话起伏，"耳机里有呼吸声"</td><td>Release 太快 · 噪声门限太低 · Hold 太短</td><td class="g">↑ Hold 200→400ms · ↑ Release 500→800ms · 启用自适应噪声门限</td></tr>
+    <tr><td class="y"><strong>削波 (Clipping)</strong></td><td>声音突然炸裂、刺耳的"咔哒"声</td><td>Attack 太慢 · Limiter 未启用 · targetLevel 太靠近 0dBFS</td><td class="g">↓ Attack 5→1ms · 启用 Limiter · targetLevel ≤ −6dBFS</td></tr>
+    <tr><td class="y"><strong>噪声放大</strong></td><td>安静时听到明显的"嘶嘶"底噪</td><td>Noise Gate 阈值太低 · 噪声估计不准确</td><td class="g">↑ Noise Gate margin 10→15dB · 降低 compressionGaindB 上限</td></tr>
+    <tr><td><strong>响应迟钝</strong></td><td>说话者音量变了但 AGC 很久才跟上</td><td>Attack/Release 过长 · 电平估计窗口太大</td><td class="g">↓ Release 800→300ms · 用 5ms 重叠窗口替代 10ms 帧</td></tr>
+    <tr><td><strong>过冲 (Overshoot)</strong></td><td>刚开口时前几个字特别响，然后才降下来</td><td>Attack 不够快 · 初始增益太高</td><td class="g">↓ Attack 10→3ms · 初始化增益为保守值 0dB</td></tr>
+    <tr><td><strong>音量不均匀</strong></td><td>不同人/不同距离音量差别仍然大</td><td>Compression Ratio 太小 · targetLevel 设置不当</td><td class="g">↑ Ratio 3:1→8:1 · 确保 targetLevel 在编码器推荐范围内</td></tr>
+    <tr><td><strong>编解码器兼容性</strong></td><td>编码器输入电平过高导致内部削波</td><td>AGC 输出 > 编码器期望输入</td><td class="g">Opus: targetLevel ≤ −6dBFS · SILK: targetLevel ≤ −3dBFS</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success" style="margin-top:16px">
+  <div class="ct">✅ AGC 调优黄金法则</div>
+  <strong>1. 先测后调</strong> — 录一段典型场景的原始音频，分析 RMS 分布，确定需要的增益范围。<br>
+  <strong>2. 从保守开始</strong> — targetLevel = −6dBFS、compressionGaindB = 6dB、Noise Gate = 15dB margin → 听效果 → 逐步调高。<br>
+  <strong>3. 用 VAD 辅助</strong> — 始终只在语音段做 AGC (VAD=1)，否则噪声估计会偏 → 底噪被放大。<br>
+  <strong>4. 两个场景分别测试</strong>: 近距离 (10cm) 大声 + 远距离 (1m) 小声 — 看 AGC 能否把两者调到相近的输出电平。<br>
+  <strong>5. AGC 之后接 Limiter</strong> — AGC 防止长期电平不均，Limiter 防止瞬时削波。两者不是替代关系。<br>
+  <strong>6. 别在 AGC 之后再来一个 AGC</strong> — 如果编码器自带 AGC (如 Opus 的 <code>OPUS_SET_GAIN</code>)，确保只用一个。
+</div>
+
+<!-- Ch8: 快速参考 -->
+<h2 class="sh">8. AGC 核心公式与参数速查</h2>
+<p class="ss">所有关键公式 + 参数表一张看完</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>指标</th><th>公式/典型值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>RMS 电平</td><td><code>dBFS = 20 × log₁₀(√(Σx²/N))</code></td><td>N=480 (10ms@48kHz)</td></tr>
+    <tr><td>所需增益 (dB)</td><td><code>G_dB = Target_dB − Input_dB</code></td><td>clamped to [−limiter, +compressionGaindB]</td></tr>
+    <tr><td>Attack 平滑</td><td><code>α_attack = 1 − e^(−T_frame/T_attack)</code></td><td>T_attack = 1~10ms</td></tr>
+    <tr><td>Release 平滑</td><td><code>α_release = 1 − e^(−T_frame/T_release)</code></td><td>T_release = 200~1000ms</td></tr>
+    <tr><td>dB → Linear</td><td><code>gain_lin = 10^(dB/20)</code></td><td>或查 256 项 LUT</td></tr>
+    <tr><td>Crest Factor (语音)</td><td><code>Peak − RMS = 12~18 dB</code></td><td>AGC 用 RMS, Limiter 用 Peak</td></tr>
+    <tr><td>Compression Ratio</td><td><code>CR = ΔInput_dB / ΔOutput_dB</code></td><td>3:1~10:1 (语音)</td></tr>
+    <tr><td>Noise Gate Margin</td><td><code>Threshold = NoiseFloor + 12~15dB</code></td><td>自适应噪声估计</td></tr>
+    <tr><td>Opus 推荐输入电平</td><td><code>−6 dBFS (RMS)</code></td><td>targetLevel 的建议值</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Audio AGC Deep Dive · 2026-06 · WebRTC AudioProcessing · Signal Processing Fundamentals<br>
+  Reference: WebRTC source (modules/audio_processing/agc/) · ITU-R BS.1770 · AES E-Library
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+
+<!-- Level Measurement Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('levelCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=280;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var m=30, pad=45, gw=W-2*pad, gh=190;
+  var gx=pad, gy=m+10;
+
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for(var i=0;i<=10;i++){ ctx.beginPath(); ctx.moveTo(gx,gy+i*gh/10); ctx.lineTo(gx+gw,gy+i*gh/10); ctx.stroke(); }
+
+  // Axis labels
+  ctx.fillStyle='#7777aa'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('0 dBFS', gx-6, gy+6);
+  ctx.fillText('−60 dBFS', gx-6, gy+gh-4);
+
+  // Generate synthetic speech waveform
+  ctx.strokeStyle='#38bdf8'; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  var y0=gy+gh*0.5;
+  for(var i=0;i<=gw;i+=1){
+    var t=i/gw*20;
+    var env=0.5+0.5*Math.sin(t*0.7)*Math.sin(t*0.31); // slow amplitude envelope
+    var sig=env*Math.sin(t*15)*Math.exp(-((t-10)*(t-10))/8) + env*Math.sin(t*22)*Math.exp(-((t-15)*(t-15))/10);
+    var y=y0-sig*gh*0.36;
+    if(i==0)ctx.moveTo(gx+i,y);else ctx.lineTo(gx+i,y);
+  }
+  ctx.stroke();
+
+  // Peak envelope
+  var peakY=y0-gh*0.45;
+  ctx.strokeStyle='rgba(248,113,113,0.6)'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath();
+  for(var i=0;i<=gw;i+=4){
+    var t=i/gw*20;
+    var env=0.5+0.5*Math.sin(t*0.7)*Math.sin(t*0.31);
+    var y=y0-env*gh*0.42;
+    if(i==0)ctx.moveTo(gx+i,y);else ctx.lineTo(gx+i,y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#f87171'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Peak Envelope (快升慢降)', gx+gw-220, gy+gh*0.18);
+
+  // RMS bar (moving window)
+  var rmsY=y0+gh*0.08;
+  ctx.fillStyle='rgba(52,211,153,0.3)';
+  for(var i=230;i<=380;i+=4){ ctx.fillRect(gx+i,rmsY,3,gh*0.06); }
+  ctx.fillStyle='#34d399'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('RMS Window (10ms)', gx+260, rmsY+gh*0.04);
+
+  // Waveform label
+  ctx.fillStyle='#38bdf8'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('PCM Waveform (原始波形)', gx+10, gy+gh*0.3);
+
+  // dB scale annotation
+  ctx.fillStyle='#8888aa'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ 同一段语音的三种电平度量: 波形 (蓝色) · 峰值包络 (红色) · RMS 窗口 (绿色)', W/2, gy+gh+20);
+  ctx.fillText('AGC 通常使用 RMS 作为主控信号 —— 它与人耳响度感知最相关', W/2, gy+gh+38);
+})();
+</script>
+
+<!-- AGC Pipeline Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('agcPipelineCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=340;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function box(x,y,w,h,line1,line2,color,txtColor){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle=txtColor||'#fff'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(line1,x+w/2,y+h/2-4);
+    if(line2){ ctx.fillStyle='#ccccee'; ctx.font='9px "JetBrains Mono",monospace'; ctx.fillText(line2,x+w/2,y+h/2+13); }
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); var a=Math.atan2(y2-y1,x2-x1),s=7; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-s*Math.cos(a-Math.PI/6),y2-s*Math.sin(a-Math.PI/6)); ctx.lineTo(x2-s*Math.cos(a+Math.PI/6),y2-s*Math.sin(a+Math.PI/6)); ctx.closePath(); ctx.fill(); }
+
+  var m=14, y=24, bw=140, bh=64, gap=10;
+  var total=W-m2, nStages=5;
+  var sw=(total-bw*nStages)/(nStages-1);
+
+  // Stage boxes
+  var stages=[
+    {label:'① 电平估计', sub:'RMS · Peak · Envelope\nVAD 区分语音/噪声', c:'rgba(248,113,113,0.18)'},
+    {label:'② 噪声估计', sub:'自适应 Noise Floor\n最小值统计 · 分位数', c:'rgba(251,191,36,0.18)'},
+    {label:'③ 增益计算', sub:'压缩曲线查表\nTarget − Input = Gain', c:'rgba(56,189,248,0.18)'},
+    {label:'④ 时间平滑', sub:'Attack · Hold · Release\n防泵浦 · 去呼吸效应', c:'rgba(52,211,153,0.18)'},
+    {label:'⑤ 增益应用', sub:'dB → linear 转换\nPCM × gain → 输出', c:'rgba(167,139,250,0.18)'}
+  ];
+
+  stages.forEach(function(s,i){
+    box(m+i*(bw+sw), y, bw, bh, s.label, s.sub, s.c);
+    if(i<stages.length-1) arrow(m+i*(bw+sw)+bw, y+bh/2, m+(i+1)*(bw+sw), y+bh/2, 'rgba(108,99,255,0.4)');
+  });
+
+  // Input/Output labels
+  ctx.fillStyle='#f87171'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('原始 PCM (−60~0 dBFS)', m+bw/2, y-8);
+
+  ctx.fillStyle='#a78bfa'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('增益后 PCM (−30~−6 dBFS)', m+4*(bw+sw)+bw/2, y-8);
+
+  // Second row: control path
+  var cy=y+bh+24;
+  ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.fillRect(m, cy, W-m2, 72);
+  ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1; ctx.strokeRect(m, cy, W-m2, 72);
+
+  ctx.fillStyle='#9999bb'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('参数控制', m+12, cy+18);
+
+  var params=[
+    {x:m+12, y:cy+28, label:'Target Level', val:'−6 dBFS'},
+    {x:m+150, y:cy+28, label:'Compression Ratio', val:'3:1 ~ 10:1'},
+    {x:m+310, y:cy+28, label:'Noise Gate Margin', val:'+12~15 dB'},
+    {x:m+500, y:cy+28, label:'Attack / Hold / Release', val:'3ms / 200ms / 500ms'},
+  ];
+  params.forEach(function(p){
+    ctx.fillStyle='#a78bfa'; ctx.font='bold 10px "JetBrains Mono",monospace'; ctx.textAlign='left';
+    ctx.fillText(p.label, p.x, p.y+12);
+    ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace';
+    ctx.fillText(p.val, p.x, p.y+26);
+  });
+
+  // Feedback
+  ctx.strokeStyle='rgba(167,139,250,0.2)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(m+bw/2, y+bh); ctx.lineTo(m+bw/2, cy-4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(m+4*(bw+sw)+bw/2, y+bh); ctx.lineTo(m+4*(bw+sw)+bw/2, cy-4); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ AGC 五阶段处理流水线 + 全局参数控制', W/2, H-10);
+})();
+</script>
+
+<!-- Smoothing Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('smoothingCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=340;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var m=50, pad=60, gw=W-2*pad, gh=200;
+  var gx=pad, gy=m;
+
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for(var i=0;i<=8;i++){ ctx.beginPath(); ctx.moveTo(gx,gy+i*gh/8); ctx.lineTo(gx+gw,gy+i*gh/8); ctx.stroke(); }
+
+  // Y labels
+  ctx.fillStyle='#7777aa'; ctx.font='9px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('Input', gx-10, gy-4);
+  ctx.fillText('Gain', gx-10, gy+gh-4);
+
+  // Input signal (top half) — loud speech then silence then soft speech
+  var iy=gy+gh*0.25;
+  ctx.fillStyle='#9999bb'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('输入电平', gx-10, iy+4);
+
+  // Loud then silent then soft
+  ctx.fillStyle='rgba(248,113,113,0.3)'; ctx.fillRect(gx,iy-gh*0.12, gw*0.25, gh*0.18);
+  ctx.fillStyle='rgba(248,113,113,0.08)'; ctx.fillRect(gx+gw*0.28,iy-gh*0.03, gw*0.22, gh*0.04);
+  ctx.fillStyle='rgba(248,113,113,0.15)'; ctx.fillRect(gx+gw*0.52,iy-gh*0.07, gw*0.3, gh*0.09);
+  ctx.fillText('大声说话', gx+gw*0.12, iy-gh*0.16);
+  ctx.fillText('停顿', gx+gw*0.38, iy-gh*0.06);
+  ctx.fillText('轻声说话', gx+gw*0.66, iy-gh*0.1);
+
+  // Arrow down
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(gx+gw/2, gy+gh*0.35); ctx.lineTo(gx+gw/2, gy+gh*0.5); ctx.stroke();
+
+  // Gain response (bottom half) — showing attack/hold/release phases
+  var gy0=gy+gh*0.52;
+  ctx.fillStyle='#9999bb'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('增益响应', gx-10, gy0+4);
+
+  // Gain curve
+  ctx.strokeStyle='#34d399'; ctx.lineWidth=2.5;
+  ctx.beginPath();
+  var pts=[
+    [0, gh*0.23],                      // start: high gain (low input)
+    [gw*0.24, gh*0.23],                // level
+    [gw*0.25, gh*0.08],               // ATTACK: fast drop (3ms)
+    [gw*0.26, gh*0.04],
+    [gw*0.28, gh*0.04],               // HOLD
+    [gw*0.50, gh*0.04],               // HOLD continues through pause
+    [gw*0.52, gh*0.06],               // RELEASE: slow rise (500ms)
+    [gw*0.70, gh*0.16],
+    [gw*0.90, gh*0.22],
+    [gw, gh*0.23]
+  ];
+  pts.forEach(function(p,i){ if(i==0)ctx.moveTo(gx+p[0],gy0+gh*0.25-p[1]); else ctx.lineTo(gx+p[0],gy0+gh*0.25-p[1]); });
+  ctx.stroke();
+
+  // Phase labels
+  ctx.fillStyle='#f87171'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Attack ↓', gx+gw*0.255, gy0+gh*0.25-gh*0.23-10);
+  ctx.fillStyle='#fbbf24'; ctx.fillText('Hold —', gx+gw*0.39, gy0+gh*0.25-gh*0.23-10);
+  ctx.fillStyle='#34d399'; ctx.fillText('Release ↑', gx+gw*0.71, gy0+gh*0.25-0.04);
+
+  // Timeline legend
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ Attack (3ms): 防止削波, 增益快速下降  |  Hold (200ms): 跨音节间隙, 增益保持  |  Release (500ms): 缓慢回升, 避免泵浦感', W/2, gy+gh+24);
+  ctx.fillText('如果 Release 太快 (如 50ms) → 增益在每个音节间隙都回升 → 噪声被反复放大 → |而持续泵浦|', W/2, gy+gh+42);
+})();
+</script>
+
+</body>
+</html>
