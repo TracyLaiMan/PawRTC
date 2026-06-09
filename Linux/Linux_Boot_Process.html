@@ -416,6 +416,202 @@
         ├── run_init_process("/bin/sh")       <span class="cm">// 后备 #4 — 恢复 shell</span>
         └── panic("No init found")            <span class="cm">// 全部失败 → 内核 panic</span></div>
 
+<!-- ══════ Ch7x: 内核态→用户态转换 ══════ -->
+<h2 class="sh">7+. 内核 → 用户空间 — 最关键的"降权一跳"</h2>
+<p class="ss">从 EL1 特权线程到 EL0 受限进程 — CPU 上下文、页表权限、execve、eret 全链路拆解</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7+.1 内核态 vs 用户态 — 不只是"权限高低的区别"</h3>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>CPU 异常级别 (ARM64)</h4>
+    <div class="lbl">硬件强制隔离 — 不是软件约定</div>
+    <p>
+    <strong>EL0</strong> (Exception Level 0): <em>用户态</em> — 只能访问自己的虚拟地址空间，不能执行特权指令 (MSR/MRS 系统寄存器、WFI、HLT)。<br>
+    <strong>EL1</strong>: <em>内核态</em> — 能访问所有物理内存、控制 MMU、处理中断。<br>
+    <strong>EL2</strong>: Hypervisor (KVM/Xen)。<br>
+    <strong>EL3</strong>: Secure Monitor (ATF/OP-TEE)。<br>
+    <strong>x86 对应</strong>: Ring 0 (内核) / Ring 3 (用户)。<br>
+    任何 EL0→EL1 的转换<strong>必须通过异常</strong> (syscall / 中断 / abort) — 用户态不能直接调用内核函数。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>地址空间隔离 — 页表是关键</h4>
+    <div class="lbl">TTBR0 vs TTBR1 — 同一份页表, 两段映射</div>
+    <p>
+    Linux 使用<strong>两个页表基址寄存器</strong>实现隔离：<br>
+    <strong>TTBR0_EL1</strong>: 用户空间 (0x0000_0000_0000 ~ 0x0000_7FFF_FFFF)<br>
+    <strong>TTBR1_EL1</strong>: 内核空间 (0xFFFF_0000_0000 ~ 0xFFFF_FFFF_FFFF)<br>
+    用户态页表项设置了 <strong>AP[2:1]=00</strong> (EL0 不可访问内核页) + <strong>PXN</strong> (特权执行禁止：EL0 不能执行内核代码)。<br>
+    内核可以访问用户空间内存 (<code>copy_from_user()</code>)，但必须显式关闭 PAN (Privileged Access Never)。<br>
+    <strong>TTBR0 切换</strong> = 切换进程地址空间 → ASID 避免频繁 TLB flush。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>系统调用 — 唯一合法入口</h4>
+    <div class="lbl">用户态"敲门"内核的唯一通道</div>
+    <p>
+    <strong>ARM64 syscall 指令</strong>: <code>SVC #0</code> (Supervisor Call)<br>
+    <strong>x86-64</strong>: <code>SYSCALL</code> (Intel) / <code>SYSENTER</code> (AMD 老)<br>
+    <strong>RISC-V</strong>: <code>ECALL</code><br>
+    硬件行为：保存 PC→ELR_EL1、PSTATE→SPSR_EL1、切换到 EL1、跳转到 VBAR_EL1 指向的异常向量。<br>
+    内核在 <code>arch/arm64/kernel/entry.S</code> 中的 <code>el0_svc</code> 处理 syscall：从 x8 读 syscall number → 查 <code>sys_call_table[]</code> → 调用对应函数 → <code>eret</code> 返回 EL0。<br>
+    <strong>耗时</strong>: 一次 syscall 约 100~300ns (含用户↔内核切换 + 参数拷贝)。
+    </p>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7+.2 内核态线程 → 用户态进程 — 启动过程中最核心的变身</h3>
+
+<div class="callout info" style="margin-bottom:16px">
+  <div class="ct">🔑 关键认知: <code>kernel_init</code> 最初是一个<strong>内核线程</strong></div>
+  <code>rest_init()</code> 通过 <code>kernel_thread(kernel_init, NULL, CLONE_FS)</code> 创建了 PID 1。此时<strong>它运行在 EL1，使用内核页表 (TTBR1)，栈在内核空间</strong>。它和 PID 0 (idle)、PID 2 (kthreadd) 一样都是内核线程。<br>
+  让它变成"用户进程"的唯一方式: <strong>execve() 一个用户空间 ELF 二进制</strong>。execve 系统调用会做一件极其特殊的事 — <strong>将当前 CPU 上下文从内核态重写为用户态</strong>。
+</div>
+
+<div class="freq-wrap">
+<canvas id="transitionCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4><code>run_init_process()</code> → execve 链路</h4>
+    <div class="lbl">从 do_execve 到 start_thread 的完整路径</div>
+    <div class="chain" style="font-size:10px;padding:12px 16px;margin:10px 0 0">
+<span class="cm">/* 1. 内核态 — kernel_init 调用 */</span>
+<span class="fn">run_init_process</span>(<span class="st">"/sbin/init"</span>)
+  └→ <span class="fn">kernel_execve</span>(init_filename, argv, envp)
+        └→ <span class="fn">do_execve</span>()
+              └→ <span class="fn">do_execveat_common</span>()
+                    └→ <span class="fn">bprm_execve</span>()
+                          └→ <span class="fn">exec_binprm</span>()
+                                └→ <span class="fn">load_elf_binary</span>()  <span class="cm">// fs/binfmt_elf.c</span>
+
+<span class="cm">/* 2. load_elf_binary — 核心转换 */</span>
+<span class="ty">static int</span> <span class="fn">load_elf_binary</span>(<span class="kw">struct</span> <span class="ty">linux_binprm</span> *bprm)
+{
+    <span class="cm">// a) 读取 ELF Program Headers → 映射 LOAD 段到用户空间</span>
+    <span class="fn">elf_map</span>(bprm->file, load_addr, ...);  <span class="cm">// mmap 用户空间地址</span>
+
+    <span class="cm">// b) 设置用户栈 — argv, envp, AT_* 辅助向量</span>
+    <span class="fn">create_elf_tables</span>(bprm, &amp;elf_ex, ...);
+        <span class="cm">// AT_PHDR, AT_ENTRY, AT_BASE, AT_PAGESZ, AT_UID...</span>
+
+    <span class="cm">// c) ★★★ 最关键的一步: 设置 CPU 上下文为 EL0 ★★★</span>
+    <span class="fn">ELF_PLAT_INIT</span>(regs, reloc_func_desc);
+    <span class="fn">START_THREAD</span>(elf_ex, regs, elf_entry, bprm->p);
+        <span class="cm">// =&gt; compat_start_thread() / start_thread()</span>
+}</div>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4><code>start_thread()</code> — 伪造一个"用户态 CPU 状态"</h4>
+    <div class="lbl">arch/arm64/kernel/process.c — 20 行代码完成身份转换</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// ARM64 — arch/arm64/kernel/process.c</span>
+<span class="kw">void</span> <span class="fn">start_thread</span>(<span class="kw">struct</span> <span class="ty">pt_regs</span> *regs,
+                     <span class="ty">unsigned long</span> pc,
+                     <span class="ty">unsigned long</span> sp)
+{
+    <span class="cm">// 1. 重置所有通用寄存器为 0</span>
+    <span class="fn">memset</span>(regs, <span class="nu">0</span>, <span class="kw">sizeof</span>(*regs));
+
+    <span class="cm">// 2. 设置用户态栈指针 (SP_EL0)</span>
+    regs->sp = sp;
+
+    <span class="cm">// 3. ★ 设置 SPSR_EL1 = EL0t (AArch64 用户态)</span>
+    <span class="cm">//    M[3:0] = 0b0000 = EL0t (EL0 with SP_EL0)</span>
+    <span class="cm">//    F,A,I,D = 1 (所有异常掩码清除 — 允许中断)</span>
+    regs->pstate = <span class="nu">PSR_MODE_EL0t</span>;
+
+    <span class="cm">// 4. ★ 设置 ELR_EL1 = ELF entry point</span>
+    <span class="cm">//    当 kernel_exit → eret 时，CPU 将跳转到此地址</span>
+    <span class="cm">//    并在 EL0 执行</span>
+    regs->pc = pc;
+
+    <span class="cm">// 5. 设置用户态页表基址 (TTBR0_EL1)</span>
+    <span class="cm">//    通过 switch_mm() 在此前已经完成</span>
+    <span class="cm">//    TTBR0 = 用户进程页表，TTBR1 = 内核页表 (不变)</span>
+}</div>
+  </div>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7+.3 从 EL1 到 EL0 — <code>eret</code> 的那一瞬间</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>execve 返回路径: 通过 kernel_exit 降权</h4>
+    <div class="lbl">load_elf_binary → start_thread → 返回到哪里？</div>
+    <p>
+    <code>load_elf_binary()</code> 设置了 <code>regs-&gt;pc</code> 和 <code>regs-&gt;pstate</code> 后<strong>正常返回</strong>。<br>
+    execve 的调用链沿路返回到 <code>do_execveat_common()</code> → <code>ret_from_fork</code> 路径 → 最终触发 <strong>kernel_exit 宏</strong> (arch/arm64/kernel/entry.S):<br>
+    <strong>kernel_exit 做了什么</strong>:<br>
+    ① 从栈上恢复 <code>pt_regs</code> (所有 GPR + SP + PC + PSTATE)<br>
+    ② 执行 <code>ERET</code> 指令<br>
+    ③ <strong>硬件原子操作</strong>: 将 ELR_EL1 → PC, SPSR_EL1 → PSTATE → 瞬间从 EL1 切换到 EL0，开始执行 ELF 的第一条指令 (_start)。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ARM64 ERET 硬件的原子操作</h4>
+    <div class="lbl">不可中断 — 一个时钟周期完成身份切换</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// ERET 指令在硬件上完成:</span>
+PC = ELR_EL1;           <span class="cm">// 跳转到 ELF entry (_start)</span>
+PSTATE = SPSR_EL1;      <span class="cm">// 从 EL1h → EL0t</span>
+
+<span class="cm">// PSTATE 变化:</span>
+<span class="cm">// M[3:0] = 0b0100 (EL1h) → 0b0000 (EL0t)</span>
+<span class="cm">// DAIF = 0b0000 (中断开启)</span>
+
+<span class="cm">// MMU 视角:</span>
+<span class="cm">// TTBR0_EL1 = 进程用户页表 (之前已设置)</span>
+<span class="cm">// TTBR1_EL1 = 内核页表 (不变)</span>
+<span class="cm">// 所有用户态地址查询走 TTBR0</span>
+<span class="cm">// 所有内核态地址查询走 TTBR1</span>
+
+<span class="cm">// ★ 从此刻起，CPU 运行在 EL0</span>
+<span class="cm">//    无法执行特权指令</span>
+<span class="cm">//    无法访问 TTBR1 映射的内核内存</span>
+<span class="cm">//    只能通过 SVC/中断/abort 回到内核</span></div>
+  </div>
+</div>
+
+<div class="callout success">
+  <div class="ct">✅ 总结: 内核线程 → 用户进程的完整变身清单</div>
+  <strong>① 页表</strong>: TTBR0_EL1 指向进程的用户空间页表 → MMU 开始区分用户/内核地址<br>
+  <strong>② CPU 模式</strong>: regs-&gt;pstate = EL0t → ERET 后 PSTATE.M = 0b0000<br>
+  <strong>③ 栈</strong>: SP_EL0 = 用户栈指针 (由 ELF 的 interpreter / libc 初始化)<br>
+  <strong>④ PC</strong>: ELR_EL1 = ELF entry (_start → __libc_start_main → main)<br>
+  <strong>⑤ 寄存器</strong>: 所有通用寄存器清零，AT_* 辅助向量通过栈传递给用户空间的 ld.so<br>
+  <strong>⑥ 权限</strong>: 页表中的 AP[2:1]=0b11 (EL0 可读写) 只对用户页有效 — 内核页 AP=0b00 (EL0 不可访问)<br>
+  <strong>⑦ 身份</strong>: <code>current-&gt;mm</code> 指向进程自己的 <code>struct mm_struct</code> — 不再与内核线程共享 init_mm
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">7+.4 一张图看懂: syscall / 中断 / abort 的全生命周期</h3>
+
+<div class="freq-wrap">
+<canvas id="elCanvas"></canvas>
+</div>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>切换方向</th><th>触发方式</th><th>硬件行为</th><th>代码路径 (ARM64)</th></tr></thead>
+  <tbody>
+    <tr><td><strong>EL0 → EL1</strong></td><td><code>SVC #0</code> (syscall)</td><td>PC→ELR_EL1, PSTATE→SPSR_EL1, 跳转 VBAR_EL1[0x400]</td><td><code>el0_svc</code> → <code>el0_svc_handler()</code></td></tr>
+    <tr><td><strong>EL0 → EL1</strong></td><td>IRQ 中断 (timer/IPI)</td><td>同 syscall, 跳转 VBAR_EL1[0x080]</td><td><code>el0_irq</code> → <code>handle_arch_irq()</code></td></tr>
+    <tr><td><strong>EL0 → EL1</strong></td><td>Data Abort (缺页/SEGV)</td><td>跳转 VBAR_EL1[0x200], FAR_EL1=故障地址</td><td><code>el0_da</code> → <code>do_mem_abort()</code></td></tr>
+    <tr><td class="g"><strong>EL1 → EL0</strong></td><td class="g"><code>ERET</code></td><td class="g">ELR_EL1→PC, SPSR_EL1→PSTATE</td><td class="g"><code>kernel_exit 0</code> (返回到用户态)</td></tr>
+    <tr><td><strong>EL0 → EL0</strong></td><td>不需要 (同级别)</td><td>N/A — 直接函数调用</td><td>用户态函数调用链 (jump/blr)</td></tr>
+    <tr><td><strong>EL1 → EL1</strong></td><td>函数调用 / 中断嵌套</td><td>N/A — SP_EL1 上压栈返回地址</td><td>内核函数调用 + 中断处理</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning" style="margin-top:14px">
+  <div class="ct">⚠️ 常见误区澄清</div>
+  <strong>误区 1</strong>: "init 进程是内核线程" — ❌。在 <code>run_init_process("/sbin/init")</code> <strong>之前</strong>，kernel_init 是一个内核线程 (运行在 EL1)。execve <strong>之后</strong>，init 是一个<strong>完全的用户态进程</strong> (运行在 EL0)。<br>
+  <strong>误区 2</strong>: "内核可以随意访问用户内存" — ❌。从 ARMv8.1 开始，PAN (Privileged Access Never) 默认阻止内核访问用户空间内存。必须用 <code>uaccess_ttbr0_enable()</code> 临时关闭 PAN 才能调用 <code>copy_from_user()</code>。<br>
+  <strong>误区 3</strong>: "用户态不能执行任何内核代码" — ✓ 正确。页表中的 PXN bit 确保 EL0 跳转到内核地址时触发硬件 abort。<br>
+  <strong>误区 4</strong>: "同级切换不需要 MMU 干预" — 部分正确。EL0→EL0 纯用户态函数调用不涉及 MMU 权限变更。但 EL1→EL1 时，若访问用户地址需通过 <code>uaccess</code> 机制。
+</div>
+
 <!-- ══════ Ch8: 文件系统挂载 ══════ -->
 <h2 class="sh">8. 文件系统挂载 — 三次关键挂载</h2>
 <p class="ss">start_kernel 中的初始 rootfs → initramfs CPIO 解包 → prepare_namespace 的 pivot_root</p>
@@ -605,5 +801,172 @@
   });
 })();
 </script>
+
+<!-- Transition Canvas: kernel_init kernel thread → user process -->
+<script>
+(function(){
+  var c=document.getElementById('transitionCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=410;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function box(x,y,w,h,line1,line2,color,textColor){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle=textColor||'#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(line1,x+w/2,y+h/2-4);
+    if(line2){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(line2,x+w/2,y+h/2+15); }
+  }
+  function arrow(x1,y1,x2,y2,color,label){
+    ctx.strokeStyle=color; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    var ang=Math.atan2(y2-y1,x2-x1), sz=8;
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-sz*Math.cos(ang-Math.PI/6),y2-sz*Math.sin(ang-Math.PI/6)); ctx.lineTo(x2-sz*Math.cos(ang+Math.PI/6),y2-sz*Math.sin(ang+Math.PI/6)); ctx.closePath(); ctx.fill();
+    if(label){ ctx.fillStyle=color; ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.fillText(label,(x1+x2)/2+10,(y1+y2)/2-8); }
+  }
+
+  var m=14, cx=W/2;
+  var y=20;
+
+  // === Left: kernel thread (Before execve) ===
+  var lx=m, lw=W*0.42;
+  ctx.fillStyle='rgba(248,113,113,0.8)'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('execve() 之前: 内核线程', lx+lw/2, y-4);
+
+  box(lx, y, lw, 42, 'kernel_init  (PID 1)', '运行在 EL1 · 内核栈 · init_mm','rgba(248,113,113,0.22)');
+  y+=52;
+  box(lx, y, lw, 64, 'CPU 状态', 'PC: 内核函数地址 (EL1)\nSP: SP_EL1 → 内核栈\nPSTATE: EL1h (中断屏蔽)','rgba(248,113,113,0.14)');
+  y+=74;
+  box(lx, y, lw, 64, '页表', 'TTBR0_EL1: 未使用 (或 = init_mm)\nTTBR1_EL1: 内核页表\n用户空间: 不可访问','rgba(248,113,113,0.1)');
+
+  // === Right: user process (After execve) ===
+  var rx=W*0.58, rw=W*0.42;
+  var ry=20;
+  ctx.fillStyle='rgba(52,211,153,0.8)'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('execve() 之后: 用户态进程', rx+rw/2, ry-4);
+
+  box(rx, ry, rw, 42, '/sbin/init  (PID 1)', '运行在 EL0 · 用户栈 · 进程 mm','rgba(52,211,153,0.22)');
+  ry+=52;
+  box(rx, ry, rw, 64, 'CPU 状态', 'PC: _start → __libc_start_main\nSP: SP_EL0 → 用户栈\nPSTATE: EL0t (中断开启)','rgba(52,211,153,0.14)');
+  ry+=74;
+  box(rx, ry, rw, 64, '页表', 'TTBR0_EL1: 进程用户页表\nTTBR1_EL1: 内核页表 (不变)\n用户空间: 可访问 (AP=11)','rgba(52,211,153,0.1)');
+
+  // === Center: the transition ===
+  var cy=260;
+  box(cx-160, cy, 320, 42, 'load_elf_binary() → start_thread() → ERET',
+    'fs/binfmt_elf.c    arch/arm64/kernel/process.c',
+    'rgba(108,99,255,0.22)','#a78bfa');
+
+  // Arrows from left to center
+  arrow(lx+lw/2, y+64+10, cx-160+60, cy, 'rgba(108,99,255,0.5)');
+  arrow(rx+rw-30, ry+64+10, cx+160-60, cy, 'rgba(108,99,255,0.5)');
+
+  cy+=54;
+  box(cx-180, cy, 360, 36, 'ERET: ELR_EL1→PC  ·  SPSR_EL1→PSTATE  ·  EL1→EL0',
+    null,'rgba(251,191,36,0.18)','#fbbf24');
+
+  // Bottom summary
+  cy+=48;
+  ctx.fillStyle='#8888aa'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('start_thread() "伪造" 了一个用户态 CPU 上下文 → kernel_exit 恢复该上下文 → ERET 原子切换', W/2, cy);
+  ctx.fillText('execve 不返回 — 调用它的代码永远不会"返回"到原来的内核线程执行流', W/2, cy+18);
+})();
+</script>
+
+<!-- EL transition lifecycle Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('elCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=350;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var m=20, cx=W/2;
+
+  // Draw timeline
+  var tlY=40;
+  ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(m, tlY); ctx.lineTo(W-m, tlY); ctx.stroke();
+
+  // EL1 level (top)
+  ctx.fillStyle='#f87171'; ctx.font='bold 13px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('EL1 (内核态)', m, tlY-12);
+
+  // EL0 level (bottom)
+  ctx.fillStyle='#34d399'; ctx.font='bold 13px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('EL0 (用户态)', m, tlY+80);
+
+  // Blocks on the timeline
+  function block(x, y, w, h, label, color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(label,x+w/2,y+h/2+4);
+  }
+
+  var segs=[
+    {x:30, w:80, y:tlY-28, h:22, label:'start_kernel', c:'rgba(248,113,113,0.25)'},
+    {x:120, w:90, y:tlY-28, h:22, label:'kernel_init (线程)', c:'rgba(248,113,113,0.2)'},
+    {x:220, w:70, y:tlY-28, h:22, label:'do_execve', c:'rgba(248,113,113,0.15)'},
+  ];
+  segs.forEach(function(s){ block(s.x, s.y, s.w, s.h, s.label, s.c); });
+
+  // ERET arrow crossing the line
+  var eretX=300;
+  ctx.fillStyle='#fbbf24'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('ERET ↓', eretX, tlY+18);
+
+  // Down arrow
+  ctx.strokeStyle='#fbbf24'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(eretX, tlY+10); ctx.lineTo(eretX, tlY+62); ctx.stroke();
+  ctx.fillStyle='#fbbf24'; ctx.beginPath(); ctx.arc(eretX, tlY+62, 5, 0, Math.PI*2); ctx.fill();
+
+  // EL0 blocks
+  block(eretX-40, tlY+68, 120, 22, '/sbin/init (用户)', 'rgba(52,211,153,0.25)');
+  block(eretX+90, tlY+68, 100, 22, 'main() 执行', 'rgba(52,211,153,0.2)');
+  block(eretX+200, tlY+68, 110, 22, 'open() / read()', 'rgba(52,211,153,0.18)');
+
+  // Syscall roundtrips
+  var scY=tlY+110;
+  ctx.fillStyle='#a78bfa'; ctx.font='bold 12px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Syscall 往返  (每次 syscall = EL0→EL1→EL0 的完整来回)', m, scY);
+
+  // Visual syscall loop
+  var lx=m+50;
+  for(var i=0; i<4; i++){
+    var sx=lx+i*150;
+    // Down
+    ctx.strokeStyle='rgba(52,211,153,0.5)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(sx, scY+16); ctx.lineTo(sx, scY+46); ctx.stroke();
+    ctx.fillStyle='#34d399'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('SVC', sx, scY+34);
+    // Kernel execute
+    block(sx-15, scY+48, 30, 18, 'EL1', 'rgba(248,113,113,0.2)');
+    // Up (eret)
+    ctx.strokeStyle='rgba(248,113,113,0.5)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(sx, scY+68); ctx.lineTo(sx, scY+96); ctx.stroke();
+    ctx.fillStyle='#f87171'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('ERET', sx, scY+86);
+    // Back to EL0
+    block(sx-15, scY+98, 30, 18, 'EL0', 'rgba(52,211,153,0.2)');
+  }
+
+  ctx.fillStyle='#8888aa'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('▲ 用户程序的一生: 启动时 ERET 降权一次 → 此后每个 syscall 做 SVC(EL0→EL1)→ERET(EL1→EL0) 往返', W/2, H-14);
+  ctx.fillText('中断/异常也可随时触发 EL0→EL1 切换 → 处理完后 ERET 回到被打断的 EL0 地址', W/2, H-14+18);
+})();
+</script>
+
 </body>
 </html>
