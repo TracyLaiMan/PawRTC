@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频 AEC 回声消除 — 从原理到实战</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}.canvas-wrap canvas{width:100%;height:100%;display:block}
+.ptbl{margin:14px 0 !important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">回声原理</a><span class="sep"></span>
+  <a href="#s3">自适应滤波</a><span class="sep"></span>
+  <a href="#s4">双讲检测</a><span class="sep"></span>
+  <a href="#s5">工程实现</a><span class="sep"></span>
+  <a href="#s6">WebRTC AEC</a><span class="sep"></span>
+  <a href="#s7">IPC 实战</a>
+</nav>
+
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">音频 AEC 回声消除</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">Acoustic Echo Cancellation — 让对讲双方听不到自己的回声。IPC 双向语音的<strong>核心技术</strong>，自适应滤波器 + 双讲检测 + 非线性处理的完整信号链。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">远端语音</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">Speaker 播放</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">声学耦合</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">Mic 采集</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399"><strong>AEC 消除</strong></span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">干净近端语音</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">自适应滤波器</div><div class="l">LMS / NLMS 算法</div></div>
+    <div class="stat"><div class="n">双讲检测</div><div class="l">DTD 防止发散</div></div>
+    <div class="stat"><div class="n">40+ dB</div><div class="l">典型回声抑制量</div></div>
+    <div class="stat"><div class="n">< 10ms</div><div class="l">处理延迟要求</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: Echo Physics ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">回声的物理成因 — 从声学到信号</h2>
+  <p class="sec-sub" id="s2s">IPC 对讲时，App 端说话→IPC 的 Speaker 播放→声音在空间中传播→被<strong>同一个 IPC 的 Mic 采集回去</strong>→App 用户听到自己的回声。AEC 要做的就是<strong>在 Mic 信号中减去 Speaker 信号的延迟副本</strong>。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>回声路径 — 一个线性系统</h4>
+      <div class="sub">Speaker → 空气 → 墙壁反射 → Mic 的传递函数</div>
+      <p>从 Speaker 到 Mic 之间存在一个<strong>物理传递函数 h(n)</strong>——它将 Speaker 播放的信号 x(n) 转换为 Mic 收到的回声信号 d(n)：<strong>d(n) = x(n) ∗ h(n)</strong>（∗=卷积）。h(n) 包含了：<strong>直达声</strong>（Speaker→Mic 直线路径，延迟最短 ~1ms）、<strong>早期反射</strong>（墙壁/桌面一次反射，延迟 5-30ms）、<strong>混响尾</strong>（多次反射叠加，持续 100-500ms）。<br>
+      <strong>AEC 的目标</strong>：估计 h(n) 的近似值 ĥ(n)→从 Mic 信号 y(n) 中减去 x(n)∗ĥ(n) → 得到纯净的近端语音。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>回声路径的长度 (Tail Length)</h4>
+      <div class="sub">滤波器阶数 = 采样率 × 回声持续时间</div>
+      <p>AEC 的自适应滤波器需要覆盖整个回声持续时间——<strong>如果滤波器太短，只能消除直达声和早期反射，混响尾仍然存在</strong>。<br>
+      <strong>滤波器长度计算</strong>：采样率 16kHz × 回声持续 200ms = <strong>3200 阶</strong>。每阶一个系数（通常是 16-bit 定点或 float32）→ 3200 × 4B = 12.8KB 滤波器状态——内存开销可接受。<br>
+      <strong>IPC 场景</strong>：Speaker 和 Mic 距离很近（同在一个机身内）→直达声占主导→回声路径短（≤100ms）→ 1600 阶足够。手机外放→Mic 距离远+反射多→需要 3200-6400 阶。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>非线性成分 — AEC 的天敌</h4>
+      <div class="sub">Speaker 失真 + 外壳振动 → 线性模型不成立</div>
+      <p>AEC 基于<strong>线性系统假设</strong>——回声 = x(n) ∗ h(n)。但现实中 Speaker 的<strong>非线性失真</strong>（喇叭在大音量时的谐波失真——导致 AEC 无法消除的信号分量）和 <strong>外壳/结构振动</strong>（声音引起 IPC 外壳共振→机械振动传导到 Mic——不是通过空气传播的声波→不是 Speaker 信号的线性函数）产生<strong>非线性回声</strong>。<br>
+      <strong>解决方案</strong>：AEC 之后的 <strong>残余回声抑制 (RES)</strong> 用频谱减法进一步压制非线性残留。但 RES 会损伤近端语音——过度使用会导致声音失真。最好的方案是<strong>硬件设计</strong>：Speaker 和 Mic 之间加物理隔离（橡胶减振垫、声学腔体隔离）。</p>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" data-reveal style="height:300px">
+    <canvas id="c1"></canvas>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S3: Adaptive Filter ═══ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">自适应滤波 — NLMS 算法</h2>
+  <p class="sec-sub" id="s3s">AEC 的核心数学引擎——<strong>持续跟踪回声路径的变化</strong>（人走动、设备位置变化、温度变化都改变 h(n)），用梯度下降逐步逼近真实回声路径。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>LMS — 最小均方算法</h4>
+      <div class="sub">梯度下降 · 每采样点更新 · O(N) 复杂度</div>
+      <p><strong>核心公式</strong>（每个采样点迭代）：<br>
+      ① 滤波输出：ŷ(n) = <strong>w</strong>ᵀ(n)·<strong>x</strong>(n)——用当前滤波器系数 w 和远端参考信号 x 计算估计回声<br>
+      ② 误差：e(n) = y(n) − ŷ(n)——真实 Mic 信号减去估计回声 = 残差（理想情况下=近端语音）<br>
+      ③ 系数更新：<strong>w</strong>(n+1) = <strong>w</strong>(n) + μ·e(n)·<strong>x</strong>(n)——沿梯度方向微调每个系数<br>
+      <strong>μ (步长)</strong> 是关键参数：<strong>μ 太大</strong>→收敛快但不稳定（可能发散）；<strong>μ 太小</strong>→收敛慢（回声消除不干净）。μ 的取值受 x(n) 的信号功率影响——大声时 μ 需要调小，小声时 μ 需要调大。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>NLMS — 归一化 LMS</h4>
+      <div class="sub">用信号功率归一化步长 · 解决 LMS 的 μ 依赖问题</div>
+      <p><strong>NLMS 改进</strong>：<br>
+      <strong>w</strong>(n+1) = <strong>w</strong>(n) + μ / (||<strong>x</strong>(n)||² + ε) · e(n)·<strong>x</strong>(n)<br>
+      分母 ||<strong>x</strong>(n)||² 是远端信号<strong>当前帧的能量</strong>——信号强时自动减小步长、信号弱时自动增大步长。ε（如 1e-6）是防止除零的微小常数。<br>
+      <strong>μ 的取值范围</strong>：<strong>0 < μ < 2</strong>。（理论：μ=1 最速收敛，μ>2 发散）。实践中 μ 取 0.1~0.5——更保守但更稳定。<br>
+      <strong>NLMS 的收敛速度</strong>：约 200-500ms 适应一个新的回声路径（如手机从桌面拿到耳边）——取决于 μ 和滤波器长度。收敛期间回声消除不干净——用户能听到短暂的回声。</p>
+    </div>
+  </div>
+
+  <div class="cblock" style="max-width:960px;margin-top:16px"><span class="cm">// NLMS 自适应滤波器的逐帧实现 (16kHz, 10ms 帧 = 160 samples)</span>
+<span class="kw">void</span> <span class="fn">nlms_process_frame</span>(<span class="kw">float</span> *far_ref, <span class="kw">float</span> *near_mic, <span class="kw">float</span> *output,
+                           <span class="kw">float</span> *w,  <span class="kw">int</span> N, <span class="kw">int</span> frame_len, <span class="kw">float</span> mu)
+{
+    <span class="kw">for</span> (<span class="kw">int</span> n = <span class="nu">0</span>; n < frame_len; n++) {
+        <span class="cm">// 1. 构建远端信号缓冲区 (长度为 N 的滑动窗口)</span>
+        <span class="fn">memmove</span>(x_buf, x_buf + <span class="nu">1</span>, (N - <span class="nu">1</span>) * <span class="kw">sizeof</span>(<span class="kw">float</span>));
+        x_buf[N - <span class="nu">1</span>] = far_ref[n];
+
+        <span class="cm">// 2. 滤波: 估计回声 = w · x (点积)</span>
+        <span class="kw">float</span> echo_est = <span class="nu">0.0f</span>;
+        <span class="kw">for</span> (<span class="kw">int</span> k = <span class="nu">0</span>; k < N; k++)
+            echo_est += w[k] * x_buf[k];
+
+        <span class="cm">// 3. 残差 = Mic 信号 - 估计回声</span>
+        output[n] = near_mic[n] - echo_est;
+
+        <span class="cm">// 4. 计算远端信号能量 ||x||^2</span>
+        <span class="kw">float</span> x_power = <span class="nu">1e-6f</span>;
+        <span class="kw">for</span> (<span class="kw">int</span> k = <span class="nu">0</span>; k < N; k++)
+            x_power += x_buf[k] * x_buf[k];
+
+        <span class="cm">// 5. NLMS 系数更新: w = w + (mu / x_power) * e * x</span>
+        <span class="kw">float</span> step = mu / x_power * output[n];
+        <span class="kw">for</span> (<span class="kw">int</span> k = <span class="nu">0</span>; k < N; k++)
+            w[k] += step * x_buf[k];
+    }
+}</div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S4: DTD ═══ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">双讲检测 — 防止滤波器发散</h2>
+  <p class="sec-sub" id="s4s">AEC 最大的工程挑战不是收敛——是<strong>在近端说话时停止更新滤波器系数</strong>。如果不停止，NLMS 会试图把近端语音也"消除"掉→滤波器发散→回声反而变大。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>什么是双讲 (Double-Talk)？</h4>
+      <div class="sub">远端和近端同时说话 → NLMS 的 e(n) 包含近端语音 → 不能用于更新</div>
+      <p><strong>正常模式</strong>（仅远端说话）：Mic 信号 = 回声 + 背景噪声。e(n) = Mic − 估计回声 ≈ 背景噪声——没有近端语音分量→<strong>可以安全更新系数</strong>。<br>
+      <strong>双讲模式</strong>（双方同时说话）：Mic 信号 = 回声 + 背景噪声 + <strong>近端语音</strong>。e(n) = Mic − 估计回声 ≈ 近端语音 + 噪声。NLMS 的更新项 μ·e(n)·x(n) 中包含了近端语音→滤波器系数被近端语音<strong>错误地推离</strong>正确值→发散→回声消除失效→甚至回声比不开 AEC 更严重。<br>
+      <strong>DTD 的任务</strong>：<strong>实时检测</strong>是正常模式还是双讲模式→双讲时<strong>冻结滤波器系数</strong>（μ=0）→双讲结束恢复更新。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>DTD 算法 — Geigel 和相关法</h4>
+      <div class="sub">能量比 + 相关性 + 频谱差异 三指标投票</div>
+      <p><strong>方法 1: Geigel 检测器</strong>（经典，简单）：比较 Mic 信号峰值和远端信号峰值。如果 Mic >> 远端 → 近端可能在说话。但远端信号通过回声路径后可能衰减——衰减后的远端信号可能小于 Mic 信号 → 误判。<br>
+      <strong>方法 2: 相关性检测</strong>：计算 e(n)（残差）与 x(n)（远端）的互相关系数。<strong>仅远端说话时</strong>：残差小→相关性强。双讲时：残差包含近端语音→与远端相关性减弱。<br>
+      <strong>方法 3: 频谱差异</strong>：比较 Mic 频谱和远端频谱。如果 Mic 频谱中有频段能量远大于远端（且不是回声路径能解释的）→近端说话。<br>
+      <strong>工程实践</strong>：三种方法<strong>组合投票</strong>——各算各的，至少两种判定双讲才冻结。单纯的 Geigel 误判率太高。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S5: Engineering ═══ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">工程实现 — 频域 AEC + 非线性处理</h2>
+  <p class="sec-sub" id="s5s">时域 NLMS 简单但计算量大（1600 阶 × 16000Hz = 25.6M 乘加/秒——对小 CPU 有压力）。<strong>频域 AEC</strong> 大幅降低计算量并更容易集成残余回声抑制。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>频域分块 LMS (FDAF)</h4>
+      <div class="sub">FFT → 频域滤波 → IFFT · 计算量 O(N log N)</div>
+      <p>将时域卷积（O(N²)）转换为频域逐元素乘法（O(N log N)）：远端信号 x(n) → <strong>FFT → X(f)</strong>；滤波器系数 h(n) → <strong>FFT → H(f)</strong>；估计回声 = <strong>IFFT(X(f) · H(f))</strong>。<br>
+      <strong>Partitioned Block FDAF</strong>：将长滤波器分成多个短块（如 64 阶 × 50 块 = 3200 阶）——每块独立做 FFT 和更新。计算量从 25.6M 降到 ~3M 乘加/秒（~8x 降低）。<br>
+      <strong>WebRTC AEC3</strong> 使用此架构——支持最长 500ms 回声尾（16kHz 下 8000 阶）。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>残余回声抑制 (RES)</h4>
+      <div class="sub">频域 Wiener 滤波 · 消除 AEC 之后的残留回声</div>
+      <p>AEC 输出 e(n) 中仍然有<strong>残余回声</strong>（线性部分因为滤波器未完全收敛，非线性部分因为 Speaker 失真）。RES 对 e(n) 做短时傅里叶变换 →每个频点计算增益 G(f)：<br>
+      <strong>G(f) = max(0, (|E(f)|² − α·|Ŷ(f)|²) / |E(f)|²)</strong><br>
+      其中 |Ŷ(f)|² 是估计回声的功率谱，α 是过减因子 (1.0~2.0)。G(f) 接近 0→该频点主要是回声→抑制。G(f) 接近 1→该频点主要是近端语音→保留。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>舒适噪声生成 (CNG)</h4>
+      <div class="sub">RES 过度抑制导致"死寂"→填充自然噪声</div>
+      <p>当 AEC+RES 过度抑制时→输出信号几乎静音→听者感觉"断了"（dead silence）。<strong>舒适噪声生成</strong>在静音段<strong>填充模拟的背景噪声</strong>（功率与原始背景噪声匹配）——让听者感知到连接仍然活跃。<br>
+      <strong>实现</strong>：在无近端语音时测量 Mic 的背景噪声功率 σ²_noise；RES 处理后如果输出功率过低→注入高斯白噪声（功率=σ²_noise）。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ AEC 的延迟要求 — 为什么必须 < 10ms</div>
+    AEC 的<strong>远端参考信号 x(n) 和 Mic 信号 y(n) 必须严格时间对齐</strong>——如果远端信号比 Mic 中的回声<strong>晚到 AEC</strong>（比如远端参考经过了额外的音频处理延迟 20ms）→ AEC 看到的 x(n) 与实际回声的 x(n−20ms) 不匹配→NLMS 试图用"未来的 x 消除过去的回声"→完全无法收敛。<br>
+    经验法则：<strong>远端参考路径和 Mic 路径的处理延迟差必须 < 1ms</strong>。IPC 的音频链路（Speaker 播放 + Mic 采集）总延迟必须 < 10ms——超出此限制→AEC 性能急剧下降→需要额外的延迟估计和补偿机制。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: WebRTC AEC ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">WebRTC AEC3 — 工业级实现</h2>
+  <p class="sec-sub" id="s6s">WebRTC 内置的 AEC3 (AEC version 3) 是目前<strong>最广泛部署的开源 AEC 实现</strong>。IPC 对讲功能直接用它——比自己从头实现可靠 100 倍。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>AEC3 的核心特性</h4>
+      <div class="sub">Partitioned Block FDAF · 多频带 · 延迟自适应</div>
+      <p>① <strong>频域分块</strong>：滤波器 64 阶/块，最多 50 块 = 3200 阶 @16kHz = 200ms 回声尾覆盖 ② <strong>多频带处理</strong>：将频谱分为多个子带（0-4kHz, 4-8kHz）——各子带独立配置滤波器长度（低频回声尾长→更多块；高频回声尾短→更少块）③ <strong>自动延迟估计</strong>：通过互相关检测远端参考和 Mic 信号之间的初始延迟——自动补偿音频链路的固定延迟（如蓝牙 Speaker 的 ~30ms 延迟）④ <strong>内置 RES + CNG</strong>：不需额外模块。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>AEC3 的配置参数</h4>
+      <div class="sub">采样率 · 滤波器长度 · 延迟 · 抑制等级</div>
+      <p><strong>采样率</strong>：8k/16k/32k/48kHz 自适应——宽带(16k)语音质量好，超宽带(32k)更自然。<br>
+      <strong>回声尾长度</strong>：默认 200ms (3200阶@16k)——可通过 <code>Config::filter.refined.length_blocks</code> 调整。<br>
+      <strong>初始延迟</strong>：<code>config.filter.default_delay = 0</code>（无额外延迟时设 0；有蓝牙 Speaker 时设 ~30ms）。<br>
+      <strong>抑制等级</strong>：<code>config.filter.config_change_duration_blocks</code>——控制 AEC 和 RES 之间的平衡。保守（更多 AEC,更少 RES）=声音更自然但可能残留回声；激进（更多 RES）=回声更彻底但可能损伤语音。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>AEC3 的 API 调用</h4>
+      <div class="sub">每帧 10ms (160 samples @16k) 调用一次</div>
+      <p>WebRTC 的 AEC3 封装在 <code>AudioProcessing</code> 模块中——配置后逐帧送入音频数据即可：<br>
+      ① <code>AudioProcessing::Config.echo_canceller.enabled = true</code><br>
+      ② 每帧调用 <code>ProcessStream(&near_mic_frame)</code>——输入近端 Mic 信号→AEC 处理后输出<br>
+      ③ <strong>但需要提前告诉 AEC 远端参考</strong>：<code>ProcessReverseStream(&far_ref_frame)</code>——送入即将播放的远端音频——AEC 在内部对齐两个流并执行回声消除。<br>
+      <strong>顺序重要</strong>：先调 ProcessReverseStream（送入远端参考），再调 ProcessStream（处理 Mic 信号）——确保 AEC 内部有对齐的参考。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: IPC Practice ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">IPC 实战 — 对讲 AEC 的完整音频链路</h2>
+  <p class="sec-sub" id="s7s">IPC 相机的双向对讲需要<strong>AEC + ANS（降噪）+ AGC（自动增益）</strong>三者协同——AEC 只是其中一环。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>IPC 对讲的完整音频处理链 (近端)</h4>
+      <div class="sub">Mic → ANS → AEC → AGC → 编码 → 网络发送</div>
+      <p><strong>处理顺序有讲究</strong>：<br>
+      ① <strong>ANS (降噪) 必须放在 AEC 之前</strong>：AEC 的自适应滤波器对<strong>平稳噪声不敏感</strong>（噪声不可预测→不会被滤波器"学习"）。但噪声会<strong>干扰 DTD 的判断</strong>（噪声大时 Geigel 容易误判）→先降噪再 AEC→DTD 更准确。<br>
+      ② <strong>AEC</strong>：消除远端回声。远端参考 = 从网络收到的即将播放的音频。<br>
+      ③ <strong>AGC (自动增益)</strong>：AEC 之后的信号可能有音量波动（近端人距离 Mic 远近不同）→AGC 将音量归一化到目标电平。<br>
+      ④ <strong>编码</strong>：AAC-LC / Opus 编码→RTP 发送。<br>
+      <strong>关键</strong>：远端参考必须从<strong>网络接收后、Speaker 播放前</strong>的节点取——不能在 Speaker 播放后取（那时已经被 DA 转换和功放失真污染了）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>IPC AEC 的硬件约束与调优</h4>
+      <div class="sub">CPU 预算 · 延迟预算 · 声学设计</div>
+      <p><strong>CPU 预算</strong>：AEC3 @16kHz 宽带的典型 CPU 占用 ~5-10 MIPS（ARM Cortex-A）。频域分块模式大幅降低计算量——IPC SoC (如 Rockchip RV1106 单核 A7) 可以运行。如果 CPU 不够→降采样到 8kHz 窄带→计算量减半但语音质量下降。<br>
+      <strong>延迟预算</strong>：10ms 音频帧 + AEC 处理 < 5ms + 编码 < 10ms → 总延迟 < 25ms——可接受。如果总延迟 > 50ms → 对讲体验差。<br>
+      <strong>声学设计比算法更重要</strong>：Speaker 和 Mic 之间用<strong>橡胶减振垫隔离</strong>（阻断结构传导）+ 密封腔体（减少内部声短路）+ Speaker 背面填充吸音棉（减少外壳共振）→ 将回声路径的<strong>非线性分量降低 10-15dB</strong>→AEC 的残余回声大幅减少→RES 可以更轻→语音更自然。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  音频 AEC 回声消除 · 从原理到实战 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="av_sync_learn.html">音视频同步 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+
+(function() {
+  const c = document.getElementById('c1'); if(!c) return;
+  const ctx = c.getContext('2d'); let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=300; c.width=W*dpr; c.height=H*dpr; c.style.width=W+'px'; c.style.height=H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+  function drawBox(x,y,w,h,label,color,alpha){
+    ctx.fillStyle=color;ctx.globalAlpha=alpha||0.1;ctx.beginPath();ctx.roundRect(x-w/2,y-h/2,w,h,8);ctx.fill();
+    ctx.strokeStyle=color;ctx.globalAlpha=0.35;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#d0d0f0';ctx.globalAlpha=0.9;ctx.font='bold 11px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+    const lines=label.split('\n');lines.forEach((l,i)=>ctx.fillText(l,x,y-(lines.length-1)*7+i*15));ctx.globalAlpha=1;
+  }
+  function drawArrow(x1,y1,x2,y2,color){
+    ctx.strokeStyle=color;ctx.globalAlpha=0.5;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const ang=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-10*Math.cos(ang-0.4),y2-10*Math.sin(ang-0.4));ctx.lineTo(x2-10*Math.cos(ang+0.4),y2-10*Math.sin(ang+0.4));ctx.fill();ctx.globalAlpha=1;
+  }
+  function animate(){t+=0.016;ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#e0e0ff';ctx.font='bold 14px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('AEC 回声消除的信号流 — 远端参考 + Mic → 自适应滤波器 → 干净语音',W/2,22);
+    const lx=W*0.12,rx=W*0.55,ox=W*0.82;
+    drawBox(lx,70,100,40,'App 语音\n(远端)','#fbbf24');drawBox(rx,70,110,40,'Speaker 播放\n(IPC 喇叭)','#f87171');
+    drawArrow(lx+50,70,rx-55,70,'#fbbf24');
+
+    const micY=140;drawBox(rx,micY,110,40,'Mic 采集\ny(n)','#38bdf8');drawBox(rx,210,110,40,'自适应滤波器\n(LMS/NLMS)','#a78bfa');
+    drawArrow(rx,160,rx,190,'#38bdf8');
+
+    drawBox(lx+30,140,100,40,'远端参考\nx(n)','#fbbf24',0.06);drawArrow(lx+30,120,lx+30,140,'#fbbf24',true);
+    drawBox(lx+30,210,100,40,'滤波器系数\nw(n)','#a78bfa',0.06);drawArrow(lx+30,160,lx+30,190,'#a78bfa',true);
+
+    drawArrow(rx+55,210,ox-55,210,'#34d399');
+    ctx.fillStyle='#34d399';ctx.globalAlpha=0.7;ctx.font='bold 11px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+    ctx.fillText('e(n)=y(n)−ŷ(n)',rx,190);ctx.fillText('干净语音',ox,240);
+
+    drawArrow(rx,160,lx+80,188,'#38bdf8',true);
+    const echoes=['直达声','一次反射','混响尾'];for(let i=0;i<3;i++){ctx.fillStyle='#fca5a5';ctx.globalAlpha=0.4+i*0.15;ctx.font='9px -apple-system,"Noto Sans SC",sans-serif';ctx.fillText(echoes[i]+' →',rx-20,micY-12+i*10);}
+    ctx.globalAlpha=1;requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

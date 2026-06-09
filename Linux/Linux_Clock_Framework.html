@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 时钟框架 — 从晶振到 CCF</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:185px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(26px,5vw,44px);font-weight:900">Linux 时钟框架 (CCF)</h2>
+  <p class="sec-sub">系统化知识体系 — 晶振 · PLL · 分频器 · 门控 · CCF 设备树 · clk_summary · IPC 实战</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>OSC</strong><br><small>晶振 24MHz</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>PLL</strong><br><small>倍频 1.2GHz</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Divider</strong><br><small>分频 / Gate</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Consumer</strong><br><small>clk_get / enable</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Peripheral</strong><br><small>I2C / MIPI / SD / Audio</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">CCF</div><div class="l">Common Clock Framework</div></div>
+    <div class="stat"><div class="n">clk_hw</div><div class="l">硬件时钟抽象</div></div>
+    <div class="stat"><div class="n">设备树</div><div class="l">clocks / assigned-clocks</div></div>
+    <div class="stat"><div class="n">clk_summary</div><div class="l">时钟树可视化</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: 硬件基础 ═══ -->
+<h2 class="sh">1. 时钟硬件基础 — 晶振 · PLL · 分频器</h2>
+<p class="ss">在理解 Linux 的软件时钟框架之前，必须先理解<strong>物理上时钟是怎么产生和变换的</strong>——软件框架只是硬件行为的抽象。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>晶振 (OSC) — 时钟的"心脏"</h4>
+    <div class="lbl">石英晶体 + 皮尔斯振荡电路 = 精确的频率源</div>
+    <p>嵌入式系统通常有一个<strong>主晶振 24MHz 或 26MHz</strong>——这是整个 SoC 所有时钟的<strong>源头</strong>。石英晶体的频率精度取决于<strong>负载电容匹配</strong>——标称负载电容（如 12pF）必须与 PCB 上实际的总电容（晶体引脚对地电容 + PCB 走线寄生电容）匹配。不匹配 → 频率偏差 → 所有派生时钟全偏。<br>
+    <strong>频率偏差的来源</strong>：<strong>初始精度</strong>（±10-20ppm @25°C）、<strong>温度漂移</strong>（±20-50ppm across -20~60°C——石英的 AT 切角决定温漂曲线形状）、<strong>老化</strong>（±3-5ppm/年——第一年最大，之后递减）。IPC 户外 -20~60°C → 总偏差可达 ±70ppm → 24MHz 时钟偏差 ±1.68kHz。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>PLL — 倍频器</h4>
+    <div class="lbl">Phase-Locked Loop — 从低频晶振生成 GHz 级时钟</div>
+    <p><strong>原理</strong>：PLL 是一个<strong>负反馈控制系统</strong>——相位比较器 (PFD) 比较参考时钟 (REF, 来自晶振 24MHz) 和反馈时钟 (FB, VCO 输出 ÷ M) → 输出误差电压 → 低通滤波器 → 控制压控振荡器 (VCO) 的频率 → VCO 输出 ÷ N 得到输出频率、÷ M 得到反馈频率。<br>
+    <strong>输出频率 = REF × N / (M × R)</strong>。如 REF=24MHz, R=1, M=24, N=1200 → VCO=1200MHz, 输出=1200/24=50MHz。<br>
+    <strong>PLL 锁定的条件</strong>：VCO 必须在它的<strong>工作频率范围内</strong>（如 600-1600MHz），M/N 必须在寄存器可编程范围内。PLL 从启动到锁定的典型时间 <strong>100-500μs</strong>（取决于环路滤波器带宽）。锁定期间输出频率不稳定→外设必须等 PLL 锁定后才能用。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>分频器 + 门控</h4>
+    <div class="lbl">Divider · Gate · Mux — 三种基本时钟操作</div>
+    <p><strong>Divider (分频器)</strong>：输出频率 = 输入频率 / N。N 通常是 2 的幂（1/2/4/8...），也可为任意整数。整数分频器输出<strong>占空比可能不是 50%</strong>（N=3 → 33%/67% 占空比——对某些外设有影响）。<strong>Fractional Divider</strong>（分数分频）：N = 整数 + 分数（如 2.5）→ 通过 sigma-delta 调制平均实现——音频 PLL 需要（如 24MHz → 12.288MHz 需要 N=1.953125——必须用分数分频器）。<br>
+    <strong>Gate (门控)</strong>：开关——enable/disable 时钟到某个外设的路径。关掉不用的外设时钟→省电（SoC 的动态功耗与时钟频率成正比）。<br>
+    <strong>Mux (选择器)</strong>：从多个父时钟中选择一个作为当前时钟源。如 I2S 音频时钟可以从 PLL_AUDIO(12.288MHz) 或外部晶振(12MHz)中选择。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch2: CCF 架构 ═══ -->
+<h2 class="sh">2. CCF 架构 — Common Clock Framework</h2>
+<p class="ss">Linux 3.x 引入的 CCF 统一了 ARM 平台碎片化的时钟管理——此前每个 SoC 厂商有自己的时钟 API（Samsung/Qualcomm/TI 各不同）。CCF 用<strong>Provider-Consumer 模型</strong>和<strong>设备树</strong>统一了这一切。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Provider (时钟提供者) — 驱动侧</h4>
+    <div class="lbl">drivers/clk/ — 描述硬件时钟树的结构和行为</div>
+    <p>SoC 的时钟驱动（通常位于 <code>drivers/clk/</code> 下）负责<strong>注册硬件上存在的每个时钟</strong>——每个 PLL、每个分频器、每个门控——都是 CCF 中的一个 <code>struct clk_hw</code>。驱动实现 <code>clk_ops</code>（recalc_rate / round_rate / set_rate / enable / disable / set_parent）——CCF Core 通过这些 ops 操作硬件寄存器。<br>
+    <strong>注册时钟的流程</strong>：<code>clk_hw_register_fixed_rate()</code>（固定频率——晶振） / <code>clk_hw_register_pll()</code> / <code>clk_hw_register_divider()</code> / <code>clk_hw_register_gate()</code> / <code>clk_hw_register_mux()</code> → 每个注册的时钟自动构建<strong>时钟树</strong>（parent/child 关系）。<strong>of_clk_add_hw_provider()</strong> 将整个 Provider 的设备树节点与这些 clk_hw 关联——Consumer 通过设备树找到 Provider 并获取时钟。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Consumer (时钟消费者) — 外设驱动侧</h4>
+    <div class="lbl">clk_get → clk_prepare_enable → 使用 → clk_disable_unprepare</div>
+    <p>外设驱动通过<strong>设备树中的 clocks 属性</strong>声明自己需要哪些时钟。驱动通过 CCF 的标准 Consumer API 获取和控制时钟——无需知道 Provider 的实现细节。<br>
+    <strong>标准调用序列</strong>：<br>
+    ① <code>clk = devm_clk_get(dev, "mipi")</code> → 从设备树的 <code>clock-names</code> 中找 "mipi" → 解析对应的 <code>clocks</code> phandle → 获取 struct clk<br>
+    ② <code>clk_set_rate(clk, 500000000)</code> → 设置时钟频率为 500MHz（CCF 自动选择/配置父 PLL 和分频器来实现目标频率——如果硬件支持）<br>
+    ③ <code>clk_prepare_enable(clk)</code> → 使能时钟（先 prepare→可能睡眠，确保 PLL 锁定；再 enable→原子操作，打开门控）<br>
+    ④ 外设工作...<br>
+    ⑤ <code>clk_disable_unprepare(clk)</code> → 关闭时钟。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// CCF Provider 注册的完整调用链 (以 Rockchip RK3399 为例)</span>
+<span class="cm">// drivers/clk/rockchip/clk-rk3399.c — 初始化阶段</span>
+
+<b>rk3399_clk_init()</b>
+  ├── <i>clk_register_fixed_rate</i>(NULL, <span class="st">"xin24m"</span>, NULL, <span class="nu">0</span>, <span class="nu">24000000</span>)
+  │     <span class="cm">// 固定 24MHz 晶振 — 所有时钟的根</span>
+  │
+  ├── <i>clk_register_pll</i>(<span class="st">"ppll"</span>, <span class="st">"xin24m"</span>, &amp;pll_ops, params)
+  │     <span class="cm">// PLL: 24MHz → 200~2200MHz 可编程 VCO 输出</span>
+  │
+  ├── <i>clk_register_divider</i>(<span class="st">"clk_uart0_div"</span>, <span class="st">"ppll"</span>, CLK_SET_RATE_PARENT, reg, shift, width, <span class="nu">0</span>, &amp;lock)
+  │     <span class="cm">// 分频器: ppll/N → UART 需要的频率</span>
+  │
+  ├── <i>clk_register_gate</i>(<span class="st">"clk_uart0"</span>, <span class="st">"clk_uart0_div"</span>, CLK_SET_RATE_PARENT, reg, bit, <span class="nu">0</span>, &amp;lock)
+  │     <span class="cm">// 门控: 开/关 UART0 模块时钟</span>
+  │
+  └── <i>of_clk_add_hw_provider</i>(np, of_clk_hw_onecell_get, &amp;data)
+        <span class="cm">// 导出: Consumer 可通过 DT phandle + index 获取任意时钟</span></div>
+
+<!-- ═══ Ch3: 设备树 ═══ -->
+<h2 class="sh">3. 设备树时钟绑定 — clocks / assigned-clocks</h2>
+<p class="ss">CCF 的 Consumer 和 Provider 之间的桥梁就是<strong>设备树的 clocks 属性</strong>——外设驱动不需要硬编码时钟名称或 phandle。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Consumer 侧 — 外设节点声明时钟需求</h4>
+    <div class="lbl">clocks + clock-names = 声明"我需要哪些时钟"</div>
+    <p>每个外设节点通过 <code>clocks</code> 属性引用 Provider 的时钟（通过 phandle + index），用 <code>clock-names</code> 给每个时钟起语义名。驱动通过 <code>clk_get(dev, "spi")</code> 按名称获取——不需要知道 Provider 内部 index。<br>
+    <strong>示例：SPI 控制器需要 1 个功能时钟</strong>：<br>
+    <code>clocks = <&cru CLK_SPI0>;</code><br>
+    <code>clock-names = "spi";</code><br>
+    <strong>示例：MIPI DSI 需要 3 个时钟</strong>：<br>
+    <code>clocks = <&cru PCLK_DSI>, <&cru SCLK_DSI>, <&cru MIPI_CLK>;</code><br>
+    <code>clock-names = "pclk", "sclk", "mipi_clk";</code></p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>assigned-clocks — 启动时设置时钟频率/父时钟</h4>
+    <div class="lbl">不需要驱动代码——设备树直接设置默认频率</div>
+    <p>当外设需要<strong>特定的默认时钟频率</strong>而驱动代码又没有调用 clk_set_rate 时——通过 <code>assigned-clocks</code> + <code>assigned-clock-rates</code> 在<strong>Provider 注册完成后自动设置</strong>。内核在 <code>of_clk_set_defaults()</code> 中遍历并应用。<br>
+    <strong>示例：I2S 音频需要 12.288MHz</strong>：<br>
+    <code>assigned-clocks = <&cru SCLK_I2S>;</code><br>
+    <code>assigned-clock-rates = <12288000>;</code><br>
+    <strong>设置父时钟</strong>：<br>
+    <code>assigned-clock-parents = <&cru PLL_AUDIO>;</code><br>
+    <strong>同时设置多个时钟</strong>：<br>
+    <code>assigned-clocks = <&cru SCLK_I2S>, <&cru MCLK_I2S>;</code><br>
+    <code>assigned-clock-rates = <12288000>, <12288000>;</code><br>
+    <strong>提示</strong>：顺序必须一一对应。</p>
+  </div>
+</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ assigned-clocks 的常见陷阱</div>
+  <strong>1. 设置频率但不检查返回值</strong>——CCF 的 set_rate 可能<strong>不能精确达到目标频率</strong>（受限于 PLL 配置和分频器精度）。实际频率可能 12287999Hz（差 1Hz）——某些外设接受、某些不接受。<br>
+  <strong>2. 顺序依赖</strong>——<code>assigned-clocks</code> 列表中的时钟按顺序处理。如果第 1 个时钟的父时钟需要第 2 个时钟先配置 → 处理失败。列表顺序 = 从根到叶。<br>
+  <strong>3. 冲突</strong>——两个外设通过 assigned-clock-rates 设置了冲突的频率 → 后启动的外设覆盖前一个 → 前一个外设工作异常。为共享时钟指定 assigned-clock-rates 必须<strong>所有 Consumer 一致</strong>。
+</div>
+
+<!-- ═══ Ch4: API ═══ -->
+<h2 class="sh">4. Consumer API — 驱动的正确使用姿势</h2>
+<p class="ss">这 6 个 API 覆盖了 95% 的时钟 Consumer 需求——理解每个函数的语义和调用上下文是关键。</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>API</th><th>可睡眠</th><th>典型延迟</th><th>作用</th><th>备注</th></tr></thead>
+  <tbody>
+    <tr><td class="g">clk_get(dev, name)</td><td class="g">✓</td><td>&lt;1μs</td><td>从设备树获取时钟句柄</td><td>推荐 devm_clk_get——自动释放</td></tr>
+    <tr><td>clk_prepare(clk)</td><td class="g">✓</td><td>100-500μs</td><td>准备时钟（PLL 锁定、电压稳定）</td><td>可能睡眠——不能在中断上下文</td></tr>
+    <tr><td>clk_enable(clk)</td><td class="r">✗</td><td>&lt;1μs</td><td>打开门控——时钟到达外设</td><td>原子操作——可在中断上下文</td></tr>
+    <tr><td class="g">clk_prepare_enable(clk)</td><td class="g">✓</td><td>100-500μs</td><td>prepare + enable 合二为一</td><td>probe 中最常用的组合调用</td></tr>
+    <tr><td class="g">clk_set_rate(clk, hz)</td><td class="g">✓</td><td>~100μs</td><td>设置时钟频率（含 PLL 重配置）</td><td>可能改变父时钟——需 CLK_SET_RATE_PARENT</td></tr>
+    <tr><td>clk_get_rate(clk)</td><td class="r">✗</td><td>&lt;1μs</td><td>查询当前频率</td><td>返回缓存值——不读硬件寄存器</td></tr>
+    <tr><td class="g">clk_round_rate(clk, hz)</td><td class="g">✓</td><td>&lt;1μs</td><td>查询"能实现的最接近频率"</td><td>不修改硬件——纯查询</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ prepare vs enable 为什么要分开？</div>
+  <code>prepare</code> 可能<strong>睡眠</strong>——因为 PLL 锁定需要等待 100-500μs（休眠等待 vs CPU 忙等）。<strong>enable</strong> 是<strong>原子操作</strong>——只操作一个寄存器 bit（门控开关），不能在中断上下文中睡眠。<br>
+  典型使用模式：<strong>probe 中 clk_prepare_enable</strong>（一次性准备+使能）→ <strong>运行时 pm_runtime 只调 clk_enable/clk_disable</strong>（原子门控——快速进入/退出低功耗）→ <strong>remove 中 clk_disable_unprepare</strong>（完全关闭）。分开 prepare 和 enable 让 runtime PM 的延迟从 500μs 降到 1μs。
+</div>
+
+<!-- ═══ Ch5: 时钟树 ═══ -->
+<h2 class="sh">5. 时钟树可视化 — clk_summary 调试</h2>
+<p class="ss">当外设工作不正常时——<strong>第一件事就是查时钟树</strong>。Linux 的 debugfs 提供了无与伦比的时钟调试能力。</p>
+
+<div class="cb"><span class="cm"># 查看完整时钟树 — 每个时钟的频率、父时钟、使能状态、使用者数量</span>
+cat /sys/kernel/debug/clk/clk_summary
+
+<span class="cm">// 输出示例 (精简):</span>
+   clock                         enable_cnt  prepare_cnt        rate   accuracy   phase
+----------------------------------------------------------------------------------------
+ xin24m                                  4            4     <span class="nu">24000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+    pll_npll                             1            1    <span class="nu">600000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+       clk_uart0_div                     1            1    <span class="nu">60000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+          clk_uart0                      1            1     <span class="nu">60000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+       clk_spi0_div                      0            0      <span class="nu">30000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+          clk_spi0                       0            0      <span class="nu">30000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+    pll_cpll                             2            2   <span class="nu">1200000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+       clk_mipi_div                      1            1    <span class="nu">500000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+          clk_mipi_csi                   1            1    <span class="nu">500000000</span>          <span class="nu">0</span>  <span class="nu">0</span>
+
+<span class="cm">// 解读:</span>
+<span class="cm">// enable_cnt: clk_enable() 被调用的次数 (0=未enable → 外设不工作!)</span>
+<span class="cm">// prepare_cnt: clk_prepare() 被调用的次数 (0=未prepare → PLL可能未锁定)</span>
+<span class="cm">// rate: 当前实际频率 (可能与驱动请求的不同)</span>
+<span class="cm">// 缩进层级: 父→子关系 (子时钟的父是上一级缩进最少的时钟)</span>
+
+<span class="cm"># 监控单个时钟的状态变化 (动态调试)</span>
+cat /sys/kernel/debug/clk/clk_uart0/clk_enable_count   <span class="cm">// 实时查看 enable 次数</span>
+cat /sys/kernel/debug/clk/clk_uart0/clk_rate           <span class="cm">// 当前频率</span>
+cat /sys/kernel/debug/clk/clk_uart0/clk_flags          <span class="cm">// CLK_SET_RATE_PARENT 等标志</span>
+
+<span class="cm"># 设置时钟频率 (仅调试——生产代码禁止这样用!)</span>
+echo <span class="nu">48000000</span> > /sys/kernel/debug/clk/clk_uart0_div/clk_rate</div>
+
+<!-- ═══ Ch6: IPC 时钟 ═══ -->
+<h2 class="sh">6. IPC 相机时钟实战 — 从 Sensor 到 SD 卡的全景</h2>
+<p class="ss">IPC 相机涉及<strong>10+ 种不同的外设时钟</strong>——每种有独特的频率精度和抖动要求。理解 IPC 的完整时钟树是调试一切"外设偶尔异常"问题的起点。</p>
+
+<div class="mb">
+  <div class="r"><span class="a">Sensor MCLK</span><span class="b c1">24/27MHz 外部晶振级</span><span class="n">MIPI Sensor 的主时钟——必须由 SoC 的专用 CCI (Camera Control Interface) 时钟输出引脚提供。频率由 sensor 数据手册决定 (常见 24MHz)。频率偏差 > ±100ppm → 图像出现横纹 (PCLK 与 MCLK 的锁相环失锁)</span></div>
+  <div class="r"><span class="a">MIPI D-PHY Clock</span><span class="b c2">200-800MHz 高速</span><span class="n">MIPI CSI-2 的 D-PHY HS 模式时钟——通常从 PLL_CPLL 或 PLL_VPLL 分频得到。频率 = Lane数 × 数据速率。D-PHY 对时钟的<strong>抖动</strong> (jitter < 10ps RMS) 极其敏感——PLL 的环路滤波器带宽不足会导致数据眼图闭合→CRC 错误</span></div>
+  <div class="r"><span class="a">ISP 核心时钟</span><span class="b c3">300-600MHz</span><span class="n">ISP 硬件模块的处理时钟——直接影响 ISP 管线吞吐量。时钟过低→帧率下降；时钟过高→功耗增加但画质不提升（ISP 内部有固定延迟的流水线 stage——时钟太快只是更多空闲周期）</span></div>
+  <div class="r"><span class="a">视频编码器时钟</span><span class="b c1">200-400MHz</span><span class="n">H.264/H.265 硬件编码器的核心时钟——编码 1080p@30fps 需要 ≥ 200MHz；4K@30fps 需要 ≥ 400MHz。时钟不足→编码帧输出延迟→环形 buffer 溢出→丢帧</span></div>
+  <div class="r"><span class="a">I2S 音频时钟</span><span class="b c2">12.288/24.576MHz 精确</span><span class="n">音频 CODEC 的 MCLK (主时钟)——必须精确匹配采样率的 256× 或 512× 倍 (48kHz×256=12.288MHz)。频率偏差 > 100ppm → 音调偏移半音——人耳极度敏感。需要分数分频 PLL</span></div>
+  <div class="r"><span class="a">SD/MMC 时钟</span><span class="b c3">400kHz 初始化 / 50MHz HS</span><span class="n">SD 卡的两个阶段用两种频率——初始化 ≤400kHz (开漏模式)，数据传输 ≤50MHz (推挽模式)。内核自动在 ACMD41 完成后调用 clk_set_rate 提升频率</span></div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>关键设计原则</h4>
+    <div class="lbl">时钟源选择 + 频率等级 + 独立门控</div>
+    <p>① <strong>PLL 分配策略</strong>：一个 PLL 可以驱动多个子时钟——但总有一个 PLL 频率是所有子时钟的<strong>公倍数约束</strong>。如 PLL=1200MHz 可以分频出 600/400/300/200/150/100MHz——灵活分配各外设。<br>
+    ② <strong>关键时钟独立 PLL</strong>：I2S 音频时钟<strong>必须独占一个 PLL</strong>（PLL_AUDIO）——因为音频频率（12.288/24.576MHz）与视频/系统频率（24/50/200MHz）没有简单的整数倍关系——共享 PLL 时一方频率调整会拖累另一方。<br>
+    ③ <strong>门控省电</strong>：未使用的外设时钟必须关闭（clk_disable）——IPC 系统中 30-50% 的动态功耗来自不必要的外设时钟。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>时钟调试 Checklist</h4>
+    <div class="lbl">按顺序排查——时钟问题是"外设不工作"的头号嫌疑</div>
+    <p>① <code>cat /sys/kernel/debug/clk/clk_summary</code> → 检查目标外设的 enable_cnt > 0？（=0→驱动没调 clk_enable）<br>
+    ② rate 是否符合预期？（!=→检查 assigned-clock-rates 是否被覆盖、或 clk_set_rate 是否失败）<br>
+    ③ 该外设的父时钟的 enable_cnt > 0？（父时钟没开→子时钟也无法工作——prepare/enable 不会自动向上传播，除非设了 CLK_SET_RATE_PARENT 标志）<br>
+    ④ <code>dmesg | grep clk</code> 查 CCF 错误——PLL 锁定失败、set_rate 返回 -EINVAL<br>
+    ⑤ 示波器测外设的 CLK 引脚——确认晶振/PLL 的输出频率、占空比、抖动</p>
+  </div>
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">Linux 时钟框架 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

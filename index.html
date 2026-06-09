@@ -89,7 +89,7 @@ html{scroll-behavior:smooth}
 <nav class="topnav" id="topnav">
   <a href="#linux-media">媒体采集</a><span class="sep"></span>
   <a href="#codec">编解码</a><span class="sep"></span>
-  <a href="#pipeline">视频管线</a><span class="sep"></span>
+  <a href="#pipeline">音视频处理</a><span class="sep"></span>
   <a href="#streaming">流媒体</a><span class="sep"></span>
   <a href="#security">安全加密</a><span class="sep"></span>
   <a href="#linux-kernel">Linux 内核</a><span class="sep"></span>
@@ -111,10 +111,10 @@ html{scroll-behavior:smooth}
   <h1 class="site-title">PawRTC</h1>
   <p class="site-sub">音视频 · Linux 内核 · BLE 蓝牙 · 流媒体协议 — 嵌入式全栈技术知识体系</p>
   <div class="hero-stats">
-    <div class="stat"><div class="n">52</div><div class="l">技术文档</div></div>
+    <div class="stat"><div class="n">72</div><div class="l">技术文档</div></div>
     <div class="stat"><div class="n">8</div><div class="l">专题分类</div></div>
-    <div class="stat"><div class="n">18</div><div class="l">Linux 内核</div></div>
-    <div class="stat"><div class="n">2</div><div class="l">BLE 蓝牙</div></div>
+    <div class="stat"><div class="n">22</div><div class="l">Linux 内核</div></div>
+    <div class="stat"><div class="n">8</div><div class="l">BLE 蓝牙</div></div>
   </div>
   <div class="site-tags">
     <span>Linux ALSA / V4L2</span>
@@ -155,7 +155,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 2. 编解码与容器 ═══════ -->
 <section class="sec" id="codec">
-  <h2 class="col-title">编解码与容器<span class="sec-count">4 篇</span></h2>
+  <h2 class="col-title">编解码与容器<span class="sec-count">6 篇</span></h2>
   <p class="col-desc">H.264 码流结构、MP4 容器解析、块效应诊断——理解视频数据的物理形态</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#fbbf24" href="av_codec_guide.html">
@@ -182,13 +182,25 @@ html{scroll-behavior:smooth}
       <span class="cnt">完整</span>
       <p>PSNR / SSIM / VMAF 指标原理与实战评估方法</p>
     </a>
+    <a class="col-card" style="--cc:#fbbf24" href="video_rate_control_roi.html">
+      <span class="icon">&#x1F3AC;</span>
+      <h3>码率控制深度剖析</h3>
+      <span class="cnt">完整</span>
+      <p>CBR / VBR / CRF / CQP / ROI — 五大模式原理与工程调参</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="video_svc_scalable_coding.html">
+      <span class="icon">&#x1F4E1;</span>
+      <h3>SVC 可伸缩视频编码</h3>
+      <span class="cnt">完整</span>
+      <p>时域 / 空域 / 质量分层、H.264 Annex G、WebRTC SVC 适配</p>
+    </a>
   </div>
 </section>
 
 <!-- ═══════ 3. 视频处理管线 ═══════ -->
 <section class="sec" id="pipeline">
-  <h2 class="col-title">视频处理管线<span class="sec-count">3 篇</span></h2>
-  <p class="col-desc">Sensor → ISP → Encoder → Muxer → Stream，嵌入式 IPC 完整视频数据流与问题诊断</p>
+  <h2 class="col-title">音频与视频处理<span class="sec-count">8 篇</span></h2>
+  <p class="col-desc">Sensor → ISP → Encoder → Muxer → Stream，嵌入式 IPC 完整音视频处理链路与问题诊断</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#f472b6" href="video_pipeline_complete.html">
       <span class="icon">&#x1F527;</span>
@@ -208,12 +220,42 @@ html{scroll-behavior:smooth}
       <span class="cnt">完整</span>
       <p>PTS 体系、时钟漂移补偿、5 种同步策略 + IPC 实战</p>
     </a>
+    <a class="col-card" style="--cc:#f472b6" href="audio_aec_learn.html">
+      <span class="icon">&#x1F50A;</span>
+      <h3>AEC 回声消除</h3>
+      <span class="cnt">完整</span>
+      <p>NLMS 自适应滤波 · 双讲检测 · 频域 AEC · WebRTC AEC3 · IPC 音频链路</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="audio_acoustic_design.html">
+      <span class="icon">&#x1F4D0;</span>
+      <h3>IPC 声学设计</h3>
+      <span class="cnt">完整</span>
+      <p>隔振结构 · 密封腔体 · 防水透声 · ePTFE膜 · 材料选型 · ERLE测试</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="audio_agc_deep_dive.html">
+      <span class="icon">&#x1F4E2;</span>
+      <h3>AGC 自动增益控制</h3>
+      <span class="cnt">完整</span>
+      <p>模拟/数字 AGC · 动态压缩 · WebRTC AGC · 双端增益控制 · IPC 噪声场景</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="audio_ans_noise_suppression.html">
+      <span class="icon">&#x1F507;</span>
+      <h3>ANS 音频降噪</h3>
+      <span class="cnt">完整</span>
+      <p>谱减法 · 维纳滤波 · 子空间降噪 · 深度学习降噪 · WebRTC NS · IPC 实战</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="audio_fundamentals_guide.html">
+      <span class="icon">&#x1F3B5;</span>
+      <h3>音频基础知识体系</h3>
+      <span class="cnt">完整</span>
+      <p>Mic 原理 · Speaker 特性 · 数字音频 · IEC 标准 · 灵敏度 · SNR · PCB 走线</p>
+    </a>
   </div>
 </section>
 
 <!-- ═══════ 4. 实时流媒体 & WebRTC ═══════ -->
 <section class="sec" id="streaming">
-  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">10 篇</span></h2>
+  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">11 篇</span></h2>
   <p class="col-desc">WebRTC 协议栈、LiveKit SFU 架构、弱网对抗——从信令到媒体传输的全链路</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#38bdf8" href="livekit_protocols_learn.html">
@@ -245,6 +287,12 @@ html{scroll-behavior:smooth}
       <h3>GCC 拥塞控制算法</h3>
       <span class="cnt">完整</span>
       <p>Kalman 滤波 · 延迟梯度 · AIMD · 丢包检测 · Transport-CC · IPC 调优</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="webrtc_simulcast_learn.html">
+      <span class="icon">&#x1F4FA;</span>
+      <h3>Simulcast 多层编码</h3>
+      <span class="cnt">完整</span>
+      <p>多 SSRC · RID/MID · SFU 选路 · SDP 协商 · 编码器三层配置 · IPC 2 层实践</p>
     </a>
     <a class="col-card" style="--cc:#38bdf8" href="livekit_cloud_adaptation.html">
       <span class="icon">&#x2601;&#xFE0F;</span>
@@ -325,7 +373,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 6. Linux 内核与驱动 ═══════ -->
 <section class="sec" id="linux-kernel">
-  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">21 篇</span></h2>
+  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">22 篇</span></h2>
   <p class="col-desc">进程管理 · 内存管理 · 文件系统 · 设备驱动 · 调试诊断 — 嵌入式 Linux 系统全栈</p>
   <div class="col-grid">
 
@@ -417,6 +465,12 @@ html{scroll-behavior:smooth}
       <h3>AV Ring Buffer</h3>
       <span class="cnt">完整</span>
       <p>SPSC 无锁环形缓冲 · vb2_queue · ALSA · DMA-BUF fd 队列 · IPC 四管线</p>
+    </a>
+    <a class="col-card" style="--cc:#fb923c" href="Linux/Linux_Clock_Framework.html">
+      <span class="icon">&#x1F570;&#xFE0F;</span>
+      <h3>时钟框架 (CCF)</h3>
+      <span class="cnt">完整</span>
+      <p>晶振 · PLL · 分频器 · CCF Provider/Consumer · 设备树 · IPC 10+时钟全景</p>
     </a>
 
     <!-- Sub: 存储 & 文件系统 -->

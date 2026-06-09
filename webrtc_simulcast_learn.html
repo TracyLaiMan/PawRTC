@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC Simulcast 多层编码 — 深度解析</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}.canvas-wrap canvas{width:100%;height:100%;display:block}
+.ptbl{margin:14px 0 !important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">Simulcast vs SVC</a><span class="sep"></span>
+  <a href="#s3">RTP 层原理</a><span class="sep"></span>
+  <a href="#s4">SDP 协商</a><span class="sep"></span>
+  <a href="#s5">SFU 转发</a><span class="sep"></span>
+  <a href="#s6">编码配置</a><span class="sep"></span>
+  <a href="#s7">IPC 实战</a>
+</nav>
+
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">WebRTC Simulcast 多层编码</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">同一视频源，<strong>同时编码为多个独立码流</strong>（高/中/低分辨率+码率）→ SFU 根据每个接收端的网络状况<strong>选择性转发</strong>最合适的层——无需重新编码。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">Camera</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">编码器×3</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">RTP SSRC×3</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">SFU 选路</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">Client A: 1080p</span>
+    <span class="flow-arr">|</span>
+    <span class="flow-box" style="color:#f472b6">Client B: 360p</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">3 层</div><div class="l">典型配置 (h/m/l)</div></div>
+    <div class="stat"><div class="n">SSRC × N</div><div class="l">多 SSRC 单 PeerConnection</div></div>
+    <div class="stat"><div class="n">RID/MID</div><div class="l">RTP 头层标识</div></div>
+    <div class="stat"><div class="n">SFU 零转码</div><div class="l">选包转发不重编</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: Simulcast vs SVC ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">Simulcast vs SVC — 两种多层方案的对比</h2>
+  <p class="sec-sub" id="s2s">两者都解决"不同客户端需要不同质量"的问题，但<strong>实现机制完全不同</strong>——Simulcast 在编码端、SVC 在码流内部。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>Simulcast — 多独立码流</h4>
+      <div class="sub">编码器同时输出 N 个独立的 H.264/VP8 码流 · 每个有独立的 SSRC</div>
+      <p><strong>原理</strong>：发送端运行<strong>多个独立的编码器实例</strong>——如 Encoder#1=1080p@3Mbps, Encoder#2=720p@1.5Mbps, Encoder#3=360p@400Kbps。每个编码器独立输出 RTP 包，各自有独立的 SSRC（同步源标识符）、独立的序列号空间、独立的 RTP 时间戳。三个码流通过<strong>同一个 PeerConnection</strong>发送——SFU 根据每个接收端的下行带宽<strong>选择转发其中一路</strong>。<br>
+      <strong>优势</strong>：① 编码器简单（标准 H.264/VP8——无需 SVC 扩展）② 独立码流互不依赖——丢了一层不影响其他层 ③ H.264 硬件编码器广泛支持。<br>
+      <strong>代价</strong>：① CPU/功耗 ↑ —— N 个编码器 = N 倍编码开销（但硬件编码器可以并行——实际开销 < N 倍）② 上行带宽 = 三层之和——即使没人看最高层，也要发。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>SVC — 单码流内分层</h4>
+      <div class="sub">H.264 SVC / VP9 SVC / AV1 SVC · 基础层 + 增强层嵌在一个 SSRC 内</div>
+      <p><strong>原理</strong>：编码器输出<strong>一个包含多层信息的码流</strong>——基础层（Base Layer, 低分辨率, 可独立解码）+ 增强层（Enhancement Layer, 依赖基础层, 提供额外分辨率或质量）。RTP 包中通过 <strong>Payload Descriptor 中的 TID/SID/LID</strong>（Temporal/Spatial/Quality ID）标识每包属于哪一层。<br>
+      <strong>优势</strong>：① 编码效率更高（增强层利用了基础层的信息——同质量下总码率更低）② 上行带宽 = 最高层带宽——SFU 丢弃增强层包即可降级（不增加上行开销）③ 单 SSRC——简化 SFU 的信令管理。<br>
+      <strong>代价</strong>：① H.264 SVC 硬件编码器支持极少（几乎都是软件）② VP9 SVC 软件编码器计算量大 ③ 增强层依赖基础层——基础层丢包→增强层全部不可解码。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead><tr><th>维度</th><th>Simulcast</th><th>SVC (VP9/H.264)</th></tr></thead>
+    <tbody>
+      <tr><td class="g">编码器数量</td><td class="g">N 个独立编码器</td><td>1 个编码器输出多层</td></tr>
+      <tr><td>SSRC</td><td>每层独立 SSRC</td><td class="g">单 SSRC</td></tr>
+      <tr><td class="g">层间依赖</td><td class="g">无——完全独立</td><td class="r">增强层依赖基础层</td></tr>
+      <tr><td>硬件编码器支持</td><td class="g">H.264 广泛支持</td><td class="r">极少 (需要 SVC 扩展)</td></tr>
+      <tr><td class="g">编码效率 (同质量)</td><td>较低 (独立编码)</td><td class="g">较高 (层间参考)</td></tr>
+      <tr><td>上行带宽</td><td class="r">= 三层之和</td><td class="g">= 最高层带宽</td></tr>
+      <tr><td class="g">SFU 转发复杂度</td><td class="g">极低——选 SSRC 路由</td><td class="y">中——需解析 Payload 头</td></tr>
+      <tr><td>实际使用</td><td class="g">WebRTC 主流 (Chrome/VP8)</td><td>VP9 SVC 在 Chrome 中可用 · H.264 SVC 极少</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">实际选择：为什么 WebRTC 主流用 Simulcast？</div>
+    H.264 硬件编码器的普及 + VP8 的 Simulcast 支持成熟 → Simulcast 是最实用的选择。SVC 在理论上更优秀（总码率更低），但 <strong>H.264 SVC 硬件编码器几乎不存在</strong>（除了少数 Intel/Qualcomm 旗舰芯片），而软件 SVC 的 CPU 开销在嵌入式设备上不可接受。VP9 SVC 在 Chrome 中有良好支持——但 IPC 相机几乎不用 VP9。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S3: RTP Layer ═══ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">RTP 层原理 — SSRC · RID · MID 三要素</h2>
+  <p class="sec-sub" id="s3s">Simulcast 在 RTP 层的核心设计：<strong>如何标识"这些 SSRC 属于同一个视频源的不同层"</strong>——这让 SFU 知道"这几个码流可以互相替代"。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>SSRC — 每层独立的同步源</h4>
+      <div class="sub">Simulcast 3 层 → 3 个 SSRC · 各自独立序列号空间</div>
+      <p>每个 Simulcast 层是<strong>一个完全独立的 RTP 流</strong>——有独立的 SSRC(32-bit 随机数)、独立的 RTP 序列号(16-bit, 0→65535 回绕)、独立的时间戳和独立的 RTCP 报告。从 RTP 协议角度看——三个 SSRC 和三个不同的视频源完全一样。<br>
+      <strong>SSRC 的分配</strong>：发送端为每层随机生成一个 SSRC——在 SDP 的 <code>a=ssrc:</code> 属性中声明。SFU 根据 SDP 中的 <code>a=simulcast:</code> 属性知道"这三个 SSRC 是同一源的 Simulcast 层"。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>RID — RTP 流标识符</h4>
+      <div class="sub">RTP 扩展头 · 1-3 字节 ASCII · 唯一标识层名称</div>
+      <p>SSRC 可以<strong>在通话中变化</strong>（SSRC 冲突、重新协商）——SFU 不能仅依赖 SSRC 识别层。RID (RTP Stream Identifier) 是<strong>稳定的层标识</strong>——嵌入在每个 RTP 包的扩展头中（urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id）。<br>
+      发送端在 RTP 扩展头中写入当前包所属的 RID（如 "h"=high, "m"=medium, "l"=low）。SFU 据此精确知道"这个 RTP 包属于哪一层"——即使 SSRC 变了，RID 不变——SFU 的转发逻辑不受影响。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>MID — 媒体源标识</h4>
+      <div class="sub">RTP 扩展头 · 关联 SSRC 到 SDP m= 行</div>
+      <p>MID (Media Identification) 是<strong>更粗粒度的标识</strong>——标识这个 RTP 流属于 SDP 中的哪个 <code>m=</code> 行（video=0, audio=1）。Simulcast 的所有层同属一个 MID（都是 video）——但 SFU 在转发时需要用 MID 区分"这是 video 还是 audio"。<br>
+      RID + MID 的组合让 SFU 可以精确路由：<strong>MID</strong>（选媒体类型→video）→ <strong>RID</strong>（选层→high/medium/low）→ <strong>SSRC</strong>（选具体流）。<br>
+      <strong>SDP 中的声明顺序</strong>：RID 在 <code>a=rid:</code> 中声明（send方向），MID 在 <code>a=mid:</code> 中声明。</p>
+    </div>
+  </div>
+
+  <div class="cblock" style="max-width:960px;margin-top:16px"><span class="cm">// RTP 包的 Simulcast 标识  —  两个扩展头字段</span>
+
+<span class="cm">// RTP Header (12B) + RID Extension (4-6B) + MID Extension (4B) + Payload</span>
+RTP Header:
+  SSRC = <span class="nu">0x12345678</span>    <span class="cm">// 当前层的 SSRC (可能变化)</span>
+  Seq  = <span class="nu">10501</span>        <span class="cm">// 该层独立的序列号</span>
+
+RTP Extension (RID):
+  ID   = <span class="nu">10</span>           <span class="cm">// 在 RTP 扩展头映射中的 ID (SDP 中 a=extmap:10 声明)</span>
+  Data = <span class="st">"h"</span>          <span class="cm">// RID = "h" → 这是 High 层</span>
+
+RTP Extension (MID):
+  ID   = <span class="nu">3</span>            <span class="cm">// SDP 中 a=extmap:3 声明</span>
+  Data = <span class="st">"0"</span>          <span class="cm">// MID = "0" → 这是第一个 m= 行 (video)</span>
+
+<span class="cm">// SFU 收到此 RTP 包 → 解析 RID="h" → 知道这是 High 层的包</span>
+<span class="cm">// → 根据接收端 Client B 的带宽 → Client B 只能收 Low 层</span>
+<span class="cm">// → SFU 丢弃此包 (不转发给 Client B)</span></div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S4: SDP ═══ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">SDP 协商 — Simulcast 的信令开销</h2>
+  <p class="sec-sub" id="s4s">Simulcast 需要 SDP 中声明<strong>各层的 RID、各层之间的依赖关系、以及 SSRC 到 RID 的映射</strong>——SDP 行数从几行膨胀到几十行。</p>
+
+  <div class="cblock" style="max-width:960px;margin-top:24px"><span class="cm">// SDP Offer — 发送端声明 Simulcast 3 层 (high / medium / low)</span>
+
+<span class="cm">// 1. 声明 RID: 三个层的标识符和方向</span>
+a=rid:<span class="st">h</span> send
+a=rid:<span class="st">m</span> send
+a=rid:<span class="st">l</span> send
+
+<span class="cm">// 2. 声明 Simulcast 层组: 这些 RID 是互斥的 (同一视频源的不同质量)</span>
+a=simulcast:send <span class="st">h</span>;<span class="st">m</span>;<span class="st">l</span>
+<span class="cm">// 含义: 发送端将发送 h/m/l 三个 Simulcast 层, 接收端可以请求其中任意一个或多个</span>
+
+<span class="cm">// 3. 每个 RID 的编码参数约束 (可选 — 告知 SFU 每层的特性)</span>
+a=rid:<span class="st">h</span> pt=<span class="nu">96</span>;max-width=<span class="nu">1920</span>;max-height=<span class="nu">1080</span>;max-fps=<span class="nu">30</span>
+a=rid:<span class="st">m</span> pt=<span class="nu">96</span>;max-width=<span class="nu">640</span>;max-height=<span class="nu">360</span>;max-fps=<span class="nu">30</span>
+a=rid:<span class="st">l</span> pt=<span class="nu">96</span>;max-width=<span class="nu">320</span>;max-height=<span class="nu">180</span>;max-fps=<span class="nu">15</span>
+
+<span class="cm">// 4. 每个 RID 对应的 SSRC (发送端随机分配)</span>
+a=ssrc:<span class="nu">1111111111</span> cname:video
+a=ssrc:<span class="nu">1111111111</span> msid:stream1 track1
+a=ssrc:<span class="nu">1111111111</span> rid:<span class="st">h</span>          <span class="cm">// SSRC 1111111111 → RID "h" (High)</span>
+
+a=ssrc:<span class="nu">2222222222</span> cname:video
+a=ssrc:<span class="nu">2222222222</span> msid:stream1 track1
+a=ssrc:<span class="nu">2222222222</span> rid:<span class="st">m</span>          <span class="cm">// SSRC 2222222222 → RID "m" (Medium)</span>
+
+a=ssrc:<span class="nu">3333333333</span> cname:video
+a=ssrc:<span class="nu">3333333333</span> msid:stream1 track1
+a=ssrc:<span class="nu">3333333333</span> rid:<span class="st">l</span>          <span class="cm">// SSRC 3333333333 → RID "l" (Low)</span>
+
+<span class="cm">// 5. RTP 扩展头映射 (告知接收端 RID 和 MID 在哪个扩展 ID 中)</span>
+a=extmap:<span class="nu">3</span> urn:ietf:params:rtp-hdrext:sdes:mid
+a=extmap:<span class="nu">10</span> urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id
+
+<span class="cm">// SDP Answer — 接收端声明希望接收的层</span>
+a=rid:<span class="st">h</span> recv
+a=rid:<span class="st">m</span> recv
+a=rid:<span class="st">l</span> recv
+a=simulcast:recv <span class="st">h</span>;<span class="st">m</span>;<span class="st">l</span></div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S5: SFU ═══ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">SFU 转发逻辑 — 如何选择转发哪一层</h2>
+  <p class="sec-sub" id="s5s">SFU 的核心价值在 Simulcast 场景中体现：<strong>不收发包 payload、不解码、不重编</strong>——仅根据网络状态决定"这个 RTP 包转发给哪个客户端"。</p>
+
+  <div class="canvas-wrap" data-reveal style="height:380px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>SFU 转发决策的三层逻辑</h4>
+      <div class="sub">带宽检测 → 层选择 → 包路由</div>
+      <p><strong>Step 1: 带宽检测</strong>：SFU 监控每个下行链路的拥塞状态（通过 RTCP RR 的丢包率 + REMB/Transport-CC 的带宽估计）。Client A 下行畅通 (5Mbps)→可接收 High 层。Client B 下行拥塞 (500Kbps)→只能接收 Low 层。<br>
+      <strong>Step 2: 层选择</strong>：SFU 根据带宽估计 + 各层的实际码率决定转发哪层。切换策略：带宽足够→升层（Low→Medium→High）；带宽不足→降层（High→Medium→Low）。<strong>必须加滞后 (Hysteresis)</strong>——不能带宽刚好过阈值就切→来回震荡。如: 升层阈值 = 目标码率 × 1.2, 降层阈值 = 目标码率 × 0.8。<br>
+      <strong>Step 3: 包路由</strong>：收到 RTP 包→解析 RID→查路由表→转发给订阅了该层的客户端。不转发的客户端→直接丢弃该包。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>切换时机与用户体验</h4>
+      <div class="sub">切换太快=画质震荡·切换太慢=卡顿或带宽浪费</div>
+      <p><strong>升层策略</strong>：当前层码率稳定 < 目标层码率 × 0.7（即当前层明显"喂不饱"带宽）→ 等待 3-5 秒确认（避免临时波动触发切换）→ 升层。<br>
+      <strong>降层策略</strong>：当前层丢包率 > 5% 或 Transport-CC 带宽估计急剧下降 → <strong>立即降层</strong>（不等确认——拥塞时延迟优先）。通常降层比升层快得多——宁可短暂低画质，不可持续卡顿。<br>
+      <strong>关键帧同步</strong>：SFU 切换转发层时——新的目标层可能正在传输 P 帧（而非 I 帧）→ 接收端解码器收到无 I 帧基础的 P 帧→花屏。SFU 需要<strong>等待目标层的下一个 I 帧</strong>（或主动请求 PLI→触发发送端编一个 I 帧）→ 从该 I 帧开始转发——切换点无缝。但等待 I 帧引入 1-3 秒 GOP 的额外切换延迟。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: Encoder Config ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">编码器配置 — 三层参数设计</h2>
+  <p class="sec-sub" id="s6s">Simulcast 各层之间的<strong>码率比、分辨率比、帧率选择</strong>直接影响总编码开销和用户体验——需要精心设计而非随意分配。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>典型 3 层配置 (1080p IPC)</h4>
+      <div class="sub">三层码率比 ≈ 8:3:1 · 满足绝大多数客户端</div>
+      <p><strong>High (h)</strong>：1080p@30fps, 2.0~3.0 Mbps<br>
+      <strong>Medium (m)</strong>：640×360@30fps, 0.6~1.0 Mbps。分辨率 = High 的 1/3 (每维)——画质可接受。<br>
+      <strong>Low (l)</strong>：320×180@15fps, 0.15~0.3 Mbps。保证在极弱网络 (3G/弱 WiFi) 下至少能看到画面。<br>
+      <strong>码率比 8:3:1</strong> 是经验最优——如果差异太小，层间切换无意义（两层都差不多）；差异太大，Low 层画质太差。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>2 层配置 (720p IPC, 资源受限)</h4>
+      <div class="sub">仅 High + Low · 码率比 ≈ 5:1</div>
+      <p><strong>High (h)</strong>：720p@30fps, 1.0~1.5 Mbps<br>
+      <strong>Low (l)</strong>：320×180@15fps, 0.2~0.3 Mbps<br>
+      2 层配置适合<strong>编码能力有限的嵌入式设备</strong>——只运行 2 个硬件编码器。大多数场景只有 2 类客户端：WiFi 高质量 + 4G 低质量。第三层 Medium 的使用率极低——可以被 High 或 Low 覆盖。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>编码开销的优化</h4>
+      <div class="sub">硬件编码器共享参考帧 · Low 层降帧率</div>
+      <p><strong>Low 层降帧率</strong>：15fps vs 30fps——编码时间减半、码率减半——对弱网客户端完全够用。降帧率比降分辨率更有效降低编码开销。<br>
+      <strong>共享 motion vector</strong>（部分硬件编码器支持）：High 层和 Medium 层对同一帧做运动估计时，Medium 层可以复用 High 层的 MV 结果——减少计算量。<br>
+      <strong>编码器优先级</strong>：High 层 > Medium 层 > Low 层。CPU 不足时——先降 Low 层帧率（15→10fps），再降 Medium 层（30→20fps），保证 High 层质量。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 各层之间的 GOP 对齐 — 关键帧必须同时出现</div>
+    如果 High 层的 I 帧在 seq=50，Low 层的 I 帧在 seq=52——当 SFU 从 High 切换到 Low 时（seq=51 时刻）→ Low 层已经过了 I 帧→必须等到 seq=52 才能转发→切换延迟增加 2 秒（如果 GOP=2s）。<br>
+    解决：<strong>所有层的编码器共享同一个 GOP 节奏</strong>——当任一层的 I 帧到来时，其他层<strong>强制编 I 帧</strong>(通过 <code>force_key_frame()</code>)。这样 SFU 在任意时刻切换→目标层在下一个 GOP 周期 (≤2s) 内必然出现 I 帧。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: IPC ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">IPC 实战 — LiveKit + Simulcast 配置</h2>
+  <p class="sec-sub" id="s7s">LinkricAI 通过 LiveKit SDK 发布 Simulcast 视频——配置集中在 RtpEncodingParameters 中。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>LiveKit 配置 Simulcast (发送端)</h4>
+      <div class="sub">RtpEncodingParameters 数组 — 每层一个 entry</div>
+      <div class="cblock" style="margin-top:6px;font-size:10px;line-height:1.6"><span class="cm">// LiveKit VideoTrack 发布 Simulcast 3 层</span>
+<span class="kw">auto</span> track = LocalVideoTrack::<span class="fn">create</span>();
+<span class="kw">std::vector</span>&lt;RtpEncodingParameters&gt; layers = {
+    <span class="cm">// Low:   320×180, 15fps, 200Kbps</span>
+    { .rid = <span class="st">"l"</span>, .maxBitrate = <span class="nu">200000</span>, .scaleResolutionDownBy = <span class="nu">6.0</span>,
+      .maxFramerate = <span class="nu">15</span>, .active = <span class="kw">true</span> },
+    <span class="cm">// Medium: 640×360, 30fps, 800Kbps</span>
+    { .rid = <span class="st">"m"</span>, .maxBitrate = <span class="nu">800000</span>, .scaleResolutionDownBy = <span class="nu">3.0</span>,
+      .maxFramerate = <span class="nu">30</span>, .active = <span class="kw">true</span> },
+    <span class="cm">// High:   1080p, 30fps, 2.5Mbps (原始分辨率)</span>
+    { .rid = <span class="st">"h"</span>, .maxBitrate = <span class="nu">2500000</span>, .scaleResolutionDownBy = <span class="nu">1.0</span>,
+      .maxFramerate = <span class="nu">30</span>, .active = <span class="kw">true</span> },
+};
+track-><span class="fn">publish</span>(layers);</div>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>IPC 场景的 Simulcast 最佳实践</h4>
+      <div class="sub">2 层足够 · 硬件编码器 · H.264 only</div>
+      <p><strong>推荐 2 层 (不推荐 3 层)</strong>：IPC 相机硬件编码器通常只支持 2 路并发（主码流 + 子码流）。3 层需要 3 个硬件编码器——多数 SoC 不支持（Rockchip 的 MPP 可支持 2 路）。<br>
+      <strong>主码流 (High)</strong>：1080p@30fps, 1.5~3Mbps——WiFi/LAN 客户端使用。<br>
+      <strong>子码流 (Low)</strong>：640×360@15fps, 200~400Kbps——4G/弱网/AI 检测使用。<br>
+      <strong>码率配置建议</strong>：Low 层码率 = 真正常用弱网场景的下行带宽（200Kbps 足够在 4G 下稳定传输）。不要设太低的 Low 层（64Kbps 画质不可用——AI 检测无法识别人脸）。<br>
+      <strong>与 Cloud Recording 的互动</strong>：LiveKit Egress 录制时——默认录制 High 层（保证录像质量）。Composite 录制时——SFU 将所有客户端的视频流合并为一个布局——每路视频的 Simulcast 层由 SFU 自动选择。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  WebRTC Simulcast 多层编码 · 深度解析 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="webrtc_gcc_algorithm.html">GCC 拥塞控制 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+
+(function() {
+  const c = document.getElementById('c1'); if(!c) return;
+  const ctx = c.getContext('2d'); let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=380; c.width=W*dpr; c.height=H*dpr; c.style.width=W+'px'; c.style.height=H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+  function drawBox(x,y,w,h,label,color,alpha){
+    ctx.fillStyle=color;ctx.globalAlpha=alpha||0.12;ctx.beginPath();ctx.roundRect(x-w/2,y-h/2,w,h,8);ctx.fill();
+    ctx.strokeStyle=color;ctx.globalAlpha=0.35;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#d0d0f0';ctx.globalAlpha=0.9;ctx.font='bold 11px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+    const lines=label.split('\n');lines.forEach((l,i)=>ctx.fillText(l,x,y-(lines.length-1)*7+i*15));ctx.globalAlpha=1;
+  }
+  function drawArrow(x1,y1,x2,y2,color){
+    ctx.strokeStyle=color;ctx.globalAlpha=0.5;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const ang=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-10*Math.cos(ang-0.4),y2-10*Math.sin(ang-0.4));
+    ctx.lineTo(x2-10*Math.cos(ang+0.4),y2-10*Math.sin(ang+0.4));ctx.fill();ctx.globalAlpha=1;
+  }
+  function animate(){t+=0.016;ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#e0e0ff';ctx.font='bold 14px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('Simulcast: 编码器 → SFU 选路 → 多客户端',W/2,22);
+    const cax=W*0.15,sfux=W*0.45;
+    drawBox(cax,70,100,45,'IPC Camera\nSimulcast × 3','#f87171');
+    const encY=130;
+    drawBox(cax,encY,90,36,'Enc h 1080p','#fbbf24',0.1);drawBox(cax,encY+42,90,36,'Enc m 360p','#fbbf24',0.08);drawBox(cax,encY+84,90,36,'Enc l 180p','#fbbf24',0.06);
+    drawArrow(cax+45,92,cax+45,112,'#fbbf24');drawArrow(cax+45,130,cax+45,150,'#fbbf24');
+    drawBox(sfux,70,130,50,'SFU\n选路','#a78bfa');
+    const colors=['#fbbf24','#fbbf24','#fbbf24'];
+    for(let i=0;i<3;i++){
+      const y=encY+i*42;drawArrow(cax+45,y+18,sfux-65,y+18,'#fbbf24');
+    }
+    const clients=[
+      {x:W*0.72,y:80,label:'Client A\nWiFi 5Mbps',layer:'← High'},
+      {x:W*0.82,y:170,label:'Client B\n4G 500Kbps',layer:'← Low'},
+      {x:W*0.72,y:260,label:'Client C\nLAN 100Mbps',layer:'← High'},
+    ];
+    clients.forEach(cl=>{
+      drawBox(cl.x,cl.y,100,42,cl.label,'#34d399',0.1);
+      drawArrow(sfux+65,cl.y-10,cl.x-50,cl.y-10,'#34d399');
+      ctx.fillStyle='#34d399';ctx.globalAlpha=0.7;ctx.font='bold 10px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+      ctx.fillText(cl.layer,cl.x,cl.y-28);
+    });
+    ctx.globalAlpha=1;requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

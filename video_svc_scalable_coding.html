@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SVC 可伸缩视频编码 — 时域·空域·质量分层</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.5; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(24px,5vw,34px);font-weight:900">SVC 可伸缩视频编码</h2>
+  <p class="sec-sub">系统化知识体系 — 时域·空域·质量三层可伸缩 · H.264 SVC · VP9 SVC · SHVC · Simulcast对比 · WebRTC实战</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>时域<br>Temporal</strong></span>
+    <span class="flow-arr">×</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>空域<br>Spatial</strong></span>
+    <span class="flow-arr">×</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>质量<br>SNR/Quality</strong></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>一次编码, 多层输出</h4><div class="sub">编一次 → 多方按需取</div>
+      <p>SVC 编码器<strong>只编一次</strong>，生成含多层的单一码流。SFU/路由器可<strong>选择性丢弃高层 NAL 单元</strong>，低带宽接收方只收基层 → 无需转码。这是 WebRTC 多方会议的<em>核心竞争力</em>。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Simulcast vs SVC</h4><div class="sub">多流独立编码 vs 单流层级编码</div>
+      <p><em>Simulcast</em>: 编码器同时编 3 路独立流 (720p/360p/180p) → 发布端 CPU 高 · 上行带宽大。<em>SVC</em>: 一个流含 3 层 → 发布端 CPU 低 · 上行带宽小。但<strong>硬件解码兼容性</strong> Simulcast 更好。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>WebRTC 中的应用</h4><div class="sub">VP9 SVC + AV1 SVC</div>
+      <p>Chrome 支持 VP9 SVC (L1T3~L3T3)。SFU 根据订阅方带宽<strong>选择性转发</strong>层 → 720p 给桌面端, 180p 给移动端 — <strong>同一发布流服务所有订阅方</strong>。2024 年 AV1 SVC 逐步成熟。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 概念 ══ -->
+<h2 class="sh">1. SVC 三轴可伸缩性 — 核心概念</h2>
+<p class="ss">Temporal (帧率) · Spatial (分辨率) · Quality/SNR (画质) — 三者可任意组合</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>时域可伸缩 (Temporal)</h4><div class="lbl">帧率分层: 30fps → 15fps → 7.5fps</div>
+    <p><strong>原理</strong>: 通过<strong>层级 B 帧</strong> 预测结构实现。基层 (T0) = I/P 帧, 增强层 (T1/T2) = B 帧, 参考 T0。<br>
+    <strong>实现</strong>: 每个 NAL 单元带 <code>temporal_id</code> (TID)。丢弃 TID ≥ N 的所有 NAL → 帧率降为 1/2^N。<br>
+    <strong>开销</strong>: 几乎零额外开销 — H.264/VP8 本身已支持时域分层。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>空域可伸缩 (Spatial)</h4><div class="lbl">分辨率分层: 1080p → 720p → 360p</div>
+    <p><strong>原理</strong>: 基层编码低分辨率, 增强层编码<strong>差值</strong> (本层原始 - 基层上采样)。<br>
+    <strong>层间预测</strong>: 增强层复用基层的运动矢量+模式 (<em>Inter-Layer Motion Prediction</em>) + 残差预测。<br>
+    <strong>开销</strong>: ~10-20% 额外码率 (vs 单独编码各分辨率)。典型二倍下采样 (dyadic)。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>质量可伸缩 (SNR/Quality)</h4><div class="lbl">相同分辨率下的画质分层</div>
+    <p><strong>CGS</strong> (粗粒度): 不同层用不同 QP — 只能在 IDR 切换层。<br>
+    <strong>MGS</strong> (中粒度): 可在任意帧切换 — 通过<strong>关键帧 (K-picture)</strong> 限制漂移。最多 15 个 MGS 质量级。<br>
+    <strong>原理</strong>: 增强层 = 基层量化残差的精细编码 → 迭代还原被粗量化的高频细节。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ SVC 三层组合 — 3D 可伸缩空间 ═══ */</span>
+<span class="cm">                    Quality (SNR)</span>
+<span class="cm">                       ▲</span>
+<span class="cm">              Q2 ┌─────┼─────┐</span>
+<span class="cm">                 │     │     │     每一层 = (S, T, Q) 三元组</span>
+<span class="cm">              Q1 ├──S1─┼─S2──┤     S = spatial_id</span>
+<span class="cm">                 │╱    │╱    │     T = temporal_id</span>
+<span class="cm">              Q0 └─────┼─────┘     Q = quality_id</span>
+<span class="cm">                 ╱     ╱     </span>
+<span class="cm">        Spatial ──────▶        (分辨率递增)      每层可独立丢弃</span>
+<span class="cm">           Temporal →  (帧率递增, 垂直于纸面)    → 接收方按需订阅</span></div>
+
+
+<!-- ══ Ch2: H.264 SVC ══ -->
+<h2 class="sh">2. H.264 SVC (Annex G) — 经典标准详解</h2>
+<p class="ss">ITU-T + ISO/IEC 联合标准 · NAL 扩展头 · dependency_id · quality_id · temporal_id · 层间预测三模式</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>NAL 单元扩展头部 (3 字节)</h4><div class="lbl">比 AVC 基础 NAL 头多 3 字节的层标识</div>
+    <p><strong>dependency_id (D, 3-bit)</strong>: 空域/CGS 依赖层。D=0 为基层 (兼容 AVC), D 递增。<br>
+    <strong>quality_id (Q, 4-bit)</strong>: MGS 质量细化层。每 D 层可有 0~15 个 Q 子层。<br>
+    <strong>temporal_id (T, 3-bit)</strong>: 时域层。T=0 为基层帧率, T 递增。<br>
+    <strong>priority_id (P, 6-bit)</strong>: 优先级 — 网络节点据此决定丢包顺序。<br>
+    <strong>Access Unit</strong>: 同一时刻的所有 D/Q/T NAL 聚合 → 解码器从中提取目标层。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>层间预测 — 三种模式</h4><div class="lbl">增强层复用基层信息 → 大幅提升编码效率</div>
+    <p><strong>① Inter-Layer Intra Prediction</strong>: 增强层 MB 从基层<strong>上采样重建块</strong> 预测 (空间域)。<br>
+    <strong>② Inter-Layer Motion Prediction</strong>: 增强层<strong>继承基层运动矢量 + 分区模式</strong> → 无需重新做运动估计。<br>
+    <strong>③ Inter-Layer Residual Prediction</strong>: 增强层残差 = 实际残差 - 上采样的<strong>基层残差</strong> → 进一步压缩。<br>
+    <strong>单循环解码</strong>: SVC 设计目标 — 解码器只需在目标层做一次运动补偿, 保持复杂度可控。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>SVC Profile</th><th>对应 AVC Profile</th><th>适用场景</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Scalable Baseline</strong></td><td>Baseline</td><td>视频通话、移动、监控</td></tr>
+    <tr><td><strong>Scalable High</strong></td><td>High</td><td>广播、流媒体、存储</td></tr>
+    <tr><td><strong>Scalable High Intra</strong></td><td>High Intra</td><td>专业制作 (全 I 帧)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch3: VP9 SVC ══ -->
+<h2 class="sh">3. VP9 SVC — WebRTC 的 SVC 主力</h2>
+<p class="ss">Google 的设计哲学: 简化 SVC · 单码流多层级 · Chrome 原生支持 · SFU 选择性转发</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>LxTy 层级命名</h4><div class="lbl">L=空域层数, T=时域层数</div>
+    <p><strong>L1T3</strong>: 1 空域 × 3 时域 (仅帧率可伸缩)<br>
+    <strong>L2T3</strong>: 2 空域 × 3 时域 (2种分辨率+帧率)<br>
+    <strong>L3T3</strong>: ★ 最常用 — 3 空域 (720p/360p/180p) × 3 时域 (30/15/7.5fps) → <strong>9 种组合</strong><br>
+    <strong>L3T3_KEY</strong>: keyframe 为同步点 — 切换更快<br>
+    Chrome 通过 <code>scalabilityMode</code> 字段 (如 <code>"L3T3_KEY"</code>) 配置。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>层间参考 — On / Off / OnKeyPic</h4><div class="lbl">控制高层是否依赖低层做预测</div>
+    <p><strong>Off</strong>: 层间独立 — 每层独立编码, 类似 Simulcast 但共享码流。<br>
+    <strong>On</strong>: 层间预测 — 高层复用低层的运动矢量+残差 → <strong>额外节省 10-20% 码率</strong>。<br>
+    <strong>OnKeyPic</strong>: 仅 keyframe 做层间预测 → 兼顾效率与随机访问。<br>
+    <strong>Chroma</strong>: VP9 4:2:0 — 层间色度预测是 SVC 效率的关键之一 (vs Simulcast 重复编码色度)。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>WebRTC 集成</h4><div class="lbl">Chrome 标志 + SFU 配合</div>
+    <p><strong>启用</strong>: <code>--force-fieldtrials=WebRTC-SupportVP9SVC/EnabledByFlag_3SL3TL/</code><br>
+    <strong>RTCRtpEncodingParameters.scalabilityMode</strong>: <code>"L3T3_KEY"</code><br>
+    <strong>SFU 职责</strong>: 检查每个 RTP 包的 <strong>RTP 头扩展</strong> (frame-marking / scalability structure) → 根据订阅方带宽<strong>丢弃</strong>高层包 → 只转发低层。<br>
+    <strong>关键优势</strong>: 发布端<strong>只编一次</strong> → CPU+带宽节省 ~30% vs Simulcast 3 路。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ VP9 SVC 的限制</div>
+  <strong>硬件解码</strong>: 即使设备支持 VP9 硬解, <strong>不一定支持 VP9 SVC 码流</strong>。Chrome 可能退回到软解 → 高分辨率 (1080p) 时 CPU 过载。这是 Simulcast + H.264 硬解的<strong>最大优势</strong> — H.264 硬解几乎通用。<br>
+  <strong>Firefox 不支持</strong> SVC — 只能用 Simulcast。<br>
+  <strong>Safari 15+</strong> 支持 VP9 但不支持 SVC。
+</div>
+
+<!-- ══ Ch4: SHVC + AV1 SVC ══ -->
+<h2 class="sh">4. SHVC (H.265) 与 AV1 SVC</h2>
+<p class="ss">SHVC = H.265 Annex H — 比 H.264 SVC 更高效 · AV1 SVC — 下一代免版税编码的可伸缩扩展</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>SHVC (Scalable HEVC)</h4><div class="lbl">H.265 Annex H — 2014 标准化</div>
+    <p><strong>核心改进</strong>: ① SHVC 的基层可以用<strong>不同的编码标准</strong> — 如 H.264 基层 + H.265 增强层 (混合编码) ② 利用 HEVC 本身的 CTU 四叉树 + 更大块 → 更灵活的分区 ③ 支持 <strong>Bit-depth Scalability</strong> (8-bit 基层 + 10-bit 增强层) ④ 支持 <strong>Color Gamut Scalability</strong> (BT.709 基层 + BT.2020 增强层)。<br>
+    <strong>现状</strong>: SHVC 未被广泛部署 — H.265 专利费问题使大多数 WebRTC 实现选择了 VP9/AV1 路线。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>AV1 SVC — 免版税的未来</h4><div class="lbl">AOMedia — 2022+ 标准化</div>
+    <p><strong>AV1 原生支持</strong>: 时域 + 空域可伸缩 — 不需要像 H.264 那样的 Annex G 扩展。<br>
+    <strong>关键设计</strong>: ① <code>spatial_layer_id</code> 和 <code>temporal_layer_id</code> 内置在 OBU (Open Bitstream Unit) 头中 ② 支持<strong>参考帧缩放 (Reference Frame Scaling)</strong> — 不同分辨率的参考帧可互相引用, 无需显式上采样 ③ <strong>Loop Restoration + CDEF 滤波</strong> 对多层编码质量尤其关键。<br>
+    <strong>WebRTC 进展</strong>: Chrome M113+ 支持 AV1 SVC (via <code>scalabilityMode: "L3T3_KEY"</code>)。编码计算量大但效率优于 VP9 SVC ~20%。</p>
+  </div>
+</div>
+
+
+<!-- ══ Ch5: Simulcast vs SVC ══ -->
+<h2 class="sh">5. Simulcast vs SVC — 选型决策</h2>
+<p class="ss">两者都是解决"多方不同带宽"的方案 — 但实现路径完全不同 · 一张表看清所有差异</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:14%">维度</th><th style="width:43%">Simulcast</th><th style="width:43%">SVC</th></tr></thead>
+  <tbody>
+    <tr><td><strong>工作原理</strong></td><td>编码器<strong>同时编 3 路独立流</strong> (如 720p/360p/180p)</td><td>编码器<strong>只编 1 路</strong>含多层 — SFU 丢弃高层 NAL</td></tr>
+    <tr><td><strong>发布端 CPU</strong></td><td class="r">高 — 3× 编码复杂度</td><td class="g">中 — 1× + 层间预测开销 (~10-20%)</td></tr>
+    <tr><td><strong>发布端上行带宽</strong></td><td class="r">高 — 3 路独立码率之和</td><td class="g">低 — 1 路含所有层的码率</td></tr>
+    <tr><td><strong>SFU 复杂度</strong></td><td class="g">低 — 直接选一路转发</td><td class="y">中 — 需解析 RTP 扩展 + 选择性丢弃 NAL</td></tr>
+    <tr><td><strong>硬件解码兼容性</strong></td><td class="g"><strong>极好</strong> — H.264 硬解几乎通用</td><td class="r">差 — 多数硬解码器不支持 SVC 码流</td></tr>
+    <tr><td><strong>浏览器支持</strong></td><td class="g">所有浏览器 (H.264/VP8)</td><td class="y">Chrome only (VP9/AV1 SVC)</td></tr>
+    <tr><td><strong>每流编码器数量</strong></td><td>3 个独立 encoder 实例</td><td>1 个 encoder 实例</td></tr>
+    <tr><td><strong>订阅方切换延迟</strong></td><td>可即时切换 (每流独立)</td><td>需要等 keyframe 同步</td></tr>
+    <tr><td><strong>编码标准</strong></td><td>H.264 / VP8 / H.265 / AV1</td><td>H.264 SVC / VP9 / AV1 / SHVC</td></tr>
+    <tr><td><strong>适用场景</strong></td><td>兼容性优先 · 有硬件编码 · 参与者少</td><td>带宽受限发布端 · 大规模多方会议 · CPU 有裕量</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">实战决策: 什么时候用 SVC, 什么时候用 Simulcast?</div>
+  <strong>用 Simulcast</strong>: ① 移动端发布 (依赖 H.264 硬编, 不支持 SVC) ② 需要 Safari/Firefox 兼容 ③ 发布端上行带宽充裕 (WiFi)。<br>
+  <strong>用 SVC</strong>: ① 桌面端发布 (CPU 充裕) ② 发布端上行受限 (4G/弱网) ③ 大型多方会议 (大量订阅方 → SVC 的发布端节省 × N 订阅方) ④ 追求带宽效率极致优化。
+</div>
+
+<!-- ══ Ch6: 配置 ══ -->
+<h2 class="sh">6. 实战配置 — WebRTC · FFmpeg · x264</h2>
+<p class="ss">浏览器端 WebRTC API · FFmpeg 命令行 · x264 SVC 参数</p>
+
+<div class="cb">
+<span class="cm">/* ===== WebRTC — VP9 SVC 配置 (JavaScript) ===== */</span>
+<span class="kw">const</span> pc = <span class="kw">new</span> RTCPeerConnection();
+
+<span class="cm">// VP9 SVC — 3 空域 × 3 时域</span>
+<span class="kw">const</span> transceiver = pc<span class="op">.</span><span class="fn">addTransceiver</span>(<span class="st">'video'</span>, {
+    sendEncodings: [
+        { rid: <span class="st">'h'</span>, scalabilityMode: <span class="st">'L3T3_KEY'</span>, maxBitrate: <span class="nu">2500000</span> }, <span class="cm">// 720p</span>
+        { rid: <span class="st">'m'</span>, scalabilityMode: <span class="st">'L3T3_KEY'</span>, maxBitrate: <span class="nu">800000</span>  }, <span class="cm">// 360p</span>
+        { rid: <span class="st">'l'</span>, scalabilityMode: <span class="st">'L3T3_KEY'</span>, maxBitrate: <span class="nu">200000</span>  }, <span class="cm">// 180p</span>
+    ]
+});
+
+<span class="cm">// AV1 SVC (Chrome M113+)</span>
+<span class="kw">const</span> tc2 = pc<span class="op">.</span><span class="fn">addTransceiver</span>(<span class="st">'video'</span>, {
+    sendEncodings: [
+        { scalabilityMode: <span class="st">'L3T3_KEY'</span>, maxBitrate: <span class="nu">2500000</span> },
+    ]
+});
+
+<span class="cm">/* ===== FFmpeg — libx264 SVC 编码 ===== */</span>
+<span class="cm"># 时域可伸缩 (3 temporal layers)</span>
+ffmpeg -i input.mp4 -c:v libx264 -x264-params <span class="st">"temporal-layers=3"</span> output.mp4
+
+<span class="cm">/* ===== x264 命令行 — 空域 SVC (需 OpenCL) ===== */</span>
+<span class="cm"># H.264 SVC 空域可伸缩 (支持的硬件/编译选项较少)</span>
+x264 --bitrate <span class="nu">5000</span> --svc <span class="st">"2,640x360,1280x720"</span> -o output.264 input.y4m</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>WebRTC scalabilityMode</th><th>含义</th><th>层数</th></tr></thead>
+  <tbody>
+    <tr><td><code>"L1T3"</code></td><td>1 空域 + 3 时域</td><td>3</td></tr>
+    <tr><td class="g"><code>"L3T3_KEY"</code></td><td class="g">3 空域 + 3 时域, keyframe 同步 ★ 最常用</td><td class="g">9</td></tr>
+    <tr><td><code>"L2T2_KEY"</code></td><td>2 空域 + 2 时域</td><td>4</td></tr>
+    <tr><td><code>"L3T1"</code></td><td>3 空域 + 1 时域 (仅空域可伸缩, 全帧率)</td><td>3</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 面试要点: 能说清楚 SVC vs Simulcast 在 WebRTC 中的权衡</div>
+  <strong>SVC 的"甜区"</strong>: 发布端上行受限 + 订阅方数 > 3 → SVC 的总上行节省 × N 订阅方 ≥ 发布端 CPU 开销。<br>
+  <strong>Simulcast 的"甜区"</strong>: 有硬件编码 (H.264 HW Enc) + 需兼容所有浏览器/设备 → Simulcast 是安全选择。<br>
+  <strong>混合部署</strong>: 许多 SFU 支持 Simulcast 和 SVC 混合 — 桌面端用 VP9 SVC, 移动端用 H.264 Simulcast。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  SVC Scalable Video Coding — 系统化知识体系 · 2026-06 · H.264 Annex G · VP9 SVC · SHVC · AV1 SVC · WebRTC
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

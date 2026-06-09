@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频降噪 ANS — 从谱减法到深度学习的完整体系</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.5; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(22px,5vw,34px);font-weight:900">音频降噪 ANS</h2>
+  <p class="sec-sub">系统化知识体系 — 谱减法 · Wiener 滤波 · MMSE · WebRTC ANS 源码 · RNNoise GRU · 深度学习降噪</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>谱减法</strong><br><small>1979</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>Wiener 滤波</strong><br><small>最优线性</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>MMSE</strong><br><small>Ephraim-Malah</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>机器学习</strong><br><small>RNNoise/PercepNet</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>传统方法</h4><div class="sub">谱减法 · Wiener · MMSE-LSA</div>
+      <p><em>谱减法</em>: |Ŝ|² = |Y|² - |N̂|² — 简单但产生音乐噪声。<em>Wiener 滤波</em>: H = ξ/(1+ξ) — 最优线性。MMSE-LSA 通过<strong>决策导向 SNR 估计</strong>大幅压制音乐噪声。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>WebRTC ANS</h4><div class="sub">量化噪声估计 · 子带处理 · MCRA</div>
+      <p>分位数跟踪 + MCRA 双重噪声估计。16 子带<strong>差异化处理</strong>(低频激进/高频保守)。Wiener+谱减混合增益 + 三级平滑消除音乐噪声。源码: <code>ns_core.c</code>。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>深度学习 (RNNoise)</h4><div class="sub">GRU RNN · Bark 频带 · 0.5MB</div>
+      <p>42 维 Bark 尺度特征 → 3 层 GRU (各 128 单元) → 22 频带 gain + VAD 双输出。模型仅 ~85KB, 延迟 <10ms。2024 年 v0.2 新增可加载模型格式。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<h2 class="sh">1. 噪声类型与 ANS 在音频链路中的位置</h2>
+<p class="ss">稳态噪声 vs 非稳态噪声 · ANS 位于 AEC 之后、AGC 之前 · STFT 频域处理框架</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>噪声分类</h4><div class="lbl">不同噪声需要不同的处理策略</div>
+    <p><strong>稳态噪声 (Stationary)</strong>: 风扇声、空调声、道路白噪声、电路底噪 — 频谱特性<strong>不随时间变化</strong>。谱减法/Wiener 可有效处理。<br>
+    <strong>非稳态噪声 (Non-stationary)</strong>: 键盘敲击、关门声、狗叫、餐具碰撞 — 频谱特性<strong>瞬态变化</strong>。传统方法难以处理 → 需要深度学习 (RNNoise/PercepNet)。<br>
+    <strong>混响 (Reverberation)</strong>: 房间反射 — 不同于加性噪声，需要<strong>去混响</strong> (Dereverberation) 专门处理。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ANS 在音频 Pipeline 中的位置</h4><div class="lbl">Mic → HPF → AEC → ★ ANS → AGC → Encoder</div>
+    <p><strong>AEC 之后</strong>: 回声消除必须先于降噪 — 否则 ANS 会把回声当作噪声学习 → 模型污染。<br>
+    <strong>AGC 之前</strong>: 降噪后再增益 — 如果先增益会把噪声也放大 → 降低信噪比。<br>
+    <strong>处理框架</strong>: 大多数 ANS 在<strong>频域 (STFT)</strong> 操作 — 10ms 帧, 50% 重叠, Hann/Hamming 窗。核心操作: <strong>估计噪声谱 → 计算增益 → 乘到幅度谱 → 保留相位 → ISTFT</strong>。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ ANS 频域处理框架 ═══ */</span>
+<span class="cm"><b>Input: 10ms PCM frame (160 samples @ 16kHz)</b></span>
+<span class="cm">    │</span>
+<span class="cm">    ├── 1. <i>Windowing</i> (Hann window, 50% overlap)</span>
+<span class="cm">    ├── 2. <i>FFT</i> → complex spectrum Y(ω) = |Y(ω)|·e^{j·φ(ω)}</span>
+<span class="cm">    │</span>
+<span class="cm">    ├── 3. <i>Noise Estimation</i> — 从 Y(ω) 中估计噪声幅度谱 |N̂(ω)|</span>
+<span class="cm">    │        ├── 谱减法: 静音段平均</span>
+<span class="cm">    │        ├── 分位数跟踪 (WebRTC 原有)</span>
+<span class="cm">    │        ├── MCRA (Minima-Controlled Recursive Averaging)</span>
+<span class="cm">    │        └── 神经网络直接预测 (RNNoise/PercepNet)</span>
+<span class="cm">    │</span>
+<span class="cm">    ├── 4. <i>Gain Computation</i> — 根据 |Y(ω)| 和 |N̂(ω)| 计算每频点的衰减增益 G(ω)</span>
+<span class="cm">    │        ├── 谱减法: G = max(|Y|² - β|N̂|², γ·|Y|²) / |Y|²</span>
+<span class="cm">    │        ├── Wiener: G = ξ/(1+ξ)  (ξ = a priori SNR)</span>
+<span class="cm">    │        └── DNN: G = sigmoid(network_output)</span>
+<span class="cm">    │</span>
+<span class="cm">    ├── 5. <i>Apply Gain + Smoothing</i> — |Ŝ(ω)| = G(ω)·|Y(ω)|, 保留原始相位</span>
+<span class="cm">    │        └── 频谱平滑 (中值滤波) + 时间平滑 (IIR) 消除音乐噪声</span>
+<span class="cm">    │</span>
+<span class="cm">    └── 6. <i>ISTFT + Overlap-Add</i> → denoised PCM</span></div>
+
+
+<h2 class="sh">2. 谱减法 (Spectral Subtraction) — 1979 年经典</h2>
+<p class="ss">最直观的降噪方法 · |Ŝ|² = |Y|² - |N̂|² · 过减因子 β · 谱下限 γ · 音乐噪声的产生与抑制</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>基本原理</h4><div class="lbl">噪声功率谱减法 — 最直观的思路</div>
+    <p><strong>核心公式</strong>: <code>|Ŝ(ω)|² = |Y(ω)|² - |N̂(ω)|²</code><br>
+    <strong>假设</strong>: 噪声是<strong>加性且与语音不相关</strong> → 功率谱可加。噪声是<strong>稳态</strong>的 — 静音段估计的噪声谱可代表全段。<br>
+    <strong>噪声估计</strong>: 在<strong>静音段</strong> (VAD=0) 对 |Y|² 做指数平均: <code>|N̂|² = α·|N̂_old|² + (1-α)·|Y|²</code>。<br>
+    <strong>致命缺陷</strong>: 减法后可能出现<strong>负值</strong> → 设下限为 0 → 产生随机孤立频谱峰值 → 听感上像<strong>"音乐噪声"</strong> (随机音调)。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>过减 + 谱下限 — 缓解音乐噪声</h4><div class="lbl">β 控制过减 · γ 控制下限 · α 控制平滑</div>
+    <p><strong>改进公式</strong>: <code>G = max( (|Y|² - β·|N̂|²) / |Y|²,  γ )</code><br>
+    <strong>β (过减因子, 1.5~3.0)</strong>: 加倍扣除噪声 → 残留噪声幅度降低，但语音失真增加。<br>
+    <strong>γ (谱下限, 0.002~0.2 ≈ -27dB~-14dB)</strong>: 保证所有频点至少保留 γ 倍原幅度 → 避免"静音"的孤立峰值（音乐噪声的根因）。<br>
+    <strong>自适应 β</strong>: 高 SNR 段 → 低 β (1.5) · 低 SNR 段 → 高 β (2.5~3.0) → 平衡失真与残留噪声。</p>
+  </div>
+</div>
+
+<h2 class="sh">3. Wiener 滤波 — 最优线性估计</h2>
+<p class="ss">频域最小均方误差最优解 · 决策导向 SNR 估计 (Ephraim-Malah 1984) · 理解它是理解一切现代方法的基石</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>Wiener 增益函数</h4><div class="lbl">G = ξ / (1 + ξ) — 极其简洁</div>
+    <p><strong>推导</strong>: 令 E[|Ŝ - S|²] 最小 → 频域解: <code>G(ω) = ξ(ω) / (1 + ξ(ω))</code><br>
+    其中 <strong>ξ = P_s / P_n</strong> = 先验 SNR (a priori SNR)。<br>
+    <strong>与谱减法的关系</strong>: 当用瞬时 SNR 估计先验 SNR 时, Wiener 退化为谱减法。<br>
+    <strong>关键挑战</strong>: 先验 SNR ξ 是<strong>未知的</strong> — 我们需要从含噪语音中<strong>估计</strong>它。这就是 <strong>Ephraim-Malah 1984 的核心贡献</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>决策导向 (DD) SNR 估计 ★</h4><div class="lbl">ξ̂ = α·Ŝ²_prev/N̂ + (1-α)·max(γ-1, 0)</div>
+    <p><strong>后验 SNR</strong>: γ = |Y|² / |N̂|² — 可以直接算 (已知 |Y|, 估计 |N̂|)。<br>
+    <strong>先验 SNR (DD 估计)</strong>: <code>ξ̂(n) = α·|Ŝ(n-1)|²/|N̂|² + (1-α)·max(γ-1, 0)</code><br>
+    <strong>α (平滑系数, 默认 0.98)</strong>: 第一项 = 上帧的干净语音功率 / 当前噪声 (利用帧间相关性) · 第二项 = 当前观测的瞬时 SNR (快响应)。<br>
+    <strong>为什么 DD 比直接用后验 SNR 好?</strong> 后验 SNR 逐帧波动剧烈 → 增益剧烈波动 → 音乐噪声。DD 的平滑作用<strong>大幅抑制这种波动</strong>。这是现代降噪算法的基石。</p>
+  </div>
+</div>
+
+<h2 class="sh">4. MMSE 估计器 — 超越线性</h2>
+<p class="ss">MMSE-STSA · MMSE-LSA · 复杂的非线性增益公式 · 音乐噪声几乎消除 · 画质最好的传统方法</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>MMSE-STSA (Ephraim-Malah 1984)</h4><div class="lbl">最小均方误差 — 短时谱幅度</div>
+    <p><strong>假设</strong>: 语音和噪声的 DFT 系数都服从<strong>复高斯分布</strong> → 在此模型下推导最优幅度估计器。<br>
+    <strong>增益</strong>: 不是简单的闭式解 — 涉及 <strong>Bessel 函数</strong> (I₀/I₁) 的复杂表达式。计算机查表实现。<br>
+    <strong>效果</strong>: 比 Wiener 滤波的音乐噪声<strong>显著减少</strong> — 因为 Bessel 函数自然提供了"软掩膜"效果。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>MMSE-LSA (Ephraim-Malah 1985)</h4><div class="lbl">对数谱幅度 — 感知更优</div>
+    <p><strong>改进动机</strong>: 人耳对<strong>对数幅度</strong> (dB) 而非线性幅度敏感。<br>
+    <strong>目标</strong>: E[(log|S| - log|Ŝ|)²] 最小化。<br>
+    <strong>增益</strong>: <code>G_LSA = (ξ/(1+ξ)) · exp(½∫(e^{-t}/t)dt)</code> — 含<strong>指数积分</strong>。<br>
+    <strong>效果</strong>: 比 MMSE-STSA 的感知质量更好 — 是传统方法的<strong>天花板</strong> (在深度学习出现之前)。WebRTC ANS 的增益计算部分基于 LSA 思想。</p>
+  </div>
+</div>
+
+
+<h2 class="sh">5. WebRTC ANS 源码深度 — ns_core.c</h2>
+<p class="ss">分位数噪声估计 · 16 子带差异化处理 · 3 特征语音/噪声分类 · 三级平滑消除音乐噪声</p>
+
+<div class="cb">
+<span class="cm">/* ===== WebRTC ns_core.c — 核心算法伪代码 ===== */</span>
+<span class="cm">/* 输入: 10ms 帧, 16kHz, FFT=256点 → 129 频点 → 16 子带 */</span>
+
+<span class="cm">// ===== 1. 噪声估计: 分位数跟踪 (Quantile Noise Estimation) =====</span>
+<span class="kw">void</span> <span class="fn">NoiseEstimation</span>(<span class="kw">float</span> magn[<span class="nu">129</span>], <span class="kw">float</span> noise[<span class="nu">129</span>]) {
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="nu">0</span>; i &lt; <span class="nu">129</span>; i++) {
+        <span class="kw">float</span> lmagn = <span class="fn">log</span>(magn[i] + <span class="nu">1e-10</span>);       <span class="cm">// 对数域处理</span>
+        <span class="cm">// 分位数更新: 若当前幅度 > 分位数 → 分位数缓慢上升</span>
+        <span class="kw">if</span> (lmagn &gt; lquantile[i]) {
+            lquantile[i] += <span class="nu">0.001</span>;                <span class="cm">// 上升慢 (适应噪声增大)</span>
+        } <span class="kw">else</span> {
+            lquantile[i] -= <span class="nu">0.01</span>;                 <span class="cm">// 下降快 (跟踪噪声减小)</span>
+        }
+        noise[i] = <span class="fn">exp</span>(lquantile[i]);               <span class="cm">// 回线性域</span>
+    }
+}
+
+<span class="cm">// ===== 2. 语音/噪声分类: 3 特征 + 直方图 =====</span>
+<span class="kw">float</span> <span class="fn">SpeechProbability</span>() {
+    <span class="kw">float</span> lrt   = <span class="fn">ComputeLRT</span>();             <span class="cm">// 似然比 — 频谱形状匹配度</span>
+    <span class="kw">float</span> flat  = <span class="fn">SpectralFlatness</span>();      <span class="cm">// 频谱平坦度 — 噪声平坦 vs 语音谐波</span>
+    <span class="kw">float</span> diff  = <span class="fn">SpectralDifference</span>();     <span class="cm">// 与噪声模板的距离</span>
+
+    <span class="cm">// 每个特征的直方图 (500 帧) → 自适应阈值 → 概率映射</span>
+    <span class="kw">return</span> w_lrt * P_lrt + w_flat * P_flat + w_diff * P_diff;
+}
+
+<span class="cm">// ===== 3. 子带增益计算: SNR → 自适应 β,γ =====</span>
+<span class="kw">float</span> <span class="fn">ComputeGain</span>(<span class="kw">float</span> signal, <span class="kw">float</span> noise, <span class="kw">float</span> snr) {
+    <span class="kw">float</span> beta = <span class="nu">1.5</span>;  <span class="kw">float</span> gamma = <span class="nu">0.01</span>;       <span class="cm">// 默认值</span>
+    <span class="kw">if</span> (snr &lt; <span class="nu">0.5</span>) { beta = <span class="nu">3.0</span>;  gamma = <span class="nu">0.002</span>; }  <span class="cm">// 低 SNR → 激进降噪</span>
+    <span class="kw">else if</span> (snr &gt; <span class="nu">2.0</span>) { beta = <span class="nu">1.5</span>; gamma = <span class="nu">0.05</span>; }  <span class="cm">// 高 SNR → 保守降噪</span>
+
+    <span class="kw">float</span> wiener_gain = prior_snr / (<span class="nu">1</span> + prior_snr);
+    <span class="kw">float</span> ss_gain = <span class="fn">max</span>((signal - beta*noise)/signal, gamma);
+    <span class="kw">return</span> <span class="fn">min</span>(wiener_gain, ss_gain);           <span class="cm">// 取两者更保守</span>
+}
+
+<span class="cm">// ===== 4. 三级平滑 — 消灭音乐噪声 =====</span>
+<span class="kw">float</span> <span class="fn">SmoothGain</span>(<span class="kw">float</span> gain, <span class="kw">float</span> prev_gain, <span class="kw">int</span> bin) {
+    <span class="cm">// L1: 频谱平滑 — 5-point 中值滤波 (相邻频点)</span>
+    gain = <span class="fn">median5</span>(gain[bin-<span class="nu">2</span>], ..., gain[bin+<span class="nu">2</span>]);
+    <span class="cm">// L2: 时间平滑 — IIR 一阶滤波</span>
+    <span class="kw">float</span> alpha = (snr[bin] &gt; <span class="nu">1</span>) ? <span class="nu">0.9</span> : <span class="nu">0.7</span>;  <span class="cm">// 语音段平滑更多</span>
+    gain = alpha * prev_gain + (<span class="nu">1</span>-alpha) * gain;
+    <span class="cm">// L3: 增益下限 — 保证不丢语音</span>
+    <span class="kw">return</span> <span class="fn">max</span>(gain, <span class="nu">0.001</span>);                   <span class="cm">// -30dB floor</span>
+}</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>WebRTC ANS 的 16 子带策略</h4><div class="lbl">不同频段的差异化处理</div>
+    <p><strong>0–2 kHz (低频)</strong>: 最激进降噪 — 这里噪声最集中 (风扇/空调/道路)。<br>
+    <strong>2–4 kHz (中频)</strong>: 平衡处理 — 语音共振峰在此 (F1/F2) → 保护语音清晰度。<br>
+    <strong>4–8 kHz (高频)</strong>: 最保守降噪 — 保留环境自然感，避免"真空感"。<br>
+    子带间通过<strong>三次样条插值</strong>平滑过渡 → 避免子带边界产生不连续。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>WebRTC ANS 版本演进</h4><div class="lbl">三代: 固定阈值 → 统计模型 → 深度学习</div>
+    <p><strong>Gen 1 (已废弃)</strong>: 固定阈值谱减法。<br>
+    <strong>Gen 2 (当前 C 实现)</strong>: 分位数跟踪 + Wiener/MMSE 混合 + 子带处理。<br>
+    <strong>Gen 3 (M94+, 当前推荐)</strong>: ① <strong>PercepNet</strong> — 结合 DSP 与轻量 DNN (感知优化) ② <strong>NSNet2</strong> — RNN 基模型。<br>
+    <strong>API</strong>: <code>config.noise_suppression.level = kHigh</code> (Low/Moderate/High/VeryHigh)</p>
+  </div>
+</div>
+
+
+<h2 class="sh">6. RNNoise — 混合 DSP + GRU 的标杆</h2>
+<p class="ss">Mozilla/Xiph 开源 · 42 维 Bark 特征 · 3 层 GRU · 0.5MB 模型 · <10ms 延迟 · 2024 v0.2</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>网络层</th><th>输入</th><th>输出</th><th>激活</th></tr></thead>
+  <tbody>
+    <tr><td>Input Features</td><td>42 (Bark bands, pitch, VAD...)</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>Conv1 (1D)</strong></td><td>42</td><td>128</td><td>tanh</td></tr>
+    <tr><td><strong>Conv2 (1D)</strong></td><td>128</td><td>128</td><td>tanh</td></tr>
+    <tr><td class="g"><strong>GRU1</strong></td><td class="g">128</td><td class="g">128</td><td class="g">sigmoid/tanh (门控)</td></tr>
+    <tr><td class="g"><strong>GRU2</strong></td><td class="g">128</td><td class="g">128</td><td class="g">sigmoid/tanh</td></tr>
+    <tr><td class="g"><strong>GRU3</strong></td><td class="g">128</td><td class="g">128</td><td class="g">sigmoid/tanh</td></tr>
+    <tr><td>Concat: Conv2+GRU1+GRU2+GRU3</td><td>512</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>Dense (Gain)</strong></td><td>512</td><td>22 bands</td><td>sigmoid (0=全抑制, 1=全保留)</td></tr>
+    <tr><td><strong>Dense (VAD)</strong></td><td>512</td><td>1</td><td>sigmoid</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>GRU 核心方程</h4><div class="lbl">门控循环单元 — LSTM 的简化版</div>
+    <p><strong>为什么用 GRU 而非 LSTM?</strong> 参数量少 25%, 计算量更低, 降噪任务性能相当。<br>
+    <strong>四个核心公式</strong>:<br>
+    <code>z = σ(W_z·x + U_z·h)</code> — 更新门 (控制保留多少过去状态)<br>
+    <code>r = σ(W_r·x + U_r·h)</code> — 重置门 (控制用多少过去状态计算候选)<br>
+    <code>h̃ = tanh(W_h·x + U_h·(r⊙h))</code> — 候选新状态<br>
+    <code>h_new = z⊙h + (1-z)⊙h̃</code> — 新隐藏状态 (z 接近 1 → 保留旧状态; 接近 0 → 接受新候选)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>训练与部署</h4><div class="lbl">PyTorch 训练 → C 部署 · 0.5MB · 10ms</div>
+    <p><strong>训练数据</strong>: 干净语音 (TTS) + 噪声库 (DEMAND/街道/人群) × 混合 SNR (−5~+20dB) + 混响 (RIR)<br>
+    <strong>损失函数</strong>: <code>L = mean((1+5·VAD)·mask·(ĝ^0.25 - g^0.25)²)</code> — 语音段加权 6×, γ=0.25 感知指数<br>
+    <strong>部署</strong>: PyTorch → C 数组 (权重硬编码) → SSE4.1/AVX2 运行时自动选择。<br>
+    <strong>2024 新增</strong>: <code>rnnoise_model_from_file()</code> 加载外部 .rnnn 模型 — 可针对特定场景训练定制模型。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== RNNoise C API ===== */</span>
+<span class="pp">#include</span> <span class="st">"rnnoise.h"</span>
+
+<span class="cm">// 1. 创建降噪器 (48kHz)</span>
+<span class="kw">DenoiseState</span> *st = <span class="fn">rnnoise_create</span>(<span class="ma">NULL</span>);
+
+<span class="cm">// 2. 逐帧处理: 每帧 480 samples (10ms @ 48kHz)</span>
+<span class="kw">float</span> frame[<span class="nu">480</span>];
+<span class="kw">while</span> (<span class="fn">read_audio</span>(frame)) {
+    <span class="fn">rnnoise_process_frame</span>(st, frame, frame);  <span class="cm">// input → output (原地)</span>
+    <span class="fn">write_audio</span>(frame);
+}
+
+<span class="cm">// 3. 自定义模型 (2024 v0.2+)</span>
+<span class="kw">DenoiseState</span> *st2 = <span class="fn">rnnoise_create</span>(<span class="st">"my_noise_model.rnnn"</span>);
+
+<span class="cm">// 4. 销毁</span>
+<span class="fn">rnnoise_destroy</span>(st);
+
+<span class="cm">/* ===== 性能指标 ===== */</span>
+<span class="cm">// 模型大小: ~85KB (内置) / ~0.5MB (外部模型文件)</span>
+<span class="cm">// 参数量:  ~200K-500K</span>
+<span class="cm">// 延迟:    <10ms (3 frame pipeline)</span>
+<span class="cm">// RTF:     ~0.03 (单核 CPU) — 实时快 30×</span>
+<span class="cm">// PESQ:    ~3.2 (噪声场景)</span></div>
+
+
+<h2 class="sh">7. 2024 深度学习降噪全景与选型</h2>
+<p class="ss">从 RNNoise 到 PercepNet/NSNet2/DTLN/Demucs — 质量 / 延迟 / CPU 的三维权衡</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>模型</th><th>架构</th><th>模型大小</th><th>延迟</th><th>质量</th><th>适用场景</th></tr></thead>
+  <tbody>
+    <tr><td><strong>RNNoise</strong></td><td>GRU RNN (3层)</td><td class="g">~85 KB</td><td class="g"><10ms</td><td class="y">★★★</td><td>嵌入式 · MCU · 浏览器 · 低功耗</td></tr>
+    <tr><td><strong>WebRTC PercepNet</strong></td><td>Hybrid DSP+DNN</td><td class="g">~500 KB</td><td class="g"><5ms</td><td class="y">★★★</td><td>WebRTC 默认 · Chrome · 实时通信</td></tr>
+    <tr><td><strong>NSNet2</strong></td><td>RNN-based</td><td>~1 MB</td><td>~10ms</td><td class="y">★★★</td><td>WebRTC 增强级 · 高要求通话</td></tr>
+    <tr><td><strong>DTLN</strong></td><td>双 LSTM (时域+频域)</td><td>~10 MB</td><td>~20ms</td><td class="g">★★★★</td><td>桌面降噪 · 实时广播</td></tr>
+    <tr><td class="g"><strong>Demucs</strong></td><td class="g">U-Net + Transformer</td><td>~80 MB</td><td class="r">~50ms</td><td class="g">★★★★★</td><td>离线/云端 · 最高质量 · PESQ 3.2+</td></tr>
+    <tr><td><strong>NVIDIA Maxine</strong></td><td>Proprietary DNN</td><td>~100 MB</td><td>~15ms</td><td class="g">★★★★★</td><td>GPU 加速 · 商业授权 · 会议系统</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 实战选型 — 嵌入式 IPC 场景推荐</div>
+  <strong>① MCU/低功耗 (Cortex-M)</strong>: RNNoise C 实现 — 85KB 模型, 无需硬件加速器。<br>
+  <strong>② Linux IPC (Cortex-A, 有 NEON)</strong>: WebRTC ANS Gen 3 (PercepNet) 或 RNNoise (SSE/NEON 加速)。<br>
+  <strong>③ 桌面/云端</strong>: DTLN 或 Demucs — 质量优先。<br>
+  <strong>④ GPU 场景</strong>: NVIDIA Maxine (Jetson) — CUDA/TensorRT 加速。<br>
+  <strong>⑤ Web 前端</strong>: RNNoise WASM (AudioWorklet) 或 WebRTC get_user_media 内建 NS。<br>
+  <strong>关键指标</strong>: RTF < 0.3 (实时因子 30% → 不阻塞其他 Pipeline 阶段) · PESQ ≥ 3.0 (通话级别)
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Audio Noise Suppression — 系统化知识体系 · 2026-06 · WebRTC · RNNoise v0.2 · PercepNet · Demucs
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>码率控制算法深度剖析 — CBR · VBR · CRF · CQP · ROI</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.5; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(22px,5vw,34px);font-weight:900">码率控制算法深度剖析</h2>
+  <p class="sec-sub">系统化知识体系 — CQP · CBR · VBR · CRF · VBV 缓冲模型 · mb-tree · ROI · 实战调优</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>CQP</strong><br><small>固定 QP</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>CRF</strong><br><small>恒定质量</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;background:rgba(52,211,153,.06)"><strong>CBR</strong><br><small>恒定码率</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>VBR</strong><br><small>可变码率</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box"><strong>ROI</strong><br><small>区域感知</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>CQP / CRF</h4><div class="sub">从固定 QP 到感知恒定质量</div>
+      <p><em>CQP</em>: 所有帧同一 QP — 简单但低效。<em>CRF</em>: x264/x265 的默认模式 — <strong>mb-tree + 自适应量化</strong> 使高运动帧 QP 更高 (人眼不敏感)，平坦帧 QP 更低。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>CBR / VBR + VBV</h4><div class="sub">比特流约束下的最优分配</div>
+      <p><em>CBR</em>: VBV 缓冲模型严格限制码率波动 — 直播/RTMP 必须。<em>VBR</em>: 允许码率波动，在目标平均码率下最大化质量。<strong>VBV 是 CBR 的核心</strong> — 模拟解码器缓冲区, 防止上溢(丢帧)和下溢(填充)。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>ROI 编码</h4><div class="sub">QP delta map — 差异化质量分配</div>
+      <p>对<strong>人脸/运动区域</strong>分配更低的 QP (高质量)，<strong>背景/静态区域</strong>分配更高的 QP (低质量)。通过 <em>QP delta map</em> (每 MB/CTU 一个 ΔQP) 实现。x264/x265/VVC 均支持。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: CQP ══ -->
+<h2 class="sh">1. CQP — 恒定量化参数</h2>
+<p class="ss">所有帧使用相同的 QP · 最简单的码率控制 · 码率完全不可预测 · 通常仅用于测试和全 I 帧场景</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>工作原理</h4><div class="lbl">Q_step = f(QP) — 查表映射, 所有帧相同</div>
+    <p><strong>CQP = Constant Quantization Parameter</strong>。编码器<strong>不对码率做任何控制</strong> — 只按固定的 QP 值量化每个宏块/CTU。<br>
+    <strong>Q_step 与 QP 的关系</strong>: H.264/265 中, QP 每增加 6, Q_step 翻倍。QP=0 表示无损 (H.264 High 4:4:4), QP=51 表示最大压缩。<br>
+    <strong>码率不可预测</strong>: 同样 QP=23, 静态场景可能 500 kbps, 高速运动场景可能 50 Mbps — 完全取决于画面复杂度。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>适用场景 &amp; 限制</h4><div class="lbl">仅测试/中间格式 — 不适合传输</div>
+    <p><strong>适用</strong>: ① 编码器 benchmark (对比不同编码器的压缩效率) ② 视频编辑中间格式 (全 I 帧) ③ 快速验证某个 QP 下的画质。<br>
+    <strong>不适用</strong>: 任何需要<strong>控制码率</strong>的场景 — 直播 (码率不可控 → 带宽溢出) · 存储 (空间不可预测) · 网络传输。<br>
+    <strong>CQP vs 固定 bitrate</strong>: QP=18 可能 5~30 Mbps — 取决于画面。x264 CLI: <code>--qp 23</code></p>
+  </div>
+</div>
+
+<h2 class="sh">2. CRF — 恒定速率因子 (x264/x265 默认)</h2>
+<p class="ss">基于感知模型的自适应 QP — mb-tree 传播分析 · 自适应量化 · qcomp 曲线压缩 · 非恒定 QP!</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>mb-tree — 宏块树</h4><div class="lbl">QP 帧内分配的核心算法</div>
+    <p><strong>原理</strong>: 对每 MB 计算其被后续帧<strong>参考的频率和强度</strong>。被大量参考 (信息传播到多帧) 的 MB → 降低 QP (更多 bits) — 因为它的质量影响后续多帧。不被参考的 MB (背景/一次性出现) → 升高 QP (更少 bits)。<br>
+    <strong>lookahead</strong>: 需要分析未来 N 帧 (rc-lookahead, 默认 40)。<br>
+    <strong>mb-tree 的 QP 调整</strong>: QP_adjusted = QP_base + 8×(1 - propagation_cost)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>自适应量化 (AQ)</h4><div class="lbl">帧内 MB 级别的 QP 微调</div>
+    <p><strong>AQ Mode 1 (默认)</strong>: 基于<strong>空间复杂度</strong> — 平坦区域 (天空/墙壁) 降 QP (更多 bits, 避免色带) · 纹理复杂区域升 QP (人眼不敏感)。<br>
+    <strong>AQ Mode 2 (auto-variance)</strong>: 基于<strong>方差</strong> — 更激进地提升平坦区域质量。<br>
+    <strong>AQ strength</strong>: 0.0~2.0, 默认 1.0。越大 → 平坦区域质量越高, 纹理区域质量越低。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>qcomp — QP 曲线压缩</h4><div class="lbl">控制帧间 QP 波动幅度</div>
+    <p><strong>qcomp</strong> (0~1, 默认 0.6): 控制码率-质量曲线的"压缩度"。<br>
+    <strong>qcomp=0</strong>: CBR 模式 — 所有帧 QP 非常接近 (帧间波动小)。<br>
+    <strong>qcomp=1</strong>: CQP 模式 — 帧间 QP 差异最大化 (恒定 Qscale)。<br>
+    <strong>qcomp=0.6</strong>: 平衡 — 高运动帧适度增 QP, 静态帧适度减 QP。<br>
+    <strong>调优</strong>: 降低 qcomp (如 0.5) → 运动场景码率更平滑, 适合直播。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ CRF 的 QP 决策流程 — 每帧/每MB 三层决策 ═══ */</span>
+<span class="cm"><b>Level 1: 帧级 crf QP</b></span>
+<span class="cm">  rate_factor_constant = -qcomp * log2(current_satd / average_satd)</span>
+<span class="cm">  frame_qp = crf_value + rate_factor_constant</span>
+<span class="cm">  // satd = 帧的 SATD 复杂度 (Sum of Absolute Transformed Differences)</span>
+<span class="cm">  // 高复杂度帧 → 正 offset → 更高 QP</span>
+
+<span class="cm"><b>Level 2: mb-tree 调整 (每 MB)</b></span>
+<span class="cm">  propagation_cost = Σ{后续帧中该 MB 被引用的权重}</span>
+<span class="cm">  mb_qp_offset = 8.0 * (1.0 - propagation_cost)</span>
+<span class="cm">  // propagation_cost 高 → 负 offset → 更低 QP (该 MB 被大量后续帧参考)</span>
+
+<span class="cm"><b>Level 3: AQ 微调 (每 MB)</b></span>
+<span class="cm">  spatial_complexity = variance(MB)</span>
+<span class="cm">  mb_qp += aq_strength * log2(spatial_complexity / avg_complexity)</span>
+<span class="cm">  // 平坦 MB → 负 offset → 更低 QP (人眼对平坦区域色带敏感)</span>
+
+<span class="cm"><b>最终 QP = crf_qp + mb_tree_offset + aq_offset</b></span></div>
+
+<h2 class="sh">3. CBR — 恒定码率 (VBV 缓冲模型)</h2>
+<p class="ss">直播/实时通信的标配 · VBV 模拟解码器缓冲区 · 上溢(填充 → 空帧)和下溢(消耗 → QP 增大)机制</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#34d399">
+    <h4>VBV 缓冲模型 — CBR 的心脏</h4><div class="lbl">VBV = Video Buffering Verifier</div>
+    <p><strong>模型</strong>: 模拟一个固定大小的解码器缓冲区。编码器每帧写入 <code>frame_bits</code>, 解码器以恒定速率 <code>bitrate/fps</code> 消耗。<br>
+    <strong>上溢 (overflow)</strong>: 缓冲区填满 → 编码器<strong>不能再写入更多 bits</strong> → 必须填充空数据 (stuffing bits) 或增大 QP。<br>
+    <strong>下溢 (underflow)</strong>: 缓冲区为空 → 解码器无数据可取 → <strong>画面卡顿</strong> → 编码器必须降低 QP 增加填充。<br>
+    <strong>VBV buffer size</strong>: 默认 = bitrate (1 秒缓冲)。网络直播通常设 0.5~2 秒。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>CBR 的 QP 调整循环</h4><div class="lbl">每帧编码后评估 VBV 状态 → 调整下一帧 QP</div>
+    <p>① 目标码率 <code>target_bitrate</code> → 每帧预期 bits = target_bitrate / fps<br>
+    ② 编码当前帧 → 实际 bits = frame_bits<br>
+    ③ <strong>充盈度 = 前一充盈度 + frame_bits - expected_bits_per_frame</strong><br>
+    ④ 若充盈度 > buffer_size × 0.9 (近满) → <strong>下帧 QP 大幅增加</strong> (速率惩罚)<br>
+    ⑤ 若充盈度 < buffer_size × 0.1 (近空) → <strong>下帧 QP 降低</strong> (加快填充)<br>
+    ⑥ 重复②~⑤, 使<strong>长期平均码率 = target_bitrate</strong></p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== CBR 内部算法伪代码 (x264 ratecontrol.c) ===== */</span>
+<span class="kw">void</span> <span class="fn">rate_control_cbr</span>(<span class="kw">x264_t</span> *h, <span class="ty">int</span> frame_bits) {
+    <span class="ty">double</span> expected = h-&gt;param<span class="op">.</span>rc<span class="op">.</span>i_bitrate / h-&gt;param<span class="op">.</span>i_fps_num;
+    <span class="ty">double</span> overflow  = <span class="nu">1.0</span>;  <span class="cm">// QP 缩放因子</span>
+
+    <span class="cm">// 1. 更新 VBV 充盈度</span>
+    h-&gt;rc<span class="op">.</span>buffer_fill += frame_bits - expected;
+    <span class="kw">if</span> (h-&gt;rc<span class="op">.</span>buffer_fill &lt; <span class="nu">0</span>) h-&gt;rc<span class="op">.</span>buffer_fill = <span class="nu">0</span>;
+
+    <span class="cm">// 2. 上溢检查 — 缓冲区近满 → 大幅增 QP</span>
+    <span class="kw">if</span> (h-&gt;rc<span class="op">.</span>buffer_fill &gt; h-&gt;param<span class="op">.</span>rc<span class="op">.</span>i_vbv_buffer_size * <span class="nu">0.9</span>) {
+        <span class="ty">double</span> extra = h-&gt;rc<span class="op">.</span>buffer_fill / (h-&gt;param<span class="op">.</span>rc<span class="op">.</span>i_vbv_buffer_size * <span class="nu">0.1</span>);
+        overflow = <span class="fn">pow</span>(<span class="nu">2.0</span>, extra / <span class="nu">6.0</span>);  <span class="cm">// 指数惩罚 — QP 每+6 码率减半</span>
+    }
+
+    <span class="cm">// 3. 下溢检查 — 缓冲区近空 → 减 QP 加速填充</span>
+    <span class="kw">if</span> (h-&gt;rc<span class="op">.</span>buffer_fill &lt; h-&gt;param<span class="op">.</span>rc<span class="op">.</span>i_vbv_buffer_size * <span class="nu">0.1</span>) {
+        overflow *= <span class="nu">0.5</span>;  <span class="cm">// QP 减半 → 码率加倍</span>
+    }
+
+    <span class="cm">// 4. 应用 QP 调整</span>
+    h-&gt;rc<span class="op">.</span>qpa_rc += overflow;
+    h-&gt;rc<span class="op">.</span>qpa_rc = <span class="fn">CLIP3</span>(<span class="nu">0</span>, <span class="nu">51</span>, h-&gt;rc<span class="op">.</span>qpa_rc);
+}</div>
+
+<!-- ══ Ch4: VBR ══ -->
+<h2 class="sh">4. VBR — 可变码率</h2>
+<p class="ss">在目标平均码率下最大化质量 · 允许瞬时码率波动 · 适合点播/存储 — 不适合实时直播</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>VBR 核心思想</h4><div class="lbl">让编码器自由分配 bits — 简单场景少用, 复杂场景多用</div>
+    <p><strong>VBR = Variable Bitrate</strong>。与 CBR 不同, VBR 不强制每帧/每秒码率恒定 — 它只保证<strong>整个视频的平均码率 = target_bitrate</strong>。<br>
+    <strong>策略</strong>: ① 两遍编码 (2-pass): 第一遍分析复杂度 → 生成统计文件 → 第二遍根据统计分配 bits ② 单遍 VBR: 通过 crf + vbv-maxrate + vbv-bufsize 实现 CRF 限制上限的 VBR。<br>
+    <strong>优势</strong>: 同等平均码率下, VBR 画质远优于 CBR (简单场景不浪费, 复杂场景不压缩过度)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>受限 VBR (capped VBR)</h4><div class="lbl">CRF + VBV-maxrate = 带码率上限的高质量编码</div>
+    <p><strong>实现</strong>: <code>--crf 23 --vbv-maxrate 4000 --vbv-bufsize 8000</code><br>
+    CRF 控制质量 → VBV maxrate 限制瞬时码率上限 → 缓冲吸收波动。<br>
+    <strong>典型配置</strong>: <code>vbv-bufsize = 2 × vbv-maxrate</code> (2 秒缓冲)。<br>
+    这比纯 CBR 画质好很多 — 因为只在<strong>必要时</strong>才限制码率 (复杂场景), 简单场景仍享低码率。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>模式</th><th>QP 决策</th><th>码率波动</th><th>延迟</th><th>质量 (同码率)</th><th>适用</th></tr></thead>
+  <tbody>
+    <tr><td><strong>CQP</strong></td><td>固定 QP</td><td class="r">极大</td><td class="g">最低</td><td>—</td><td>测试/Benchmark</td></tr>
+    <tr><td><strong>CRF</strong></td><td>mb-tree + AQ 自适应</td><td class="y">大</td><td class="g">低</td><td class="g">最佳</td><td>存档/离线编码</td></tr>
+    <tr><td><strong>CBR</strong></td><td>VBV 缓冲模型驱动</td><td class="g">极小</td><td class="y">低</td><td class="r">最差</td><td>直播/RTMP/WebRTC</td></tr>
+    <tr><td><strong>2-Pass VBR</strong></td><td>第一遍分析→第二遍最优分配</td><td class="y">中</td><td class="r">高 (2遍)</td><td class="g">最佳 (同码率)</td><td>点播/存储</td></tr>
+    <tr><td><strong>CRF+VBR</strong></td><td>CRF + VBV maxrate 上限</td><td class="y">中</td><td class="y">中</td><td class="g">好</td><td>直播(高质量)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch5: ROI ══ -->
+<h2 class="sh">5. ROI 编码 — 差异化质量分配</h2>
+<p class="ss">QP delta map 逐块控制 · 人脸/运动降 QP · 背景升 QP · 感知画质不变, 码率降低 20-40%</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>QP Delta Map — 核心机制</h4><div class="lbl">per-MB/per-CTU 的 QP 偏移量数组</div>
+    <p><strong>公式</strong>: <code>QP_block = QP_rc + delta_qp[i]</code><br>
+    <strong>delta_qp</strong>: 每 MB/CTU 一个值。负值 → 更低 QP → 更高质量 (更多 bits)。正值 → 更高 QP → 更低质量 (更少 bits)。<br>
+    <strong>范围</strong>: 通常 -51 ~ +51 (但极端值可能破坏码控)。<br>
+    <strong>粒度</strong>: H.264 = 16×16 MB · H.265 = 32×32 sub-CTU · VVC = CTU。<br>
+    <strong>码率中性</strong>: 用 ROI_QP_map[i] - ROI_AVG_QP 做偏移 → 总码率基本不变, 只是重新分配。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>典型应用场景</h4><div class="lbl">人脸视频通话 · 车牌识别 · 工业检测</div>
+    <p><strong>视频通话</strong>: 人脸区域 ΔQP=-6 (高质量) + 背景 ΔQP=+6 (低质量) → 人脸清晰度不变, 码率降低 20-40%。<br>
+    <strong>车牌识别 IPC</strong>: 画面中心 (车牌) ΔQP=-8, 边缘 ΔQP=+4 → 确保车牌可识别。<br>
+    <strong>游戏/桌面共享</strong>: 鼠标/光标区域 ΔQP=-4 → 文字清晰。<br>
+    <strong>实现途径</strong>: ① FFmpeg: <code>AVRegionOfInterest</code> side data · ② x265: <code>--roi</code> 或 API <code>x265_picture_t.roi</code> · ③ V4L2: <code>V4L2_CID_MPEG_VIDEO_ROI_MODE</code> + QP map · ④ VA-API: <code>VAEncMiscParameterBufferROI</code></p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== FFmpeg ROI — 人脸区域高质量编码 ===== */</span>
+<span class="cm"># 方法1: FFmpeg addroi filter — 矩形ROI</span>
+ffmpeg -i input.mp4 -vf <span class="st">"addroi=iw/4:ih/4:iw/2:ih/2:-0.5"</span> \
+  -c:v libx264 -crf <span class="nu">23</span> output.mp4
+<span class="cm"># iw/4:ih/4 = ROI 起始坐标, iw/2:ih/2 = ROI 宽高, -0.5 = qoffset</span>
+<span class="cm"># qoffset 范围 -1.0 ~ +1.0 (负值=更高质量)</span>
+
+<span class="cm">/* ===== x265 API — QP delta map (per-CTU) ===== */</span>
+<span class="pp">#include</span> <span class="st">&lt;x265.h&gt;</span>
+
+<span class="cm">// 1. 分配 QP delta 数组 (每 CTU 一个值)</span>
+<span class="ty">int</span> ctu_count = (width/<span class="nu">64</span>) * (height/<span class="nu">64</span>);  <span class="cm">// 64×64 CTU</span>
+<span class="ty">int8_t</span> *qp_delta = <span class="fn">calloc</span>(ctu_count, <span class="kw">sizeof</span>(<span class="ty">int8_t</span>));
+
+<span class="cm">// 2. 填充 QP delta: 人脸区域 = -6, 背景 = +4</span>
+<span class="kw">for</span> (i = <span class="nu">0</span>; i &lt; ctu_count; i++) {
+    <span class="kw">if</span> (<span class="fn">is_face_region</span>(i)) qp_delta[i] = -<span class="nu">6</span>;  <span class="cm">// 更高质量</span>
+    <span class="kw">else</span> qp_delta[i] = <span class="nu">4</span>;                    <span class="cm">// 更低质量</span>
+}
+
+<span class="cm">// 3. 编码每帧时设置</span>
+<span class="kw">x265_picture_t</span> pic;
+pic<span class="op">.</span>quantOffsets = qp_delta;  <span class="cm">// ★ QP delta map</span>
+<span class="fn">x265_encoder_encode</span>(encoder, &amp;nal, &amp;nal_count, &amp;pic, &amp;out_pic);
+
+<span class="cm">/* ===== V4L2 ROI (Linux 内核, 2024 新增) ===== */</span>
+<span class="kw">struct</span> <span class="ty">v4l2_ctrl_vp9_frame</span> roi;
+<span class="cm">// V4L2_CID_MPEG_VIDEO_ROI_MODE — 矩形或 QP map</span>
+<span class="cm">// V4L2_CID_MPEG_VIDEO_ROI_BLOCK_SIZE — 16x16 / 32x32 / 64x64</span>
+<span class="cm">// QP map: uint8_t 数组, 栅格扫描序, 每 block 一个值</span>
+<span class="fn">ioctl</span>(fd, <span class="ma">VIDIOC_S_EXT_CTRLS</span>, &amp;ctrls);  <span class="cm">// 设置 roi QP map</span></div>
+
+<div class="callout success">
+  <div class="ct">🔧 ROI 实战效果 — 数据驱动</div>
+  <strong>典型视频通话</strong>: 人脸占画面 30%, ΔQP_face=-6, ΔQP_bg=+6 → <strong>码率降低 25-35%</strong>, 主观画质不变。<br>
+  <strong>车牌识别</strong>: 车牌区域占画面 10%, ΔQP=-10 → 车牌清晰度提升<strong>相当于整体 QP 降低 4</strong>, 整体码率仅增加 5%。<br>
+  <strong>关键</strong>: Delta QP 的<strong>码率中性设计</strong> (<code>QP_block = QP_rc + (delta_qp[i] - avg_delta)</code>) — 负 delta 从正 delta 回收 bits → 总码率不变。
+</div>
+
+<!-- ══ Ch6: 调优 ══ -->
+<h2 class="sh">6. 实战调优指南</h2>
+<p class="ss">x264/x265 关键参数 · 场景选型决策 · 常见问题诊断</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>场景</th><th>推荐配置</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td>离线存档 (最高质量)</td><td class="g"><code>--preset slower --crf 18 --tune film</code></td><td>CRF 18 视觉无损 · slow preset 最佳压缩率</td></tr>
+    <tr><td>点播 (平衡质量/码率)</td><td class="g"><code>--preset medium --crf 23</code></td><td>CRF 23 是 x264 的 sweet spot</td></tr>
+    <tr><td>直播 RTMP (CBR)</td><td class="g"><code>--preset veryfast --bitrate 4000 --vbv-maxrate 4000 --vbv-bufsize 8000 --tune zerolatency</code></td><td>zerolatency 禁 B 帧 · VBV 严格 CBR · veryfast 低延迟</td></tr>
+    <tr><td>直播 (高质量 VBR)</td><td class="g"><code>--crf 23 --vbv-maxrate 6000 --vbv-bufsize 12000</code></td><td>CRF 保质量 · VBV 限上限 · 2 秒缓冲</td></tr>
+    <tr><td>低延迟 IPC (WebRTC)</td><td class="g"><code>--tune zerolatency --profile baseline --rc-lookahead 0 --sync-lookahead 0</code></td><td>无 B 帧 · 无 lookahead · baseline profile</td></tr>
+    <tr><td>监控存储 (长时间)</td><td class="g"><code>--preset ultrafast --bitrate 2000 --vbv-maxrate 2000 --vbv-bufsize 4000</code></td><td>ultrafast 低 CPU · CBR 码率可预测 · 存储空间可计算</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 码率控制问题诊断 ===== */</span>
+<span class="cm"># 问题1: CBR 码率波动过大 (远超 target_bitrate)</span>
+<span class="cm">  → 增大 vbv-bufsize (如 2x → 4x target) → 给编码器更多缓冲空间</span>
+<span class="cm">  → 降低 rc-lookahead (如 40 → 20) → 减少前瞻 → 更快响应 VBV 状态</span>
+<span class="cm">  → 增大 qcomp (如 0.6 → 0.8) → 帧间 QP 更均匀</span>
+
+<span class="cm"># 问题2: VBR 瞬时码率峰值过高 (网络丢包)</span>
+<span class="cm">  → 加 vbv-maxrate + vbv-bufsize 限制 → 变为 capped VBR</span>
+<span class="cm">  → 降低 keyint → I 帧更频繁 (I 帧通常是峰值)</span>
+
+<span class="cm"># 问题3: CRF 码率远高于预期 (场景过于复杂)</span>
+<span class="cm">  → 提高 crf 值 (18→23) → 每+6 码率约减半</span>
+<span class="cm">  → 降低 aq-strength (1.0→0.6) → 减少平坦区域的额外 bits</span>
+
+<span class="cm"># 问题4: ROI 编码后整体码率增加 (而非降低)</span>
+<span class="cm">  → 检查 delta_qp 是否做了均值归一化 → 必须用 (delta_qp - avg_delta)</span>
+<span class="cm">  → 确认正 delta (背景) 的 MB 数量 > 负 delta (人脸) 的数量 → 正 delta 贡献的"节省"应大于负 delta 的"支出"</span></div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Video Rate Control &amp; ROI Encoding — 系统化知识体系 · 2026-06 · x264/x265/VVC · FFmpeg · V4L2
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPC 声学设计 — 从物理层面解决回声与音质</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}.canvas-wrap canvas{width:100%;height:100%;display:block}
+.ptbl{margin:14px 0 !important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">耦合路径</a><span class="sep"></span>
+  <a href="#s3">隔振设计</a><span class="sep"></span>
+  <a href="#s4">腔体与导管</a><span class="sep"></span>
+  <a href="#s5">防水与声学</a><span class="sep"></span>
+  <a href="#s6">测试验证</a><span class="sep"></span>
+  <a href="#s7">实战案例</a>
+</nav>
+
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">IPC 声学设计</h2>
+  <p class="sec-sub" id="s1s" style="max-width:720px">好的声学设计可以让 AEC 算法<strong>轻松 10 倍</strong>——从物理层面阻断回声传导路径，比任何软件算法都更根本、更可靠。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">Speaker</span><span class="flow-arr">⇢</span>
+    <span class="flow-box" style="color:#f87171">空气传导</span><span class="flow-arr">⇢</span>
+    <span class="flow-box" style="color:#f87171">结构传导</span><span class="flow-arr">⇢</span>
+    <span class="flow-box" style="color:#a78bfa"><strong>隔振阻断</strong></span><span class="flow-arr">⇢</span>
+    <span class="flow-box" style="color:#34d399">密封腔体</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">Mic 干净信号</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">10-15dB</div><div class="l">隔振改善回声量</div></div>
+    <div class="stat"><div class="n">2 条路径</div><div class="l">空气 + 结构传导</div></div>
+    <div class="stat"><div class="n">3 种材料</div><div class="l">硅胶 · 泡棉 · 吸音棉</div></div>
+    <div class="stat"><div class="n">< 0.1mm</div><div class="l">振动位移量级</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: 耦合路径 ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">回声耦合的两条物理路径</h2>
+  <p class="sec-sub" id="s2s">IPC 的 Speaker 播放声音 → 同一个 IPC 的 Mic 收到回声。这中间有<strong>两条完全不同的物理传导路径</strong>——每一条需要不同的对策。</p>
+
+  <div class="canvas-wrap" data-reveal style="height:360px">
+    <canvas id="c1"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>路径 1: 空气传导 — 线性、可预测</h4>
+      <div class="sub">Speaker 振膜 → 空气 → IPC 外壳出声孔 → 外部空间 → Mic 进声孔 → Mic 振膜</div>
+      <p><strong>传播方式</strong>：声波通过空气传播——符合<strong>线性声学</strong>模型。AEC 的自适应滤波器<strong>专门针对这条路径设计</strong>——可以消除 30-40dB。<br>
+      <strong>主要影响因素</strong>：① Speaker 出声孔和 Mic 进声孔之间的<strong>空间距离</strong>——距离每翻倍，声压级 -6dB（自由场）。IPC 机身内距离通常 5-15cm → 空气回声衰减 20-30dB ② <strong>外壳出声孔的面积和指向性</strong>——指向性越强（声音集中在某个方向），Mic 方向上的溢出越少。<br>
+      <strong>优化方向</strong>：增大 Speaker-Mic 间距、<strong>出声孔朝向远离 Mic</strong>（如 Speaker 朝下/朝后，Mic 朝前）、在出声孔和进声孔之间加<strong>物理声屏障</strong>（外壳筋位/隔板）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>路径 2: 结构传导 — 非线性、最棘手</h4>
+      <div class="sub">Speaker 振膜振动 → 外壳共振 → 机械振动传导到 Mic → Mic 振膜被"振"出信号</div>
+      <p><strong>传播方式</strong>：Speaker 通过<strong>安装支架</strong>将机械振动传入 IPC 外壳——外壳作为一个整体开始<strong>微振动</strong>（位移 0.01-1μm）。Mic 固定在<strong>同一外壳上</strong>——外壳振动直接传递给 Mic 封装→Mic 内部的 MEMS 振膜或驻极体膜片被机械力驱动→<strong>产生"假"音频信号</strong>——这不是声波，是机械振动直接被换能器拾取。<br>
+      <strong>为什么 AEC 消除不了</strong>：AEC 基于线性模型 d(n)=x(n)∗h(n)——但结构传导经历了 Speaker 振膜的非线性响应 + 外壳不同位置的模态振动（不同频率下外壳的不同区域以不同的幅度和相位振动）→ <strong>Mic 收到的结构回声不再是 Speaker 信号的线性函数</strong> → NLMS 无法建模 → AEC 只能消除 10-15dB（远低于空气回声的 30-40dB）→ 残余回声严重。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S3: 隔振 ═══ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">隔振设计 — 阻断结构传导</h2>
+  <p class="sec-sub" id="s3s">结构传导的阻断只有一个原理：<strong>在 Speaker 和外壳之间插入弹性元件</strong>——让 Speaker 的振动能量耗散在弹性元件中，而不是传到外壳。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>一级隔振：Speaker 硅胶减振垫</h4>
+      <div class="sub">Speaker 不直接接触外壳 — 通过软硅胶垫过渡</div>
+      <p><strong>设计</strong>：Speaker 四周和背面包裹<strong>硅胶（Shore A 10-20，极软）或 EVA 泡棉</strong>——厚度 ≥ 2mm。Speaker 的固定螺丝<strong>不直接锁外壳</strong>——而是锁在硅胶垫的硬质嵌入件上。<br>
+      <strong>原理</strong>：硅胶的弹性模量极低（~1MPa vs 外壳 PC/ABS 的 ~2GPa）→ <strong>力传递率 = 1 / (1 − (f/fn)²)</strong>——f 是振动频率，fn 是隔振系统的固有频率。f 远大于 fn 时（语音 300-3400Hz >> fn ~100Hz）→ <strong>传递率 ≈ (fn/f)² → 300Hz 时只有 ~11% 的振动传到外壳 → >1kHz 时 < 1%</strong>。<br>
+      <strong>关键</strong>：硅胶不能太硬（否则固有频率高→隔振频率起点高）也不能太软（否则 Speaker 晃动导致音圈蹭磁路→失真）。Shore A 10-20 + 厚度 ≥ 2mm 是实践中的最佳平衡。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>二级隔振：Mic 硅胶套</h4>
+      <div class="sub">Mic 本身也不直接接触外壳 — 通过软硅胶套浮装</div>
+      <p><strong>设计</strong>：MEMS Mic 封装在一个<strong>硅胶套</strong>中——硅胶套卡入外壳槽位。Mic 的 PCB 不硬连接外壳。声音通过硅胶套上的<strong>细声孔</strong>（φ0.8-1.2mm）进入 Mic。<br>
+      <strong>原理</strong>：外壳的微振动传到硅胶套→<strong>硅胶套吸收了绝大部分振动能量</strong>——到达 Mic 封装表面的残余振动已经衰减 15-25dB。这种"浮装"设计是高端手机和 IPC 的标配。<br>
+      <strong>代价</strong>：硅胶套的声孔会产生<strong>Helmholtz 共振</strong>（一个由声孔直径+腔体体积决定的共振频率——通常在 6-10kHz）→可能引起高频响应不平坦。需要在硅胶套后腔中填充<strong>调音网布</strong>（声学阻尼）来压制共振峰。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>材料选择：硅胶 vs EVA vs PORON</h4>
+      <div class="sub">不同硬度/阻尼/温度特性的选择指南</div>
+      <p><strong>硅胶 (Silicone, Shore A 10-30)</strong>：弹性最好、耐温范围广（-40~200°C）、压缩永久变形小→长期使用隔振性能不下降。成本中等。IPC 首选——户外温差 -20~60°C 下性能稳定。<br>
+      <strong>EVA 泡棉</strong>：更软、阻尼更大（振动能量耗散更快）但回弹差——长时间压缩后会永久变形→隔振效果随时间降低。成本低——适合消费电子产品（使用周期 2-3 年）。<br>
+      <strong>PORON (聚氨酯微孔泡棉)</strong>：极软 + 高阻尼 + 长期回弹保持率 > 95%——性能最优但成本最高。高端手机和顶级 IPC 使用。<br>
+      <strong>选择要点</strong>：户外 IPC → 硅胶（耐候 + 寿命）；室内消费级 → EVA（成本）；高端产品 → PORON（性能）。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 隔振的常见错误 — 螺丝"硬连接"</div>
+    加了硅胶垫但 Speaker 的固定螺丝<strong>直接锁到外壳螺柱上</strong>——螺丝穿过硅胶垫上的孔→螺丝头压住 Speaker 边框→螺丝杆传递振动到外壳螺柱→<strong>整个隔振垫被"短路"</strong>——振动通过螺丝直接传到外壳。正确做法：螺丝只锁硅胶垫内部的嵌入铜螺母或塑料 boss——<strong>不与外壳直接接触</strong>。或者使用<strong>肩螺丝</strong>——螺丝头下有一段光滑杆（不攻螺纹），穿过 Speaker 安装孔和硅胶垫，只在最下段攻入外壳——光滑杆允许 Speaker+硅胶自由微动。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S4: 腔体 ═══ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">密封腔体与声学导管设计</h2>
+  <p class="sec-sub" id="s4s">Speaker 背后需要一个<strong>密封的后腔</strong>——不只为了音质，更为了防止<strong>背面声波绕过 Speaker 边缘传到 Mic</strong>（声短路）。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Speaker 密封前腔 + 后腔</h4>
+      <div class="sub">前腔指向前方出声 · 后腔密封防声短路</div>
+      <p><strong>前腔</strong>：Speaker 振膜前方到外壳出声孔之间的封闭空间。前腔体积控制<strong>高频响应</strong>——体积越大→高频衰减越多。出声孔面积影响<strong>声辐射阻抗</strong>——太小→声音闷、太大→防水难做。<br>
+      <strong>后腔</strong>：Speaker 背面必须<strong>完全密封</strong>——如果后腔泄漏→背面反相声波绕过 Speaker 边框→到达 Mic→与正面回声的相位关系复杂→AEC 处理困难。后腔密封用<strong>硅胶圈或闭孔泡棉</strong>压在 Speaker 边框和外壳之间。<br>
+      <strong>IPC 的小体积约束</strong>：前腔+后腔总共可能只有 2-5cm³。小后腔→Speaker 的低频谐振频率上移→低频响应变差→但对语音（300-3400Hz）影响不大——IPC 不需要 HiFi 低音。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>出声孔 + 导声管设计</h4>
+      <div class="sub">声音不是"钻出小孔就行" — 孔的面积/长度/形状全影响频响</div>
+      <p><strong>出声孔面积</strong>：Speaker 振膜面积 × 0.3~0.6 是经验最佳——太小→声阻大、声音闷；太大→防水防尘难。<br>
+      <strong>导声管 (Port Tube)</strong>：出声孔到外壳表面的通道。导声管长度+截面积决定 <strong>Helmholtz 共振频率</strong> f = (c/2π) × √(A/VL)（c=声速, A=管截面积, V=腔体体积, L=管长）。共振频率在 2-5kHz→会增强语音清晰度（辅音频段）；共振频率在 500Hz→会产生"嗡嗡"的鼻音。<br>
+      <strong>IPC 典型设计</strong>：多个小孔（φ0.8-1.2mm 各孔）而非单个大孔——多个小孔的总面积不变但<strong>防尘网更容易覆盖</strong>（单孔太大→网布支撑不足→容易凹陷）。孔内侧贴<strong>防尘网布</strong>（200-400 目尼龙网或 PET 无纺布）——防止灰尘和昆虫进入腔体。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">外壳材料对声学的影响 — 不是"什么塑料都行"</div>
+    <strong>PC/ABS (通用)</strong>：刚度高、阻尼适中。厚度 1.5-2mm 时——外壳共振频率在 500-800Hz（恰好在语音范围内！）→ Speaker 容易激发外壳共振→结构传导回声增强。解决：内部加筋（增加刚度→提高共振频率移出语音范围）或贴<strong>丁基橡胶阻尼片</strong>（增加阻尼→降低共振幅度）。<br>
+    <strong>铝合金</strong>：刚度和密度都远高于塑料→共振频率高（> 4kHz）→语音范围内几乎不振。但成本高、重量大、需要表面处理。中高端 IPC 筒机/枪机常用。<br>
+    <strong>锌合金/镁合金</strong>：铝合金的升级——比刚度更高、阻尼更大。高端产品使用。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S5: 防水 ═══ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">防水与声学的矛盾 — IP66/IP67 的权衡</h2>
+  <p class="sec-sub" id="s5s">防水和透声是<strong>天然矛盾</strong>——防水膜阻挡水分子通过的同时<strong>也会衰减声波</strong>。IPC 户外必须 IP66/IP67——声学设计必须在防水的前提下做到最好。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>防水透声膜 (ePTFE)</h4>
+      <div class="sub">Gore-Tex / 日东 Denko — 水过不去、声音能过</div>
+      <p><strong>原理</strong>：ePTFE (膨体聚四氟乙烯) 有<strong>纳米级微孔</strong>（0.2-1μm）——水分子团（~100μm——水的表面张力使水滴无法通过微孔）被阻挡；空气分子（~0.0003μm）自由通过——声波是空气的振动→能透过去。<br>
+      <strong>声学衰减</strong>：ePTFE 膜在 300-3400Hz 语音范围内的<strong>插入损耗约 1-3dB</strong>——牺牲 1-3dB 的音量换取 IP67 防水。<strong>膜越厚→防水越好→插入损耗越大</strong>。0.1mm 膜损耗 ~1dB 但水压承受力低；0.3mm 膜损耗 ~3dB 但可承受 1m 水深。<br>
+      <strong>安装</strong>：膜通过<strong>双面胶或热压焊接</strong>贴在外壳出声孔内侧——覆盖所有声孔。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>声孔迷宫 + 疏水网</h4>
+      <div class="sub">不让水直接冲到膜上 — 物理迷宫 + 表面张力排水</div>
+      <p><strong>迷宫设计</strong>：出声孔不是直通外壳表面——对外开口朝下/朝侧面→水垂直落下不会直接进入→内部再拐 1-2 个弯（Z 形或 L 形声学导管）→即使有水溅入也被拐弯挡在第一个转角。<br>
+      <strong>疏水不锈钢网</strong>：在迷宫入口覆盖 100-200 目不锈钢网（表面做疏水处理——PTFE 涂层）。水滴接触角 > 120°→水滴自动滚落不附着。这层网<strong>不负责防水</strong>（网孔 100-200μm 水能过）——只负责<strong>挡住大颗粒灰尘和降低水流速度</strong>——减轻对内部 ePTFE 膜的冲击。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Mic 进声孔的防水</h4>
+      <div class="sub">MEMS Mic 本身不耐水 — 需要同样的保护</div>
+      <p>MEMS Mic 的声孔直接连接到内部的 MEMS 振膜——<strong>一旦进水→振膜短路→Mic 永久损坏</strong>。Mic 的防水方案与 Speaker 相同：ePTFE 膜 + 迷宫导管。<br>
+      <strong>关键差异</strong>：Mic 的进声孔<strong>面积小</strong>（φ0.8-1.2mm 单孔 vs Speaker 的多孔阵列）→单个孔的 ePTFE 膜面积很小→插入损耗更高（3-5dB）→ Mic 的信噪比直接降低 3-5dB。需要选择<strong>高灵敏度 Mic</strong>（-38dBV 或更高）来补偿膜损耗。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: 测试 ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">声学测试与验证方法</h2>
+  <p class="sec-sub" id="s6s">声学设计的好坏<strong>不能靠"听着感觉"</strong>——需要量化测量。以下是 IPC 声学验证的标准测试项。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>测试 1: ERLE (回声衰减增益)</h4>
+      <div class="sub">量化 AEC 前 vs AEC 后的回声能量比——声学设计的最终评分</div>
+      <p><strong>方法</strong>：在消音室或安静房间中——IPC 的 Speaker 播放标准测试信号（ITU-T G.167 推荐的白噪声或伪语音信号）→ Mic 采集→不开 AEC 时测量回声能量 E_before → 开 AEC 时测量残余能量 E_after。<br>
+      <strong>ERLE = 10·log10(E_before / E_after) dB</strong>。<strong>> 40dB = 优秀</strong>（结构传导极小、声学设计到位）；30-40dB = 良好（可接受）；20-30dB = 差（结构传导明显——需改善隔振）；< 20dB = 不可用（硬件设计缺陷——AEC 无法弥补）。<br>
+      <strong>频段分析</strong>：不只测总 ERLE——要测<strong>各 1/3 倍频程的 ERLE</strong>。如果在 500-800Hz 频段 ERLE 特别低→说明外壳共振在这个频段——需要加筋或阻尼片。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>测试 2: 双讲衰减 (Double-Talk Attenuation)</h4>
+      <div class="sub">近端同时说话时，AEC 是否误伤了近端语音</div>
+      <p><strong>方法</strong>：远端 Speaker 播放测试信号 + <strong>同时</strong>近端正对 Mic 说话（标准语句 "The quick brown fox"）→ 录制 AEC 输出 → 比较输出中近端语音成分与原始近端语音。<br>
+      <strong>期望</strong>：近端语音能量衰减 < 3dB（几乎不被误伤）。超过 6dB 衰减→ DTD 反应太慢→AEC 在双讲刚开始时错误地更新了滤波器。<br>
+      <strong>声学设计的影响</strong>：结构传导大的设计——即使 AEC 不开，Mic 信号中已经有<strong>延迟且失真的回声</strong>——双讲时人类的听觉系统可以接受一定程度的回声（侧音），但 AEC 处理后的<strong>残余失真回声</strong>更令人不适——好的声学设计让原始回声<strong>本身就"干净"</strong>（主要是直达声+线性空气传导）。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead><tr><th>测试项</th><th>设备</th><th>目标值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="g">ERLE (宽带)</td><td>消音箱 + 人工嘴 + 测量Mic</td><td class="g">> 40 dB</td><td>回声消除量的核心指标</td></tr>
+      <tr><td>ERLE (500-800Hz)</td><td>同上 + 频谱分析</td><td class="g">> 35 dB</td><td>外壳共振频段的特殊关注</td></tr>
+      <tr><td class="g">双讲衰减</td><td>人工嘴 + 真人语音</td><td class="g">< 3 dB</td><td>近端语音保护程度</td></tr>
+      <tr><td>收敛时间</td><td>示波器 + 音频分析</td><td>< 500ms</td><td>回声路径变化后重新收敛的速度</td></tr>
+      <tr><td class="g">频响 (Speaker→Mic)</td><td>扫频信号 100-8kHz + FFT</td><td>平坦度 ±5dB</td><td>声学通道的频率响应一致性</td></tr>
+      <tr><td>非线性失真 (THD)</td><td>正弦扫频 200-4kHz</td><td>< 5% @额定功率</td><td>Speaker 驱动的非线性成分</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: 案例 ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">实战案例 — 从问题到方案</h2>
+  <p class="sec-sub" id="s7s">三个真实 IPC 声学问题——从现象追溯到物理根因，再到结构改善方案。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>案例 1: 对讲有"嗡嗡"声</h4>
+      <div class="sub">根因: Speaker 螺丝硬连接 + 外壳共振</div>
+      <p><strong>现象</strong>：对讲时对方听到持续的<strong>低频嗡嗡声</strong>（~600Hz）——不随音量变化、不开 AEC 也有。<br>
+      <strong>排查</strong>：① 不播放任何声音→Mic 输出频谱在 600Hz 仍有明显峰→排除回声问题——这是<strong>环境振动被 Mic 拾取</strong> ② 用螺丝刀轻触外壳——600Hz 峰幅度变化→确认是外壳共振 ③ 检查结构——Speaker 用 2 颗<strong>自攻螺丝直接锁到外壳 ABS 螺柱</strong>上。<br>
+      <strong>方案</strong>：改用 M2 肩螺丝 + 2mm 硅胶垫——螺丝不与 Speaker 边框接触（仅限位）——Speaker 通过硅胶垫"浮"在外壳上。改善后 600Hz 峰降低 18dB。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>案例 2: AEC 怎么调都不行</h4>
+      <div class="sub">根因: Mic 和 Speaker 共用一个 PCB → 振动直接耦合</div>
+      <p><strong>现象</strong>：ERLE 最高只有 22dB——无论怎么调 AEC 参数、换不同的 AEC 算法（WebRTC AEC3→AECM→Speex）都突破不了 25dB。<br>
+      <strong>排查</strong>：① 用激光测振仪测 Mic 附近的外壳表面——振动幅度在 Speaker 工作时达到 0.5μm——远超预期 ② 断开 Speaker 物理连接（把 Speaker 拿出外壳悬空）→ ERLE 立刻飙到 45dB → <strong>确认是结构传导</strong> ③ 发现 Mic 和 Speaker <strong>焊接在同一块 PCB 上</strong>——Speaker 的振动通过焊点→PCB→Mic 引脚直接传导。<br>
+      <strong>方案</strong>：重新设计 PCB——Mic 和 Speaker 分板（FPC 连接）——Mic 小板单独通过硅胶套浮装在外壳上。ERLE 从 22dB 提升到 41dB。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>案例 3: 户外大雨后回声变大</h4>
+      <div class="sub">根因: 水在 Speaker 出声孔形成"水膜"→改变声学路径</div>
+      <p><strong>现象</strong>：晴天对讲正常——大雨后回声明显变大（ERLE 从 40dB 降到 25dB）——持续数小时才慢慢恢复。<br>
+      <strong>排查</strong>：① 拆机检查——Speaker 出声孔的 ePTFE 膜外侧<strong>积了大量水珠</strong> ② 水珠在膜外表面形成<strong>不均匀的水膜</strong>→某些孔被水堵住、某些孔畅通→出声孔的有效面积和不均匀性改变→<strong>Speaker 的辐射阻抗和指向性改变</strong>→更多声能反射回 Mic→回声增大 ③ 水蒸发后恢复正常。<br>
+      <strong>方案</strong>：出声孔外增加<strong>疏水不锈钢网</strong>（接触角 > 120°）→水珠不在孔口停留→直接滚落。出声孔区域整体设计为<strong>倾斜面</strong>（5-10° 向外倾斜）——重力辅助排水。改善后 ERLE 雨后变化 < 3dB。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  IPC 声学设计 · 从物理层面解决回声 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="audio_aec_learn.html">AEC 回声消除算法 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+
+(function() {
+  const c = document.getElementById('c1'); if(!c) return;
+  const ctx = c.getContext('2d'); let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=360; c.width=W*dpr; c.height=H*dpr; c.style.width=W+'px'; c.style.height=H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+  function drawBox(x,y,w,h,label,color,alpha){
+    ctx.fillStyle=color;ctx.globalAlpha=alpha||0.1;ctx.beginPath();ctx.roundRect(x-w/2,y-h/2,w,h,8);ctx.fill();
+    ctx.strokeStyle=color;ctx.globalAlpha=0.35;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#d0d0f0';ctx.globalAlpha=0.9;ctx.font='bold 10px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+    const lines=label.split('\n');lines.forEach((l,i)=>ctx.fillText(l,x,y-(lines.length-1)*6+i*14));ctx.globalAlpha=1;
+  }
+  function drawArrow(x1,y1,x2,y2,color,alpha){
+    ctx.strokeStyle=color;ctx.globalAlpha=alpha||0.5;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const ang=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-8*Math.cos(ang-0.4),y2-8*Math.sin(ang-0.4));ctx.lineTo(x2-8*Math.cos(ang+0.4),y2-8*Math.sin(ang+0.4));ctx.fill();ctx.globalAlpha=1;
+  }
+  function animate(){t+=0.016;ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#e0e0ff';ctx.font='bold 13px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('IPC 内部声学耦合路径 — 空气传导 vs 结构传导',W/2,22);
+    const spx=W*0.25,micx=W*0.68;
+    drawBox(spx,80,90,40,'Speaker\n振膜','#fbbf24');drawBox(micx,80,80,40,'Mic\n(MEMS)','#38bdf8');
+    ctx.fillStyle='#f87171';ctx.globalAlpha=0.7;ctx.font='bold 10px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('路径1: 空气传导 (线性)',W/2,145);
+    for(let i=0;i<4;i++){const ay=120+i*10;ctx.strokeStyle='#f87171';ctx.globalAlpha=0.15+i*0.08;ctx.lineWidth=2+Math.sin(t*3+i)*1;ctx.beginPath();const ax1=spx+30,ax2=micx-30;ctx.moveTo(ax1,ay);ctx.bezierCurveTo(ax1+40,ay-20,ax2-40,ay+20,ax2,ay);ctx.stroke();}
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#fbbf24';ctx.globalAlpha=0.7;ctx.font='bold 10px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('路径2: 结构传导 (非线性)',W/2,200);
+    drawBox(spx,240,110,36,'安装支架\n(螺丝固定)','#fbbf24',0.06);drawArrow(spx,100,spx,222,'#fbbf24',0.3);
+    drawBox(W/2,270,160,30,'IPC 外壳 (PC/ABS)\n受迫振动 0.01-1μm','#a78bfa',0.08);
+    drawArrow(spx,258,W/2-80,260,'#fbbf24',0.3);drawArrow(W/2+80,260,micx,260,'#fbbf24',0.3);
+    drawArrow(micx,270,micx,100,'#fbbf24',0.3);
+    ctx.fillStyle='#34d399';ctx.globalAlpha=0.7;ctx.font='bold 10px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('隔振对策: 硅胶垫在 Speaker-外壳之间切断结构传导',W/2,315);
+    ctx.fillText('声学对策: 出声孔朝下 · Mic 进声孔朝前 · 中间加隔板',W/2,335);
+    ctx.globalAlpha=1;requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

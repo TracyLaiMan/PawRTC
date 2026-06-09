@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频基础知识体系 — Mic · Speaker · 声学 · 数字音频</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(24px,5vw,34px);font-weight:900">音频基础知识体系</h2>
+  <p class="sec-sub">系统化知识体系 — 声学基础 · Mic 灵敏度/SNR/指向性 · Speaker 频响/THD/阻抗 · 室内声学 RT60 · 数字音频</p>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>声音物理</h4><div class="sub">dB SPL · 频率 · 波长 · 响度</div>
+      <p>声音是<em>气压波动</em>。SPL (声压级) 以 dB 度量, 基准 20μPa=0dB。人耳可闻 20Hz~20kHz。<strong>A-weighting</strong> 模拟人耳频率响应。距离每翻倍, SPL 衰减 6dB。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Mic (麦克风)</h4><div class="sub">灵敏度 · SNR · 指向性 · 类型</div>
+      <p><em>灵敏度</em> = 给定 SPL 下的输出电压 (mV/Pa 或 dBV/Pa)。<em>SNR</em> = 94dB SPL 信号与自噪声的差值。<em>指向性</em> = 全向/心形/8字形。ECM/MEMS/动圈三大类型。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Speaker (扬声器)</h4><div class="sub">频响 · THD · 阻抗 · 分频</div>
+      <p><em>频响</em> = 各频率的输出幅度 (理想 ±3dB)。<em>THD</em> 总谐波失真 — 2 次谐波温暖, 3 次刺耳。<em>阻抗</em> 随频率变化, 最低点不可低于额定 80%。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 声音物理 ══ -->
+<h2 class="sh">1. 声音物理基础 — 频率 · 振幅 · 分贝 · 响度</h2>
+<p class="ss">声音是气压波动 · SPL = 20×log₁₀(P/P₀) · A-weighting 模拟人耳 · 距离每翻倍 -6dB</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>声音的本质</h4><div class="lbl">气压的周期性波动 — 纵波</div>
+    <p>声音是在<strong>弹性介质 (空气/水/固体)</strong> 中传播的<strong>机械纵波</strong>。声源振动 → 压缩/稀疏周围空气分子 → 波动向外传播。<br>
+    <strong>频率 f (Hz)</strong>: 每秒振动次数 — 决定<strong>音高</strong>。<br>
+    <strong>振幅 A</strong>: 气压波动的幅度 — 决定<strong>响度</strong>。<br>
+    <strong>波长 λ = c/f</strong>: 空气中声速 c ≈ 343 m/s (20°C)。100Hz → λ=3.43m, 1kHz → λ=0.343m, 10kHz → λ=0.034m。</p>
+  </div>
+  <div class="cd" style="--cg:#fbbf24">
+    <h4>分贝 (dB) 体系</h4><div class="lbl">对数单位 — 匹配人耳的非线性感知</div>
+    <p><strong>dB SPL (声压级)</strong>: <code>Lp = 20·log₁₀(P/P₀)</code>, P₀ = 20 μPa (人耳听阈 @1kHz)。<br>
+    <strong>关键阈值</strong>: 0dB=听阈 · 30dB=耳语 · 60dB=交谈 · 85dB=长期暴露限 · 100dB=嘈杂 · 120dB=痛阈 · 140dB=喷气机。<br>
+    <strong>A-weighting (dBA)</strong>: 在 1kHz 以下和 6kHz 以上<strong>衰减</strong> → 模拟人耳频率响应。噪声测量必用。<br>
+    <strong>C-weighting (dBC)</strong>: 更平坦 — 用于高峰值测量 (音乐会/工业噪声)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>距离衰减与响度</h4><div class="lbl">距离每翻倍 → -6dB · 10dB↑ = 感知响度翻倍</div>
+    <p><strong>平方反比定律</strong>: 点声源在自由场中, 距离翻倍 → 声压减半 → <strong>-6 dB SPL</strong>。<br>
+    <strong>响度 (Loudness) vs SPL</strong>: SPL 是物理量, 响度是<strong>主观感知</strong>:<br>
+    <strong>+10 dB SPL</strong> ≈ <strong>感知响度翻倍</strong> (需要 10× 功率)。<br>
+    <strong>+3 dB SPL</strong> ≈ 刚好可分辨的响度变化 (需要 2× 功率)。<br>
+    <strong>等响曲线 (Fletcher-Munson)</strong>: 人耳对 2-5kHz 最敏感 (共振腔), 低频/高频需更高 SPL 才感知同等响度。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>声源</th><th>SPL (dB)</th><th>主观感受</th></tr></thead>
+  <tbody>
+    <tr><td>听阈</td><td>0</td><td>绝对安静</td></tr>
+    <tr><td>安静的图书馆</td><td>~30</td><td>耳语可闻</td></tr>
+    <tr><td>正常交谈 (1m)</td><td>~60</td><td>清晰对话</td></tr>
+    <tr><td>繁忙街道</td><td>~80</td><td>需提高音量</td></tr>
+    <tr><td>音乐会 / 工厂</td><td>~100</td><td>长时间暴露损伤听力</td></tr>
+    <tr><td>摇滚现场 (近距离)</td><td>~120</td><td>痛阈 — 短时间即损伤</td></tr>
+    <tr><td>喷气发动机 (30m)</td><td>~140</td><td>立即听力损伤</td></tr>
+  </tbody>
+  </table>
+</div>
+
+
+<!-- ══ Ch2: Mic ══ -->
+<h2 class="sh">2. 麦克风 (Microphone) — 灵敏度 · SNR · 指向性 · 类型</h2>
+<p class="ss">将声波转换为电信号 · 三大类型 (ECM/MEMS/动圈) · 关键参数解读 · 选型核心考量</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>灵敏度 (Sensitivity)</h4><div class="lbl">给定 SPL → 输出电压 · mV/Pa 或 dBV/Pa</div>
+    <p><strong>定义</strong>: 1kHz、94dB SPL (即 1Pa) 声压下, 麦克风的<strong>开路输出电压</strong>。<br>
+    <strong>单位换算</strong>: <code>dBV/Pa = 20·log₁₀(mV/Pa / 1000)</code><br>
+    例: -38 dBV/Pa = 12.6 mV/Pa · -24 dBV/Pa = 63 mV/Pa (更灵敏!)<br>
+    <strong>负值解读</strong>: 绝对值<strong>越小</strong> = 越灵敏。−24dB > −38dB > −44dB。<br>
+    <strong>选型</strong>: 安静环境用<strong>高灵敏度</strong> (捕捉细节) · 嘈杂环境用<strong>低灵敏度</strong> (避免削波)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SNR & 动态范围</h4><div class="lbl">SNR = 94dB信号 − 自噪声 · Dynamic Range = AOP − Noise</div>
+    <p><strong>自噪声 (Self-Noise / Noise Floor)</strong>: 麦克风自身的电噪声 (等效 SPL in dBA)。低端 29dBA · 高端 14dBA。<br>
+    <strong>SNR = 94 - SelfNoise(dBA)</strong>: 典型值 65~80dBA。值越大 → 录音越"干净"。<br>
+    <strong>AOP (Acoustic Overload Point)</strong>: 失真 >1% (或10%) THD 时的 SPL。典型 110~130dB。<br>
+    <strong>动态范围 = AOP - Noise Floor</strong>: 例: 110dB − 14dB = <strong>96dB</strong> — 决定了能同时录制的最小声和最大声的<strong>跨度</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>指向性 (Polar Pattern)</h4><div class="lbl">全向 · 心形 · 8字形 · 枪型</div>
+    <p><strong>全向 (Omni)</strong>: 360° 均匀 — 无近讲效应, 录音自然。会议/测量。<br>
+    <strong>心形 (Cardioid)</strong>: 正面敏感, 后方抑制 — 有<strong>近讲效应</strong> (近距离低频增强)。人声/乐器。<br>
+    <strong>8字形 (Figure-8/Bidirectional)</strong>: 前+后, 两侧抑制 — 立体声/降噪 (主动抵消侧向噪声)。<br>
+    <strong>超心形/枪型 (Shotgun)</strong>: 极窄前方 — 影视同期声/远距离拾音。<br>
+    <strong>近讲效应 (Proximity Effect)</strong>: 只有压力梯度式 (心形/8字) 有 — 距离 < 30cm 低频提升 6-10dB。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>类型</th><th>原理</th><th>灵敏度</th><th>SNR</th><th>典型用途</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ECM (驻极体)</strong></td><td>预充电驻极体膜片 + FET 阻抗变换器</td><td>−44~−24 dBV/Pa</td><td>60~70 dBA</td><td>消费电子 · 耳机 · IPC</td></tr>
+    <tr><td><strong>MEMS (硅麦)</strong></td><td>硅刻蚀膜片 + 集成 ASIC (ADC可选)</td><td>−38~−26 dBV/Pa</td><td class="g"><strong>65~80+ dBA</strong></td><td>手机 · 阵列 · IoT · 数字输出</td></tr>
+    <tr><td><strong>动圈 (Dynamic)</strong></td><td>线圈在磁场中振动 → 电磁感应</td><td>−56~−50 dBV/Pa (极低)</td><td>—</td><td>舞台演出 · 高声压 · 坚固</td></tr>
+    <tr><td><strong>电容 (Condenser)</strong></td><td>外部极化电压 (48V幻象) + 膜片电容变化</td><td>−38~−28 dBV/Pa</td><td class="g">75~85+ dBA</td><td>录音室 · 测量 · 广播</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">MEMS vs ECM — IPC 产品 Mic 选型决策</div>
+  <strong>MEMS 优势</strong>: ① 尺寸极小 (3.76×2.95mm) ② 高 SNR (>66dBA) ③ 数字输出 (PDM/I2S), 省去 ADC ④ 温湿度可靠性好 ⑤ 一致性好 (灵敏度偏差 ±1dB)。<br>
+  <strong>ECM 优势</strong>: ① 成本极低 ② 多种指向性可选 ③ 高 AOP (承受高声压)。<br>
+  <strong>IPC 推荐</strong>: 模拟 MEMS (高 SNR, 小尺寸) 或 数字 MEMS (直接 I2S, 省 codec ADC, 抗干扰强)。
+</div>
+
+<!-- ══ Ch3: Speaker ══ -->
+<h2 class="sh">3. 扬声器 (Speaker) — 频响 · THD · 阻抗 · 分频</h2>
+<p class="ss">电信号 → 声波 · 频响 ±3dB 标准 · 谐波失真 (2nd 温暖 vs 3rd 刺耳) · 分频器 · 灵敏度与功率</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>频率响应 (Frequency Response)</h4><div class="lbl">各频率下输出 SPL 的平坦度 · ±3dB 为优质</div>
+    <p><strong>测量方式</strong>: 输入扫频信号 (20Hz~20kHz) → 测量轴线上 1m 处的 SPL。<br>
+    <strong>±3dB 标准</strong>: 理想响应在此容差内 → "平坦"。专业监听音箱: 40Hz~20kHz ±3dB。消费级可能 ±5dB 以上。<br>
+    <strong>低频滚降 (Bass Roll-off)</strong>: 小型箱体低于某一频率 (f3) 后每倍频程 -12dB (封闭箱) 或 -24dB (倒相箱)。<br>
+    <strong>高音延伸</strong>: 钛膜/铝带高音可至 30kHz+ (Hi-Res Audio)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>THD 谐波失真 — 读懂失真</h4><div class="lbl">THD = √(ΣV_harm²)/V_fund · 关键不是总数值, 是成分!</div>
+    <p><strong>定义</strong>: <code>THD% = 100 × √(H₂²+H₃²+...)/H₁</code><br>
+    <strong>2 次谐波 (H₂)</strong>: 八度音程 — 听起来<strong>温暖、饱满</strong>。胆机/黑胶大量产生, 主观认为是"好听"的失真。<br>
+    <strong>3 次谐波 (H₃)</strong>: 八度+五度 — 听起来<strong>刺耳、粗糙</strong>。过载/削波产生, 几乎总是<strong>不好听</strong>。<br>
+    <strong>关键洞见</strong>: THD=1% 但全是 H₂ → 好听。THD=0.5% 但 H₃ 主导 → 难听。THD 数值<strong>不能单独评判音质</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>阻抗 (Impedance)</h4><div class="lbl">随频率变化的交流电阻 · 最低值 ≥ 额定 80%</div>
+    <p><strong>额定阻抗</strong>: 3.2Ω / 4Ω / 6Ω / <strong>8Ω</strong> (最常见)。这是"标称值", 实际阻抗随频率<strong>剧烈变化</strong>。<br>
+    <strong>最低阻抗 (Zmin)</strong>: 通常在 200Hz 附近 (低音谐振点) 或高频段。按 IEC 标准, Zmin 应 ≥ 额定值×80% (8Ω→6.4Ω)。<br>
+    <strong>与功放匹配</strong>: 阻抗过低 → 功放过流 → 保护/烧毁。两只 8Ω 并联 = <strong>4Ω</strong> — 需确认功放能驱动。<br>
+    <strong>灵敏度</strong>: 1W@1m 的 SPL。87dB(低效) → 93dB(高效)。差 3dB = 需要<strong>2倍功放功率</strong>达到同响度。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>分频器 (Crossover)</h4><div class="lbl">分割频谱 → 低音/中音/高音各司其职</div>
+    <p><strong>低频 (Woofer)</strong>: 20Hz~2kHz · 大口径 (8-15") · 大冲程。<br>
+    <strong>中频 (Midrange)</strong>: 400Hz~5kHz · 关键频段 — 人声/乐器主体。<br>
+    <strong>高频 (Tweeter)</strong>: 2kHz~20kHz+ · 球顶/带式/AMT。<br>
+    <strong>分频点 (Crossover Freq)</strong>: 2-way ~2kHz · 3-way ~500Hz+3.5kHz。<br>
+    <strong>主动分频</strong>: 分频→独立功放→每单元 (bi-amp/tri-amp)。优势: 低失真/高效率。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>THD %</th><th>相对于基频</th><th>品质</th><th>典型场景</th></tr></thead>
+  <tbody>
+    <tr><td>10%</td><td>−20 dB</td><td class="r">可闻失真</td><td>扩声系统极限</td></tr>
+    <tr><td>3%</td><td>−30 dB</td><td class="y">专业上限</td><td>录音棚监听最大可接受</td></tr>
+    <tr><td>1%</td><td>−40 dB</td><td class="g">非常干净</td><td>Hi-Fi 监听目标值</td></tr>
+    <tr><td>0.3%</td><td>−50 dB</td><td class="g">接近透明</td><td>高端录音棚</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ Ch4: 室内声学 ══ -->
+<h2 class="sh">4. 室内声学 — 混响 RT60 · 吸收 · 回声</h2>
+<p class="ss">Sabine 公式: T₆₀ = 0.161V/A · 吸声系数 α · 不同房间的理想 RT60 · 近讲/远场判据</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>RT60 — 混响时间</h4><div class="lbl">声压衰减 60dB 所需的时间 (秒)</div>
+    <p><strong>Sabine 公式</strong>: <strong>T₆₀ = 0.161 × V / A</strong><br>
+    V=房间体积(m³), A=总吸声量 (Sabins = Σ αᵢ×Sᵢ)。<br>
+    <strong>物理直觉</strong>: 房间越大 (V↑) → 混响越长。吸声越多 (A↑) → 混响越短。<br>
+    <strong>Eyring 修正</strong> (α>0.3 时): <code>T₆₀ = 0.161×V / (−S×ln(1−ᾱ))</code> → 高吸收率时更准确。<br>
+    <strong>混响 vs 回声</strong>: 混响 = 无数反射叠加的连续衰减 · 回声 = 可分辨的离散反射 (延时 >50ms, 强度 > 直达声 -10dB)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>吸声系数 α (0~1)</h4><div class="lbl">每种材料在每个频率的吸声能力不同</div>
+    <p><strong>α=0</strong>: 完全反射 (混凝土) · <strong>α=1</strong>: 完全吸收 (开口窗)。<br>
+    <strong>频率依赖性</strong>: 多孔材料 (吸音棉) → 高频 α 高 (0.8+), 低频 α 低 (0.1)。<br>
+    <strong>共振吸收</strong>: 薄板/膜共振器 → 针对特定低频 (如 125Hz) 吸收。<br>
+    <strong>典型材料</strong>: 厚窗帘 0.4~0.75 · 地毯 0.1~0.6 · 吸音板 0.5~0.9 · 玻璃 0.03~0.05。<br>
+    <strong>RT60 优化方向</strong>: 短 RT(0.2~0.6s) → 录音棚/控制室 · 中 RT(0.8~1.5s) → 教室/剧院 · 长 RT(2~4s) → 音乐厅/教堂。</p>
+  </div>
+</div>
+
+<!-- ══ Ch5: 数字音频 ══ -->
+<h2 class="sh">5. 数字音频 — 采样 · 量化 · 位深 · Nyquist</h2>
+<p class="ss">模拟→数字的关键概念 · 采样率与混叠 · 位深与动态范围 · dBFS · 抖动 (Dither)</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>采样 (Sampling)</h4><div class="lbl">连续信号 → 离散时间点 · Nyquist: fs ≥ 2×fmax</div>
+    <p><strong>采样定理</strong>: 要无失真重建信号, 采样频率必须 ≥ <strong>2×信号最高频率</strong>。<br>
+    <strong>CD 音质</strong>: 44.1kHz → 可完整采集 0~22.05kHz (覆盖人耳上限 20kHz)。<br>
+    <strong>48kHz</strong>: 视频/专业音频标准 — 与 24fps 视频帧对齐 (48k/24=2000 samples/frame)。<br>
+    <strong>96kHz/192kHz</strong>: Hi-Res — 给抗混叠滤波器更平缓的过渡带, 减少相位失真。<br>
+    <strong>混叠 (Aliasing)</strong>: fs < 2×fmax → 高频折叠为假低频 → 不可逆失真。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>量化 (Quantization)</h4><div class="lbl">连续幅度 → 离散台阶 · 位深决定动态范围</div>
+    <p><strong>位深</strong>: 每采样的 bit 数 — 决定了<strong>动态范围 (DR)</strong>。<br>
+    <strong>DR ≈ 6.02×N + 1.76 dB</strong>: 16bit=98dB · 24bit=146dB。<br>
+    <strong>量化噪声</strong>: 量化的舍入误差, 均匀分布在 −½LSB~+½LSB → 信噪比 SNR=DR。<br>
+    <strong>dBFS (dB Full Scale)</strong>: 数字域基准 — 0 dBFS = 最大可表示幅值 (全 1)。所有值 ≤0 (负数)。<br>
+    <strong>0 dBFS 对应的模拟电平</strong>: 由 DAC/ADC 的<strong>参考电压 (Vref)</strong> 决定 — 专业设备 +4dBu=−18dBFS (常见对应)。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>抖动 (Dither)</h4><div class="lbl">在量化前加微小噪声 — 消除量化失真</div>
+    <p><strong>问题</strong>: 纯正弦波在低位深时, 量化误差与信号<strong>相关</strong> → 产生可闻的谐波失真 (颗粒感)。<br>
+    <strong>解决</strong>: 加<strong>随机噪声 (dither)</strong> (幅度 ~1 LSB) → 量化误差变成<strong>不相关的白噪声</strong> → 谐波失真消除, 换来轻微的本底噪声提升。<br>
+    <strong>噪声整形 (Noise Shaping)</strong>: 将 dither 噪声的频谱<strong>推向高频</strong> (人耳不敏感) → 可闻频段内 SNR 可提升 10-20dB。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>位深</th><th>量化级数</th><th>动态范围 (理论)</th><th>典型应用</th></tr></thead>
+  <tbody>
+    <tr><td>8 bit</td><td>256</td><td>~50 dB</td><td>电话语音 (μ-law/A-law)</td></tr>
+    <tr><td>16 bit</td><td>65,536</td><td class="g">~98 dB</td><td>CD 音质 · 消费音频</td></tr>
+    <tr><td>24 bit</td><td>16,777,216</td><td class="g">~146 dB</td><td>录音棚 · 专业制作</td></tr>
+    <tr><td>32 bit float</td><td>— (浮点)</td><td>~1528 dB</td><td>DAW 内部处理 · 无削波风险</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 嵌入式 IPC 音频设计关键参数一览</div>
+  <strong>Mic 选型</strong>: MEMS 模拟 (−38dBV, SNR>66dBA, AOP>120dB) 或 MEMS 数字 (I2S/PDM, 省 codec ADC)。<br>
+  <strong>Mic 增益</strong>: 从 Mic 输出到 ADC 输入的模拟增益 — 根据目标 SPL 范围和 ADC 满量程 (通常 1Vrms=0dBFS) 计算。<br>
+  <strong>Speaker 选型</strong>: 微型动圈 (IPC 内置) 频响通常 300Hz~8kHz ±10dB — 注重语音清晰度 (2-4kHz 峰值)。<br>
+  <strong>腔体设计</strong>: Mic 密封 (避免腔体共振) · Speaker 后腔容积决定低频延伸。<br>
+  <strong>RT60 考量</strong>: 小空间 (IPC 安装位置) RT60 < 0.3s → AEC 更容易收敛 (混响尾短)。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Audio Fundamentals — 系统化知识体系 · 2026-06 · 声学 · Mic · Speaker · 室内声学 · 数字音频
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>
