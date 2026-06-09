@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC PeerConnection 内核 — 深度剖析</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.5; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; text-decoration:none; }
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(24px,5vw,36px);font-weight:900">WebRTC PeerConnection 内核</h2>
+  <p class="sec-sub">深度剖析 — 三线程模型 · 控制器模式 · SDP 协商 · ICE 连通性 · DTLS 握手 · 媒体引擎 · 端到端连接时间线</p>
+
+  <div class="flow-row" style="margin:24px 0">
+    <span class="flow-box" style="color:#f87171;background:rgba(248,113,113,.06)"><strong>Signaling<br>Thread</strong></span>
+    <span class="flow-arr">⇄</span>
+    <span class="flow-box" style="color:#fbbf24;background:rgba(251,191,36,.06)"><strong>Worker<br>Thread</strong></span>
+    <span class="flow-arr">⇄</span>
+    <span class="flow-box" style="color:#a78bfa;background:rgba(108,99,255,.08)"><strong>Network<br>Thread</strong></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>控制器模式</h4><div class="sub">God Object 下的模块化</div>
+      <p>PeerConnection 是中央协调者, 委托给 6 个<em>专用控制器</em>: SdpOfferAnswerHandler (SDP协商) · JsepTransportController (ICE+DTLS) · RtpTransmissionManager (收发) · DataChannelController · RtcStatsCollector · Call (媒体)</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>三线程架构</h4><div class="sub">Signaling · Worker · Network</div>
+      <p><em>Signaling Thread</em>: API 调用 + Observer 回调 · <em>Worker Thread</em>: 编码/解码/3A · <em>Network Thread</em>: ICE/DTLS/网络 I/O。跨线程通过 <strong>BlockingCall + Proxy 模式</strong> 保证安全。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>连接时间线</h4><div class="sub">Offer/Answer → ICE → DTLS → SRTP → Media</div>
+      <p>createOffer→setLocalDesc(ICE 收集开始)→Signaling→setRemoteDesc(ICE 检查开始)→ICE connected→<strong>DTLS 握手</strong>→SRTP 密钥派生→connectionState='connected'→媒体流动。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 架构 ══ -->
+<h2 class="sh">1. PeerConnection 总体架构 — 控制器模式</h2>
+<p class="ss">PeerConnection 是"God Object" — 它不直接做所有事, 而是委托给 6 个专用控制器, 各自拥有独立子系统</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>六大内部控制器</h4><div class="lbl">每个控制器 = 一个独立子系统</div>
+    <p><strong>SdpOfferAnswerHandler</strong> — SDP offer/answer 生成与解析 · 信令状态机 · codec 协商<br>
+    <strong>JsepTransportController</strong> — ICE 候选收集/连通性检查 · DTLS 握手生命周期 · SRTP 密钥管理<br>
+    <strong>RtpTransmissionManager</strong> — RTCRtpSender/Receiver 管理 · transceiver · track 生命周期<br>
+    <strong>DataChannelController</strong> — DataChannel 创建 · SCTP 流分配<br>
+    <strong>RtcStatsCollector</strong> — 聚合所有子系统的统计信息<br>
+    <strong>Call</strong> — 顶层媒体会话 · 管理 AudioSendStream / VideoSendStream / AudioReceiveStream / VideoReceiveStream</p>
+  </div>
+  <div class="cd" style="--cg:#a78bfa">
+    <h4>关键源码位置 (libwebrtc)</h4><div class="lbl">src/ 目录下的核心文件</div>
+    <p><code>api/peer_connection_interface.h</code> — 公共 API 接口定义 (W3C 标准映射)<br>
+    <code>pc/peer_connection.cc</code> — ★ PeerConnection 核心实现 (~5000 行)<br>
+    <code>pc/sdp_offer_answer.cc</code> — SDP Offer/Answer 处理逻辑<br>
+    <code>call/call.cc</code> — 媒体 Call 对象, 管理收发流<br>
+    <code>media/engine/webrtc_video_engine.cc</code> — 视频媒体引擎<br>
+    <code>media/engine/webrtc_voice_engine.cc</code> — 音频媒体引擎 (含 3A 处理)<br>
+    <code>p2p/base/p2p_transport_channel.cc</code> — ★ ICE 连通性检查实现<br>
+    <code>pc/jsep_transport_controller.cc</code> — ICE+DTLS 传输控制器</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ PeerConnection 内部组件通信 ═══ */</span>
+<span class="cm">┌────────────────────────────────────────────────────────────────────┐</span>
+<span class="cm">│                      <b>PeerConnection</b>                               │</span>
+<span class="cm">│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │</span>
+<span class="cm">│  │SdpOfferAnswer    │  │JsepTransport     │  │RtpTransmission   │  │</span>
+<span class="cm">│  │Handler            │  │Controller         │  │Manager            │  │</span>
+<span class="cm">│  │  - Offer/Answer   │  │  - ICE gather     │  │  - Senders        │  │</span>
+<span class="cm">│  │  - Signaling SM   │  │  - ICE checks     │  │  - Receivers      │  │</span>
+<span class="cm">│  │  - Codec prefs    │  │  - DTLS lifecycle │  │  - Transceivers   │  │</span>
+<span class="cm">│  └──────────────────┘  └──────────────────┘  └──────────────────┘  │</span>
+<span class="cm">│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │</span>
+<span class="cm">│  │DataChannel       │  │RtcStatsCollector │  │<b>Call</b>              │  │</span>
+<span class="cm">│  │Controller         │  │                  │  │  - AudioSendStream│  │</span>
+<span class="cm">│  │  - SCTP streams  │  │                  │  │  - VideoSendStream│  │</span>
+<span class="cm">│  └──────────────────┘  └──────────────────┘  │  - AudioRecvStream│  │</span>
+<span class="cm">│                                              │  - VideoRecvStream│  │</span>
+<span class="cm">│                                              └──────────────────┘  │</span>
+<span class="cm">└────────────────────────────────────────────────────────────────────┘</span></div>
+
+<!-- ══ Ch2: 线程模型 ══ -->
+<h2 class="sh">2. 三线程模型 — PeerConnection 的并发基石</h2>
+<p class="ss">PeerConnectionFactory 创建并持有三条线程 · 所有 PeerConnection 实例共享 · 跨线程通过 BlockingCall + Proxy 安全通信</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Signaling Thread</h4><div class="lbl">信令线程 — API 入口</div>
+    <p><strong>运行内容</strong>: ① 所有 W3C API 调用 (createOffer/setLocalDescription/addTrack...) ② <strong>PeerConnectionObserver 回调</strong> (onIceCandidate/ontrack/oniceconnectionstatechange) ③ SDP 解析与生成 ④ 信令状态机<br>
+    <strong>约束</strong>: 应用代码必须<strong>快速返回</strong> — 不能阻塞此线程。任何耗时操作 (编解码/I/O) 必须委托到 Worker/Network。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Worker Thread</h4><div class="lbl">工作线程 — 媒体处理</div>
+    <p><strong>运行内容</strong>: ① 音频: 采集→3A 处理(AEC/NS/AGC)→Opus 编码→RTP 打包 ② 视频: 采集→预处理→VP8/VP9/H264/AV1 编码→RTP 打包 ③ 接收侧: RTP 解包→解码→渲染 ④ 带宽估计 (GCC)<br>
+    <strong>Call 对象</strong> 及其全部 AudioSendStream/VideoSendStream 在此线程运行。<br>
+    <strong>关键</strong>: 媒体处理是 CPU 密集型 — Worker 线程优先级应高于 Signaling。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Network Thread</h4><div class="lbl">网络线程 — I/O 与传输</div>
+    <p><strong>运行内容</strong>: ① UDP/TCP socket 读写 ② ICE 候选收集 (STUN/TURN 查询) ③ ICE 连通性检查 (STUN binding request/response) ④ <strong>DTLS 握手</strong> ⑤ SRTP 加密/解密 ⑥ SCTP 数据传输 (DataChannel)<br>
+    <strong>特点</strong>: 拥有独立的 socket server · 处理所有网络层协议 · 从 Worker 收到的编码数据在此加密后发出。</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ 线程创建 — PeerConnectionFactory 初始化 ═══ */</span>
+<span class="cm">LibWebRTC::Initialize()</span>
+<span class="cm">  └── <b>PeerConnectionFactory::Create()</b></span>
+<span class="cm">        ├── <i>rtc::Thread::CreateWithSocketServer()</i>    <span class="cm">// Network Thread (带 socket server)</span></span>
+<span class="cm">        ├── <i>rtc::Thread::Create()</i>                     <span class="cm">// Worker Thread</span></span>
+<span class="cm">        ├── <i>rtc::Thread::Create()</i>                     <span class="cm">// Signaling Thread</span></span>
+<span class="cm">        ├── 命名: network_thread / worker_thread / signaling_thread</span>
+<span class="cm">        └── 所有 PC 实例共享这三条线程</span>
+
+<span class="cm">/* ═══ 跨线程调用机制 ═══ */</span>
+<span class="cm">// 1. 同步跨线程调用 (Signaling → Worker)</span>
+<span class="kw">int</span> result = <span class="fn">worker_thread</span>()-&gt;<span class="fn">BlockingCall</span>([&amp;] {
+    <span class="fn">RTC_DCHECK_RUN_ON</span>(<span class="fn">worker_thread</span>());
+    <span class="cm">// ★ 运行在 Worker Thread 上</span>
+    <span class="kw">return</span> <span class="fn">call</span>()-&gt;<span class="fn">CreateVideoSendStream</span>(config);
+});
+<span class="cm">// 调用线程阻塞直到返回</span>
+
+<span class="cm">// 2. 异步跨线程调用 (Network → Signaling)</span>
+<span class="fn">signaling_thread</span>()-&gt;<span class="fn">PostTask</span>([this] {
+    <span class="cm">// ★ 运行在 Signaling Thread 上</span>
+    <span class="fn">observer_</span>()-&gt;<span class="fn">OnIceCandidate</span>(candidate);
+});
+
+<span class="cm">// 3. Proxy 模式 — 自动跨线程代理</span>
+<span class="cm">// PeerConnectionProxy / RtpSenderProxy 等通过宏自动生成</span>
+<span class="cm">// PROXY_PRIMARY_THREAD_DESTROYOR(PeerConnection)</span>
+<span class="cm">// PROXY_METHOD0(void, PeerConnection, Close)</span></div>
+
+<div class="callout info">
+  <div class="ct">线程安全保证 — 三个机制</div>
+  <strong>① RTC_DCHECK_RUN_ON(thread)</strong>: 编译期+运行期检查 — 确保代码在正确线程执行。生产构建不检查, 调试构建 crash 提示线程错误。<br>
+  <strong>② BlockingCall / PostTask</strong>: 显式跨线程调度 — BlockingCall 同步等待返回, PostTask 异步不等待。<br>
+  <strong>③ Proxy 模式</strong>: 自动生成线程代理 — 宏展开为基础 BlockingCall/PostTask 调用, 避免手动线程调度错误。
+</div>
+
+<!-- ══ Ch3: Signaling State Machine ══ -->
+<h2 class="sh">3. 信令状态机 — SDP 协商的生命周期</h2>
+<p class="ss">W3C 标准定义的 5 状态 · 每个状态转换触发级联效应: 传输创建、ICE 启动、DTLS 初始化</p>
+
+<div class="chain">
+<span class="cm">/* ═══ WebRTC Signaling State Machine ═══ */</span>
+<span class="cm">                         <b>createOffer() / createAnswer()</b></span>
+<span class="cm">  ┌──────────┐ ─────────────────────────────────► ┌─────────────────┐</span>
+<span class="cm">  │ <b>stable</b>  │ ◄─── setLocalDescription(answer) ── │ <b>have-local-offer</b>│</span>
+<span class="cm">  └────┬─────┘                                    └────────┬────────┘</span>
+<span class="cm">       │        setRemoteDescription(answer)                │</span>
+<span class="cm">       │ ◄──────────────────────────────────────────────── ┘</span>
+<span class="cm">       │</span>
+<span class="cm">       │  setRemoteDescription(offer)</span>
+<span class="cm">       ▼</span>
+<span class="cm">  ┌────────────────────┐</span>
+<span class="cm">  │ <b>have-remote-offer</b> │── setLocalDescription(answer) ──► <b>stable</b></span>
+<span class="cm">  └────────────────────┘</span>
+<span class="cm"></span>
+<span class="cm">  <b>stable</b> → <b>have-local-offer</b>:    调用者调用 createOffer + setLocalDescription</span>
+<span class="cm">  <b>have-local-offer</b> → <b>stable</b>:    收到远程 answer 后 setRemoteDescription</span>
+<span class="cm">  <b>stable</b> → <b>have-remote-offer</b>:  收到远程 offer 后 setRemoteDescription</span>
+<span class="cm">  <b>have-remote-offer</b> → <b>stable</b>:  调用 createAnswer + setLocalDescription</span></div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>SetLocalDescription — 触发级联</h4><div class="lbl">★★★★★ 最关键的 API 调用</div>
+    <p><code>setLocalDescription()</code> 是<strong>整个连接建立过程的起点</strong>:<br>
+    ① SDP 写入本地描述<br>
+    ② <strong>★ ICE 候选收集开始</strong> — 查询 STUN/TURN 服务器<br>
+    ③ JsepTransportController 创建传输对象<br>
+    ④ DTLS 证书生成 (首次)<br>
+    ⑤ <code>iceGatheringState</code> → "gathering"<br>
+    ⑥ <code>onicecandidate</code> 逐次触发 (Trickle ICE)</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SetRemoteDescription — 激活连接</h4><div class="lbl">★★★★★ 触发 ICE 连通性检查</div>
+    <p><code>setRemoteDescription()</code> 是<strong>连接激活的触发器</strong>:<br>
+    ① SDP 解析 → 创建远程媒体描述<br>
+    ② ★ <strong>ontrack</strong> 事件触发 — 远程媒体流到达<br>
+    ③ ICE 候选对形成 → <strong>连通性检查开始</strong><br>
+    ④ <code>iceConnectionState</code> → "checking"<br>
+    ⑤ DTLS 角色确定 (controlling vs controlled)<br>
+    ⑥ <code>canTrickleIceCandidates</code> 赋值</p>
+  </div>
+</div>
+
+<!-- ══ Ch4: ICE ══ -->
+<h2 class="sh">4. ICE — 穿越 NAT 的连通性魔法</h2>
+<p class="ss">候选收集 (host/srflx/relay) → 候选对排序 (host>srflx>relay, UDP>TCP) → STUN 连通性检查 → Nomination</p>
+
+<div class="chain">
+<span class="cm">/* ═══ ICE 完整流程 ═══ */</span>
+<span class="cm"><b>Phase 1: 候选收集 (ICE Gathering)</b></span>
+<span class="cm">  setLocalDescription() ──► JsepTransportController ──► PortAllocator</span>
+<span class="cm">    ├── 每网络接口创建 AllocationSequence</span>
+<span class="cm">    ├── <i>STUN 查询</i> → 获取 srflx 候选 (服务器反射地址)</span>
+<span class="cm">    ├── <i>TURN Allocate</i> → 获取 relay 候选 (中继地址, 如果配置了 TURN)</span>
+<span class="cm">    ├── host 候选 = 本地 IP (192.168.x.x / 10.x.x.x)</span>
+<span class="cm">    └── onIceCandidate(candidate) — 逐次触发 (Trickle ICE)</span>
+<span class="cm">      └── iceGatheringState: new → gathering → <b>complete</b></span>
+
+<span class="cm"><b>Phase 2: 候选交换</b></span>
+<span class="cm">  应用层 Signaling (WebSocket / REST / 自定义) 交换 SDP + ICE 候选</span>
+
+<span class="cm"><b>Phase 3: 连通性检查</b></span>
+<span class="cm">  setRemoteDescription() ──► P2PTransportChannel ──► 形成候选对列表</span>
+<span class="cm">    ├── <i>排序</i>: host→host > host→srflx > srflx→srflx > relay (UDP > TCP)</span>
+<span class="cm">    ├── <i>STUN Binding Request</i> — 对每个候选对发送连通性检查</span>
+<span class="cm">    ├── <i>角色确定</i>: ice-ufrag 字典序大的一方 = <b>controlling</b> (主动提名)</span>
+<span class="cm">    ├── <i>Nomination</i>: controlling 端标记选中的候选对</span>
+<span class="cm">    └── iceConnectionState: new → <b>checking</b> → <b>connected</b> → <b>completed</b></span></div>
+
+<h2 class="sh">5. DTLS 握手 — 安全的最后一道门</h2>
+<p class="ss">ICE connected → DTLS ClientHello → 证书验证 (fingerprint) → SRTP 密钥派生 (RFC 5705)</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>DTLS 握手 — 简化流程</h4><div class="lbl">在 ICE 选中的 5-tuple 上运行</div>
+    <p>① <strong>ClientHello</strong> (Flight 1+3): 包含加密套件、随机数、<strong>use_srtp 扩展</strong> (RFC 5764)<br>
+    ② <strong>ServerHello + Certificate + ServerHelloDone</strong> (Flight 2+5): 服务端证书、密钥交换参数<br>
+    ③ <strong>Client Certificate + ChangeCipherSpec + Finished</strong> (Flight 4+6): 客户端认证完成<br>
+    ④ <strong>Fingerprint 验证</strong>: 收到的证书指纹 vs SDP 中的 <code>a=fingerprint:sha-256</code> → <strong>不匹配 = MITM 攻击 → 连接失败</strong></p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SRTP 密钥派生 (DTLS-SRTP)</h4><div class="lbl">DTLS 完成后的最关键步骤</div>
+    <p>① DTLS 握手完成后, 双方都有共享的 <strong>master secret</strong><br>
+    ② 调用 <strong>RFC 5705</strong> key exporter: <code>SSL_export_keying_material(ssl, label="EXTRACTOR-dtls_srtp", ...)</code><br>
+    ③ 派生 <strong>SRTP master keys</strong> (send + recv 方向各自独立)<br>
+    ④ <code>DtlsSrtpTransport</code> 配置 <code>SrtpSession</code> → 此后所有 RTP/RTCP 包通过 <strong>SRTP 加密</strong><br>
+    ⑤ <code>connectionState</code> → "connected"</p>
+  </div>
+</div>
+
+<div class="chain">
+<span class="cm">/* ═══ DTLS 在 WebRTC 中的特殊之处 ═══ */</span>
+<span class="cm"><b>a=setup:actpass</b> — 双方都可以是 DTLS Client 或 Server</span>
+<span class="cm">  角色由 ICE 确定: controlling = DTLS Client (默认)</span>
+<span class="cm">  注意: 这里有 DTLS Client ≠ WebRTC 的 offerer/answerer 分离</span>
+
+<span class="cm"><b>DTLS 1.3</b> (field trial: WebRTC-ForceDtls13) — 更快握手 (1-RTT)</span>
+<span class="cm">  优势: 减少一次往返 → 连接建立更快</span>
+
+<span class="cm"><b>SCTP over DTLS</b> (RFC 8261) — DataChannel 在 DTLS 之上运行 SCTP</span>
+<span class="cm">  DTLS 提供加密 → SCTP 提供可靠/不可靠多流传输 → DataChannel API</span></div>
+
+<!-- ══ Ch6: 媒体引擎 ══ -->
+<h2 class="sh">6. 媒体引擎 — 音频和视频的处理核心</h2>
+<p class="ss">Worker Thread 上的编码/解码/3A 流水线 · RTP 打包/解包 · NACK/PLI/FIR 反馈</p>
+
+<div class="chain">
+<span class="cm">/* ═══ Worker Thread 上的媒体处理流水线 ═══ */</span>
+<span class="cm">┌─────────────────────── <b>SEND PATH</b> ───────────────────────┐</span>
+<span class="cm">│  Capture → Pre-process → Encoder → RTP Packetizer         │</span>
+<span class="cm">│  (mic/cam)  (AEC3/NS/AGC) (Opus/VP8/H264)                 │</span>
+<span class="cm">│      │                                                      │</span>
+<span class="cm">│      ▼ Worker → Network 线程间传递                         │</span>
+<span class="cm">├───────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>Network Thread</b>: SRTP encrypt → send over ICE socket     │</span>
+<span class="cm">└───────────────────────────────────────────────────────────┘</span>
+
+<span class="cm">┌─────────────────────── <b>RECEIVE PATH</b> ───────────────────┐</span>
+<span class="cm">│  <b>Network Thread</b>: recv from ICE → SRTP decrypt            │</span>
+<span class="cm">│      │                                                      │</span>
+<span class="cm">│      ▼ Network → Worker 线程间传递                         │</span>
+<span class="cm">├───────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  RTP Depacketizer → JitterBuffer → Decoder → Render        │</span>
+<span class="cm">│                     (NetEQ)      (Opus/VP8)  (spk/display) │</span>
+<span class="cm">└───────────────────────────────────────────────────────────┘</span></div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>组件</th><th>类名</th><th>线程</th><th>职责</th></tr></thead>
+  <tbody>
+    <tr><td>音频引擎</td><td><code>WebRtcVoiceEngine</code></td><td>Worker</td><td>创建 AudioSendStream / AudioReceiveStream</td></tr>
+    <tr><td>视频引擎</td><td><code>WebRtcVideoEngine</code></td><td>Worker</td><td>创建 VideoSendStream / VideoReceiveStream</td></tr>
+    <tr><td>音频发送流</td><td><code>AudioSendStream</code></td><td>Worker</td><td>采集 → AEC3(回声消除) → NS(降噪) → AGC(增益) → Opus 编码 → RTP 打包</td></tr>
+    <tr><td>音频接收流</td><td><code>AudioReceiveStream</code></td><td>Worker</td><td>RTP 解包 → NetEQ(抖动缓冲+PLC) → Opus 解码 → 渲染</td></tr>
+    <tr><td>视频发送流</td><td><code>VideoSendStream</code></td><td>Worker</td><td>采集 → 预处理 → VP8/VP9/H264/AV1 编码 → RTP 打包</td></tr>
+    <tr><td>视频接收流</td><td><code>VideoReceiveStream</code></td><td>Worker</td><td>RTP 解包 → 抖动缓冲 → 解码 → 渲染</td></tr>
+    <tr><td>SRTP 加密</td><td><code>SrtpSession</code></td><td>Network</td><td>加密向外发送, 解密向内接收</td></tr>
+    <tr><td>ICE 传输</td><td><code>P2PTransportChannel</code></td><td>Network</td><td>STUN 连通性检查 · 候选对管理 · Nomination</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h2 class="sh">7. 端到端连接时间线 — 从创建到媒体流动</h2>
+<p class="ss">T0→T8 八个关键节点 · 每个节点的触发条件和级联效应 · 理解它是排障的基础</p>
+
+<div class="sg">
+  <div class="st"><b>T0</b> <strong>new PeerConnection</strong><br>signaling thread<br>分配内部控制器<br>初始化 Call 对象</div>
+  <div class="st"><b>T1</b> <strong>addTrack</strong><br>signaling thread<br>创建 RTP Sender<br>关联 MediaStreamTrack</div>
+  <div class="st"><b>T2</b> <strong>createOffer +</strong><br><strong>setLocalDescription</strong><br>★ ICE 收集启动<br>DTLS 证书生成</div>
+  <div class="st"><b>T3</b> <strong>Signaling</strong><br>app 层交换<br>SDP + ICE 候选<br>Trickle 逐次发送</div>
+  <div class="st"><b>T4</b> <strong>setRemoteDescription</strong><br>★ ICE 检查启动<br>ontrack 触发<br>DTLS 角色确定</div>
+  <div class="st"><b>T5</b> <strong>ICE connected</strong><br>network thread<br>候选对连通<br>→ DTLS 开始握手</div>
+  <div class="st"><b>T6</b> <strong>DTLS connected</strong><br>network thread<br>★ SRTP 密钥派生<br>connectionState→connected</div>
+  <div class="st"><b>T7</b> <strong>Media flows</strong><br>worker→network<br>编码→加密→发送<br>接收→解密→解码</div>
+  <div class="st"><b>T8</b> <strong>DataChannel open</strong><br>SCTP over DTLS<br>可靠/不可靠通道<br>二进制/文本传输</div>
+</div>
+
+<h2 class="sh">8. 调试 — chrome://webrtc-internals</h2>
+<p class="ss">诊断 ICE 失败/DTLS 卡住/编解码不匹配/丢包统计 — WebRTC 开发者最重要的调试界面</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th>面板 / API</th><th>查看内容</th><th>诊断用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>getStats()</code></td><td>实时 RTP/RTCP 统计: 发送/接收字节、丢包率、jitter、RTT、帧率、分辨率、编码器</td><td>★ 最重要的诊断数据 — 定位媒体质量问题</td></tr>
+    <tr><td><code>iceConnectionState</code></td><td>new → checking → connected → completed / failed / disconnected</td><td>ICE 连通性是否建立</td></tr>
+    <tr><td><code>connectionState</code></td><td>ICE + DTLS 的聚合状态</td><td>整体连接是否就绪 (推荐使用)</td></tr>
+    <tr><td><code>signalingState</code></td><td>stable / have-local-offer / have-remote-offer</td><td>SDP 协商是否卡住</td></tr>
+    <tr><td><code>dtlsTransport.state</code></td><td>new → connecting → connected → closed / failed</td><td>DTLS 握手是否成功</td></tr>
+    <tr><td><code>iceGatheringState</code></td><td>new → gathering → complete</td><td>ICE 候选收集是否完成</td></tr>
+    <tr><td>Candidate pairs</td><td>每对候选的连通性检查状态、RTT、优先级</td><td>哪对候选正在使用 (writable + nominated)</td></tr>
+    <tr><td>Codec 列表</td><td>协商后的 codec + payload type + 参数</td><td>编解码是否匹配</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 常见故障速查 ===== */</span>
+<span class="cm"># ICE 始终在 "checking" → 不走到 "connected"</span>
+<span class="cm">  → STUN/TURN 服务器不可达 · 防火墙阻止 UDP · 双方都是 symmetric NAT</span>
+<span class="cm">  → 检查 candidate pairs 表: 是否有任何 pair 显示 "succeeded"</span>
+
+<span class="cm"># DTLS 始终在 "connecting"</span>
+<span class="cm">  → 证书不匹配 (fingerprint) · UDP 双向不通 · DTLS 版本不兼容</span>
+<span class="cm">  → 检查 SDP 中 a=fingerprint 是否在 signaling 过程中被篡改</span>
+
+<span class="cm"># connectionState = "connected" 但无媒体</span>
+<span class="cm">  → 编解码不匹配 · SSRC 不识别 · SRTP 密钥错误 · 防火墙阻止 RTP 端口</span>
+<span class="cm">  → 查 getStats(): outbound-rtp.bytesSent 是否增长? inbound-rtp.bytesReceived ?</span>
+
+<span class="cm"># 突然断开</span>
+<span class="cm">  → 网络切换 (WiFi→4G) → ICE restart · TURN 服务器崩溃 · DTLS 超时</span>
+<span class="cm">  → 应用层应处理 iceConnectionState="disconnected" → 触发 ICE restart</span></div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  WebRTC PeerConnection Internals — 内核深度剖析 · 2026-06 · libwebrtc M127+
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

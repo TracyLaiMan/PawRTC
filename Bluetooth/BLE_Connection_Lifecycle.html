@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE 连接全生命周期 — 从发现到数据传输</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+@media(max-width:700px){.sg{grid-template-columns:1fr 1fr}}
+.st{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:10px 14px;font-size:11.5px;color:#b0b0d0;line-height:1.65}
+.st b{color:#a78bfa;font-size:13px}.st code{font-size:10px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:180px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">BLE 连接全生命周期</h2>
+  <p class="sec-sub">系统化知识体系 — 从手机发现设备到 GATT 数据交互的<strong>每一帧空中包</strong>逐层解析</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Advertising</strong><br><small>外设广播</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Scanning</strong><br><small>手机扫描</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>Connection</strong><br><small>建立连接</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>Discovery</strong><br><small>服务发现</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>Data</strong><br><small>数据交互</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">Adv Packet</div><div class="l">31 字节广播数据</div></div>
+    <div class="stat"><div class="n">3 个信道</div><div class="l">37/38/39 广播信道</div></div>
+    <div class="stat"><div class="n">7 阶段</div><div class="l">完整生命周期</div></div>
+    <div class="stat"><div class="n">~200ms</div><div class="l">典型连接耗时</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: 角色与频谱 ═══ -->
+<h2 class="sh">1. 角色分配与物理信道</h2>
+<p class="ss">在一切开始之前，手机和外设必须先确定自己的角色——Central 还是 Peripheral。这个角色决定了<strong>谁发起连接、谁控制连接参数、以及物理信道如何使用</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Central (手机)</h4>
+    <div class="lbl">主动扫描 → 发起连接 → 控制连接参数</div>
+    <p>Central 是"主人"——负责<strong>扫描</strong>（监听广播信道）、<strong>发起连接</strong>（发送 CONNECT_IND）、<strong>管理连接参数</strong>（Connection Interval 等由 Central 最终决定）。典型设备：<strong>智能手机、平板、PC</strong>。<br>
+    BLE 连接建立后，Central 在<strong>每个 Connection Event 的起始时刻</strong>首先发送包（master role）——Peripheral 必须在 150μs 内响应。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Peripheral (BLE 设备)</h4>
+    <div class="lbl">被动广播 → 接受连接 → 请求参数更新</div>
+    <p>Peripheral 是"仆人"——负责<strong>广播</strong>（定期在 3 个广播信道上发送 ADV_IND）、<strong>接受连接</strong>（收到 CONNECT_IND 后进入连接态）、可以<strong>请求</strong>但<strong>不能决定</strong>连接参数（Peripheral 发 LL_CONNECTION_PARAM_REQ，Central 决定是否接受）。典型设备：<strong>项圈、传感器、IPC 相机</strong>。<br>
+    连接后 Peripheral 在每个 Connection Event 中<strong>等待 Central 先发</strong>，然后响应。</p>
+  </div>
+</div>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>40 个物理信道</h4>
+    <div class="lbl">3 个广播信道 + 37 个数据信道</div>
+    <p>BLE 将 2.4GHz ISM 频段分为 40 个 2MHz 宽的信道（编号 0~39）。<strong>信道 37(2402MHz)、38(2426MHz)、39(2480MHz)</strong> 专门用于广播/扫描/连接建立——选择这三个频率是因为它们避开了 WiFi 最常用的信道 1/6/11 的干扰。<br>
+    连接建立后，通信在 <strong>37 个数据信道</strong>（0~36）上<strong>跳频</strong>进行——每个 Connection Event 使用不同信道（由 Central 的 Channel Map 和 hopIncrement 决定）。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>广播信道 vs 数据信道</h4>
+    <div class="lbl">建立连接前 vs 建立连接后</div>
+    <p><strong>广播信道</strong>：Adv Interval 间隔周期性发送（20ms~10.24s）。三个信道轮流发（或同时发）同一包——提高被发现的概率。<br>
+    <strong>数据信道</strong>：Connection Interval 频率周期性通信。自适应跳频 (AFH) ——检测到某个信道干扰严重 → 从 Channel Map 中移除 → 跳到干净信道。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>空中包时序</h4>
+    <div class="lbl">每个 Connection Event 的精确时序</div>
+    <p>Central 在约定时刻（connInterval 的整数倍）发送第一个包 → Peripheral 在 <strong>150μs ± 2μs</strong> 内必须响应（T_IFS）→ Central 可继续发 → 直到双方都没有更多数据或 Event 结束。<br>
+    每个 Event 持续<strong>至少 connSlaveLatency × connInterval</strong>（如果 Peripheral 无数据可发）。Central 在每个 Event 必须发送（至少空包轮询确认 Peripheral 存活）。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">广播信道</span><span class="b c3">CH37 2402MHz</span><span class="n">BLE 广播/扫描/连接建立 (避 WiFi CH1)</span></div>
+  <div class="r"><span class="a"></span><span class="b c3">CH38 2426MHz</span><span class="n">同上 (避 WiFi CH6)</span></div>
+  <div class="r"><span class="a"></span><span class="b c3">CH39 2480MHz</span><span class="n">同上 (避 WiFi CH11)</span></div>
+  <div class="r"><span class="a">数据信道</span><span class="b c2">CH0~36 (37 个)</span><span class="n">连接建立后自适应跳频——每 Event 换信道</span></div>
+</div>
+
+<!-- ═══ Ch2: Advertising ═══ -->
+<h2 class="sh">2. 阶段 1: Advertising — 外设广播自己的存在</h2>
+<p class="ss">这是整个连接生命周期的<strong>起点</strong>——Peripheral 在三个广播信道上周期性发送 ADV_IND 包，向世界宣告"我在这里，可以连接我"。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ADV_IND 空中包的内容 — 31 字节能装什么？</h4>
+    <div class="lbl">Address (6B) + AdvData (最多 31B) — BLE 4.x 限制</div>
+    <p>ADV_IND PDU 的 payload = <strong>AdvA (6 字节广播地址)</strong> + <strong>AdvData (0~31 字节广播数据)</strong>。31 字节的 AdvData 由多个 <strong>AD Structure</strong> 组成，每个 AD Structure = [Length:1B][AD Type:1B][AD Data: N 字节]。<br>
+    典型广播数据：<strong>Flags</strong> (3B: 声明 BR/EDR 不支持 + LE General Discoverable)、<strong>Complete Local Name</strong> ("IPC-CAM-001", ~12B)、<strong>TX Power</strong> (2B: -4dBm)、<strong>Service UUIDs</strong> (2~16B: 0x180A Device Info, 0x180F Battery, 自定义 Service)。<br>
+    <strong>31 字节非常紧张</strong>——名字长了 UUID 就放不下。BLE 5.0 引入 Extended Advertising (最大 1650B) 解决了这个问题。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Advertising Interval — 广播频率的选择</h4>
+    <div class="lbl">20ms ~ 10.24s — 发现速度 vs 功耗的博弈</div>
+    <p><strong>20ms (快速广播)</strong>：手机开启扫描后 ~30ms 内就能发现。功耗极高（不休眠）。适合<strong>设备配网模式</strong>（用户按了配网键后 30 秒快速广播）。<br>
+    <strong>100ms~1s (省电广播)</strong>：手机可能需要 1-3 秒发现。功耗低。适合<strong>已配网设备日常存活广播</strong>。<br>
+    <strong>Apple 的诡异规则</strong>：iOS 后台扫描时只对特定 Adv Interval 敏感（30ms 倍数）。如果设备广播间隔不是 30ms 的倍数 → 概率性不被 iOS 发现。<br>
+    广播包在三个信道上<strong>顺序轮流发送</strong>（不是同时发三个信道——芯片只有一套 RF 收发器）。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// ADV_IND 空中包完整结构 (链路层 PDU, BLE 4.x)</span>
+<span class="cm">// LL Header (2B) + Payload (6~37B) + CRC (3B)</span>
+
+<span class="cm">[LL Header: 2 字节]</span>
+  Byte 0:  PDU Type = <span class="nu">0x00</span> (ADV_IND)       <span class="cm">// 4bit Type + 1bit RFU + 1bit ChSel + 2bit TxAdd/RxAdd</span>
+  Byte 1:  Payload Length = <span class="nu">6 + AdvData_len</span>  <span class="cm">// 6 (AdvA) + N (AD Structures)</span>
+
+<span class="cm">[Payload: 6 + N 字节]</span>
+  Byte 2-7:  AdvA (6B)                        <span class="cm">// 广播地址, 随机或 Public</span>
+                                      <span class="cm">// 随机地址分两种: Static (上电不变) vs Private (定时更换防追踪)</span>
+  Byte 8-N:  AdvData (最多 31B, AD Structures) <span class="cm">// 由多个 Length-Type-Value 组成</span>
+    <span class="cm">// AD1: Flags</span>
+    Byte 8:    Length = <span class="nu">0x02</span>
+    Byte 9:    AD Type = <span class="nu">0x01</span> (Flags)
+    Byte 10:   Flags = <span class="nu">0x06</span> (LE General Discoverable | BR/EDR Not Supported)
+    <span class="cm">// AD2: Complete Local Name</span>
+    Byte 11:   Length = <span class="nu">0x0C</span> (12)
+    Byte 12:   AD Type = <span class="nu">0x09</span> (Complete Local Name)
+    Byte 13-24: "IPC-CAM-001" (UTF-8)
+    <span class="cm">// AD3: TX Power Level</span>
+    Byte 25:   Length = <span class="nu">0x02</span>
+    Byte 26:   AD Type = <span class="nu">0x0A</span> (TX Power)
+    Byte 27:   TX Power = <span class="nu">0xFC</span> (-4 dBm, 有符号 int8)
+    <span class="cm">// AD4: Service UUID (16-bit, incomplete list)</span>
+    Byte 28:   Length = <span class="nu">0x03</span>
+    Byte 29:   AD Type = <span class="nu">0x02</span> (Incomplete List of 16-bit Service UUIDs)
+    Byte 30-31: UUID16 = <span class="nu">0xFFE0</span> (Custom Service)
+<span class="cm">// Total AdvData: 2+2+12+2+3+3 = 24 字节 (在 31 字节限制内)</span>
+
+<span class="cm">[CRC: 3 字节]</span>
+  CRC24 覆盖 LL Header + Payload. 多项式: x^24 + x^10 + x^9 + x^6 + x^4 + x^3 + x + 1</div>
+
+<!-- ═══ Ch3: Scanning ═══ -->
+<h2 class="sh">3. 阶段 2: Scanning — 手机如何发现设备</h2>
+<p class="ss">手机打开 BLE 扫描 → 底层控制器在三个广播信道上<strong>轮询监听</strong> → 收到 ADV_IND → 解析广播数据 → 过滤（按 Service UUID 或 Name）→ 上报给 App。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>被动扫描 (Passive)</h4>
+    <div class="lbl">只监听不发送 — 纯接收模式</div>
+    <p>手机<strong>只接收广播包，不发送任何数据</strong>——外设完全不知道有人在扫描它。功耗最低。广播包中只能拿到 AdvA + AdvData (最多 31B)。如果 App 需要<strong>设备名称不在广播数据中</strong>（放在 Scan Response 里）→ 需要用主动扫描。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>主动扫描 (Active)</h4>
+    <div class="lbl">收到 ADV_IND 后发送 SCAN_REQ → 外设回复 SCAN_RSP</div>
+    <p>手机收到 ADV_IND → 可以在<strong>同一广播信道上</strong>立即发送 SCAN_REQ（包含 ScanA 地址）→ 外设收到 SCAN_REQ → 回复 <strong>SCAN_RSP</strong> —— 额外的 31 字节数据（通常放完整设备名、TX Power、Service UUID 等 ADV_IND 中放不下的数据）。<br>
+    <strong>ADV_IND 31B + SCAN_RSP 31B = 总共 62 字节广播数据</strong>——这是 BLE 4.x 在不建立连接的前提下能获取的全部设备信息。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>扫描参数</h4>
+    <div class="lbl">Scan Window / Scan Interval · 占空比</div>
+    <p><strong>Scan Interval</strong>：两次扫描之间的间隔（如 100ms）。<strong>Scan Window</strong>：每次扫描持续多长时间（如 50ms）。<strong>占空比 = Window / Interval</strong>（50% 意味着手机一半时间在扫、一半在休眠）。<br>
+    <strong>影响</strong>：Window 越大 → 发现速度越快，但功耗越高。iOS 后台扫描强制低占空比（~10%）；Android 各厂商自定义。<br>
+    App 收到 ADV_IND → 回调 <code>onScanResult(device, rssi, scanRecord)</code>——<strong>不是每个 ADV_IND 都上报</strong>（Android 默认 1-2 秒聚合一次）。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">手机从"打开蓝牙"到"App 看到设备"的完整时间线</div>
+  <div class="chain">T+0ms     App 调用 BluetoothLeScanner.startScan()
+T+5ms      Bluetooth 协议栈向 Controller 发 LE Set Scan Enable (Enable=1, Filter_Duplicates=0)
+T+10ms     Controller 开始在 CH37/38/39 上轮询监听
+T+45ms     外设在 CH37 上发 ADV_IND (如果 Adv Interval=30ms, 每 30ms 在三个信道各发一次)
+T+46ms     Controller 收到 ADV_IND → 解析 AdvA, AdvData, RSSI=-52dBm
+T+47ms     Controller 发 SCAN_REQ (主动扫描) → 外设发 SCAN_RSP (额外 31B 数据)
+T+50ms     Controller 通过 HCI (LE Advertising Report Event) 上报给 Host
+T+55ms     Android BLE Stack 处理 → 匹配 App 注册的 ScanFilter
+T+60ms     App.onScanResult(device, rssi, scanRecord) 被回调
+           <i>→ 总计: 从 startScan 到 onScanResult ~55ms (最快), 典型 100-500ms</i></div>
+</div>
+
+<!-- ═══ Ch4: Connection ═══ -->
+<h2 class="sh">4. 阶段 3: 建立连接 — CONNECT_IND 握手</h2>
+<p class="ss">手机决定连接某个设备 → 在同一广播信道上发送 CONNECT_IND → 外设收到后<strong>立即停止广播、进入连接态</strong>。这是整个过程中<strong>时序要求最严格</strong>的一步。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>CONNECT_IND 里携带了什么？</h4>
+    <div class="lbl">6 个关键参数 — 定义了此后所有 Connection Event 的时序</div>
+    <p><strong>InitA (6B)</strong>：发起者 (手机) 的地址。<strong>AdvA (6B)</strong>：目标外设的地址——外设看到自己的地址才知道"这是在叫我"。<strong>Access Address (4B)</strong>：随机生成的 32-bit 值——此后<strong>所有数据信道上</strong>的包都用这个 Access Address 标识这个连接（替代广播信道上的固定 Access Address 0x8E89BED6）。<br>
+    <strong>CRCInit (3B)</strong>：CRC 计算的初始值——每个连接独立。<br>
+    <strong>WinSize (1B)</strong>：传输窗口大小 = WinSize × 1.25ms——外设在这个窗口内监听第一个 Connection Event。<br>
+    <strong>WinOffset (2B)</strong>：传输窗口偏移 = WinOffset × 1.25ms——外设在 CONNECT_IND 之后<strong>等待 WinOffset × 1.25ms</strong> 才开始监听。<br>
+    <strong>Interval (2B)</strong>：Connection Interval = Interval × 1.25ms。<br>
+    <strong>Latency (2B)</strong>：Slave Latency——外设可以跳过的 Event 数量。<br>
+    <strong>Timeout (2B)</strong>：Supervision Timeout = Timeout × 10ms——超过此时间无通信 → 判定断连。<br>
+    <strong>ChM (5B)</strong>：Channel Map——标记 37 个数据信道中哪些可用。<br>
+    <strong>Hop (1B)</strong>：跳频增量——下一个 Connection Event 的信道 = (当前信道 + Hop) % 37。<br>
+    <strong>SCA (3bit)</strong>：Sleep Clock Accuracy——外设休眠时钟精度 (ppm)，决定接收窗口宽度。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>为什么 CONNECT_IND 一发外设就"消失"了？</h4>
+    <div class="lbl">外设立即停止广播 → 切换到数据信道 → 等待第一个 Connection Event</div>
+    <p>外设收到 CONNECT_IND → ① <strong>立即停止所有广播活动</strong>（不再发 ADV_IND）② 根据 CONNECT_IND 中的参数计算第一个 Connection Event 的时刻 = CONNECT_IND 结束 + <strong>WinOffset × 1.25ms + transmitWindowDelay</strong> ③ 在计算的时刻打开接收窗口（WinSize × 1.25ms），监听 Access Address 匹配的包。<br>
+    <strong>手机侧</strong>：发完 CONNECT_IND 后，在第一个 Connection Event 时刻发送一个<strong>空包</strong>（LL Data PDU with Length=0）——相当于"ping"外设。外设在 150μs 内回复空包 → <strong>连接正式建立</strong>。双方记录对方的 Access Address + CRCInit → 此后所有数据信道上的包都用这些参数。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 连接失败的最常见原因 — 时序问题</div>
+  <strong>1. WinOffset 太大</strong>：外设等了太久 → 在此期间手机以为连接失败 → App 收到 onConnectionStateChange(DISCONNECTED)。缩短 WinOffset 可加速。<br>
+  <strong>2. 外设时钟精度不够</strong>：SCA (Sleep Clock Accuracy) 声明 50ppm 实际 500ppm → 外设醒来时间漂移 → 错过手机的发送窗口 → 连接失败。这是廉价 BLE 芯片的常见问题。<br>
+  <strong>3. 干扰</strong>：第一个 Connection Event 的信道恰好被 WiFi 严重干扰 → 手机连发数包无 ACK → supervisionTimeout → 断连。解决：Channel Map 避开已知干扰信道。
+</div>
+
+<!-- ═══ Ch5: Service Discovery ═══ -->
+<h2 class="sh">5. 阶段 4: Service Discovery — GATT 数据库遍历</h2>
+<p class="ss">连接建立后，手机<strong>只知道外设的 MAC 地址和广播名</strong>——对外设能提供什么服务（Service/Characteristic/Descriptor）一无所知。GATT Discovery 就是手机的"探索"过程。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>为什么需要 Discovery？</h4>
+    <div class="lbl">Handle 是动态分配的——每次连接可能不同</div>
+    <p>GATT 数据库中的每个 Attribute 由一个 16-bit <strong>Handle</strong> 标识。Handle<strong>不是固定的</strong>——每次连接、不同固件版本，Handle 都可能变化。手机必须通过 Discovery 过程<strong>动态查找</strong>想要访问的 Characteristic 的 Handle。<br>
+    <strong>例外</strong>：如果 App 缓存了 Handle（上次连接时记录的），且外设未发生"Service Changed"（Handle 重排）→ 可以跳过 Discovery——直接使用缓存的 Handle 读写。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>四层递进遍历</h4>
+    <div class="lbl">Services → Characteristics → Descriptors → 逐个 Handle</div>
+    <p><strong>Step 1: Discover All Primary Services</strong> —— ATT Read By Group Type Request (UUID=0x2800)。外设返回每个 Service 的起止 Handle 范围 + UUID。<br>
+    <strong>Step 2: Discover Characteristics</strong> —— ATT Read By Type Request (UUID=0x2803) 对每个 Service 范围内的 Handle。外设返回每个 Characteristic 的 Handle + Properties(Read/Write/Notify/Indicate) + Value Handle。<br>
+    <strong>Step 3: Discover Descriptors</strong> —— ATT Find Information Request 遍历 Characteristic 的 Descriptor（CCCD 等）。<br>
+    <strong>Step 4: 缓存 Handle</strong> —— App 记录下需要的 Handle → 后续直接读写。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>时间代价</h4>
+    <div class="lbl">2~5 秒 (iOS) — 连接中最耗时的阶段</div>
+    <p>Discovery 需要<strong>多次 ATT 请求-响应往返</strong>——每次往返 = 至少 1 个 Connection Interval (30ms default)。一个典型的 GATT 数据库（5 个 Service × 3 个 Characteristic）→ 需要 ~20 次 ATT 请求 → 20 × 30ms = 600ms。加上 iOS 的 throttling → 实际 2-5 秒。<br>
+    <strong>优化的关键</strong>：首次连接后<strong>缓存所有 Handle</strong> → 后续重连跳过 Discovery → 连接建立到可通信从 3 秒降到 100ms。仅在外设发送 Service Changed Indication (Handle 0x0001) 时重新 Discovery。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// GATT Discovery 的完整 ATT 请求序列 (以电池服务 0x180F 为例)</span>
+
+<b>Step 1: Discover All Primary Services</b>
+  Central  → ATT_READ_BY_GROUP_TYPE_REQ (Start=0x0001, End=0xFFFF, UUID=0x2800)
+  Peripheral → ATT_READ_BY_GROUP_TYPE_RSP:
+    [Handle 0x0001~0x0005, UUID=0x1800 (Generic Access)]
+    [Handle 0x0006~0x0009, UUID=0x1801 (Generic Attribute)]
+    [Handle 0x000A~0x0010, UUID=0x180F (Battery Service)]   <i>// 找到了!</i>
+    [Handle 0x0011~0x0018, UUID=0xFFE0 (Custom Service)]
+
+<b>Step 2: Discover Characteristics of Battery Service (0x000A~0x0010)</b>
+  Central  → ATT_READ_BY_TYPE_REQ (Start=0x000A, End=0x0010, UUID=0x2803)
+  Peripheral → ATT_READ_BY_TYPE_RSP:
+    [Handle=0x000B, Properties=Read|Notify, Value Handle=0x000C, UUID=0x2A19]
+    <i>// 0x000B = Characteristic Declaration, 0x000C = Characteristic Value</i>
+
+<b>Step 3: Discover Descriptors of Battery Level (Handle 0x000C)</b>
+  Central  → ATT_FIND_INFO_REQ (Start=0x000D, End=0x0010)
+  Peripheral → ATT_FIND_INFO_RSP:
+    [Handle=0x000D, UUID=0x2902 (CCCD)]  <i>// Client Characteristic Configuration Descriptor</i>
+    [Handle=0x000E, UUID=0x2904 (CPF)]   <i>// Characteristic Presentation Format</i>
+
+<b>缓存结果:</b>
+  Battery Level Characteristic: Handle=0x000C, Properties=Read|Notify
+  Battery CCCD: Handle=0x000D (写 0x0001 启用 Notify)</div>
+
+<!-- ═══ Ch6: Data Transfer ═══ -->
+<h2 class="sh">6. 阶段 5: 数据传输 — GATT 操作的完整流程</h2>
+<p class="ss">Discovery 完成后，手机拿到了所有 Handle → 可以开始真正有意义的数据交互。四种 GATT 操作各有不同的时序、确认机制和适用场景。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>GATT Write Request (有响应)</h4>
+    <div class="lbl">1 Request → 必须等 1 Response → 才能发下一个</div>
+    <p><strong>用途</strong>：命令下发（拍照、OTA 控制、参数设置）。<br>
+    <strong>时序</strong>：手机发送 ATT_WRITE_REQ (Handle + Value) → 外设执行 → 发送 ATT_WRITE_RSP (或 ATT_ERROR_RSP) → <strong>手机收到 RSP 之前不能发下一个 Write Request</strong>。<br>
+    <strong>延迟</strong>：1 次往返 = 1 个 Connection Interval (30ms default)。<br>
+    <strong>可靠性</strong>：ATT 层自动重传（如果 RSP 超时）。30s supervision timeout 内无响应 → 断连。<br>
+    <strong>适用</strong>：需要确认执行结果的命令。<strong>不适合</strong>：高频数据（每 30ms 才完成一次 → 33 次/秒 → 吞吐极低）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>GATT Write Without Response (Write Command)</h4>
+    <div class="lbl">发送即忘 — 无 Response — 可连续发送</div>
+    <p><strong>用途</strong>：OTA 数据块、音频流、高频传感器数据。<br>
+    <strong>时序</strong>：手机发送 ATT_WRITE_CMD (Handle + Value) → <strong>不等 Response</strong> → 立即发送下一个 Write Command。一个 Connection Event 内可连发 3-6 个（取决于 MTU/DLE/PHY）。<br>
+    <strong>可靠性</strong>：无 ATT 层确认——包可能在控制器队列满时<strong>静默丢弃</strong>（应用层不知道！）。OTA/音频需要在应用层实现 Sequence Number + ACK。<br>
+    <strong>适用</strong>：需要高吞吐的流式数据。<strong>不适合</strong>：需要确认每个操作是否成功的命令。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>GATT Notify (外设主动推送, 无确认)</h4>
+    <div class="lbl">外设 → 手机, 不需要手机回复确认</div>
+    <p><strong>用途</strong>：状态上报（电池、温度、传感器数据）、数据流输出。<br>
+    <strong>前提</strong>：手机必须先写 CCCD (Handle 0x2902) 为 0x0001 启用 Notify。<br>
+    <strong>时序</strong>：外设在 Connection Event 中主动发送 ATT_HANDLE_VALUE_NTF → 手机收到后<strong>不需要回复</strong> → 外设可以继续发。<br>
+    <strong>限制</strong>：Notify 只能由外设→手机（Peripheral → Central）。手机→外设必须用 Write。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>GATT Indicate (外设主动推送, 需确认)</h4>
+    <div class="lbl">外设 → 手机 → 手机必须回复 ATT_HANDLE_VALUE_CFM</div>
+    <p><strong>用途</strong>：关键状态变更通知（如 OTA 完成、错误告警——必须确保 App 收到）。<br>
+    <strong>时序</strong>：外设发送 ATT_HANDLE_VALUE_IND → 手机<strong>必须回复</strong> ATT_HANDLE_VALUE_CFM → 外设收到 CFM 才能发下一个 Indicate。<br>
+    <strong>限制</strong>：和 Write Request 一样——必须等待确认 → 吞吐低。仅用于关键通知。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ 同一时刻只能有一个未完成的 GATT 操作——这是 BLE 应用开发中最容易被忽视的约束</div>
+  ATT 协议<strong>不支持 pipeline</strong>。如果 App 发了 Write Request → 必须等 Write Response → 才能发下一个 Write Request 或 Read Request。如果 App 在两个线程中同时发 → 第二个会失败（返回 Busy 或静默排队）。<strong>解决方案</strong>：应用层实现<strong>GATT 操作队列</strong>——所有 GATT 操作串行化，前一个完成（收到 callback）才发送下一个。Read/Write Request 之类的有响应操作共享同一个队列；Write Command 和 Notify 不受此限制（无响应 = 无需排队等待）。
+</div>
+
+<!-- ═══ Ch7: Security ═══ -->
+<h2 class="sh">7. 安全配对 — 加密与认证</h2>
+<p class="ss">安全配对是<strong>可选的</strong>——但如果你的设备需要传输敏感数据或防止未授权访问，则必须配对。BLE 4.2+ 推荐 LE Secure Connections。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>配对三阶段</h4>
+    <div class="lbl">Phase 1: 能力交换 · Phase 2: 密钥生成 · Phase 3: 密钥分发</div>
+    <p><strong>Phase 1 (Pairing Feature Exchange)</strong>：双方交换 IO Capabilities（有显示屏？有键盘？）、OOB 支持、AuthReq（是否需要 Bonding/MITM 保护）。决定使用哪种配对方法。<br>
+    <strong>Phase 2 (Key Generation)</strong>：根据 Phase 1 协商的方法生成 STK (LE Legacy) 或 LTK (LE Secure Connections)。<strong>Just Works</strong>（无 MITM 保护——适合无 UI 的项圈设备）、<strong>Passkey Entry</strong>（手机显示 6 位数字，外设输入——但项圈没有键盘）、<strong>Numeric Comparison</strong>（双方显示 6 位数字，用户确认一致——最安全）。<br>
+    <strong>Phase 3 (Key Distribution)</strong>：分发 LTK、IRK (Identity Resolving Key——用于 RPA 地址)、CSRK (Connection Signature Resolving Key)。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>Just Works — 无 UI 设备的唯一选择</h4>
+    <div class="lbl">无 MITM 保护 — 可能被中间人攻击</div>
+    <p>项圈/传感器这类<strong>没有显示器和键盘的设备只能使用 Just Works</strong>。配对过程对用户完全透明——无需输入 PIN 码、无需确认数字。<br>
+    <strong>LE Legacy (BLE 4.0/4.1) Just Works</strong>：STK 通过 TK=0 生成 → <strong>可被被动窃听者暴力破解</strong>（窃听配对过程的全部空中包 → 离线计算 TK → 解密后续通信）。<br>
+    <strong>LE Secure Connections (BLE 4.2+) Just Works</strong>：使用 ECDH (P-256 椭圆曲线) 密钥交换 → 即使窃听全部配对过程也无法破解——无 MITM 保护但<strong>防被动窃听</strong>。<br>
+    <strong>强烈建议</strong>：任何新设备都用 LE Secure Connections + Just Works——向后兼容 BLE 4.2+ 手机（2015 年后几乎所有手机都支持）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Bonding — 记住对方</h4>
+    <div class="lbl">配对一次 → 存储密钥 → 后续自动加密</div>
+    <p>配对时如果设置了 Bonding 标志 → 双方<strong>永久存储</strong>对方的 LTK 和 IRK。下次连接时：① 手机用存储的 LTK 直接启动<strong>加密</strong>（LL_ENC_REQ）——不需重新配对 ② 外设用存储的 LTK 解密验证 ③ <strong>整个加密过程在 1-2 个 Connection Event 内完成</strong>（~30ms）——用户感知不到。<br>
+    <strong>Bonding 后外设可以使用 RPA (Resolvable Private Address)</strong>——每次广播换一个随机地址，只有 Bonded 的手机能通过 IRK 解析出真实身份——防追踪、隐私保护。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch8: 全流程时间线 ═══ -->
+<h2 class="sh">8. 完整时间线 — 从开机到数据传输的每一毫秒</h2>
+<p class="ss">以下追踪一个典型的 IPC 相机开机 → 手机连接 → 读取电池电量 → 持续接收状态通知的完整过程。每个阶段标注了空中包类型、耗时和关键事件。</p>
+
+<div class="chain"><span class="cm">// IPC 相机 BLE 连接全生命周期 — 空中包级时间线</span>
+<i>Phase 1: Advertising (相机开机自检完成, 开始广播)</i>
+  T+0ms     相机初始化 BLE Stack → 配置 Adv Interval=100ms, Adv Data 写入芯片
+  T+10ms    开始广播: CH37(2402)发 ADV_IND → CH38(2426) → CH39(2480)
+            每 100ms 重复一轮。AdvA=Random Static, Name="IPC-CAM-001"
+  ...
+  (持续广播, 等待手机连接)
+
+<i>Phase 2: Scanning + Connection (用户打开 App, 扫描设备)</i>
+  T+5000ms  App 调用 startScan()
+  T+5050ms  手机收到 CH39 上的 ADV_IND (RSSI=-52) → 发 SCAN_REQ → 收 SCAN_RSP
+  T+5100ms  App.onScanResult("IPC-CAM-001", RSSI=-52)
+  T+5200ms  用户点击设备 → App 调用 connectGatt()
+  T+5210ms  手机在 CH39 上发 CONNECT_IND:
+              Interval=30ms, Latency=0, Timeout=2000ms, WinOffset=0, WinSize=2
+  T+5210ms  相机收到 CONNECT_IND → 立即停止广播 → 切换到数据信道
+  T+5215ms  第一个 Connection Event: 手机发空包 → 相机回空包 → 连接建立!
+  T+5230ms  App.onConnectionStateChange(CONNECTED)
+
+<i>Phase 3: Service Discovery</i>
+  T+5230ms  App 启动 GATT Discovery (需要 ~15-20 次 ATT 请求)
+  T+5260ms  ATT Read By Group Type → 4 个 Service 返回
+  T+5320ms  ATT Read By Type ×3 (遍历每个 Service 的 Characteristic)
+  T+5600ms  ATT Find Info (Descriptor) ×2
+  T+5800ms  Discovery 完成 → App 缓存所有 Handle (下次重连跳过)
+
+<i>Phase 4: 使能通知 + 第一次数据交互</i>
+  T+5800ms  App 写 Battery CCCD (Handle 0x000D ← 0x0001) → 相机回复 Write RSP
+  T+5830ms  相机检测到 CCCD 写入 → 立即发 Notify: Battery=85%
+  T+5840ms  App.onCharacteristicChanged(Battery=85%)  ← 第一次数据!
+
+<i>Phase 5: 持续数据交互 (正常运行时)</i>
+  T+6000ms  用户点"拍照" → App 发 Write Request (CmdID=0x10) → 相机回复 Status=0x00
+  T+6100ms  相机周期性 Notify: Temperature=42°C, Activity=1200 steps
+  T+6500ms  相机 RSSI 变化 → App 内部记录 (不涉及 GATT)
+
+<i>Phase 6: 断开连接</i>
+  T+60000ms App 进入后台 → 系统发 disconnect()
+  T+60010ms 手机发 LL_TERMINATE_IND → 相机回复 ACK
+  T+60020ms 相机恢复广播模式 (重新开始 Phase 1)
+  T+60030ms App.onConnectionStateChange(DISCONNECTED)</div>
+
+<div class="callout info">
+  <div class="ct">连接优化的 4 个关键点</div>
+  <strong>1. 快速广播配网模式</strong>：用户按配网键后 30 秒内用 20ms Adv Interval（而不是 100ms）——发现速度提升 5×。<br>
+  <strong>2. 缓存 GATT Handle</strong>：首次 Discovery 后缓存所有 Handle → 重连跳过 Discovery (5s→100ms)——这是最有效的优化。<br>
+  <strong>3. 连接参数更新</strong>：连接建立后立即请求 Connection Parameter Update——iOS 要求 Interval≥15ms, Latency≤2。不符合要求会被拒绝。<br>
+  <strong>4. MTU 协商</strong>：连接建立后立即 Exchange MTU Request → 247。此后所有 GATT 操作可发更长的 value ——减少分片。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">BLE 连接全生命周期 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

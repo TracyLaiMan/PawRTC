@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蓝牙空中抓包与 HCI 分析 — 从工具到实战</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:165px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">蓝牙空中抓包与 HCI 分析</h2>
+  <p class="sec-sub">系统化知识体系 — nRF Sniffer · Wireshark · btmon · HCI Log · Ellisys · 实战案例</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>空中抓包</strong><br><small>nRF Sniffer / Ellisys</small></span>
+    <span class="flow-arr">+</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>HCI Log</strong><br><small>Android / btmon</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>Wireshark</strong><br><small>协议解析 · 过滤 · 统计</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>根因定位</strong><br><small>连接失败 · 配对错误 · 断连原因</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">4 种工具</div><div class="l">覆盖全部层级</div></div>
+    <div class="stat"><div class="n">HCI / LL / ATT</div><div class="l">三层分析视角</div></div>
+    <div class="stat"><div class="n">Wireshark</div><div class="l">统一分析平台</div></div>
+    <div class="stat"><div class="n">~100 元</div><div class="l">入门成本</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1 ═══ -->
+<h2 class="sh">1. 诊断工具全景 — 四层视角对比</h2>
+<p class="ss">蓝牙问题的诊断不是靠猜——不同工具能看到<strong>不同层次的数据</strong>。选对工具，问题已经解决了一半。</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>工具</th><th>可见层级</th><th>BLE</th><th>BR/EDR</th><th>成本</th><th>适合场景</th></tr></thead>
+  <tbody>
+    <tr><td class="g">nRF Sniffer</td><td>LL + ATT/GATT 全层</td><td class="g">✓ 全部</td><td class="r">✗</td><td>~100 元</td><td>BLE 协议级调试首选</td></tr>
+    <tr><td class="g">Android HCI Log</td><td>HCI (Host↔Controller)</td><td class="g">✓</td><td class="g">✓</td><td>免费</td><td>手机侧问题 · 快速初步诊断</td></tr>
+    <tr><td class="g">btmon (Linux)</td><td>HCI + L2CAP + 上层</td><td class="g">✓</td><td class="g">✓</td><td>免费</td><td>Linux/嵌入式设备侧 · 协议栈调试</td></tr>
+    <tr><td>Ellisys Explorer</td><td>PHY + LL + ATT + L2CAP</td><td class="g">✓ 40 信道并行</td><td class="g">✓ 79 信道并行</td><td class="r">~4-8 万元</td><td>专业认证 · μs 级时序 · WiFi 干扰分析</td></tr>
+    <tr><td class="y">Wireshark</td><td>(分析平台, 非采集)</td><td class="g">✓ 解析上述所有</td><td class="g">✓</td><td>免费</td><td>统一分析——所有抓包工具的归宿</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">nRF Sniffer</span><span class="b c1">空中 LL 包 + ATT/GATT</span><span class="n">LL Data PDU · LL Control PDU · ATT 请求/响应 · 原始 Advertising 包</span></div>
+  <div class="r"><span class="a">Android HCI Log</span><span class="b c3">HCI Command + Event</span><span class="n">HCI CMD (LE Set Scan Enable...) · HCI EVT (LE Advertising Report...) · ACL Data</span></div>
+  <div class="r"><span class="a">Linux btmon</span><span class="b c2">HCI + L2CAP + SDP/RFCOMM</span><span class="n">与 Android HCI Log 同层级 + L2CAP 信令 · SDP PDU · RFCOMM 帧 · mgmt 接口</span></div>
+  <div class="r"><span class="a">Ellisys</span><span class="b c4">PHY 射频 + 全协议栈</span><span class="n">信号强度/dBm · CRC 错误 · T_IFS 时序 · 多信道并行 · WiFi 并存分析</span></div>
+</div>
+
+<!-- ═══ Ch2 ═══ -->
+<h2 class="sh">2. nRF Sniffer — BLE 空中抓包实战</h2>
+<p class="ss">nRF52840 USB Dongle + nRF Sniffer 固件 + Wireshark 是目前<strong>性价比最高、最实用</strong>的 BLE 调试方案。100 元硬件看到 99% 的问题。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>硬件准备与固件烧录</h4>
+    <div class="lbl">nRF52840 Dongle + nRF Sniffer for Bluetooth LE</div>
+    <p>① 购买 nRF52840 USB Dongle (PCA10059, ~100 元) ② 下载 <strong>nRF Connect for Desktop</strong> (Nordic 官方工具) → 安装 "Programmer" ③ 下载 nRF Sniffer for Bluetooth LE 固件 (Nordic 官网, 对应 dongle 的 hex 文件) ④ Programmer 烧录 hex → 设备变为 USB CDC-ACM 串口 (Wireshark 通过此串口接收捕获数据)。<br>
+    <strong>注意</strong>：Sniffer 固件占用整个芯片——烧录后 Dongle 不能再做普通 BLE 应用。想恢复 → 烧录回原厂固件。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Wireshark 配置与捕获流程</h4>
+    <div class="lbl">nRF Sniffer 插件 + 串口选择 + 设备跟踪</div>
+    <p>① Wireshark 安装 nRF Sniffer 插件：<code>帮助 → 关于 Wireshark → 文件夹 → Global ExtPlugins → 复制 nrf_sniffer.bat</code> ② 插入 Dongle → Wireshark 顶部出现 nRF Sniffer 工具栏 ③ 选择 Dongle 对应的串口 (如 COM3 或 /dev/ttyACM0) ④ <strong>选择要跟踪的设备</strong>：在设备列表中勾选目标的 MAC 地址 → Sniffer 开始在该设备的广播信道上监听 → 收到 CONNECT_IND 后<strong>自动提取 Access Address 和 CRCInit</strong> → 自动切换到数据信道跟踪跳频 ⑤ 开始捕获！</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Sniffer 的限制与绕行</h4>
+    <div class="lbl">只抓 BLE · 需要紧跟连接 · 无法抓加密内容</div>
+    <p><strong>只能抓 BLE</strong>：不支持 BR/EDR 抓包（BR/EDR 需要 Ellisys 或 Ubertooth）。<br>
+    <strong>无法解密加密数据</strong>：除非提供 LTK。Wireshark 中可以配置 <code>Edit → Preferences → Protocols → Bluetooth → Link Keys</code>——粘贴 Bonding 的 LTK。或使用 <strong>nRF Connect 的 Sniffer + LTK 自动提取</strong>（从已 Bonding 的手机中导出 LTK）。<br>
+    <strong>连接跟踪可能丢失</strong>：如果 Connection Interval 变化、或跳频算法未正确跟踪 → Wireshark 中出现大片空白。需要<strong>重新选取设备</strong>（nRF Sniffer 会自动重新捕获 Access Address）。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// nRF Sniffer + Wireshark 的过滤秘籍 — 常用 Display Filter</span>
+
+<span class="cm">=== 按协议层级过滤 ===</span>
+btle                 <span class="cm">// 只显示 BLE 空中包</span>
+btle.advertising_header  <span class="cm">// 只看广播包 (ADV_IND, SCAN_REQ, CONNECT_IND...)</span>
+btle.data_header     <span class="cm">// 只看数据信道包 (连接后的所有包)</span>
+btle.llid == <span class="nu">0x03</span>    <span class="cm">// 只看 LL Control PDU (LL_CONNECTION_PARAM_REQ, LL_TERMINATE_IND...)</span>
+bthci_acl            <span class="cm">// 只看 ACL 数据包 (含 L2CAP + ATT 负载)</span>
+
+<span class="cm">=== 按具体事件过滤 ===</span>
+btle.ll_control.opcode == <span class="nu">0x02</span>   <span class="cm">// LL_TERMINATE_IND — 查看断连原因码</span>
+btle.advertising_header.pdu_type == <span class="nu">0x00</span>  <span class="cm">// ADV_IND 包</span>
+btle.advertising_header.pdu_type == <span class="nu">0x05</span>  <span class="cm">// CONNECT_IND 包</span>
+btle.advertising_header.adv_addr == <span class="st">AA:BB:CC:11:22:33</span>  <span class="cm">// 指定设备</span>
+btatt.opcode == <span class="nu">0x12</span>   <span class="cm">// ATT Write Request</span>
+btatt.opcode == <span class="nu">0x1B</span>   <span class="cm">// ATT Handle Value Notification</span>
+
+<span class="cm">=== 按错误/异常过滤 ===</span>
+btatt.opcode == <span class="nu">0x01</span>   <span class="cm">// ATT Error Response — GATT 操作失败!</span>
+btle.crc.error        <span class="cm">// CRC 校验失败的包 (需要 Ellisys 才能检测)</span>
+btle.ll_terminate.error_code  <span class="cm">// 断连原因码 (0x05=Auth Fail, 0x08=Conn Timeout, 0x13=Remote User Terminated...)</span>
+
+<span class="cm">=== 组合过滤 — 实战中最常用 ===</span>
+btle.data_header && btle.llid == <span class="nu">0x03</span>   <span class="cm">// 连接后所有控制包 (参数更新/加密/断连)</span>
+btatt && btat.handle == <span class="nu">0x000c</span>        <span class="cm">// 只看 Handle 0x000C (如电池 Characteristic)</span>
+btle && btle.access_address == <span class="nu">0x12345678</span>  <span class="cm">// 只看某个连接的 Access Address</span></div>
+
+<!-- ═══ Ch3 ═══ -->
+<h2 class="sh">3. 实战案例 1: 断连原因追踪 — 空中包还原真相</h2>
+<p class="ss">最常见的 BLE 问题：手机 App 显示"连接断开"——原因可能是外设主动断连、手机主动断连、超时断连、加密失败断连。空中包告诉你<strong>谁先发的 LL_TERMINATE_IND 以及为什么</strong>。</p>
+
+<div class="chain"><span class="cm">// 案例 1-A: 手机主动断连 — LL_TERMINATE_IND 从 Master 出发</span>
+<span class="cm">// Wireshark 中看到的时间轴 (nRF Sniffer 捕获):</span>
+
+No. Time      Source            Destination       Protocol  Info
+<span class="nu">42</span>  <span class="nu">0.000000</span>  Master            Slave             LE LL     EMPTY PDU
+<span class="nu">43</span>  <span class="nu">0.000150</span>  Slave             Master            LE LL     EMPTY PDU
+<span class="nu">44</span>  <span class="nu">0.030000</span>  Master            Slave             LE LL     LL_FEATURE_REQ
+<span class="nu">45</span>  <span class="nu">0.030150</span>  Slave             Master            LE LL     LL_FEATURE_RSP
+<span class="nu">46</span>  <span class="nu">0.060000</span>  <b>Master</b>            Slave             LE LL     <u>LL_TERMINATE_IND</u>
+           <span class="cm">// Error Code: 0x08 (Connection Timeout)</span>
+           <span class="cm">// → 手机主动断连, 原因是超时!</span>
+           <span class="cm">// → 诊断: 外设在 46ms~60ms 之间没有响应 (应该每 30ms 至少响应一次)</span>
+           <span class="cm">// → 外设的 30ms Connection Event 可能没醒来 (晶体漂移? 固件卡死?)</span>
+
+<span class="cm">// 案例 1-B: 外设主动断连 — LL_TERMINATE_IND 从 Slave 出发</span>
+
+No. Time      Source            Destination       Protocol  Info
+<span class="nu">78</span>  <span class="nu">0.000000</span>  Master            Slave             LE LL     EMPTY PDU
+<span class="nu">79</span>  <span class="nu">0.030000</span>  Master            Slave             LE LL     LL_ENC_REQ
+<span class="nu">80</span>  <span class="nu">0.030150</span>  Slave             Master            LE LL     LL_ENC_RSP
+<span class="nu">81</span>  <span class="nu">0.030300</span>  <b>Slave</b>             Master            LE LL     <u>LL_TERMINATE_IND</u>
+           <span class="cm">// Error Code: 0x0E (MIC Failure)</span>
+           <span class="cm">// → 外设主动断连!</span>
+           <span class="cm">// → 诊断: 外设收到手机的 LL_ENC_REQ, 尝试加密 — 但MIC校验失败</span>
+           <span class="cm">// → 说明外设使用了错误的 LTK (Bonding 丢失/Flash 恢复错误)</span>
+           <span class="cm">// → 外设代码检测到 MIC Failure → 主动断连保护</span>
+
+<span class="cm">// 案例 1-C: 外设"消失" (无 LL_TERMINATE_IND 就没了)</span>
+           <span class="cm">// Supervision Timeout 后空中只有 Master 的 LL_TERMINATE_IND (0x08)</span>
+           <span class="cm">// 但 Master 发之前可能重试了多次 EMPTY PDU (无 SCI 回复)</span>
+           <span class="cm">// → 外设可能已 crash/死机/断电</span></div>
+
+<!-- ═══ Ch4 ═══ -->
+<h2 class="sh">4. 实战案例 2: GATT 层问题 — ATT 请求/响应的完整追踪</h2>
+<p class="ss">GATT 问题（Discovery 慢、Write 失败、Notify 不来）如果只从 App 代码看——只能看到 callback 的参数。空中包让你看到<strong>每一帧 ATT PDU 的完整内容和时序</strong>。</p>
+
+<div class="chain"><span class="cm">// 案例 2-A: Service Discovery 慢的原因 — ATT 请求被分片</span>
+
+<span class="cm">// App 调用 discoverServices() → 背后是 ATT_READ_BY_GROUP_TYPE_REQ</span>
+<span class="cm">// 外设 GATT 数据库大 → Response 数据超过 MTU → ATT 层自动分片</span>
+
+<i>Wireshark 中看到的完整对话:</i>
+
+<span class="nu">101</span>  Master → Slave  ATT  Rcvd Read By Group Type Request
+       Start=0x0001, End=0xFFFF, UUID=0x2800 (Primary Service)
+
+<span class="nu">102</span>  Slave  → Master  ATT  Rcvd Read By Group Type Response  <span class="cm">// ← 第 1 个响应</span>
+       Attribute List Length=20, 包含 3 个 Service
+       [Service 0x0001-0x0005 UUID=0x1800] [0x0006-0x0009 UUID=0x1801] [0x000A-0x0014 UUID=0xFFE0]
+
+<span class="nu">103</span>  Slave  → Master  ATT  Rcvd Read By Group Type Response  <span class="cm">// ← 第 2 个响应!</span>
+       [Service 0x0015-0x0020 UUID=0x180F] [0x0021-0x0030 UUID=0xFFF1] [0x0031-0x0044 UUID=0xFFF2]
+
+<span class="cm">// 每个响应之间的间隔 = 1 个 Connection Interval (30ms)
+// 6 个 Service → 可能需要 2-3 个响应包 → 60-90ms 每次 Read By Group Type
+// 总共需要 ~4 种 ATT 请求 (Services / Characteristics / Descriptors / CCCD)
+// 每种可能需要多次分片响应 → 4 × 3 × 30ms = ~360ms (理想情况)
+// iOS throttling 会让这个时间膨胀到 2-5 秒</span>
+
+<span class="cm">// 案例 2-B: Write CCCD 后 Notify 不来的排查</span>
+
+<i>正常流程:</i>
+<span class="nu">201</span>  Master → Slave  ATT  Write Request (Handle=0x0022, Value=0x0001)  <span class="cm">// 写 CCCD</span>
+<span class="nu">202</span>  Slave  → Master  ATT  Write Response                          <span class="cm">// 外设确认</span>
+<span class="nu">203</span>  Slave  → Master  ATT  Handle Value Notification (Handle=0x0021, Battery=85)  <span class="cm">// Notify来了!</span>
+
+<i>异常排查 — 只有 Write Response 后没有 Notify:</i>
+<span class="nu">201</span>  Master → Slave  ATT  Write Request (Handle=0x0022, Value=0x0001)  <span class="cm">// 写 CCCD</span>
+<span class="nu">202</span>  Slave  → Master  ATT  Write Response                          <span class="cm">// 外设确认了</span>
+<span class="cm">// 之后 5 秒内没有任何 Notify → 问题在外设固件层 (不是 BLE 协议层)</span>
+<span class="cm">// 外设 GATT 层正确处理了 CCCD 写入, 但应用层代码没有启动 Notify 逻辑</span></div>
+
+<!-- ═══ Ch5 ═══ -->
+<h2 class="sh">5. HCI 层分析 — Android HCI Snoop Log 与 Linux btmon</h2>
+<p class="ss">HCI (Host Controller Interface) 是 <strong>Host (协议栈) 和 Controller (射频芯片) 之间的标准接口</strong>。HCI Log 记录了两者之间所有的命令、事件和数据——是手机侧/设备侧最易获取的诊断数据。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Android HCI Snoop Log</h4>
+    <div class="lbl">开发者选项 → 启用蓝牙 HCI 日志 → /sdcard/btsnoop_hci.log</div>
+    <p><strong>获取步骤</strong>：① 手机进入"设置 → 开发者选项" ② 勾选 <strong>"启用蓝牙 HCI 信息收集日志"</strong> ③ 复现问题（连接、配对、传输数据）④ 取消勾选 → 日志写入 <code>/sdcard/btsnoop_hci.log</code> ⑤ <code>adb pull /sdcard/btsnoop_hci.log</code> → 用 Wireshark 打开。<br>
+    <strong>HCI Log 的典型内容</strong>：<code>HCI_CMD: LE Set Scan Enable → HCI_EVT: Command Complete</code>（开启扫描）、<code>HCI_EVT: LE Advertising Report</code>（发现设备——含 RSSI + AdvData 完整内容）、<code>HCI_CMD: LE Create Connection → HCI_EVT: LE Connection Complete (Status=0x00 成功)</code>（建立连接）、<code>ACL Data: ATT_Write_Req → ATT_Write_Rsp</code>（GATT 操作）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Linux btmon</h4>
+    <div class="lbl">btmon --write hci.log — BlueZ 协议栈的官方调试工具</div>
+    <p><strong>启动抓包</strong>：<code>btmon -w hci.log</code>（将日志写入文件，后台运行）。<strong>btmon 能看到比 Android HCI Log 更多的内容</strong>：<strong>mgmt 接口</strong>（BlueZ 管理接口——内核与 bluetoothd 之间的通信）、<strong>L2CAP 信令</strong>（Connection Request/Response、Configuration Request/Response——这些在 HCI 层被封装在 ACL 数据中但 btmon 会自动解析）、<strong>SDP PDU</strong>（Service Search Request/Response 的完整字段）、<strong>RFCOMM 帧</strong>（SABM/UA/PN/DISC 的控制帧 + UIH 数据帧）。<br>
+    <strong>嵌入式设备的 btmon</strong>：如果使用 BlueZ 协议栈的嵌入式 Linux 设备（如 IPC 相机、树莓派）——<code>btmon -w /tmp/bt.log &</code> 持续记录所有蓝牙活动。这是<strong>设备侧最强大的诊断工具</strong>。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// btmon 输出的完整连接建立过程 (BLE Peripheral 侧)</span>
+<span class="cm">// btmon 输出格式: 时间戳 + 层级 + 方向 + 内容</span>
+
+= bluetoothd: (mgmt)  <span class="cm">// mgmt 接口 — bluetoothd ↔ 内核</span>
+@ MGMT Command: Add Advertising          <span class="cm">// bluetoothd 配置广播参数</span>
+@ MGMT Event:   Command Complete (0x003E) <span class="cm">// 内核确认</span>
+
+= btusb: (HCI)                            <span class="cm">// HCI 层 — 内核 ↔ Controller</span>
+&lt; HCI Command: LE Set Advertising Enable (0x08|0x000A)  <span class="cm">// 开启广播</span>
+&gt; HCI Event: Command Complete (0x0e) plen 4
+
+&gt; HCI Event: LE Meta Event (0x3e) plen 19  — LE Connection Complete
+      Status: Success (0x00)
+      Handle: 64                              <span class="cm">// Connection Handle = 64</span>
+      Role: Slave (0x01)
+      Peer address: AA:BB:CC:11:22:33
+
+&lt; ACL Data: Handle 64, ATT_Exchange_MTU_Req (MTU=247)  <span class="cm">// 外设发起 MTU 协商</span>
+&gt; ACL Data: Handle 64, ATT_Exchange_MTU_Rsp (MTU=185)  <span class="cm">// 手机回复</span>
+
+<span class="cm">// btmon 的价值: 同时看到 mgmt/HCI/L2CAP 三层——端到端追踪一个事件</span></div>
+
+<!-- ═══ Ch6 ═══ -->
+<h2 class="sh">6. 实战案例 3: Connection Interval 没有更新的排查</h2>
+<p class="ss">外设发 LL_CONNECTION_PARAM_REQ 请求更短的 Interval——手机要么接受、要么拒绝。不同的拒绝原因意味着不同的问题。</p>
+
+<div class="chain"><span class="cm">// 空中包追踪 Connection Parameter Update Request 的完整对话</span>
+
+<i>正常流程 (外设请求, Central 接受):</i>
+  Slave  → LL_CONNECTION_PARAM_REQ
+            Interval Min=15ms, Interval Max=30ms, Latency=0, Timeout=6000ms
+  Master → LL_CONNECTION_PARAM_RSP (Result=0x0000 Accepted)
+
+<i>异常 1: iOS 拒绝 (不符合 Apple 的规则)</i>
+  Slave  → LL_CONNECTION_PARAM_REQ (Interval=10ms, Latency=0, Timeout=2000ms)
+  Master → LL_REJECT_EXT_IND (Error Code=0x3B: Unacceptable Connection Parameters)
+  <span class="cm">// Interval=10ms 违反了 iOS 的 ≥15ms 规则 → 直接拒绝!</span>
+
+<i>异常 2: 手机拒绝后主动发起自己的更新</i>
+  Slave  → LL_CONNECTION_PARAM_REQ (Interval=15ms, Latency=0, Timeout=6000ms)
+  Master → LL_REJECT_EXT_IND (0x3B)  <span class="cm">// ?! 15ms 怎么也被拒了?</span>
+
+  <span class="cm">// 等一下 — 手机拒绝后立即发起了自己的更新请求:</span>
+  Master → LL_CONNECTION_PARAM_REQ (Interval=15ms, Latency=2, Timeout=6000ms)
+  <span class="cm">// 诊断: 手机接受 15ms 但要求 Latency=2 (而不是 0)</span>
+  <span class="cm">// 手机的计算: Interval*Latency = 15*2 = 30ms — 与原来的 30ms 接近</span>
+  <span class="cm">// 手机的逻辑: 不要 15ms+Latency0 (功耗太高), 要 15ms+Latency2 (可跳过 2 个Event)</span>
+  <span class="cm">// 但 Latency 不为 0 意味着外设在某些 Event 可以不响应 — 吞吐可能降低!</span>
+
+<i>异常 3: 外设请求被 Central 忽略 (无回复)</i>
+  Slave  → LL_CONNECTION_PARAM_REQ
+  (等待 30 个 Connection Event...)
+  Slave  → LL_CONNECTION_PARAM_REQ (重试, 最多 N 次)
+  (继续等待...)
+  <span class="cm">// → LL_TERMINATE_IND (Error=0x22: LL Response Timeout)</span>
+  <span class="cm">// 诊断: 手机 Controller 可能不支持 LL_CONNECTION_PARAM_REQ 这个 LL Control PDU</span>
+  <span class="cm">// (极老的 Android 4.x 设备有此 bug)</span></div>
+
+<!-- ═══ Ch7 ═══ -->
+<h2 class="sh">7. 实战案例 4: 配对失败的完整空中包拆解</h2>
+<p class="ss">配对失败的原因有数十种——每一种都在配对请求/响应的某个字段中留下了线索。</p>
+
+<div class="chain"><span class="cm">// 完整的 LE Secure Connections 配对过程 — 每个包的字段解读</span>
+
+<span class="cm">// Step 1: 配对特性交换</span>
+Master → <b>Pairing Request</b>:
+  IO Capability: <span class="nu">0x03</span> (NoInputNoOutput)   <span class="cm">// 双方都没有键盘/显示器</span>
+  OOB Data Flag: <span class="nu">0x00</span> (Not Present)
+  AuthReq: <span class="nu">0x05</span>                           <span class="cm">// bit0=Bonding, bit1=MITM(no), bit2=SC(yes!)</span>
+  Max Enc Key Size: <span class="nu">16</span>
+  Initiator Key Dist: <span class="nu">0x0D</span> (LTK + IRK + CSRK)  <span class="cm">// 手机希望分发哪些密钥</span>
+  Responder Key Dist:  <span class="nu">0x0D</span> (LTK + IRK + CSRK)
+
+Slave → <b>Pairing Response</b>:
+  IO Capability: <span class="nu">0x03</span> (NoInputNoOutput)
+  AuthReq: <span class="nu">0x01</span>                           <span class="cm">// bit0=Bonding, MITM=no, SC=no(!)</span>
+                                           <span class="cm">// ⚠ 外设不支持 LE Secure Connections!</span>
+  <span class="cm">// 结果: 手机检测到自己的 SC=yes 但外设 SC=no → 手机依据策略</span>
+  <span class="cm">// Android 8-12: 降级到 LE Legacy → 配对可能继续</span>
+  <span class="cm">// iOS 13+: 直接发送 Pairing Failed (0x05=Pairing Not Supported) → 配对失败!</span>
+
+<span class="cm">// 如果双方 AuthReq 不冲突, 进入 Step 2: 密钥交换 (ECDH)</span>
+Master → <b>Pairing Public Key</b> (64 bytes: P-256 X + Y)     <span class="cm">// 手机公钥</span>
+Slave  → <b>Pairing Public Key</b> (64 bytes)                  <span class="cm">// 外设公钥</span>
+
+<span class="cm">// Step 3: 认证阶段 (双方各自计算确认值)</span>
+Master → <b>Pairing Confirm</b> (16 bytes)                    <span class="cm">// 手机确认值</span>
+Slave  → <b>Pairing Confirm</b> (16 bytes)                    <span class="cm">// 外设确认值</span>
+Master → <b>Pairing Random</b> (16 bytes)                     <span class="cm">// 手机随机数</span>
+Slave  → <b>Pairing Random</b> (16 bytes)                     <span class="cm">// 外设随机数</span>
+<span class="cm">// 双方各自验证: Confirm == AES-CMAC(K, Random) → 匹配→成功</span>
+
+<span class="cm">// Step 4: 密钥分发</span>
+Master → LL_ENC_REQ → LL_ENC_RSP → LL_START_ENC_REQ → LL_START_ENC_RSP
+<span class="cm">// 加密链路建立 → 后续通过加密通道分发 LTK/IRK/CSRK</span></div>
+
+<!-- ═══ Ch8: Ellisys ═══ -->
+<h2 class="sh">8. Ellisys Explorer — 专业级全信道并行抓包</h2>
+<p class="ss">Ellisys Bluetooth Explorer 是蓝牙协议分析的<strong>金标准</strong>——全信道并行监听、微秒级时间戳、PHY 层射频分析、WiFi 共存分析。成本 4-8 万元——芯片原厂、认证实验室、以及<strong>被疑难杂症逼到绝路的开发团队</strong>的终极武器。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>与 nRF Sniffer 的本质区别</h4>
+    <div class="lbl">全信道并行 vs 单信道跟踪</div>
+    <p><strong>nRF Sniffer</strong>：单射频收发器——需要先知道 Access Address 和 CRCInit → 计算跳频序列 → <strong>跟踪一个连接</strong>的跳频。如果跟踪丢了（错过了 CRC、信道切换时未同步）→大片空白。<strong>只能抓 BLE</strong>。<br>
+    <strong>Ellisys</strong>：内置<strong>宽带射频前端 + FPGA</strong>——同时监听<strong>全部 40 个 BLE 信道</strong>（或全部 79 个 BR/EDR 信道）→ <strong>不需要跟踪跳频</strong>——所有信道上的所有包尽收眼底。即使错过了某个连接的 Access Address，回溯数据中也能找到。<strong>同时抓 BLE + BR/EDR + WiFi</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>硬件连接与设置</h4>
+    <div class="lbl">USB 连接 + Ellisys 软件 (非 Wireshark)</div>
+    <p><strong>连接</strong>：Ellisys Explorer B300/B400 通过 USB 3.0 连接 PC。设备自带全向天线（4 根——2.4GHz + 5GHz WiFi）。<br>
+    <strong>软件</strong>：<strong>Ellisys Bluetooth Analyzer</strong>（自有软件，非 Wireshark）——提供比 Wireshark 更专业的蓝牙协议视图：<strong>Instant Piconet View</strong>（实时显示 Piconet 拓扑）、<strong>Timeline View</strong>（所有包的时序瀑布图）、<strong>Packet Detail View</strong>（逐字段协议解码）、<strong>Audio Expert View</strong>（SCO/eSCO 音频质量分析——抖动/丢包/延迟）。也可导出为 Wireshark 兼容格式。<br>
+    <strong>供电</strong>：USB 供电即可，无需外部电源。便携——可以带到客户现场抓包。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Ellisys 独有的分析能力</h4>
+    <div class="lbl">PHY 层错误 · 时序违规 · 音频质量 · WiFi 共存</div>
+    <p><strong>① CRC 错误检测</strong>：nRF Sniffer 固件丢弃 CRC 错误的包——你看不到。Ellisys <strong>捕获所有包</strong>（包括 CRC 错误的），在 UI 中标注 CRC Error → 可以统计误包率 → 判断 RF 干扰程度。<br>
+    <strong>② T_IFS 时序测量</strong>：BLE 要求响应在 150μs±2μs 内发送。Ellisys 对每个包打<strong>125ns 精度时间戳</strong>——可以精确测量外设的响应时间是否超出 150μs 限制。<br>
+    <strong>③ Audio Expert</strong>：SCO/eSCO 链路的音频质量分析——显示每个 slot 的音频数据是否到达、是否在正确的时间到达——量化通话断续/卡顿。<br>
+    <strong>④ WiFi 共存分析</strong>：同时抓 2.4GHz WiFi 和蓝牙——可视化两者在频域上的冲突时刻——判断是否是 WiFi 20MHz 信道干扰了正在跳频的蓝牙。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Ellisys 实战: 定位"偶发性断连"的 RF 干扰</h4>
+    <div class="lbl">nRF Sniffer 看不到的 CRC 错误 — Ellisys 全信道捕获还原真相</div>
+    <p><strong>场景</strong>：IPC 相机 BLE 连接每隔 2-3 小时断连一次，App 报 error=133。nRF Sniffer 抓包正常（看不到 CRC 错误，因为固件丢弃了）。<br>
+    <strong>Ellisys 分析步骤</strong>：① 同时抓 BLE 40 信道 + WiFi 2.4GHz ② 在 Timeline View 中定位断连时刻的 LL_TERMINATE_IND ③ 回溯断连前 200ms 的所有包——发现<strong>大量 CRC 错误包</strong>（Ellisys 用红色标注）集中在 CH6(2426MHz) 和 CH12(2438MHz) ④ 切换到 WiFi 频谱视图——发现断连时刻恰好有<strong>WiFi AP 在 CH6(2437MHz)</strong> 上以最大功率发送 Beacon 帧（每 100ms 一发——持续时间 2ms）⑤ Beacon 的频谱泄漏覆盖了 BLE CH6~CH12（2436-2440MHz）→ BLE 在这些信道上的包几乎全被干扰 → ARQ 重试多次后 Supervision Timeout → 断连。<br>
+    <strong>解决</strong>：外设的 Channel Map 中排除 CH6~CH12（通过 LL_CHANNEL_MAP_IND 更新）——断连问题消失。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Ellisys 实战: T_IFS 时序违规 — 外设响应太慢</h4>
+    <div class="lbl">125ns 精度时间戳揭示的微秒级延迟问题</div>
+    <p><strong>场景</strong>：BLE 外设频繁被手机判定超时断连，但外设固件日志显示"正常响应"。<br>
+    <strong>Ellisys 分析</strong>：在 Packet Detail View 中选中任意 Master→Slave 包 → 查看下一个 Slave→Master 包的时间间隔。T_IFS 标准 = <strong>150μs ± 2μs</strong>。Ellisys 实测显示外设的 T_IFS = <strong>162-180μs</strong>——每次都超出 10-30μs。虽然外设固件"响应了"——但响应晚了 10μs——手机的 Controller 硬件在 152μs 时关闭了接收窗口（认为超时）。<br>
+    <strong>根因</strong>：外设 BLE 芯片的 HCI 传输层 (UART) 波特率设置太低（115200）→ HCI 事件从 Controller 传到 Host 需要 ~80μs → Host 处理 GATT 请求耗时 ~50μs → HCI Command 回传 Controller 又 80μs → 总延迟 210μs > 150μs。将 UART 升级到 921600 → T_IFS 降到 130-140μs → 问题解决。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Ellisys 实战: BR/EDR Inquiry 找不到设备的根因</h4>
+    <div class="lbl">全 79 信道捕获 → 精确看到 Inquiry Scan 的时序漂移</div>
+    <p><strong>场景</strong>：传统蓝牙 SPP 设备在手机上有时能搜到、有时搜不到——概率性问题。<br>
+    <strong>Ellisys 分析</strong>：全 79 信道捕获。手机在 32 个 Inquiry 信道上跳频发 ID 包——每个信道停留 312.5μs。外设在 32 个信道上轮询监听——监听窗口 11.25ms，间隔 1.28s。Ellisys Timeline View 显示：<strong>外设的监听窗口在逐渐漂移</strong>（晶体老化→时钟偏差 → 窗口相对手机的 Inquiry 序列在移动）→ 每 8 个 Inquiry 周期（~10s）窗口恰好落在手机不扫描的信道上 → 那次 Inquiry 就找不到设备。<br>
+    <strong>解决</strong>：手机端增加 Inquiry Length（延长扫描时间覆盖外设窗口的漂移范围）或 外设增大 Inquiry Scan Window（从 11.25ms 增加到 22.5ms——2 倍覆盖）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Ellisys 实战: Audio SCO 断续定位</h4>
+    <div class="lbl">Audio Expert View → 量化通话质量</div>
+    <p><strong>场景</strong>：蓝牙耳机通话时对方听到"咔咔"断续声——不是完全断，是有规律的杂音。<br>
+    <strong>Ellisys 分析</strong>：Audio Expert View 显示 SCO interval=6 slots (3.75ms)。每个 SCO slot 中<strong>有数据到达</strong>，但大约每 14 个 slot（~52ms）有一个 slot 的数据包<strong>延迟了 1 个 slot</strong>（本该在 slot N 到的包在 slot N+1 才到）。这 1 个 slot 的迟到导致音频解码器收到两个连续的零填充帧 →"咔"一声。<br>
+    <strong>根因</strong>：Master 的 ACL 数据流量过大（同时在传文件 via SPP）→ ACL 包占用了 SCO 预留 slot 前后的保护间隔 → SCO 包被推后 1 slot。解决：在文件传输期间降低 ACL 优先级或限制 ACL 吞吐。</p>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠ Ellisys 的局限性 — 什么时候它也无能为力</div>
+  <strong>1. 加密数据不可见</strong>：Ellisys 抓到了加密的空口包——但如果不知道 LTK，Payload 是乱码。需要在软件中导入 Link Key（从 Bonding 的设备中导出）。nRF Sniffer 一样有此限制。<br>
+  <strong>2. 距离限制</strong>：全信道并行需要宽带天线——灵敏度略低于单信道窄带接收机。在10 米以外的高衰减场景（如穿过墙壁）——信号可能弱到 Ellisys 也无法解码。<strong>RSSI < -80dBm 时错误率急剧上升</strong>。<br>
+  <strong>3. 不会自动识别协议错误</strong>：Ellisys 是<strong>被动监听</strong>——不会告诉你"这个包违反了协议"。需要工程师自己理解协议规范并判断。不过 Ellisys 软件会自动标注一些明显的错误（如 CRC Error、长度不匹配、T_IFS 超时）。<br>
+  <strong>4. 价格</strong>——B400 型号约 $6,000-10,000 USD。对于个人开发者——nRF Sniffer 覆盖 90% 的问题；团队可以共享一台 Ellisys（远程预约使用）。
+</div>
+
+<!-- ═══ Ch9 ═══ -->
+<h2 class="sh">9. 工具组合拳 — 多层面交叉验证</h2>
+<p class="ss">最强大的诊断不是靠单一工具——而是<strong>同时从多个层面抓取数据，交叉验证</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>组合 1: nRF Sniffer + Android HCI Log</h4>
+    <div class="lbl">空中真实包 vs 手机 HCI 层看到的包 — 找差异</div>
+    <p>同时抓空中包（nRF Sniffer）和手机侧（HCI Log）→ <strong>对比两者</strong>：空中包显示外设发了 Notify → HCI Log 中却没有对应的 ACL Data 包 → 说明手机 Controller 收到了但<strong>没有上报给 Host</strong>（Android 栈内部过滤或 bug）。空中包显示外设没有发 LL_TERMINATE_IND → HCI Log 中却有 Disconnection Complete Event → 说明手机 Controller<strong>自己决定断连</strong>（如 Supervision Timeout 到期时 Controller 不通知 Host 直接断）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>组合 2: btmon + 外设固件日志</h4>
+    <div class="lbl">软件日志 vs 空中真实行为 — 找代码 Bug</div>
+    <p>外设固件打印"已发送 Notify (电池=85%)" → btmon 中却没有看到对应的 ACL Data → 说明外设的 GATT 层代码有 bug——<strong>应用层以为发送了，但底层没有真正发出</strong>（可能 CCCD 未使能、或 ATT 队列满、或 GATT 连接未建立）。<br>
+    btmon 显示手机发了 ATT_Write_Req → 外设固件日志却显示"收到未知 Handle=0xFFFF 的写请求"→ App 缓存了错误的 Handle（Service Changed 后没有重新 Discovery）。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">BLE 调试的黄金法则 — 永远不要只相信日志</div>
+  ① <strong>应用层日志会说谎</strong>：调用了 writeCharacteristic() ≠ 空中真的发出去了（MTU 不足被分片？ATT 队列满被丢弃？Controller 忙？）。<br>
+  ② <strong>HCI Log 比应用日志可靠</strong>：HCI 层记录的是 Host↔Controller 的真实交互——如果 HCI 中也没有，那肯定是 Host 以上的问题。<br>
+  ③ <strong>空中抓包是真相的唯一来源</strong>：电波不会说谎——如果空中没有这个包，那就是<strong>根本没有发出来</strong>。<br>
+  ④ <strong>三层交叉验证</strong>：应用日志 ∩ HCI Log ∩ 空中包 = 精确定位问题层级。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">蓝牙空中抓包与 HCI 分析 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

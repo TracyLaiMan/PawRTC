@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC JitterBuffer 深度剖析 — 抖动消除与自适应缓冲</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd strong { color: #d0d0f0; }
+
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .fn { color: #d2a8ff; }
+
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.sg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+@media(max-width:700px){ .sg { grid-template-columns: 1fr 1fr; } }
+.st { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #b0b0d0; line-height: 1.65; }
+.st b { color: #a78bfa; font-size: 13px; }
+.st code { font-size: 10px; }
+
+.freq-wrap { width: 100%; background: rgba(0,0,0,.15); border-radius: 12px; padding: 20px; margin: 16px 0;
+  border: 1px solid rgba(255,255,255,.04); text-align: center; }
+.freq-wrap canvas { max-width: 100%; }
+
+hr { border: none; border-top: 1px solid rgba(255,255,255,.04); margin: 48px 0 0; }
+
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.6; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">WebRTC JitterBuffer</h2>
+  <p class="sec-sub">深度剖析抖动消除与自适应缓冲 — NetEQ · VideoJB · 延迟估计 · PLC · 收敛算法</p>
+
+  <div class="flow-row" style="margin:28px 0">
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>RTP 收包</strong><br><small>乱序 · 丢包 · 抖动</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>JitterBuffer</strong><br><small>排序 · 缓冲 · 估计</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>解码器</strong><br><small>Opus · H.264</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>渲染</strong><br><small>播放 · 显示</small></span>
+    <span class="flow-arr">↺</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(108,99,255,.3);background:rgba(108,99,255,.08)"><strong>延迟估计</strong><br><small>反馈 → 自适应</small></span>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>抖动 (Jitter) 的本质</h4><div class="sub">ΔT<sub>到达</sub> ≠ ΔT<sub>发送</sub></div>
+      <p>网络不是等时的。每包走不同的路由、不同的排队深度，导致<em>包间延迟抖动</em>。JitterBuffer 用<strong>额外的缓冲延迟</strong>换取<strong>均匀的播放间隔</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>核心矛盾</h4><div class="sub">延迟 vs 丢包 vs 卡顿</div>
+      <p>缓冲太小 → 网络抖动时<em>缓冲区干涸 (underrun)</em> → 卡顿。缓冲太大 → <em>端到端延迟</em>增加 → 实时性差。自适应调节是这个<strong>不可能三角</strong>的求解器。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>WebRTC 双轨实现</h4><div class="sub">NetEQ (音频) + VideoJB (视频)</div>
+      <p>音频用 <em>NetEQ</em> (GIPS 遗产，2007 年收购): 含 DSP 级别的 PLC 和时间拉伸。视频用独立 <em>VideoReceiveStream</em> + <em>RtpVideoStreamReceiver</em> 内置的帧级缓冲。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- Ch1: 概述 -->
+<h2 class="sh">1. JitterBuffer 本质 — 为什么要"没事找事"地延迟？</h2>
+<p class="ss">包到达时间的随机性 → 需要缓冲区吸收抖动 → 引入额外延迟 → 需要自适应的缓冲长度</p>
+
+<div class="freq-wrap">
+<canvas id="jitterCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>没有 JitterBuffer</h4>
+    <div class="lbl">收到就播 → 严重卡顿</div>
+    <p>
+    包 0 在 t=20ms 到达 → 立即解码播放。包 1 晚到了 10ms (t=50ms 才到) → 解码器<strong>缺数据</strong> → 静音/卡帧 → 用户感知到"卡"了。<br>
+    PLC (Packet Loss Concealment) 可以掩盖一两个缺包，但频繁的 underrun 会让音视频<em>不可接受</em>。<br>
+    <strong>结果</strong>: 零缓冲延迟 → 零抗抖动能力 → 网络稍微波动就卡。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>有 JitterBuffer</h4>
+    <div class="lbl">预先缓冲 N 毫秒 → 平滑播放</div>
+    <p>
+    包 0 到达 → <strong>不立即播放</strong>，先放入缓冲区等 40ms。<br>
+    包 1 晚了 10ms → 没关系，缓冲区内还有足够数据 → 播放线程以<strong>均匀 20ms 间隔</strong>取包 → 解码 → 用户感知流畅。<br>
+    <strong>代价</strong>: 端到端延迟 = 网络延迟 + 缓冲延迟 (40ms)。<br>
+    <strong>核心问题</strong>: 缓冲设多长？太长延迟高，太短扛不住抖动。
+    </p>
+  </div>
+</div>
+
+<!-- Ch2: 包到达模型 -->
+<h2 class="sh">2. 抖动模型 — 网路如何让包"乱来"</h2>
+<p class="ss">包间延迟 · 网络排队 · WiFi 重传 · 蜂窝切换 — 抖动的物理来源</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>固定间隔发送 → 随机间隔到达</h4>
+    <div class="lbl">Sender: ΔT = 20ms · Receiver: ΔT = 15~45ms</div>
+    <p>
+    发送端用<strong>匀速的编码节奏</strong> (如 50fps → 20ms/帧) 发送 RTP 包。每个包经过：WiFi 竞争窗口等待 (0~10ms) → 路由器排队 (0~50ms) → ISP 骨干网路由变化 (±5ms) → 蜂窝基站切换 (±100ms) → 到达时间间隔<strong>不再是常数</strong>。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Jitter 的统计定义</h4>
+    <div class="lbl">RFC 3550: interarrival jitter</div>
+    <div class="cb" style="font-size:10px;padding:10px 14px;margin:10px 0 0"><span class="cm">// RFC 3550 Section 6.4.1</span>
+J(i) = J(i-<span class="nu">1</span>) + (|D(i-<span class="nu">1</span>,i)| − J(i-<span class="nu">1</span>)) / <span class="nu">16</span>
+
+<span class="cm">// D(i,j) = 到达时间差 − 发送时间差</span>
+D(i-<span class="nu">1</span>,i) = (R_i − R_{i-<span class="nu">1</span>}) − (S_i − S_{i-<span class="nu">1</span>})
+       = (R_i − S_i) − (R_{i-<span class="nu">1</span>} − S_{i-<span class="nu">1</span>})
+
+<span class="cm">// 这是一个指数加权移动平均 (EWMA)</span>
+<span class="cm">// 平滑因子 α = 1/16 → 对新样本较迟钝</span>
+<span class="cm">// 反应的是抖动的"长期趋势"，非瞬时值</span></div>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>不只是迟到 — 四种异常</h4>
+    <div class="lbl">JitterBuffer 需要同时处理</div>
+    <p>
+    <strong>1. 抖动 (Jitter)</strong>: 包间隔不均匀 → 缓冲吸收<br>
+    <strong>2. 乱序 (Reordering)</strong>: 包 5 比包 4 先到 → 按 seq 重排<br>
+    <strong>3. 丢包 (Loss)</strong>: 包永远不到 → PLC 或 NACK/FEC 恢复<br>
+    <strong>4. 突发 (Burst)</strong>: 连续丢 N 包 → 缓冲区快速干涸<br>
+    一个好的 JitterBuffer 必须同时处理这四种情况，且<strong>在它们之间自适应切换策略</strong>。
+    </p>
+  </div>
+</div>
+
+<!-- Ch3: 音频 NetEQ -->
+<h2 class="sh">3. 音频 JitterBuffer — NetEQ 深度剖析</h2>
+<p class="ss">WebRTC 音频抖动缓冲的"大脑" — MCU 控制 + DSP 信号处理 + 自适应决策</p>
+
+<div class="freq-wrap">
+<canvas id="neteqCanvas"></canvas>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">3.1 NetEQ 架构 — 三个缓冲区 + 一个决策器</h3>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Packet Buffer</h4>
+    <div class="lbl">RTP 包仓库 — 按 seq 排序的优先队列</div>
+    <p>
+    <code>PacketBuffer</code>: 存储<strong>未解码的 RTP 包</strong> (含 payload + timestamp + seq)。<br>
+    插入: 按 seq 号二分查找 → 乱序插入自动排序。<br>
+    查询: <code>GetNextPacket()</code> 返回最早未播放的连续包。<br>
+    <strong>Flush 策略</strong>: seq 号间隔过大 (gap > threshold) 或 timestamp 过期 → 丢弃旧包，避免播放延迟无限增长。<br>
+    <strong>大小</strong>: 动态，由 MCU 模块根据网络条件增减。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Decoded Buffer</h4>
+    <div class="lbl">已解码 PCM — 播放的直接来源</div>
+    <p>
+    <code>DecodedDatabase</code>: 存储<strong>已解码的 PCM 音频帧</strong>。<br>
+    当 Packet Buffer 积累足够的包后，解码线程取出并解码 → 放入 Decoded Buffer。<br>
+    播放线程以 <strong>10ms 为单位</strong> 从这里取数据 → 交给 AudioDevice 播放。<br>
+    <strong>关键</strong>: 已解码 buffer 不能太大（内存）也不能太小（抗抖动差）。NetEQ 根据网络条件决定何时解码、解码多少。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Algorithm Buffer</h4>
+    <div class="lbl">DSP 算法层 — 扩展/压缩/生成</div>
+    <p>
+    当 Decoded Buffer <strong>缺数据</strong> (underrun) 时，Algorithm Buffer 介入：<br>
+    <strong>PLC (丢包隐藏)</strong>: 用上一帧的 LPC 系数 + 基音周期来<strong>外推</strong>合成缺失的音频 → 用户听不出丢包。<br>
+    <strong>时间拉伸/压缩</strong>: WSOLA 或基音同步重叠相加 (PSOLA) → 在 buffer 太长时加速播放 (听不出音调变化)，太短时减速。<br>
+    <strong>CNG (舒适噪声)</strong>: 长期无包时生成背景噪声代替静音。
+    </p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>操作模式</th><th>触发条件</th><th>DSP 动作</th><th>用户感知</th></tr></thead>
+  <tbody>
+    <tr><td class="g">NORMAL</td><td>buffer 在目标范围内</td><td>正常解码播放</td><td>正常</td></tr>
+    <tr><td class="y">EXPAND</td><td>buffer 干涸，无包可用</td><td>PLC 外推合成 (基于 LPC + pitch)</td><td>听不到丢包 (短时)</td></tr>
+    <tr><td class="y">ACCELERATE</td><td>buffer 过长 (积累太多)</td><td>PSOLA 时间压缩 (加速 ~3%)</td><td>几乎无感知</td></tr>
+    <tr><td class="y">PREEMPTIVE_EXPAND</td><td>buffer 变短 (即将干涸)</td><td>PSOLA 时间拉伸 (减速 ~3%)</td><td>几乎无感知</td></tr>
+    <tr><td class="r">MERGE</td><td>EXPAND 后有新包到达</td><td>在 PLC 合成和新解码间平滑过渡</td><td>无缝衔接</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">3.2 MCU (Micro Controller Unit) — 决策大脑</h3>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>目标延迟 (Target Delay)</h4>
+    <div class="lbl">Buffer 想维持在多少 ms —— 核心控制变量</div>
+    <p>
+    MCU 维护一个 <strong>target_level_ms</strong> — 期望的缓冲水平。这是 JitterBuffer 唯一需要调节的<em>控制变量</em>。<br>
+    <strong>过大</strong>: 积累过多 → ACCELERATE → 压缩播放<br>
+    <strong>过小</strong>: 面临干涸 → PREEMPTIVE_EXPAND → 拉伸播放<br>
+    <strong>刚好</strong>: NORMAL → 正常解码<br>
+    Target 的设定基于：<em>网络抖动估计</em> + <em>丢包率</em> + <em>历史 underrun 频率</em>。<br>
+    <strong>初始值</strong>: 通常在 30~100ms，根据首个包的到达延迟设定基线。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>延迟估计 — 如何知道 target 该设多少？</h4>
+    <div class="lbl">基于百分位 (percentile) 的抖动估计</div>
+    <p>
+    <strong>简单方法</strong>: <code>target = J(i) × k + base</code> (J 是 RFC 3550 估计，k 是安全系数 2~4)。问题：J 是 EWMA，反应迟钝。<br>
+    <strong>NetEQ 方法</strong>: 维护最近 N 个包的 <em>IAT (Inter-Arrival Time) 直方图</em> → 取 95th percentile → <code>target = P95(IAT) × α + base</code>。<br>
+    <strong>Percentile 的好处</strong>: 自动过滤极端异常值 (99.9th 可能是 WiFi 扫描造成的 200ms 突发，不应据此把 target 设到 200ms)。<br>
+    <strong>自适应收敛</strong>: 如果过去 10s 内出现 2 次 underrun → target += 10ms。如果过去 30s 无 underrun → target -= 5ms。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>时间伸缩 — 加减速的 DSP 原理</h4>
+    <div class="lbl">PSOLA: Pitch-Synchronous Overlap and Add</div>
+    <p>
+    <strong>加速 (ACCELERATE)</strong>: 在音频信号中找到重复的基音周期 → 把相邻两个周期<strong>重叠相加</strong> → 信号缩短 ~1 个周期但音调不变。<br>
+    <strong>减速 (PREEMPTIVE_EXPAND)</strong>: 在基音边界<strong>复制插入</strong>一个周期 → 信号延长但音调不变。<br>
+    <strong>极限</strong>: 单次加速/减速不超过 ~30% (3ms 在 10ms 帧上)，否则<em>人耳可感知</em>失真。多次累积操作后，总伸缩量可逐步达到 ~100ms。<br>
+    <strong>为什么不做简单重采样</strong>: 重采样会<strong>改变音调</strong> → 人耳极其敏感 → 绝对不可接受。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>PLC — 丢包隐藏的数学</h4>
+    <div class="lbl">Linear Predictive Coding + Pitch Estimation</div>
+    <p>
+    <strong>步骤 1</strong>: 对上一帧 PCM 做 LPC (10~16 阶) → 得到声道模型的滤波器系数。<br>
+    <strong>步骤 2</strong>: 估计基音周期 (pitch lag) — 计算自相关函数，找除 0 外的最大峰值 → pitch = 50~400 Hz。<br>
+    <strong>步骤 3</strong>: 用 LPC 合成滤波器 + 基音周期脉冲激励 → <strong>外推</strong>生成缺失帧的 PCM。<br>
+    <strong>步骤 4</strong>: 缺失超过 1 帧时，逐步衰减增益 → 60ms 后<strong>静音</strong>。<br>
+    <strong>限制</strong>: 适用于语音 (LPC 假设人声道是线性时不变滤波器) — 对音乐/背景噪声效果差很多。这也是为什么 Opus 内置 PLC 效果比 NetEQ 的通用 PLC 好。
+    </p>
+  </div>
+</div>
+
+<!-- Ch4: 视频 JitterBuffer -->
+<h2 class="sh">4. 视频 JitterBuffer — 帧级缓冲与参考帧管理</h2>
+<p class="ss">VideoReceiveStream · FrameBuffer · RtpFrameReferenceFinder · 帧完整性检查</p>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4.1 视频与音频的根本区别</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>维度</th><th>音频 JitterBuffer</th><th>视频 JitterBuffer</th></tr></thead>
+  <tbody>
+    <tr><td><strong>播放单位</strong></td><td>10ms PCM 帧</td><td class="y">完整视频帧 (I/P/B)</td></tr>
+    <tr><td><strong>帧间依赖</strong></td><td class="g">无 (每帧独立可解)</td><td class="r">强依赖 (P 帧需参考帧，B 帧需双向参考)</td></tr>
+    <tr><td><strong>解码时间</strong></td><td>恒定 (~1ms)</td><td class="y">可变 (1~30ms，依赖帧类型 + 分辨率)</td></tr>
+    <tr><td><strong>丢包处理</strong></td><td>PLC 外推合成</td><td class="r">请求 I 帧 / 等待重传 / 冻结上一帧</td></tr>
+    <tr><td><strong>Buffer 粒度</strong></td><td>RTP 包 (payload 级别)</td><td class="y">视频帧 (需等所有 RTP 包到齐拼成完整帧)</td></tr>
+    <tr><td><strong>时间伸缩</strong></td><td class="g">PSOLA (人耳不可感知)</td><td class="r">不可 — 必须完整播放或完整跳过</td></tr>
+    <tr><td><strong>延迟目标</strong></td><td>30~100ms</td><td class="y">0~200ms (受应用场景影响大)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<h3 style="color:#d0d0f0;font-size:15px;margin:24px 0 10px">4.2 视频 JitterBuffer 处理流水线</h3>
+
+<div class="freq-wrap">
+<canvas id="videoJbCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>RTP 包 → 完整帧的组装</h4>
+    <div class="lbl">RtpFrameReferenceFinder · PacketBuffer</div>
+    <p>
+    视频帧通常<strong>超过 MTU</strong> → 一个帧被分割为多个 RTP 包 (FU-A / FU-B 分片)。<br>
+    <strong>1. 收包</strong>: RTP 包到达 → 按 SSRC + seq 存入 <code>PacketBuffer</code>。<br>
+    <strong>2. 拼帧</strong>: <code>RtpFrameReferenceFinder</code> 检查: seq 连续 + Marker bit (最后一包) + Start bit (第一包) → 拼成完整帧。<br>
+    <strong>3. 参考链</strong>: 检查该帧依赖的参考帧 (通过 RTP generic descriptor / FrameDependency 扩展头) → 确认参考帧已解码。<br>
+    <strong>4. 可解码帧</strong>: 自身完整 + 参考帧就绪 → 放入 <em>Decodable Frame Queue</em>。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>帧级延迟管理 — 视频独有的"等还是跳"</h4>
+    <div class="lbl">min_playout_delay / max_playout_delay</div>
+    <p>
+    每一帧有一个 <strong>Render Time</strong> (来自 RTP timestamp)，JitterBuffer 据此决定：<br>
+    <strong>帧提前到达</strong>: Render Time 还未到 → 等待。<br>
+    <strong>帧准时到达</strong>: Render Time 到了且可解码 → 取出解码。<br>
+    <strong>帧迟到</strong>: Render Time 过了还没完整 → <strong>决策点</strong>: 继续等 (增加延迟) 还是跳过 (丢帧 + 请求 I 帧/keyframe)?<br>
+    <strong>min_playout_delay</strong>: 最小缓冲延迟 (即使网络完美也保持此缓冲) → 防止瞬时抖动。<br>
+    <strong>max_playout_delay</strong>: 最多等多久 → 超过则丢帧。两者均来自<em>远端 SDP/RTCP 协商</em>或<em>本地自适应设定</em>。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Keyframe Request — 视频的最后防线</h4>
+    <div class="lbl">PLI / FIR — 请求发送端生成 I 帧</div>
+    <p>
+    当参考帧丢失且重传也失败时，解码器完全无法解码后续任何 P/B 帧 → 画面冻结。<br>
+    <strong>PLI (Picture Loss Indication)</strong>: RTCP Feedback 消息 → 告诉发送端"我的解码器卡住了，寄个 I 帧过来"。<br>
+    <strong>FIR (Full Intra Request)</strong>: 更强力的 PLI 变体 — 要求发送端丢弃当前编码状态，从 I 帧重新开始。<br>
+    <strong>触发时机</strong>: 连续丢帧 > 阈值 (通常 3~5 帧) → JitterBuffer 发出 PLI → 等待 I 帧到达 → 丢弃中间所有不可解码的帧 → 从 I 帧恢复播放。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>视频 JitterBuffer 的收敛算法</h4>
+    <div class="lbl">TargetDelay 的 AIMD (加性增/乘性减)</div>
+    <p>
+    视频使用类似 TCP 的 AIMD 策略调节目标延迟：<br>
+    <strong>增窗 (Additive Increase)</strong>: 每 1 秒无丢帧 → <code>target += 5ms</code> (缓慢增加缓冲以应对潜在抖动)<br>
+    <strong>减窗 (Multiplicative Decrease)</strong>: 发生丢帧 → <code>target = target × 0.9</code> (快速降低延迟)<br>
+    实际实现更复杂:<br>
+    <code>inter_frame_delay_variation</code> 估计 → 计算 P95 百分位 → <code>target_delay = max(min_playout_delay, P95 × factor)</code>。<br>
+    配合 <em>Google Congestion Control (GCC)</em> 的延迟估计 → 当网络变差时 <strong>Buffer 反而要缩小</strong> (因为延迟已经很高了，再缓冲更糟)。
+    </p>
+  </div>
+</div>
+
+<!-- Ch5: 延迟估计 -->
+<h2 class="sh">5. 延迟估计 — 如何"感知"网络状态</h2>
+<p class="ss">KALMAN 滤波 · 百分位估计 · EWMA · 丢包率 · 过冲/干涸计数 — 多信号融合决策</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Kalman Filter — 时延估计的数学最优解</h4>
+    <div class="lbl">WebRTC 音频 jitter 估计的默认算法</div>
+    <p>
+    <strong>状态模型</strong>: 往返时延 (RTT) + 时钟偏置 (offset)。<br>
+    <strong>观测模型</strong>: 每个 RTP 包的 (发送时间, 到达时间) 对 → 观测到的单向延迟。<br>
+    <strong>Kalman 优势</strong>: 自动分离<strong>真实延迟变化</strong>和<strong>时钟漂移</strong>（收发两端的时钟频率可能有 ppm 级别差异，导致观测延迟线性漂移）。<br>
+    <strong>滤波输出</strong>: 当前网络的<strong>最小延迟</strong> (基线) + <strong>抖动方差</strong> (σ²) → <code>target = base_delay + k × σ</code>。<br>
+    <strong>参数 k</strong>: 决定激进程度。k=2 → 约 95% 包能赶上播放 (假设正态分布)。k=3 → 约 99.7%。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Min-Max 滤波器 — 简单有效的工业替代</h4>
+    <div class="lbl">WebRTC 视频 jitter 估计使用的方法</div>
+    <p>
+    <strong>滑动窗口</strong>: 维护最近 N 个帧 (或 N 秒) 的到达延迟。<br>
+    <strong>最小延迟</strong>: 滑动窗口内的 <code>min(arrival_delay)</code> — 认为是网络的"物理极限延迟" (无排队时延)。<br>
+    <strong>抖动估计</strong>: <code>current_jitter = P95(arrival_delay) - min_delay</code>。<br>
+    <strong>target = min_delay + P95_jitter × safety_margin</strong><br>
+    为什么不用 mean：<em>均值掩盖了分布的尾部</em>。用户感知差来自尾部的大延迟，不是均值。<br>
+    <strong>P95 vs P99</strong>: P99 更保守 (抗抖更强) 但延迟更高。WebRTC 默认倾向 P95。
+    </p>
+  </div>
+</div>
+
+<!-- Ch6: 自适应算法 -->
+<h2 class="sh">6. 自适应缓冲算法 — 求解"不可能三角"</h2>
+<p class="ss">Buffer 长度如何实时调整 — 延迟 · 丢包率 · underrun 频率三重约束下的最优解</p>
+
+<div class="freq-wrap">
+<canvas id="adaptCanvas"></canvas>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>AIMD — 音频 JitterBuffer 的经典算法</h4>
+    <div class="lbl">Additive Increase / Multiplicative Decrease</div>
+    <p>
+    <strong>增窗 (AI)</strong>: 每个正常播放周期 → target += <code>kI × packet_len</code><br>
+    (典型 kI = 1/500 → 每秒增加 0.1ms 级别)<br>
+    <strong>减窗 (MD)</strong>: 每次 underrun → target = target × <code>kD</code><br>
+    (典型 kD = 2.0 → target 翻倍)<br>
+    <strong>问题</strong>: 减窗太快 (翻倍) → 延迟爆增 → 之后需要很长时间的 AI 才能降回来。<br>
+    <strong>改进</strong>: 区分<strong>软 underrun</strong> (丢 ≤ 2 包) 和<strong>硬 underrun</strong> (丢 > 2 包) → 软 underrun 时 target += 5ms (不翻倍)，硬 underrun 时翻倍。
+    </p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>决策树方法 — 视频 JitterBuffer 的多信号融合</h4>
+    <div class="lbl">根据多种状态组合做出决策</div>
+    <p>
+    视频 JitterBuffer 不使用简单的 AIMD，而是<strong>信号融合决策树</strong>:<br>
+    <strong>输入</strong>: underrun 频率、丢包率、解码延迟、播放延迟、buffer 占用率、RTT。<br>
+    <strong>规则</strong>:<br>
+    • 无 underrun + buffer_occupancy > 80% → <code>target -= 10ms</code> (缓冲太多)<br>
+    • underrun + RTT 低 → <code>target += 20ms</code> (网络突发，增加缓冲)<br>
+    • underrun + RTT 高 → <code>target += 5ms</code> (网络已经拥堵，慎加延迟)<br>
+    • 连续 underrun 3 次 → <code>target *= 1.5</code> (紧急扩张)<br>
+    • buffer_occupancy < 20% + 无丢包 → <code>target -= 2ms</code> (轻微回收)
+    </p>
+  </div>
+</div>
+
+<!-- Ch7: 源码位置 -->
+<h2 class="sh">7. WebRTC 源码结构 — 在哪里找 JitterBuffer？</h2>
+<p class="ss">关键源文件 · 入口函数 · 核心数据结构速查</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>模块</th><th>关键文件</th><th>核心类/函数</th></tr></thead>
+  <tbody>
+    <tr><td class="g"><strong>音频 NetEQ</strong></td><td><code>modules/audio_coding/neteq/</code></td><td>—</td></tr>
+    <tr><td>├ 入口 & 主循环</td><td><code>neteq_impl.cc</code></td><td><code>NetEqImpl::GetAudio()</code> — 每 10ms 调用一次，返回 PCM</td></tr>
+    <tr><td>├ 包缓冲</td><td><code>packet_buffer.cc</code></td><td><code>PacketBuffer::InsertPacket()</code> / <code>GetNextPacket()</code></td></tr>
+    <tr><td>├ 决策器 (MCU)</td><td><code>decision_logic.cc</code></td><td><code>DecisionLogic::GetDecision()</code> → 返回 NORMAL/EXPAND/ACCELERATE/…</td></tr>
+    <tr><td>├ 延迟管理</td><td><code>delay_manager.cc</code></td><td><code>DelayManager::Update()</code> → 返回 target_level_ms</td></tr>
+    <tr><td>├ PLC (丢包隐藏)</td><td><code>expand.cc</code></td><td><code>Expand::Process()</code> — LPC + pitch 外推</td></tr>
+    <tr><td>├ 时间伸缩</td><td><code>accelerate.cc</code> / <code>preemptive_expand.cc</code></td><td>PSOLA 加速/减速</td></tr>
+    <tr><td>├ 合并过渡</td><td><code>merge.cc</code></td><td><code>Merge::Process()</code> — PLC→正常 平滑过渡</td></tr>
+    <tr><td class="g"><strong>视频 JitterBuffer</strong></td><td><code>modules/video_coding/</code></td><td>—</td></tr>
+    <tr><td>├ 帧接收</td><td><code>rtp_video_stream_receiver2.cc</code></td><td><code>RtpVideoStreamReceiver2::OnReceivedPayloadData()</code></td></tr>
+    <tr><td>├ 帧缓冲</td><td><code>frame_buffer2.cc</code></td><td><code>FrameBuffer::InsertFrame()</code> / <code>NextFrame()</code></td></tr>
+    <tr><td>├ 参考帧查找</td><td><code>rtp_frame_reference_finder.cc</code></td><td><code>RtpFrameReferenceFinder::ManageFrame()</code></td></tr>
+    <tr><td>├ 帧解码时序</td><td><code>timing.cc</code></td><td><code>VCMTiming::TargetDelayInternal()</code> — 延迟的核心估计</td></tr>
+    <tr><td>├ 抖动估计</td><td><code>jitter_estimator.cc</code></td><td><code>VCMJitterEstimator::UpdateEstimate()</code> — Kalman 滤波</td></tr>
+    <tr><td>├ 包缓冲</td><td><code>packet_buffer.cc</code></td><td><code>PacketBuffer::InsertPacket()</code> — RTP 包排序</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">📂 关键数据结构</div>
+  <strong>音频</strong>: <code>struct Packet</code> (seq, timestamp, payload, priority, waiting_time) · <code>struct DecisionLogic::NetEqStatus</code> (playout_timestamp, target_timestamp, packet_buffer_info)<br>
+  <strong>视频</strong>: <code>class VCMTiming</code> (min_playout_delay, max_playout_delay, jitter_delay, decode_delay, render_delay) · <code>struct FrameInfo</code> (rtp_timestamp, render_time, is_decodable, continuous, num_missing_continuous)
+</div>
+
+<!-- Ch8: 调试 -->
+<h2 class="sh">8. 调试与调优 — 实战参数与方法</h2>
+<p class="ss">chrome://webrtc-internals · 关键指标 · 常见问题诊断 · 参数建议</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>chrome://webrtc-internals 关键指标</h4>
+    <div class="lbl">视频收发统计 · jitterBuffer 专用字段</div>
+    <p>
+    <strong>音频 (ssrc → audioLevel)</strong>:<br>
+    <code>googJitterBufferMs</code>: 当前 JitterBuffer 目标延迟<br>
+    <code>googJitterBufferMs2</code>: 实际 buffer 占用 (ms)<br>
+    <code>googPreferredJitterBufferMs</code>: 偏好延迟 (由接收端设定)<br>
+    <code>googExpandRate</code>: PLC 扩展帧比例 → 高说明频繁 underrun<br>
+    <code>googAccelerateRate</code>: 时间压缩帧比例 → 高说明 buffer 太长<br>
+    <strong>视频 (ssrc → framesReceived)</strong>:<br>
+    <code>googJitterBufferMs</code> / <code>googCurrentDelayMs</code>: 视频缓冲延迟<br>
+    <code>googInterframeDelayMax</code>: 最大帧间延迟<br>
+    <code>googJitterBufferDelayLargerThan750ms</code>: 超大缓冲延迟计数<br>
+    <code>googNacksSent</code>: NACK 数 → 丢包多
+    </p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>常见问题诊断</h4>
+    <div class="lbl">现象 → 根因 → 解决</div>
+    <div class="ptbl" style="font-size:10px;margin:10px 0 0">
+    <table>
+    <thead><tr><th>现象</th><th>根因</th><th>解决</th></tr></thead>
+    <tbody>
+    <tr><td>googExpandRate > 5%</td><td>网络抖动大，buffer 太小</td><td class="g">增大 min_playout_delay</td></tr>
+    <tr><td>googAccelerateRate > 5%</td><td>buffer 太大，积累过多</td><td>减小 target delay</td></tr>
+    <tr><td>视频卡顿 + JitterBufferDelay 稳定</td><td>解码太慢 (非网络问题)</td><td class="r">降低分辨率/码率</td></tr>
+    <tr><td>JitterBufferDelay 持续上涨</td><td>时钟漂移 (收发时钟不同步)</td><td>检查 NTP 同步</td></tr>
+    <tr><td>频繁 PLI 请求</td><td>参考帧丢失 + NACK 不及</td><td class="y">启用 FEC + 降低 NACK 延迟</td></tr>
+    </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<div class="callout success">
+  <div class="ct">✅ 调优建议</div>
+  <strong>音频</strong>: min_playout_delay 默认 30ms → 蜂窝网络建议 50~80ms。WiFi 保持 30ms 即可。<br>
+  <strong>视频</strong>: min_playout_delay 默认 0 → <em>总是设置一个非零最小值</em> (建议 50ms) 以吸收帧间抖动。max_playout_delay 建议 200~500ms。<br>
+  <strong>通用</strong>: 开启 <code>--force-fieldtrials=WebRTC-Video-PlayoutDelay/min_ms:50,max_ms:200</code> (Chrome 命令行) 或通过 SDP <code>a=playout-delay:50-200</code>。<br>
+  <strong>嵌入式</strong>: 内存受限时降低 buffer 上限，但接受更高的 underrun 风险。优先保障音频 (NetEQ PLC 效果远好于视频冻结)。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  WebRTC JitterBuffer Deep Dive — 2026-06 · NetEQ · VideoJB · Delay Estimation · Adaptive Playout<br>
+  Reference: WebRTC source (chromium.googlesource.com) · RFC 3550 · NetEQ original GIPS paper
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+
+<!-- Jitter intro Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('jitterCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=310;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var m=30, pad=40, w=W-2*pad;
+
+  // Title
+  ctx.fillStyle='#b0b0d0'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('发送端以固定 20ms 间隔发送 → 网络传输引入随机延迟 → 到达时间间隔不均匀', W/2, m-10);
+
+  // Send timeline
+  var sendY=50, laneH=30;
+  ctx.fillStyle='#7777aa'; ctx.font='11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Sender', pad, sendY-10);
+
+  for(var i=0; i<10; i++){
+    var sx=pad+i*(w/10);
+    ctx.fillStyle='rgba(56,189,248,0.25)'; ctx.fillRect(sx, sendY, w/10-3, laneH);
+    ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.strokeRect(sx, sendY, w/10-3, laneH);
+    ctx.fillStyle='#fff'; ctx.font='9px "JetBrains Mono",monospace'; ctx.textAlign='center';
+    ctx.fillText(i, sx+(w/10-3)/2, sendY+20);
+  }
+  ctx.fillStyle='#8888aa'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('ΔT = 20ms 恒定', W/2, sendY+laneH+12);
+
+  // Network cloud
+  var netY=sendY+laneH+28;
+  ctx.fillStyle='rgba(108,99,255,0.06)'; ctx.fillRect(pad, netY, w, 36);
+  ctx.strokeStyle='rgba(108,99,255,0.15)'; ctx.setLineDash([4,4]); ctx.strokeRect(pad, netY, w, 36); ctx.setLineDash([]);
+  ctx.fillStyle='#a78bfa'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Network  (WiFi · 路由器 · 蜂窝 · 骨干网)   →   引入随机抖动', W/2, netY+24);
+
+  // Receive timeline
+  var recvY=netY+50;
+  ctx.fillStyle='#7777aa'; ctx.font='11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Receiver (with Jitter)', pad, recvY-10);
+
+  // Arrival times with jitter
+  var jitter=[0, 18, 25, 15, 45, 19, 38, 22, 50, 20];
+  var accum=pad;
+  for(var i=0; i<10; i++){
+    var bw=(w/10-3); // base width
+    var delayW=jitter[i]*w/220; // extra width proportional to jitter
+    var gw=Math.max(bw, bw+delayW*0.3);
+    ctx.fillStyle=i%2==0?'rgba(248,113,113,0.2)':'rgba(251,191,36,0.18)';
+    ctx.fillRect(accum, recvY, gw, laneH);
+    ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.strokeRect(accum, recvY, gw, laneH);
+    ctx.fillStyle='#fff'; ctx.font='9px "JetBrains Mono",monospace'; ctx.textAlign='center';
+    ctx.fillText(i, accum+gw/2, recvY+20);
+    accum+=gw+1;
+  }
+  ctx.fillStyle='#f87171'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('到达间隔: 15ms ~ 50ms (不均匀!)', W/2, recvY+laneH+12);
+
+  // JitterBuffer absorption
+  var jbY=recvY+laneH+30;
+  ctx.fillStyle='rgba(52,211,153,0.1)'; ctx.fillRect(pad, jbY, w, 40);
+  ctx.strokeStyle='rgba(52,211,153,0.25)'; ctx.lineWidth=1.5; ctx.strokeRect(pad, jbY, w, 40);
+  ctx.fillStyle='#34d399'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('JitterBuffer  (缓冲 40~80ms)  →  吸收抖动  →  均匀间隔输出到解码器', W/2, jbY+26);
+
+  // Output arrow
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif';
+  ctx.fillText('→ 输出: ΔT = 20ms (恢复恒定间隔)', W/2, jbY+60);
+})();
+</script>
+
+<!-- NetEQ Architecture Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('neteqCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=450;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function box(x,y,w,h,line1,line2,color,txtColor){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle=txtColor||'#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(line1,x+w/2,y+h/2-4);
+    if(line2){ ctx.fillStyle='#ccccee'; ctx.font='10px "JetBrains Mono",monospace'; ctx.fillText(line2,x+w/2,y+h/2+14); }
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); var a=Math.atan2(y2-y1,x2-x1),s=7; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-s*Math.cos(a-Math.PI/6),y2-s*Math.sin(a-Math.PI/6)); ctx.lineTo(x2-s*Math.cos(a+Math.PI/6),y2-s*Math.sin(a+Math.PI/6)); ctx.closePath(); ctx.fill(); }
+
+  var m=14, cx=W/2, cw=(W-m2)/3-8;
+
+  // RTP Input
+  box(m+W*0.35, 16, W*0.3, 36, 'RTP Packets Arrive', '乱序 · 抖动 · 丢包', 'rgba(248,113,113,0.15)');
+
+  // Arrow down: RTP → Packet Buffer
+  arrow(cx, 52, cx, 70, 'rgba(248,113,113,0.4)');
+
+  // Three buffers
+  var bufY=76, bufH=80;
+  box(m, bufY, cw, bufH, 'Packet Buffer', '未解码 RTP 包\n按 seq 排序 · 二分插入\nFlush 过期包', 'rgba(248,113,113,0.18)');
+  box(m+cw+8, bufY, cw, bufH, 'Decoded Buffer', '已解码 PCM 帧\n10ms 为单位取用\n播放线程直接消费', 'rgba(52,211,153,0.18)');
+  box(m+2*(cw+8), bufY, cw, bufH, 'Algorithm Buffer', 'PLC · PSOLA · CNG\n信号处理引擎\n缺数据时的"救火队"', 'rgba(56,189,248,0.18)');
+
+  // Arrows between buffers
+  arrow(m+cw, bufY+bufH/2, m+cw+8, bufY+bufH/2, 'rgba(52,211,153,0.3)');
+
+  // MCU Decision
+  var mcuY=bufY+bufH+16;
+  box(m+W*0.2, mcuY, W*0.6, 50, 'MCU — Decision Logic  (决策器)', 'NORMAL · EXPAND · ACCELERATE · PREEMPTIVE_EXPAND · MERGE', 'rgba(251,191,36,0.22)', '#fbbf24');
+
+  // Feedback arrows
+  arrow(cx, mcuY, cx, bufY+bufH, 'rgba(251,191,36,0.35)');
+  arrow(m+cw+cw/2, mcuY, m+cw+cw/2, bufY+bufH, 'rgba(251,191,36,0.35)');
+
+  // Delay Manager
+  var dmY=mcuY+66;
+  box(m+W*0.15, dmY, W*0.7, 42, 'Delay Manager  (自适应延迟估计)', 'Percentile IAT → Target Delay → Kalman Filter → Min-Max 窗口', 'rgba(167,139,250,0.2)', '#a78bfa');
+
+  arrow(cx, mcuY+50, cx, dmY, 'rgba(167,139,250,0.4)');
+
+  // Output
+  var outY=dmY+58;
+  box(m+W*0.3, outY, W*0.4, 36, 'Audio Device Output', '均匀 10ms 间隔 · 无卡顿', 'rgba(52,211,153,0.25)', '#6ee7b7');
+
+  arrow(m+cw+8+cw/2, dmY+42, m+cw+8+cw/2, outY, 'rgba(52,211,153,0.4)');
+
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('NetEQ = Packet Buffer + Decoded Buffer + Algorithm Buffer + MCU + DelayManager — 五者协同工作', W/2, H-10);
+})();
+</script>
+
+<!-- Video JB Pipeline Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('videoJbCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=340;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  function box(x,y,w,h,line1,line2,color){
+    ctx.fillStyle=color; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(line1,x+w/2,y+h/2-3);
+    if(line2){ ctx.fillStyle='#ccccee'; ctx.font='9px "JetBrains Mono",monospace'; ctx.fillText(line2,x+w/2,y+h/2+14); }
+  }
+  function arrow(x1,y1,x2,y2,c){ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); var a=Math.atan2(y2-y1,x2-x1),s=7; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-s*Math.cos(a-Math.PI/6),y2-s*Math.sin(a-Math.PI/6)); ctx.lineTo(x2-s*Math.cos(a+Math.PI/6),y2-s*Math.sin(a+Math.PI/6)); ctx.closePath(); ctx.fill(); }
+
+  var m=14, y=20, bw=160, bh=48, gap=12, g2=24;
+  // Flow: RTP → PacketBuffer → FrameAssembler → ReferenceFinder → Decodable Queue → Decoder
+
+  var total=W-m*2, step=(total-bw*5-gap*4)/5;
+  var steps=[];
+  for(var i=0;i<5;i++) steps.push(m+i*(bw+gap)+i*step+(i>0?step-gap:0));
+
+  // Actually use fixed spacing
+  var sw=total/5;
+
+  box(m, y, bw, bh, '① RTP 接收', '按 SSRC+seq 排序', 'rgba(248,113,113,0.18)');
+  arrow(m+bw, y+bh/2, m+sw, y+bh/2, 'rgba(248,113,113,0.4)');
+
+  box(m+sw, y, bw, bh, '② PacketBuffer', '拼帧: Marker+Start bits', 'rgba(251,191,36,0.18)');
+  arrow(m+sw+bw, y+bh/2, m+2*sw, y+bh/2, 'rgba(251,191,36,0.4)');
+
+  box(m+2*sw, y, bw, bh, '③ ReferenceFinder', '检查参考帧依赖', 'rgba(56,189,248,0.18)');
+  arrow(m+2*sw+bw, y+bh/2, m+3*sw, y+bh/2, 'rgba(56,189,248,0.4)');
+
+  box(m+3*sw, y, bw, bh, '④ 可解码队列', '渲染时间检查', 'rgba(52,211,153,0.18)');
+  arrow(m+3*sw+bw, y+bh/2, m+4*sw, y+bh/2, 'rgba(52,211,153,0.4)');
+
+  box(m+4*sw, y, bw, bh, '⑤ 解码输出', 'decode → render', 'rgba(167,139,250,0.18)');
+
+  // Second row: delay management
+  var dy=y+bh+24;
+  box(m+W*0.15, dy, W*0.7, 40, 'PlayoutDelay 自适应  (AIMD / Min-Max / Kalman Filter)',
+    'min_playout_delay  ──  target_delay  ──  max_playout_delay',
+    'rgba(167,139,250,0.15)','#a78bfa');
+
+  // Feedback arrows from stage 4 to delay manager
+  ctx.strokeStyle='rgba(167,139,250,0.3)'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(m+3*sw+bw/2, y+bh); ctx.lineTo(m+3*sw+bw/2, dy+20); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Late/dropped frame
+  var fy=dy+56;
+  ctx.fillStyle='#f87171'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('迟到帧: Render Time 过期 → 丢弃 → PLI/FIR 请求 I 帧', W/2, fy);
+
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('视频 JitterBuffer: 包排序 → 拼帧 → 检查参考链 → 渲染时间校验 → 自适应延迟调节', W/2, H-10);
+})();
+</script>
+
+<!-- Adaptive Algorithm Canvas -->
+<script>
+(function(){
+  var c=document.getElementById('adaptCanvas');
+  if(!c)return;
+  var dpr=window.devicePixelRatio||1;
+  var W=c.parentElement.clientWidth-40;
+  var H=300;
+  c.style.width=W+'px'; c.style.height=H+'px';
+  c.width=W*dpr; c.height=H*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+
+  var m=50, pad=40, gw=W-2*pad, gh=180;
+  var gx=pad, gy=30;
+
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for(var i=0;i<=10;i++){ ctx.beginPath(); ctx.moveTo(gx,gy+i*gh/10); ctx.lineTo(gx+gw,gy+i*gh/10); ctx.stroke(); }
+  ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(gx,gy); ctx.lineTo(gx+gw,gy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gx,gy+gh); ctx.lineTo(gx+gw,gy+gh); ctx.stroke();
+
+  // Y labels
+  ctx.fillStyle='#7777aa'; ctx.font='9px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('Target (ms)', gx-10, gy-4);
+  ctx.fillText('200', gx-10, gy+gh*0.2);
+  ctx.fillText('100', gx-10, gy+gh*0.5);
+  ctx.fillText('30', gx-10, gy+gh*0.85);
+
+  // X label
+  ctx.fillStyle='#7777aa'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('Time →', gx+gw/2, gy+gh+20);
+
+  // Draw the adaptation curve
+  // Phase 1: startup (steep rise to initial buffer)
+  ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2.5;
+  ctx.beginPath();
+  var pts=[
+    [0, gh*0.9],   // start at 0ms buffer
+    [gw*0.05, gh*0.5], // quick ramp to initial target 100ms
+    [gw*0.15, gh*0.48], // stabilize
+    [gw*0.25, gh*0.5],
+    [gw*0.35, gh*0.52], // slight jitter absorbed
+    [gw*0.40, gh*0.3],  // underrun → MD: target *= 2 (100→200)
+    [gw*0.45, gh*0.35], // jitter detected, stay high
+    [gw*0.55, gh*0.45], // AI: slowly decrease
+    [gw*0.65, gh*0.55],
+    [gw*0.75, gh*0.58],
+    [gw*0.80, gh*0.30], // another underrun → MD
+    [gw*0.85, gh*0.38], // AI recovery
+    [gw*0.95, gh*0.50],
+    [gw, gh*0.48]
+  ];
+  pts.forEach(function(p,i){ if(i==0)ctx.moveTo(gx+p[0],gy+p[1]); else ctx.lineTo(gx+p[0],gy+p[1]); });
+  ctx.stroke();
+
+  // Annotations
+  ctx.fillStyle='#38bdf8'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('启动缓冲积累', gx+gw*0.05, gy-8);
+  ctx.fillText('↑ Underrun: MD 翻倍', gx+gw*0.40, gy+gh*0.22);
+  ctx.fillText('Underrun ↑', gx+gw*0.80, gy+gh*0.22);
+
+  ctx.fillStyle='rgba(248,113,113,0.15)'; ctx.fillRect(gx+gw*0.39, gy+gh*0.1, gw*0.04, gy+gh*0.25);
+  ctx.fillRect(gx+gw*0.79, gy+gh*0.1, gw*0.04, gy+gh*0.25);
+  ctx.strokeStyle='rgba(248,113,113,0.3)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.strokeRect(gx+gw*0.39, gy+gh*0.1, gw*0.04, gy+gh*0.25);
+  ctx.strokeRect(gx+gw*0.79, gy+gh*0.1, gw*0.04, gy+gh*0.25);
+  ctx.setLineDash([]);
+
+  ctx.fillStyle='#8888aa'; ctx.font='10px sans-serif';
+  ctx.fillText('AIMD: 正常时缓慢缩减 (AI ↓) · Underrun 时快速扩张 (MD ↑) · 在延迟和卡顿之间动态平衡', W/2, gy+gh+40);
+})();
+</script>
+
+</body>
+</html>

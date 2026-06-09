@@ -213,7 +213,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 4. 实时流媒体 & WebRTC ═══════ -->
 <section class="sec" id="streaming">
-  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">9 篇</span></h2>
+  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">10 篇</span></h2>
   <p class="col-desc">WebRTC 协议栈、LiveKit SFU 架构、弱网对抗——从信令到媒体传输的全链路</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#38bdf8" href="livekit_protocols_learn.html">
@@ -239,6 +239,12 @@ html{scroll-behavior:smooth}
       <h3>弱网对抗技术</h3>
       <span class="cnt">完整</span>
       <p>FEC / NACK / GCC / RED / 重传策略全解析</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="webrtc_gcc_algorithm.html">
+      <span class="icon">&#x1F4C8;</span>
+      <h3>GCC 拥塞控制算法</h3>
+      <span class="cnt">完整</span>
+      <p>Kalman 滤波 · 延迟梯度 · AIMD · 丢包检测 · Transport-CC · IPC 调优</p>
     </a>
     <a class="col-card" style="--cc:#38bdf8" href="livekit_cloud_adaptation.html">
       <span class="icon">&#x2601;&#xFE0F;</span>
@@ -459,7 +465,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 7. 蓝牙 BLE ═══════ -->
 <section class="sec" id="bluetooth">
-  <h2 class="col-title">蓝牙 BLE &amp; BlueZ<span class="sec-count">2 篇</span></h2>
+  <h2 class="col-title">蓝牙 BLE &amp; BlueZ<span class="sec-count">8 篇</span></h2>
   <p class="col-desc">从物理层 GFSK 调制到 Linux BlueZ D-Bus API — BLE 协议栈全链路</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#38bdf8" href="Bluetooth/BLE_Deep_Dive.html">
@@ -473,6 +479,42 @@ html{scroll-behavior:smooth}
       <h3>Linux BlueZ 深度剖析</h3>
       <span class="cnt">完整</span>
       <p>内核 net/bluetooth/ · bluetoothd · D-Bus API · HCI H4/H5/btusb · GATT Client/Server · 交叉编译 · 调试排错</p>
+    </a>
+    <a class="col-card" style="--cc:#34d399" href="Bluetooth/BLE_Protocol_Design.html">
+      <span class="icon">&#x1F4E6;</span>
+      <h3>BLE 应用传输协议设计</h3>
+      <span class="cnt">完整</span>
+      <p>OTA · 小数据 · 音频流三场景协议格式、MTU分片、CRC校验、重传策略、吞吐优化</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="Bluetooth/BLE_Connection_Lifecycle.html">
+      <span class="icon">&#x1F50D;</span>
+      <h3>BLE 连接全生命周期</h3>
+      <span class="cnt">完整</span>
+      <p>广播→扫描→连接→服务发现→数据交互的完整空中包级时间线</p>
+    </a>
+    <a class="col-card" style="--cc:#f87171" href="Bluetooth/BR_EDR_Connection_Lifecycle.html">
+      <span class="icon">&#x1F4E1;</span>
+      <h3>BR/EDR 连接全生命周期</h3>
+      <span class="cnt">完整</span>
+      <p>Inquiry 发现→Paging 连接→SDP 服务查询→RFCOMM 串口→SPP 透传</p>
+    </a>
+    <a class="col-card" style="--cc:#f59e0b" href="Bluetooth/BLE_Compatibility_Debugging.html">
+      <span class="icon">&#x1F50E;</span>
+      <h3>BLE 兼容性与疑难杂症</h3>
+      <span class="cnt">完整</span>
+      <p>iOS 诡异行为 · Android 碎片化 · 连接/配对失败 · GATT 坑 · 空中抓包诊断</p>
+    </a>
+    <a class="col-card" style="--cc:#a78bfa" href="Bluetooth/BLE_Packet_Capture_Analysis.html">
+      <span class="icon">&#x1F4E1;</span>
+      <h3>蓝牙抓包与 HCI 分析</h3>
+      <span class="cnt">完整</span>
+      <p>nRF Sniffer · Wireshark 过滤 · HCI Log · btmon · 4 大实战案例空中包拆解</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="Bluetooth/BLE_Protocol_Stack_Deep_Dive.html">
+      <span class="icon">&#x1F3D7;&#xFE0F;</span>
+      <h3>BLE 协议栈深度剖析</h3>
+      <span class="cnt">完整</span>
+      <p>Controller/Host分块 · PHY→LL→HCI→L2CAP→ATT→SM→GATT 逐层解析 · 数据流追踪</p>
     </a>
   </div>
 </section>

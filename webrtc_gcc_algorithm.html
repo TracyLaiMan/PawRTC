@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC GCC 拥塞控制算法 — 深度解析</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.ptbl{margin:14px 0 !important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">双控制器</a><span class="sep"></span>
+  <a href="#s3">延迟控制器</a><span class="sep"></span>
+  <a href="#s4">丢包控制器</a><span class="sep"></span>
+  <a href="#s5">反馈机制</a><span class="sep"></span>
+  <a href="#s6">动态行为</a><span class="sep"></span>
+  <a href="#s7">调优实战</a>
+</nav>
+
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">WebRTC GCC 拥塞控制算法</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">Google Congestion Control — 基于<strong>延迟梯度</strong>和<strong>丢包率</strong>的双引擎自适应码率控制。WebRTC 实时通信的传输质量核心。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">RTP 发送</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">网络传输</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">接收端测量</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">RTCP 反馈</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">GCC 计算新码率</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">编码器调整</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">双引擎</div><div class="l">延迟检测 + 丢包检测</div></div>
+    <div class="stat"><div class="n">Kalman 滤波</div><div class="l">延迟梯度估计</div></div>
+    <div class="stat"><div class="n">5ms</div><div class="l">典型反馈间隔</div></div>
+    <div class="stat"><div class="n">~200ms</div><div class="l">收敛时间</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: Architecture ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">GCC 架构：双控制器协同</h2>
+  <p class="sec-sub" id="s2s">GCC 的核心思想：<strong>延迟是拥塞的早期信号</strong>（缓冲区开始堆积但还未丢包），<strong>丢包是拥塞的确认信号</strong>（缓冲区已满）。两者独立运行，最终取<strong>最保守的码率</strong>。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>延迟控制器 (Delay-Based)</h4>
+      <div class="sub">Kalman 滤波 → 过载检测 → AIMD 调整 · 约 200ms 响应</div>
+      <p><strong>输入</strong>：接收端测量的<strong>包间延迟梯度</strong>（每 5ms 一组包的到达时间差 vs 发送时间差）。<br>
+      <strong>核心算法</strong>：Kalman 滤波器估计<strong>网络排队延迟的变化趋势</strong>——过滤掉传输延迟的随机噪声（抖动），提取出真正的拥塞信号（队列增长）。<br>
+      <strong>输出</strong>：三个状态——<strong>Normal</strong>（队列在减小→可以增加码率）、<strong>Overuse</strong>（队列在增长→必须降低码率）、<strong>Underuse</strong>（队列稳定→保持码率）。用 AIMD (Additive Increase / Multiplicative Decrease) 调整目标码率。<br>
+      <strong>意义</strong>：在<strong>丢包发生之前</strong>就检测到拥塞——比单纯基于丢包的算法早 500ms~2s 响应。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>丢包控制器 (Loss-Based)</h4>
+      <div class="sub">RTCP RR 丢包率 → 查表调整 · 约 1-3s 响应</div>
+      <p><strong>输入</strong>：RTCP Receiver Report 中的<strong>丢包率</strong>（fraction lost / cumulative lost）。<br>
+      <strong>核心算法</strong>：根据丢包率查表决定码率调整——丢包率 < 2% → 增加码率；2%~10% → 保持；> 10% → 大幅降低。<br>
+      <strong>输出</strong>：丢包率触发的<strong>最大码率上限</strong>。丢包控制器<strong>不能增加码率超过延迟控制器给出的值</strong>——它只设上限。<br>
+      <strong>意义</strong>：延迟控制器可能在非拥塞场景（如 WiFi 信道切换导致的延迟尖峰）误判——丢包控制器作为<strong>保守的后备</strong>，确保即使延迟信号有噪声，也不会过度压制码率。</p>
+    </div>
+  </div>
+
+  <div class="stage-card" style="max-width:960px;--sc:#6c63ff;margin-top:12px">
+    <div class="stage-num" style="background:#6c63ff">A</div>
+    <div class="stage-body">
+      <h4>最终目标码率 = min(延迟控制器输出, 丢包控制器上限)</h4>
+      <div class="en">两个控制器独立运行，各算各的——取 min 作为最终目标码率。编码器再根据目标码率调整分辨率/帧率/QP。</div>
+      <p><strong>为什么取 min？</strong>延迟控制器激进（AIMD 加性增——每帧微增码率探索可用带宽），丢包控制器保守（丢包 > 10%→乘性降 0.85×）。正常情况下延迟控制器主导；当网络真正拥塞到丢包时→丢包控制器接管→强制大幅降码率→延迟控制器在此基础上重新开始 AIMD 增长。<br>
+      <strong>动态平衡</strong>：延迟控制器倾向于<strong>轻微过载</strong>（不断探索带宽上限—偶尔触发 Overuse→微降→再增加→再触发...反复循环）。丢包控制器作为"安全阀"——当延迟控制器的探索触发了真正的丢包（> 2%）→丢包控制器设上限→延迟控制器在上限之内重新 AIMD。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S3: Delay Controller ═══ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">延迟控制器 — Kalman 滤波 + 过载检测 + AIMD</h2>
+  <p class="sec-sub" id="s3s">这是 GCC 最核心也最复杂的部分——从一个看似简单的"包到达时间差"中<strong>滤除随机噪声、提取真正的拥塞信号</strong>。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Step 1: 包组 (Packet Group)</h4>
+      <div class="sub">每 5ms 一组——组内包几乎同时发送，组间才有信息量</div>
+      <p>发送端以<strong>突发方式</strong>发送 RTP 包（一个视频帧可能封装为多个 RTP 包，在~1ms 内连续发出）。GCC 将<strong>连续发送且间隔 ≤ 5ms</strong>的包归为一个 <strong>Burst Group</strong>。组内的包间延迟差没有信息量——它们到达时间的差异几乎全是排队延迟抖动（而非真正的网络变化）。<br>
+      <strong>组间延迟</strong>才有意义：第 N 组的最后一个包与第 N-1 组的最后一个包之间的<strong>到达时间差 vs 发送时间差</strong>——这个差值反映了<strong>在这两组之间网络中队列的变化</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>Step 2: Kalman 滤波器</h4>
+      <div class="sub">从噪声中估计真实的排队延迟变化趋势</div>
+      <p><strong>状态方程</strong>：<code>θ[n] = θ[n-1] + u[n]</code>（θ = 单向排队延迟梯度, u = 过程噪声——网络本身的变化）。<br>
+      <strong>观测方程</strong>：<code>d[n] = θ[n] + C·m[n] + v[n]</code>（d = 测量到的包间延迟差, C·m = 传输速率变化导致的基线偏移, v = 测量噪声——抖动）。<br>
+      Kalman 滤波器根据 <strong>过程噪声方差</strong>（网络变化多快）和 <strong>测量噪声方差</strong>（抖动多大）动态权衡：测量噪声大时（抖动大）→<strong>更信任预测</strong>（θ 平滑——不会因偶然抖动误判Overuse）；过程噪声大时（网络本身波动大）→<strong>更信任测量</strong>（θ 响应快——快速跟上带宽变化）。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Step 3: 过载检测 + AIMD</h4>
+      <div class="sub">θ 与阈值的比较 → 三个状态</div>
+      <p>Kalman 滤波器输出当前估计的 <strong>θ (排队延迟梯度)</strong>，单位：ms/s（每秒钟排队时间变化的毫秒数）。将其与<strong>动态阈值 γ</strong> 比较：<br>
+      <strong>θ > γ</strong>（梯度上限，如 10ms/s）→ <strong>Overuse</strong>：队列在快速堆积→<strong>乘性降码率</strong>（A = A × 0.85）。<br>
+      <strong>θ < -γ</strong>（梯度下限）→ <strong>Underuse</strong>：队列在快速排空→<strong>加性增码率</strong>（A = A + 恒定增量——每帧约 5-30kbps）。<br>
+      <strong>-γ ≤ θ ≤ γ</strong> → <strong>Normal</strong>：队列稳定→<strong>保持码率</strong>。<br>
+      <strong>自适应阈值 γ</strong>：静止时 γ 大（容忍更多噪声——避免误判）；检测到 Overuse 后 γ 变小（敏感——快速响应验证是否真的拥堵）；确认拥堵后 γ 恢复——避免持续压制。</p>
+    </div>
+  </div>
+
+  <div class="cblock" style="max-width:960px;margin-top:16px"><span class="cm">// GCC 延迟控制器的核心逻辑（伪代码）</span>
+<span class="cm">// 每收到一个 RTCP Transport-CC 反馈包时执行</span>
+
+<span class="kw">void</span> DelayBasedController::<span class="fn">OnFeedback</span>(feedback) {
+    <span class="kw">for</span> (each packet_group in feedback) {
+        <span class="cm">// 1. 计算包间延迟梯度</span>
+        <span class="kw">double</span> send_delta   = group.send_time   - prev_group.send_time;
+        <span class="kw">double</span> arrive_delta = group.arrive_time - prev_group.arrive_time;
+        <span class="kw">double</span> delay_gradient = arrive_delta - send_delta;
+
+        <span class="cm">// 2. Kalman 滤波: 估计真实的排队延迟变化趋势 θ</span>
+        kalman_filter_.<span class="fn">Predict</span>();
+        kalman_filter_.<span class="fn">Update</span>(delay_gradient);
+        <span class="kw">double</span> theta = kalman_filter_.<span class="fn">estimated_queue_delay_trend</span>();
+
+        <span class="cm">// 3. 过载检测 — 与自适应阈值比较</span>
+        <span class="kw">if</span> (theta > overuse_threshold_) {
+            state_ = OVERUSE;
+            <span class="fn">OveruseDetected</span>();  <span class="cm">// → 乘性降码率: A = A * 0.85</span>
+        } <span class="kw">else</span> <span class="kw">if</span> (theta < -overuse_threshold_) {
+            state_ = UNDERUSE;
+            <span class="fn">UnderuseDetected</span>(); <span class="cm">// → 保持, 准备在 Normal 后加性增</span>
+        } <span class="kw">else</span> {
+            state_ = NORMAL;
+            <span class="fn">NormalDetected</span>();   <span class="cm">// → 加性增码率: A = A + kBitrateIncrement</span>
+        }
+    }
+}</div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S4: Loss Controller ═══ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">丢包控制器 — 保守的安全阀</h2>
+  <p class="sec-sub" id="s4s">丢包控制器逻辑比延迟控制器简单得多——本质上是一个<strong>查表状态机</strong>。它的价值在于<strong>可靠</strong>——丢包率是确定性的拥塞信号，不会像延迟那样被抖动误导。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>丢包率 → 码率乘数</h4>
+      <div class="sub">RTCP RR fraction_lost → 查表 → 乘性调整</div>
+      <p>GCC 根据最近一个 RTCP 报告周期（通常 100ms~1s）内的<strong>丢包比例</strong>决定调整乘数：<br>
+      <strong>丢包率 < 0.5%</strong> → 乘数 = 1.08（增加 8%——探索带宽）<br>
+      <strong>0.5%~2%</strong> → 乘数 = 1.05（小幅增加）<br>
+      <strong>2%~10%</strong> → 乘数 = 1.0（保持——不增不减，谨慎等待）<br>
+      <strong>> 10%</strong> → 乘数 = 0.85（乘性降——大幅降低码率）<br>
+      <strong>注意</strong>：丢包控制器的调整对象是<strong>最大允许码率的上限</strong>，而不是直接设置当前码率。最终生效码率 = min(delay_controller_rate, loss_based_max_rate)。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>与延迟控制器的互补</h4>
+      <div class="sub">延迟信号模糊时 → 丢包信号直接接管</div>
+      <p><strong>场景 A: WiFi 信号波动</strong>——延迟控制器可能因 AP 的信道竞争产生假阳性 Overuse（延迟尖峰→Kalman 估计 θ 增大→误判→降码率）。但丢包率为 0（WiFi 重传在链路层完成——RTP 层看不到丢包）→ 丢包控制器不设上限→延迟控制器的误降很快被 AIMD 恢复。<br>
+      <strong>场景 B: 真实拥塞</strong>——路由器缓冲区满→开始丢包。延迟控制器可能因为缓冲区已满（排队延迟不再增长——θ 可能回落到 Normal 范围——"已经堵死了所以不再恶化"）→ 错误地停止降码率。丢包控制器检测到丢包率 > 10%→强制设上限 = 当前码率 × 0.85——<strong>接管控制</strong>。延迟控制器在此基础上重新 AIMD。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">为什么丢包控制器的阈值是 2% 而不是 0%？</div>
+    网络中的随机丢包（WiFi 干扰、信号弱）即使在没有拥塞时也可能有 0.1%~1% 的丢包。如果阈值是 0% → 任何微小的随机丢包都触发降码率 → GCC 在 WiFi 环境下永远无法达到合理码率。2% 是一个经验阈值——<strong>超过 2% 的丢包几乎一定是拥塞而非随机噪声</strong>。在这个阈值以下，延迟控制器继续主导。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S5: Feedback ═══ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">反馈机制 — Transport-CC vs REMB</h2>
+  <p class="sec-sub" id="s5s">GCC 需要接收端把<strong>每个包的到达时间</strong>和<strong>丢包率</strong>反馈给发送端——两种 RTCP 扩展协议承载这些信息。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>Transport-CC (推荐)</h4>
+      <div class="sub">transport-wide 序列号 + 到达时间戳 · 每包级精度</div>
+      <p>发送端在每个 RTP 包中嵌入一个<strong>全局唯一的 transport-wide 序列号</strong>（Transport-CC 扩展头，1-2 字节开销）。接收端记录每个包的到达时间（精确到 250μs/100μs）。接收端周期性发送 <strong>RTCP Transport-CC Feedback</strong> 包——包含每个 transport-cc 序列号的<strong>到达时间 delta</strong>（以 base time 为参考的 250μs 增量编码）。<br>
+      <strong>精度</strong>：每个包的到达时间独立记录——GCC 可以精确计算任意两个包之间的到达时间差。这是<strong>包组 (Burst Group)</strong> 划分和延迟梯度计算的数据基础。<br>
+      <strong>WebRTC 默认启用</strong>——比 REMB 更精确、更现代。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>REMB (旧方案, 仍支持)</h4>
+      <div class="sub">接收端估算可用带宽 · 直接告诉发送端</div>
+      <p>REMB (Receiver Estimated Maximum Bitrate) 让<strong>接收端自己估算可用带宽</strong>——基于接收到的码率和包到达时间差。接收端运行自己的 GCC 算法（或简化版）→ 计算出一个"建议码率"→ 通过 RTCP REMB 消息发给发送端。<br>
+      <strong>缺点</strong>：① 接收端的计算在 JavaScript 中执行——延迟大、精度低 ② 接收端没有发送端的发送时间戳——只能用"接收间隔"估算——<strong>无法区分"发送端故意不发"和"网络延迟"</strong> ③ 无法做包组级别的精确分析。<br>
+      <strong>现状</strong>：Chrome 已默认使用 Transport-CC；REMB 作为兼容旧版 WebRTC 实现的 fallback 保留。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">Transport-CC Feedback 包的内容（每个反馈周期 ~100ms 发送一次）</div>
+    <div class="cblock" style="margin-top:0"><span class="cm">// RTCP Transport-CC Feedback Message 结构</span>
+Base Sequence Number:  <span class="nu">12345</span>        <span class="cm">// 这个反馈包覆盖的起始 transport-cc 序列号</span>
+Packet Status Count:   <span class="nu">20</span>            <span class="cm">// 这个反馈包覆盖 20 个包</span>
+Reference Time:        <span class="nu">9876543210</span>  <span class="cm">// 基准时间 (64-bit NTP 或 24-bit 250μs tick)</span>
+<span class="cm">// 对每个包:</span>
+  Packet Chunk: [0b10=Received, Delta=<span class="nu">0x03</span>]  <span class="cm">// 收到, 到达时间 = RefTime + 3×250μs</span>
+  Packet Chunk: [0b10=Received, Delta=<span class="nu">0x05</span>]  <span class="cm">// 收到, 到达时间 = RefTime + 5×250μs</span>
+  Packet Chunk: [0b11=NotReceived]           <span class="cm">// 丢失!</span>
+  <span class="cm">// 发送端据此计算: 包12345和12346之间的到达间隔 = (5-3)×250μs = 500μs</span>
+  <span class="cm">// 对比发送间隔: 如果发送间隔是 400μs → 延迟梯度 = 500-400 = +100μs → 队列增长!</span></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: Dynamic ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">动态行为 — GCC 在不同网络条件下的表现</h2>
+  <p class="sec-sub" id="s6s">GCC 不是静态算法——它在不同的网络条件下表现出完全不同的行为特征。理解这些动态是调优 GCC 的关键。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>理想网络 — 有线、低延迟、无丢包</h4>
+      <div class="sub">GCC 表现: 快速探测可用带宽上限，稳定后微调</div>
+      <p>① GCC 从低码率启动（如 300Kbps）→ AIMD 加性增（每帧 +5-30Kbps）→ 在 ~2-5 秒内达到带宽上限 ② 接近上限时延迟控制器检测到微弱的 Overuse 信号→乘性降（×0.85）→短暂回落后重新 AIMD ③ 最终在<strong>带宽上限附近 ±10%</strong> 区间内稳定振荡。<br>
+      <strong>特征</strong>：丢包控制器几乎不介入（丢包率=0%）。延迟控制器的 θ 在 NORMAL 和微弱 OVERUSE 之间交替——这是 GCC 在<strong>健康运行时的正常行为</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>WiFi 环境 — 延迟抖动大、偶发丢包</h4>
+      <div class="sub">GCC 表现: Kalman 滤波抵抗抖动、丢包控制器保守</div>
+      <p>① WiFi 的 MAC 层重传和信道竞争导致<strong>间歇性延迟尖峰</strong>（延迟突然从 5ms 跳到 50ms，持续 20-50ms 后恢复）→ 延迟控制器可能在尖峰时刻误判 Overuse→降码率 ② Kalman 滤波器在抖动大的环境中自动提高对<strong>测量噪声的容忍度</strong>（增加测量噪声协方差 R）→ θ 的估计更平滑——减少误判 ③ WiFi 丢包（0.1-1%）< 2% 阈值→丢包控制器不介入。<br>
+      <strong>特征</strong>：GCC 码率在 WiFi 下<strong>波动更大</strong>（±20%），但不会持续压制。Kalman 的自适应方差是关键——如果方差参数固定，GCC 在 WiFi 下会频繁错误降码率。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>4G/5G 移动网络 — 带宽快速波动</h4>
+      <div class="sub">GCC 表现: 延迟控制器主导、带宽陡降时丢包接管</div>
+      <p>① 4G 的带宽可能在<strong>几秒内从 5Mbps 跌到 500Kbps</strong>（切换基站、进入信号盲区）→ 丢包率瞬间飙升到 20%+→丢包控制器立刻介入：最大码率上限 = 当前码率 × 0.85 → 延迟控制器在此基础上重新 AIMD ② 带宽回升时→延迟控制器的 AIMD 加性增 <strong>速度太慢</strong>（需要几秒才能从 500Kbps 爬回 5Mbps）→ GCC 在恢复阶段<strong>码率偏低</strong>→ 画质暂时下降 ③ BWE (Bandwidth Estimation) 的 <strong>early ramp-up</strong> 机制：检测到丢包率连续多个周期 < 0.5%→<strong>加速 AIMD</strong>（增量从 5Kbps/帧 提升到 20Kbps/帧）。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: Tuning ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">调优实战 — GCC 参数与 IPC 场景适配</h2>
+  <p class="sec-sub" id="s7s">WebRTC 的默认 GCC 参数为视频会议优化——IPC 实时监控场景有完全不同的需求（<strong>低延迟 > 画质</strong>、<strong>稳定 > 峰值吞吐</strong>）。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>IPC 场景的 GCC 调优方向</h4>
+      <div class="sub">降低延迟容限 · 减少 AIMD 惯性 · 加速恢复</div>
+      <p><strong>1. 减少 AIMD 加性增量</strong>（从默认 ~30Kbps/帧 降到 ~5-10Kbps/帧）：GCC 的 AIMD 在正常模式下不断加性增码率→轻微 Overuse→微降→再加→...这个循环在 IPC 场景中被感知为<strong>周期性的码率波动</strong>（画质时好时坏）。减小增量→波动幅度减小→码率更稳定。<br>
+      <strong>2. 降低 Overuse 检测阈值</strong>（γ 从 10ms/s 降到 5-8ms/s）：IPC 端到端延迟目标 < 200ms——需要比视频会议更早检测到拥塞。降低阈值→更快响应→延迟更低但码率可能更保守。<br>
+      <strong>3. 丢包控制器阈值收紧</strong>：丢包率 > 5%（vs 默认 10%）→触发降码率。IPC 场景丢包 5% 已经影响 AI 检测准确率——需要更早介入。<br>
+      <strong>4. 禁用或限制 probing</strong>：GCC 在空闲时会主动探测更高码率（probe）→ 短暂发送高于当前估计的码率→ 在 IPC 固定码率场景中<strong>毫无意义</strong>——只会引起短暂的延迟尖峰。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>通过 Field Trial 参数调整 GCC</h4>
+      <div class="sub">WebRTC 的 GCC 参数通过命令行或代码注入</div>
+      <p>Chrome/WebRTC 的 GCC 参数不直接暴露为 API——通过 <code>--force-fieldtrials</code> 或 C++ 代码中的 <code>webrtc::field_trial</code> 配置：<br>
+      <code>WebRTC-Bwe-ProbingConfiguration/probe_bitrate:1000000,min_probe_bitrate:500000/</code>——限制探测码率范围。<br>
+      <code>WebRTC-Bwe-EstimatedSendRateUpperBound/upper_bound:2000000/</code>——硬限制最大发送码率（2Mbps）。<br>
+      <code>WebRTC-Bwe-LossBasedBweV2/enabled:true,min_loss_rate:0.05/</code>——启用 V2 丢包控制器、降低丢包触发阈值到 5%。<br>
+      <strong>LiveKit SDK (LinkricAI 使用)</strong>：通过 RtpEncodingParameters 的 <code>maxBitrate</code> 和 <code>scaleResolutionDownBy</code> 间接控制 GCC 的行为空间——把上限设得接近期望码率→GCC 的探测范围缩小→更稳定。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ GCC 调优的黄金法则 — 不要在延迟控制器和丢包控制器之间"打架"</div>
+    最常见的错误：为了"提高画质"把丢包控制器的阈值从 10% 调高到 20%——希望"允许更多丢包来换取更高码率"。结果：延迟控制器在探测带宽时触发了真正的拥塞→路由器缓冲区满+丢包→但丢包控制器因为阈值太高不介入→延迟控制器以为自己还可以继续探测→继续加性增→延迟爆炸→<strong>端到端延迟从 50ms 飙升到 2s</strong>——视频会议完全不可用。<br>
+    <strong>原则</strong>：丢包控制器的阈值应该与<strong>端到端延迟目标</strong>对应——延迟目标越严格、丢包阈值越低。IPC 场景的丢包 10% 阈值是合理的（延迟目标 200ms）。当延迟明显恶化时→<strong>降低阈值</strong>而非升高。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  WebRTC GCC 拥塞控制算法 · 深度解析 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="webrtc_weak_network_learn.html">弱网对抗技术 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+</script>
+</body>
+</html>

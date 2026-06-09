@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux/RTOS SDK 设计 — 架构 · API · 版本迭代</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12.5px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cb { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  font-family: "JetBrains Mono","Fira Code",monospace;
+  font-size: 11.5px; line-height: 1.78; overflow-x: auto; color: #c8c8e8; white-space: pre; }
+.cb .kw { color: #a78bfa; font-weight: 600; } .cb .ty { color: #38bdf8; font-weight: 600; }
+.cb .cm { color: #555577; font-style: italic; } .cb .st { color: #34d399; }
+.cb .nu { color: #fbbf24; } .cb .ma { color: #fbbf24; font-weight: 600; } .cb .fn { color: #d2a8ff; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+.chain { background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.04); border-radius:10px;
+  padding:16px 20px; margin:18px 0; font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:10px; line-height:1.55; color:#b0b0d0; white-space:pre; overflow-x:auto; }
+.chain b { color:#a78bfa; font-weight:600; } .chain i { color:#34d399; font-style:normal; }
+.chain em { color:#f87171; font-style:normal; } .chain u { color:#fbbf24; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(24px,5vw,36px);font-weight:900">Linux/RTOS SDK 设计方法论</h2>
+  <p class="sec-sub">系统化知识体系 — 分层架构 · API 设计 · 版本迭代 · ABI 兼容 · 可测试性 · 开发者体验</p>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>架构设计</h4><div class="sub">HAL · OSAL · 中间件 · 模块化</div>
+      <p>五层分层架构 (BSP→HAL→OSAL→Middleware→App)。<em>CRTP 静态多态</em> 在 MCU 上零虚表开销。<strong>DeviceManager 集中式设备生命周期</strong>。严格目录分离 (hal/middleware/os/external)。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>API 设计</h4><div class="sub">Opaque Pointer · 错误码 · 命名规范</div>
+      <p><em>不透明句柄</em> 隐藏实现 → ABI 稳定。统一返回 <code>error_code</code>，输出通过参数指针。<strong>每个公共符号必须有唯一前缀</strong> (C 无命名空间)。create/destroy 配对，get/set 一致。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>版本与兼容</h4><div class="sub">SemVer · SONAME · Deprecation</div>
+      <p><em>Semantic Versioning</em> (MAJOR.MINOR.PATCH)。共享库 <strong>SONAME</strong> 控制 ABI 兼容。增量式 Deprecation 流程：标记→警告→移除 (至少一个大版本周期)。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 架构 ══ -->
+<h2 class="sh">1. 分层架构 — SDK 的骨架设计</h2>
+<p class="ss">严格分层降低耦合 · HAL 隔离硬件 · OSAL 隔离操作系统 · 中间件复用业务逻辑</p>
+
+<div class="chain">
+<span class="cm">/* ═══ Linux/RTOS SDK 标准五层分层架构 ═══ */</span>
+<span class="cm">┌──────────────────────────────────────────────────────────────┐</span>
+<span class="cm">│  <b>Application Layer</b>       用户业务逻辑                      │</span>
+<span class="cm">│  (mylib_init / mylib_process / mylib_deinit)                 │</span>
+<span class="cm">├──────────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>Services / Middleware</b>    协议栈, 文件系统, 日志, Shell       │</span>
+<span class="cm">│  (TCP/IP, BLE, CAN, FAT32, ulog, finsh)                      │</span>
+<span class="cm">├──────────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>OS Abstraction (OSAL)</b>   线程, 互斥锁, 信号量, 队列, 定时器  │</span>
+<span class="cm">│  (CMSIS-OS / POSIX shim / 自定义 OSAL)                       │</span>
+<span class="cm">├──────────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>Hardware Abstraction (HAL)</b>  UART, SPI, I2C, GPIO, ADC, PWM │</span>
+<span class="cm">│  (Peripheral HAL + Board HAL 两级抽象)                        │</span>
+<span class="cm">├──────────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>BSP / Chip Support</b>     寄存器定义, 启动代码, 链接脚本         │</span>
+<span class="cm">│  (CMSIS 头, startup.s, linker.ld, pinmux 配置)               │</span>
+<span class="cm">├──────────────────────────────────────────────────────────────┤</span>
+<span class="cm">│  <b>Hardware</b>               MCU / SoC / 外设芯片                │</span>
+<span class="cm">└──────────────────────────────────────────────────────────────┘</span></div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#f87171">
+    <h4>PHAL — 外设 HAL</h4><div class="lbl">统一 MCU 外设编程接口</div>
+    <p><strong>目标</strong>: 使 UART/SPI/I2C/GPIO 的访问与具体 MCU 型号无关。<br>
+    <strong>实现</strong>: ① <strong>CRTP 静态多态</strong> (C++) — 编译期绑定，零虚表开销 (MCU 关键!)。② 虚拟包装器仅在 Host 测试时启用 (GMock 注入)。③ 接口头文件纯模板，最大化内联。<br>
+    <strong>原则</strong>: <em>一个外设，多层次抽象</em> — 如带流控的 UART 可同时暴露 <code>hal_uart</code> (基础) 和 <code>hal_modem_uart</code> (扩展)。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>OSAL — 操作系统抽象层</h4><div class="lbl">FreeRTOS / RT-Thread / Zephyr / Linux 统一接口</div>
+    <p><strong>核心抽象</strong>: thread_create, mutex_lock/unlock, sem_wait/post, queue_send/recv, timer_start/stop, malloc/free。<br>
+    <strong>实现策略</strong>: ① <strong>CMSIS-OS 汇聚</strong> — 多个 RTOS 适配到 CMSIS-RTOS API → OSAL 统一暴露。② <strong>POSIX shim</strong> — Linux 兼容模式 (pthread/mqueue 映射到 RTOS 原语)。③ <strong>头文件重定向</strong> — 最简单的移植技巧。<br>
+    <strong>代价</strong>: 一次间接调用开销 (<1μs) — 对绝大多数场景可忽略。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 标准 SDK 目录结构 ===== */</span>
+sdk-root/
+├── boards/                <span class="cm">// 板级支持 — 新增板子只改这里</span>
+│   └── myboard/           <span class="cm">// 引脚配置, 外设使能, 板级外设驱动</span>
+├── drivers/
+│   ├── cmsis/             <span class="cm">// 寄存器头, startup, linker script</span>
+│   ├── hal/               <span class="cm">// HAL .c 实现</span>
+│   └── include/           <span class="cm">// HAL .h 公共头</span>
+├── osal/                  <span class="cm">// OS 抽象层</span>
+│   ├── freertos/           <span class="cm">// FreeRTOS 后端</span>
+│   ├── rtthread/           <span class="cm">// RT-Thread 后端</span>
+│   └── linux/              <span class="cm">// Linux/POSIX 后端</span>
+├── middleware/             <span class="cm">// 自研中间件 (协议栈, FS, 日志)</span>
+├── external/              <span class="cm">// 第三方组件 (lwIP, FatFS, mbedTLS)</span>
+├── examples/              <span class="cm">// 示例代码 — ★ 用户的第一入口</span>
+├── tests/                 <span class="cm">// 单元测试 + 集成测试</span>
+├── tools/                 <span class="cm">// 构建/烧录/调试辅助工具</span>
+└── docs/                  <span class="cm">// API 文档 + 移植指南</span></div>
+
+<!-- ══ Ch2: API 设计 ══ -->
+<h2 class="sh">2. API 设计原则 — 让开发者"不会用错"</h2>
+<p class="ss">Opaque Pointer/Handle · 统一错误码 · 命名规范 · 内存所有权 · 线程安全 · 可测试性</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Opaque Pointer — 隐藏实现</h4><div class="lbl">typedef struct xxx_t xxx_t; — 前向声明</div>
+    <p><strong>公共头文件</strong>: 只暴露<strong>不完整类型</strong>的 typedef 和函数声明。<br>
+    <strong>私有 .c 文件</strong>: 包含完整的 struct 定义。<br>
+    <strong>核心优势</strong>: ① <strong>ABI 稳定</strong> — struct 布局变化不需要重编译用户代码 ② <strong>封装</strong> — 用户无法直接访问内部字段 ③ <strong>所有权清晰</strong> — SDK 分配/释放对象。<br>
+    <strong>⚠️ 反例</strong>: 让用户在栈上声明 <code>foo_t obj;</code> → struct 大小变化 → ABI 断裂。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>统一错误码 — 零歧义</h4><div class="lbl">typed enum + 错误字符串函数</div>
+    <p><strong>规则</strong>: 每个公共函数返回 <code>xxx_error_t</code> (typed enum)，输出值通过指针参数。<br>
+    <strong>成功 = 0</strong>: <code>XXX_SUCCESS = 0</code> — C 语言惯用法。<br>
+    <strong>错误详情</strong>: 提供 <code>xxx_error_string(err)</code> 将错误码转为可读字符串。<br>
+    <strong>每条 if 都检查</strong>: <code>if (rc != XXX_SUCCESS) goto cleanup;</code> — goto 是 C 语言最干净的错误处理。<br>
+    <strong>线程安全</strong>: 不使用全局 errno — 每函数返回或每句柄存储错误状态。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>命名规范 — 一致性是王道</h4><div class="lbl">prefix_object_action() — 始终如一</div>
+    <p><strong>类型</strong>: <code>xxx_handle_t</code>, <code>xxx_config_t</code><br>
+    <strong>函数</strong>: <code>xxx_handle_create/destroy()</code>, <code>xxx_buffer_write/read()</code><br>
+    <strong>常量</strong>: <code>XXX_SUCCESS</code>, <code>XXX_ERROR_TIMEOUT</code><br>
+    <strong>宏</strong>: <code>XXX_CHECK_RESULT(x)</code><br>
+    <strong>★ Golden Rule</strong>: <em>每个公共符号必须有库的唯一前缀</em> — C 无命名空间，名称冲突 = 用户构建失败。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== 完整示例: 不透明句柄 + 错误码 + 命名规范 ===== */</span>
+<span class="cm">/* ============ mylib.h (公共头文件) ============ */</span>
+<span class="pp">#include</span> <span class="st">&lt;stdint.h&gt;</span>
+
+<span class="cm">/* 前向声明 — 不暴露 struct 定义 */</span>
+<span class="kw">typedef struct</span> <span class="ty">mylib_ctx_t</span>   mylib_ctx_t;
+<span class="kw">typedef struct</span> <span class="ty">mylib_buffer_t</span> mylib_buffer_t;
+
+<span class="cm">/* 类型化的错误码 */</span>
+<span class="kw">typedef enum</span> {
+    <span class="ma">MYLIB_SUCCESS</span> = <span class="nu">0</span>,
+    <span class="ma">MYLIB_ERROR_INVALID_ARGS</span>,
+    <span class="ma">MYLIB_ERROR_OUT_OF_MEMORY</span>,
+    <span class="ma">MYLIB_ERROR_TIMEOUT</span>,
+    <span class="ma">MYLIB_ERROR_INTERNAL</span>,
+} mylib_error_t;
+
+<span class="cm">/* 生命周期 — SDK 分配/释放 */</span>
+mylib_error_t <span class="fn">mylib_init</span>(<span class="kw">mylib_ctx_t</span> **ctx, <span class="kw">const</span> <span class="kw">mylib_config_t</span> *cfg);
+mylib_error_t <span class="fn">mylib_deinit</span>(<span class="kw">mylib_ctx_t</span> *ctx);
+
+<span class="cm">/* 数据操作 — 统一返回 error, 输出通过参数 */</span>
+mylib_error_t <span class="fn">mylib_process</span>(<span class="kw">mylib_ctx_t</span> *ctx,
+                         <span class="kw">const</span> <span class="kw">mylib_buffer_t</span> *input,
+                         <span class="kw">mylib_buffer_t</span> **output);
+
+<span class="cm">/* 错误信息 */</span>
+<span class="kw">const char</span>* <span class="fn">mylib_error_string</span>(mylib_error_t err);
+
+<span class="cm">/* 版本信息 */</span>
+<span class="kw">void</span> <span class="fn">mylib_version</span>(<span class="ty">int</span> *major, <span class="ty">int</span> *minor, <span class="ty">int</span> *patch);
+
+<span class="cm">/* ============ mylib.c (私有实现) ============ */</span>
+<span class="kw">struct</span> <span class="ty">mylib_ctx_t</span> {
+    <span class="ty">int</span>         state;        <span class="cm">// 用户不可见的内部状态</span>
+    <span class="ty">void</span>        *dma_buf;     <span class="cm">// DMA 缓冲区 (平台相关, 对用户透明)</span>
+    <span class="ty">osal_mutex_t</span> lock;        <span class="cm">// 线程安全锁</span>
+};
+
+mylib_error_t <span class="fn">mylib_init</span>(<span class="kw">mylib_ctx_t</span> **ctx, <span class="kw">const</span> <span class="kw">mylib_config_t</span> *cfg)
+{
+    <span class="kw">mylib_ctx_t</span> *c = <span class="fn">calloc</span>(<span class="nu">1</span>, <span class="kw">sizeof</span>(*c));
+    <span class="kw">if</span> (!c) <span class="kw">return</span> <span class="ma">MYLIB_ERROR_OUT_OF_MEMORY</span>;
+    c-&gt;state = <span class="nu">0</span>;
+    <span class="fn">osal_mutex_create</span>(&amp;c-&gt;lock);
+    *ctx = c;
+    <span class="kw">return</span> <span class="ma">MYLIB_SUCCESS</span>;
+}</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 常见 API 设计反模式</div>
+  <strong>① 暴露内部结构体</strong>: 用户 <code>sizeof(foo_t)</code> 或直接访问 <code>.internal_field</code> → ABI 断裂 / 数据损坏。<br>
+  <strong>② 混用 allocator</strong>: 库内 malloc → 用户 free → 堆损坏 (跨编译器/跨 CRT 时尤其致命)。→ 始终配对 create/destroy。<br>
+  <strong>③ 全局状态</strong>: 单例 + 全局变量 → 多线程不安全 / 不可重入 → 通过句柄传递上下文。<br>
+  <strong>④ 忽略 const 修饰</strong>: <code>void process(buffer_t *buf)</code> 不声明为 const → 用户无法信任输入不被修改。<br>
+  <strong>⑤ 无错误返回</strong>: <code>void do_stuff()</code> → 失败无法通知用户 → 至少返回 error_code。
+</div>
+
+<!-- ══ Ch3: 版本管理 ══ -->
+<h2 class="sh">3. 版本管理与 API/ABI 兼容 — 最棘手的工程问题</h2>
+<p class="ss">Semantic Versioning · SONAME · Deprecation 流程 · ABI 兼容检查表 · 增量演进不破坏用户</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>Semantic Versioning (SemVer)</h4><div class="lbl">MAJOR.MINOR.PATCH — 从版本号看影响</div>
+    <p><strong>PATCH</strong> (1.0.0→1.0.1): Bug 修复 — API/ABI<strong>完全兼容</strong>。用户升级无需任何改动。<br>
+    <strong>MINOR</strong> (1.0.0→1.1.0): 新增功能 — API<strong>向后兼容</strong> (新增接口，不删不改)。重新编译即可。<br>
+    <strong>MAJOR</strong> (1.0.0→2.0.0): 不兼容变更 — <strong>删除/修改</strong> 了公共 API。用户必须修改代码。<br>
+    <strong>0.x.y</strong>: 不稳定版本 — <em>不提供任何兼容保证</em>。min 变更可能破坏一切。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>共享库 SONAME — ABI 守卫</h4><div class="lbl">libxxx.so.MAJOR → ldconfig 自动管理</div>
+    <p><strong>SONAME 规则</strong>: <code>libmylib.so.1</code> (只含 MAJOR 版本号)。<br>
+    <strong>安装</strong>: <code>libmylib.so.1 → libmylib.so.1.2.3</code> (符号链接)<br>
+    <strong>链接</strong>: <code>libmylib.so → libmylib.so.1</code> (编译时链接)<br>
+    <strong>规则</strong>: ① MINOR/PATCH 升级 → <strong>仅改 real name</strong> (libmylib.so.1.2.3→1.3.0) ② MAJOR 升级 → <strong>改 SONAME</strong> (libmylib.so.2)。<br>
+    <strong>效果</strong>: MAJOR 升级后旧二进制自动链接旧 SONAME → 新旧可共存。</p>
+  </div>
+</div>
+
+<div class="ptbl" style="margin-top:14px">
+  <table>
+  <thead><tr><th>变更类型</th><th>举例</th><th>API 兼容?</th><th>ABI 兼容?</th><th>版本号</th></tr></thead>
+  <tbody>
+    <tr><td>新增函数</td><td>添加 <code>mylib_new_feature()</code></td><td class="g">✓</td><td class="g">✓</td><td>MINOR++</td></tr>
+    <tr><td>新增 struct 末尾字段</td><td>在 <code>xxx_config_t</code> 末尾加成员 (且用户不分配该 struct)</td><td class="g">✓</td><td class="g">✓</td><td>MINOR++</td></tr>
+    <tr><td>修改函数内部实现</td><td>优化算法但不改签名</td><td class="g">✓</td><td class="g">✓</td><td>PATCH++</td></tr>
+    <tr><td>扩大 enum 值</td><td>加新的错误码</td><td class="g">✓</td><td class="g">✓</td><td>MINOR++</td></tr>
+    <tr><td>修改函数签名</td><td><code>func(int a)</code> → <code>func(int a, int b)</code></td><td class="r">✗</td><td class="r">✗</td><td class="r"><strong>MAJOR++</strong></td></tr>
+    <tr><td>删除函数</td><td>移除任何 public API</td><td class="r">✗</td><td class="r">✗</td><td class="r"><strong>MAJOR++</strong></td></tr>
+    <tr><td>修改 struct 布局</td><td>重新排序/插入/删除字段 (用户可见)</td><td class="r">✗</td><td class="r">✗</td><td class="r"><strong>MAJOR++</strong></td></tr>
+    <tr><td>改变 typedef 基础类型</td><td><code>mylib_size_t: int→size_t</code></td><td class="y">调用兼容</td><td class="r">✗</td><td class="y"><strong>MAJOR 推荐</strong></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== Deprecation — 安全删除 API 的三步流程 ===== */</span>
+
+<span class="cm">/* 阶段 1: 标记废弃 (v1.2.0 — MINOR 版本) */</span>
+<span class="pp">#define MYLIB_DEPRECATED(msg)</span> \
+    __attribute__((deprecated(msg)))
+
+<span class="ma">MYLIB_DEPRECATED</span>(<span class="st">"Use mylib_v2_process() instead. Will be removed in v3.0"</span>)
+mylib_error_t <span class="fn">mylib_process_legacy</span>(<span class="kw">mylib_ctx_t</span> *ctx, <span class="ty">int</span> flags);
+
+<span class="cm">/* 阶段 2: 运行时警告 (v2.0.0 — MAJOR, 但仍可用) */</span>
+mylib_error_t <span class="fn">mylib_process_legacy</span>(<span class="kw">mylib_ctx_t</span> *ctx, <span class="ty">int</span> flags)
+{
+    <span class="cm">/* 每次调用打印一次 stderr 警告 (或 syslog, 或回调) */</span>
+    <span class="fn">fprintf</span>(stderr, <span class="st">"WARNING: mylib_process_legacy is deprecated. "</span>
+                    <span class="st">"Use mylib_v2_process(). Will be REMOVED in v3.0.0</span><span class="st">\n</span><span class="st">"</span>);
+    <span class="kw">return</span> <span class="fn">mylib_v2_process</span>(ctx, flags);
+}
+
+<span class="cm">/* 阶段 3: 彻底移除 (v3.0.0 — MAJOR) */</span>
+<span class="cm">// 函数实现和声明全部删除</span>
+<span class="cm">// Changelog 明确标注: BREAKING: Removed mylib_process_legacy()</span>
+
+<span class="cm">/* ===== CMake 中的版本管理 ===== */</span>
+<span class="fn">project</span>(mylib VERSION <span class="nu">2</span>.<span class="nu">1</span>.<span class="nu">0</span>)  <span class="cm">// MAJOR.MINOR.PATCH</span>
+
+<span class="cm">// 自动生成 version.h</span>
+<span class="fn">configure_file</span>(version.h.in version.h @ONLY)
+
+<span class="cm">// version.h.in:</span>
+<span class="pp">#define MYLIB_VERSION_MAJOR</span> @mylib_VERSION_MAJOR@
+<span class="pp">#define MYLIB_VERSION_MINOR</span> @mylib_VERSION_MINOR@
+<span class="pp">#define MYLIB_VERSION_PATCH</span> @mylib_VERSION_PATCH@
+<span class="pp">#define MYLIB_VERSION_STRING</span> <span class="st">"@mylib_VERSION@"</span>
+
+<span class="cm">// 设置 SONAME</span>
+<span class="fn">set_target_properties</span>(mylib PROPERTIES
+    VERSION   <span class="st">"${PROJECT_VERSION}"</span>        <span class="cm">// real name: libmylib.so.2.1.0</span>
+    SOVERSION <span class="st">"${PROJECT_VERSION_MAJOR}"</span>  <span class="cm">// SONAME:   libmylib.so.2</span>
+)</div>
+
+<div class="callout info">
+  <div class="ct">API 生命周期管理 — 三个铁律</div>
+  <strong>① 永远不直接修改公共 API</strong>: 要改 → 先加新函数 (vN.minor) → 标记旧函数 deprecated (vN+1.minor) → 下个 MAJOR 版本删除 (vN+2)。<br>
+  <strong>② Changelog 是合同</strong>: 每个 release 必须清晰标注 Breaking Changes / Deprecations / Additions。<br>
+  <strong>③ 0.x 阶段不保证兼容</strong>: 达到一定稳定性后尽快发布 1.0.0 → 承诺向后兼容 → 用户才有信心升级。
+</div>
+
+<!-- ══ Ch4: 构建系统 ══ -->
+<h2 class="sh">4. 构建系统与包管理 — 降低集成门槛</h2>
+<p class="ss">CMake 现代化构建 · pkg-config · 交叉编译 · 多平台支持 · Kconfig 配置系统</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>CMake — 现代 C/C++ 构建标配</h4><div class="lbl">target-based 设计 · 自动依赖传递</div>
+    <p><strong>核心原则</strong>: <code>target_include_directories</code> + <code>target_link_libraries</code> 的 <strong>PUBLIC/PRIVATE/INTERFACE</strong> 三级可见性。<br>
+    <strong>PUBLIC</strong>: 自己的头文件和依赖者的头文件都需要。<br>
+    <strong>PRIVATE</strong>: 仅 .c 实现需要 — 不传染给依赖者。<br>
+    <strong>INTERFACE</strong>: 仅依赖者需要 (header-only 库)。<br>
+    <strong>交叉编译</strong>: <code>-DCMAKE_TOOLCHAIN_FILE=arm-none-eabi.cmake</code> 一键切换目标平台。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>pkg-config — 编译期依赖发现</h4><div class="lbl">mylib.pc → --cflags / --libs 自动推导</div>
+    <p><code>pkg-config --cflags mylib</code> → <code>-I/usr/include/mylib</code><br>
+    <code>pkg-config --libs mylib</code> → <code>-lmylib</code><br>
+    <strong>CMake 集成</strong>: <code>find_package(PkgConfig) → pkg_check_modules(MYLIB REQUIRED mylib)</code>。<br>
+    <strong>Kconfig</strong>: RTOS SDK 常用 Kconfig (Linux 内核风格) 进行模块化配置 — <code>CONFIG_MYLIB_ENABLE_FEATURE_X=y</code>。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== CMake: target-based 设计 ===== */</span>
+<span class="fn">add_library</span>(mylib SHARED
+    src/mylib.c
+    src/internal.c
+)
+<span class="fn">target_include_directories</span>(mylib
+    <span class="ma">PUBLIC</span>  include/           <span class="cm">// 用户也需要: mylib.h 在此</span>
+    <span class="ma">PRIVATE</span> src/internal.h      <span class="cm">// 仅 mylib.c 需要: 不泄露给用户</span>
+)
+<span class="fn">target_link_libraries</span>(mylib
+    <span class="ma">PUBLIC</span>  pthread            <span class="cm">// 用户代码若包含 mylib.h → 也需链接 pthread</span>
+    <span class="ma">PRIVATE</span> math               <span class="cm">// 仅在 mylib.c 内部使用 → 用户不需要</span>
+)
+<span class="fn">set_target_properties</span>(mylib PROPERTIES
+    VERSION   <span class="nu">1</span>.<span class="nu">2</span>.<span class="nu">0</span>
+    SOVERSION <span class="nu">1</span>                 <span class="cm">// libmylib.so.1</span>
+)
+
+<span class="cm">/* ===== pkg-config: mylib.pc.in → mylib.pc ===== */</span>
+<span class="kw">prefix</span>=/usr/local
+<span class="kw">exec_prefix</span>=${prefix}
+<span class="kw">libdir</span>=${exec_prefix}/lib
+<span class="kw">includedir</span>=${prefix}/include/mylib
+
+<span class="kw">Name</span>: mylib
+<span class="kw">Description</span>: My SDK Library
+<span class="kw">Version</span>: @PROJECT_VERSION@
+<span class="kw">Cflags</span>: -I${includedir}
+<span class="kw">Libs</span>: -L${libdir} -lmylib</div>
+
+<!-- ══ Ch5: 文档 ══ -->
+<h2 class="sh">5. 文档化 — 决定 SDK 生死的隐形因素</h2>
+<p class="ss">API 参考 · Getting Started · Examples · 移植指南 · Doxygen · 交互式体验</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>API 参考 — Doxygen/Sphinx</h4><div class="lbl">每个公共函数必须有文档注释</div>
+    <p><strong>最少信息</strong>: ① 功能描述 (一句话) ② 每个参数的 in/out 语义 ③ 返回值含义 ④ 线程安全性 ⑤ 使用示例代码片段。<br>
+    <strong>Doxygen 标记</strong>: <code>@brief @param[in] @param[out] @return @note @warning @code @endcode</code>。<br>
+    <strong>自动生成</strong>: <code>doxygen Doxyfile</code> → HTML/PDF 参考手册。</p>
+  </div>
+  <div class="cd" style="--cg:#34d399">
+    <h4>Getting Started — 5 分钟体验</h4><div class="lbl">用户 5 分钟内跑通第一个 demo</div>
+    <p><strong>必备内容</strong>: ① 安装依赖 (apt/pacman/brew) ② 克隆+编译三步曲 (cmake/make/make install) ③ 最小示例代码 (50 行以内) ④ 预期输出 (用户确认环境正确)。<br>
+    <strong>黄金法则</strong>: 如果 Getting Started 超过 15 分钟无法跑通 → 潜在用户流失率 > 70%。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>示例代码 — 质量 > 数量</h4><div class="lbl">每个主要功能一个独立示例</div>
+    <p><strong>要求</strong>: ① 可独立编译运行 ② 有清晰的注释说明每一步做什么 ③ 覆盖常见错误处理 ④ 对应真实使用场景 (非玩具示例)。<br>
+    <strong>布局</strong>: <code>examples/01_hello_world/</code>, <code>examples/02_advanced_config/</code>...<br>
+    <strong>CI 验证</strong>: 示例代码必须作为 CI 的一部分编译运行 — 确保文档不过时。</p>
+  </div>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== Doxygen 注释示例 ===== */</span>
+<span class="cm">/**</span>
+<span class="cm"> * @brief  初始化 mylib 库并创建上下文句柄。</span>
+<span class="cm"> *</span>
+<span class="cm"> * 分配内部资源 (DMA 缓冲区、线程池), 配置硬件加速器。</span>
+<span class="cm"> * 必须在任何其他 API 调用前执行, 且每个进程只能调用一次。</span>
+<span class="cm"> *</span>
+<span class="cm"> * @param[out] ctx  返回创建的上下文句柄。调用者负责通过 mylib_deinit() 释放。</span>
+<span class="cm"> * @param[in]  cfg  初始化配置。可为 NULL 使用默认值 (推荐)。</span>
+<span class="cm"> *</span>
+<span class="cm"> * @return MYLIB_SUCCESS           初始化成功</span>
+<span class="cm"> * @return MYLIB_ERROR_OUT_OF_MEMORY 内存不足</span>
+<span class="cm"> * @return MYLIB_ERROR_INTERNAL     硬件初始化失败</span>
+<span class="cm"> *</span>
+<span class="cm"> * @note  本函数不是线程安全的 — 应在单线程初始化阶段调用。</span>
+<span class="cm"> *</span>
+<span class="cm"> * @code</span>
+<span class="cm"> *   mylib_ctx_t *ctx = NULL;</span>
+<span class="cm"> *   mylib_error_t rc = mylib_init(&amp;ctx, NULL);</span>
+<span class="cm"> *   if (rc != MYLIB_SUCCESS) {</span>
+<span class="cm"> *       fprintf(stderr, "Init failed: %s\n", mylib_error_string(rc));</span>
+<span class="cm"> *       return -1;</span>
+<span class="cm"> *   }</span>
+<span class="cm"> *   // ... 使用 ctx ...</span>
+<span class="cm"> *   mylib_deinit(ctx);</span>
+<span class="cm"> * @endcode</span>
+<span class="cm"> */</span>
+mylib_error_t <span class="fn">mylib_init</span>(<span class="kw">mylib_ctx_t</span> **ctx, <span class="kw">const</span> <span class="kw">mylib_config_t</span> *cfg);</div>
+
+<!-- ══ Ch6: 测试 ══ -->
+<h2 class="sh">6. 测试与质量保障 — 让用户信任你的 SDK</h2>
+<p class="ss">单元测试 (Host/MCU) · 集成测试 · 模糊测试 · CI/CD · 代码覆盖率 · 静态分析</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#f87171">
+    <h4>Host 端单元测试</h4><div class="lbl">在 PC 上跑 → 秒级反馈</div>
+    <p><strong>框架</strong>: Unity/CMock (嵌入式首选) / GoogleTest (C++) / Ceedling。<br>
+    <strong>Mock HAL</strong>: 虚拟 GPIO/UART/SPI 接口 → GMock 注入 → 验证 SDK 逻辑<strong>无需真实硬件</strong>。<br>
+    <strong>CRTP + Virtual Wrapper</strong>: 生产路径用 CRTP (零开销), 测试路径用虚函数 (GMock)。<br>
+    <strong>覆盖率</strong>: <code>gcov/lcov</code> → 目标 ≥ 80% 行覆盖率。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>片上集成测试</h4><div class="lbl">真实硬件验证 — 最终真理</div>
+    <p><strong>外设回环</strong>: UART TX→RX, SPI MOSI→MISO 物理连接 → 自发自收验证。<br>
+    <strong>时序容差</strong>: 验证极端条件下的时序 (最高波特率、DMA 全速)。<br>
+    <strong>CI 硬件 Farm</strong>: Jenkins + Labgrid → 自动化烧录+测试真实板卡。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>静态分析 + Fuzz</h4><div class="lbl">编译期 + 运行时双向把关</div>
+    <p><strong>Clang-Tidy / Cppcheck</strong>: 编译期检查潜在 bug。<br>
+    <strong>ASan/UBSan</strong>: 运行时检测内存错误 + 未定义行为。<br>
+    <strong>LibFuzzer / AFL</strong>: 随机输入轰炸 API → 发现边界条件崩溃。<br>
+    <strong>CI 阻断</strong>: 任何 warning + sanitizer error → 构建失败。</p>
+  </div>
+</div>
+
+<!-- ══ Ch7: 案例 ══ -->
+<h2 class="sh">7. 实战案例 — 知名 SDK 的设计智慧</h2>
+<p class="ss">Zephyr · ESP-IDF · Azure RTOS · Memfault · AWS IoT — 从优秀项目中学习的模式</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:14%">SDK</th><th style="width:28%">架构亮点</th><th style="width:28%">API 设计</th><th>版本/兼容策略</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Zephyr RTOS</strong></td><td>DeviceTree 驱动硬件描述 → <strong>编译期设备绑定</strong>。Kconfig 模块化配置。CMake + west 工具链。</td><td>设备驱动统一为 <code>device</code> 对象 + <code>device_api</code> 虚函数表。每个子系统 (GPIO/I2C/SPI) 定义标准 API struct。</td><td class="g">严格 SemVer。每 4 个月一个 release。MAJOR 升级在 LTS 之间。<strong>Deprecation 用 __attribute__((deprecated))</strong>。</td></tr>
+    <tr><td><strong>ESP-IDF</strong></td><td>FreeRTOS 内核 + 自研组件管理器。idf.py 统一构建/烧录/监视。menuconfig 图形化配置。</td><td>事件循环 (esp_event) 解耦组件通信。不透明句柄 (esp_xxx_handle_t)。统一 <code>esp_err_t</code> 错误码。</td><td class="y">MAJOR.MINOR 两级 (如 v5.1→v5.2 兼容, v5→v6 不兼容)。<strong>IDF 版本与芯片支持绑定</strong>。</td></tr>
+    <tr><td><strong>Azure RTOS<br>(ThreadX)</strong></td><td>极简内核 + NetX/USBX/FileX 独立模块。picokernel 架构: 中断处理 < 0.5μs。</td><td>前缀命名: <code>tx_</code> (ThreadX), <code>nx_</code> (NetX)。全部 C API，非 OOP。错误码通过返回值 (UINT status)。</td><td class="y">工业级 ABI 稳定承诺。跨版本兼容周期 5-10 年。不轻易做 breaking change。</td></tr>
+    <tr><td><strong>Memfault<br>(嵌入式 SDK)</strong></td><td>极简集成: 3 个文件 + 平台适配宏。数据压缩后批量上传。零动态内存分配。</td><td>单头文件 <code>memfault/core.h</code>。事件驱动: <code>MEMFAULT_LOG_ERROR()</code> 宏。平台适配通过 <code>memfault_platform_xxx()</code> 弱函数实现。</td><td class="g"><strong>SemVer + 最长 Deprecation 周期</strong>。废弃 API 至少保留 2 个 MINOR 版本。Changelog 详尽。</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 设计自检清单 — 发布前逐项确认</div>
+  <strong>□ API</strong>: 所有公共符号有前缀? 不透明句柄? 统一错误码? const 正确? 线程安全声明?<br>
+  <strong>□ 版本</strong>: SemVer 严格? SONAME 正确? Changelog 有 Breaking Changes 标注?<br>
+  <strong>□ 构建</strong>: CMake target-based? pkg-config .pc 文件? 交叉编译一键切换?<br>
+  <strong>□ 文档</strong>: Doxygen 注释完整? Getting Started 可在 5 分钟内跑通? 每个功能有独立示例?<br>
+  <strong>□ 测试</strong>: Host 单元测试覆盖率 ≥ 80%? CI 通过? ASan/UBSan 无报错? 示例代码在 CI 中运行?<br>
+  <strong>□ DX (开发者体验)</strong>: 安装 < 3 步? 报错信息可读? 命名一致? 无全局状态? create/destroy 严格配对?
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Linux/RTOS SDK Design Patterns — 系统化知识体系 · 2026-06 · C/C++ · CMake · SemVer
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

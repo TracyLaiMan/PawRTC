@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>传统蓝牙 BR/EDR 连接全生命周期 — 从 Inquiry 到 SPP 透传</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:180px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">传统蓝牙 BR/EDR 连接全生命周期</h2>
+  <p class="sec-sub">系统化知识体系 — Inquiry 发现 · Paging 连接 · SDP 服务查询 · RFCOMM 串口仿真 · SPP 透传 · 配对认证</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>Inquiry</strong><br><small>设备发现</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>Paging</strong><br><small>建立连接</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>SDP</strong><br><small>服务发现</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>RFCOMM</strong><br><small>串口仿真</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>SPP</strong><br><small>透传数据</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">79 个信道</div><div class="l">1MHz 间隔</div></div>
+    <div class="stat"><div class="n">1600 hop/s</div><div class="l">跳频速率</div></div>
+    <div class="stat"><div class="n">Inquiry + Paging</div><div class="l">两阶段发现连接</div></div>
+    <div class="stat"><div class="n">~2-10s</div><div class="l">典型连接耗时</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: BR/EDR vs BLE ═══ -->
+<h2 class="sh">1. BR/EDR 与 BLE 的根本差异</h2>
+<p class="ss">传统蓝牙 (BR/EDR) 和低功耗蓝牙 (BLE) <strong>共用同一个品牌名称</strong>但几乎是两套完全不同的协议栈。理解它们的差异是理解 BR/EDR 连接流程的前提。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>BR/EDR — 经典蓝牙</h4>
+    <div class="lbl">79 信道 · 1MHz 间隔 · 1600 hop/s · ACL + SCO</div>
+    <p><strong>物理层</strong>：79 个 1MHz 宽信道（2402~2480MHz），1600 次/秒跳频（每 625μs 一个 slot）。BR 用 GFSK 调制（1Mbps），EDR 用 π/4-DQPSK (2Mbps) 或 8DPSK (3Mbps)。<br>
+    <strong>链路类型</strong>：<strong>ACL (异步无连接)</strong>——数据包传输，有重传，适合文件传输、音频流；<strong>SCO/eSCO (同步面向连接)</strong>——预留固定时隙，无重传，适合双向语音（HFP 通话）。<br>
+    <strong>体系结构</strong>：L2CAP → RFCOMM → SDP。RFCOMM 模拟串口（蓝牙 SPP 的核心）。上层 Profile：A2DP(音乐)、HFP(免提通话)、SPP(串口透传)、HID(键盘鼠标)、OBEX(文件交换)。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>BLE — 低功耗蓝牙</h4>
+    <div class="lbl">40 信道 · 2MHz 间隔 · 连接事件驱动 · 仅 ACL</div>
+    <p><strong>物理层</strong>：40 个 2MHz 宽信道，连接后自适应跳频。1M/2M/Coded PHY。不是按固定时隙跳频，而是按 Connection Event 间隔醒来通信。<br>
+    <strong>链路类型</strong>：<strong>仅 ACL</strong>——没有 SCO 信道（LE Audio 用 LC3 编码通过 ACL 传输——完全不同的机制）。<br>
+    <strong>体系结构</strong>：L2CAP → ATT/GATT。服务以 Characteristic 树形结构暴露。没有 RFCOMM、没有 SDP（BLE 用 GATT Discovery 替代）、没有传统的 Profile 概念（用 GATT Service 替代）。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>对比维度</th><th>BR/EDR</th><th>BLE</th></tr></thead>
+  <tbody>
+    <tr><td class="g">物理信道</td><td>79 个 × 1MHz</td><td>40 个 × 2MHz</td></tr>
+    <tr><td>跳频</td><td>1600 hop/s (每 625μs slot)</td><td>每 Connection Event 跳一次</td></tr>
+    <tr><td class="g">发现方式</td><td>Inquiry (问询) + Inquiry Scan</td><td>Advertising (广播) + Scanning (扫描)</td></tr>
+    <tr><td>连接方式</td><td>Paging (寻呼)</td><td>CONNECT_IND 单包</td></tr>
+    <tr><td class="g">服务发现</td><td>SDP (Service Discovery Protocol)</td><td>GATT Discovery</td></tr>
+    <tr><td>数据通道</td><td>RFCOMM (串口仿真)</td><td>GATT Characteristic</td></tr>
+    <tr><td class="g">吞吐量</td><td>EDR 2-3Mbps 理论 (实际 ~1Mbps)</td><td>~800Kbps (2M PHY)</td></tr>
+    <tr><td>功耗</td><td class="r">高 (持续活跃连接)</td><td class="g">低 (多数时间休眠)</td></tr>
+    <tr><td class="g">适用场景</td><td>音频、大文件、持续数据流</td><td>传感器、IoT、间歇数据、信标</td></tr>
+    <tr><td>连接设备数</td><td>1 Master + 最多 7 Slaves (Piconet)</td><td>不限 (实际受内存限制)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">Dual-Mode (BR/EDR + BLE) 芯片 — 现代手机的标配</div>
+  BR/EDR 和 BLE 共享同一射频前端但分时复用——芯片在 BR/EDR 时隙和 BLE Connection Event 之间切换。这就是为什么手机同时连接蓝牙耳机 (BR/EDR A2DP) 和智能手表 (BLE) 时不会互相干扰——控制器调度器在两者之间分配时间。
+</div>
+
+<!-- ═══ Ch2: BR/EDR 协议栈 ═══ -->
+<h2 class="sh">2. BR/EDR 协议栈分层架构</h2>
+<p class="ss">BR/EDR 的协议栈比 BLE 更厚、更复杂——因为它要兼容 1999 年以来的各种 Profile。理解分层是理解连接流程的前提。</p>
+
+<div class="mb">
+  <div class="r"><span class="a">应用层</span><span class="b c4">A2DP / HFP / SPP / HID / OBEX</span><span class="n">Profile 层——定义了"音乐怎么传""电话怎么接"</span></div>
+  <div class="r"><span class="a">传输协议层</span><span class="b c3">RFCOMM / AVDTP / AVCTP</span><span class="n">RFCOMM 模拟串口 · AVDTP 传输音频 · AVCTP 传输控制命令</span></div>
+  <div class="r"><span class="a">逻辑链路层</span><span class="b c2">L2CAP</span><span class="n">多路复用——一个 ACL 链路上承载多个逻辑通道 (CID 标识)</span></div>
+  <div class="r"><span class="a">主机控制接口</span><span class="b c1">HCI (Host Controller Interface)</span><span class="n">Host (协议栈) ↔ Controller (射频) 的标准通信接口</span></div>
+  <div class="r"><span class="a">链路管理层</span><span class="b c5">LM (Link Manager)</span><span class="n">连接建立 · 鉴权 · 加密 · 功率控制 · QoS 协商</span></div>
+  <div class="r"><span class="a">基带层</span><span class="b c5">Baseband</span><span class="n">跳频 · 时隙分配 · ACL/SCO 链路 · ARQ 重传 · FEC 纠错</span></div>
+  <div class="r"><span class="a">射频层</span><span class="b c5">Radio</span><span class="n">GFSK/π/4-DQPSK/8DPSK 调制 · 2.4GHz 收发</span></div>
+</div>
+
+<!-- ═══ Ch3: Inquiry ═══ -->
+<h2 class="sh">3. 阶段 1: Inquiry — 设备发现</h2>
+<p class="ss">手机打开蓝牙设置页面 → 开始搜索设备。底层执行的是 <strong>Inquiry</strong> 流程——这与 BLE 的 Advertising/Scanning 有本质区别。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Inquiry 的原理：跳频问询</h4>
+    <div class="lbl">手机在 32 个 Inquiry 信道上跳频发送 ID 包 → 外设在 32 个信道上轮询监听</div>
+    <p>BR/EDR 不像 BLE 那样有固定的广播信道——Inquiry 使用<strong>79 个信道中的 32 个</strong>（分为 A/B 两组，各 16 个）。<br>
+    <strong>手机 (Inquiring Device)</strong>：在 32 个 Inquiry 信道上<strong>高速跳频</strong>——每 312.5μs（半个 slot）换一个信道——发送 <strong>ID 包</strong>（仅含 Inquiry Access Code，无数据 payload）。一个完整的 Inquiry 跳频序列覆盖全部 32 个信道需要 10ms。<br>
+    <strong>外设 (Inquiry Scanning Device)</strong>：在自己的 32 个 Inquiry 信道上<strong>缓慢轮流监听</strong>——监听窗口 = 11.25ms，间隔 = 1.28s~2.56s（省电）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>FHS 包 — 外设的"身份证"回复</h4>
+    <div class="lbl">收到 ID 包 → 等待 625μs → 回复 FHS 包 (包含关键参数)</div>
+    <p>外设在监听信道上收到 ID 包（匹配自己的 Inquiry Access Code）→ 进入<strong>Inquiry Response 状态</strong>——等待 625μs (一个 slot) → 回复 <strong>FHS (Frequency Hop Synchronization) 包</strong>。FHS 包包含：<br>
+    <strong>BD_ADDR (6B)</strong>：外设的蓝牙 MAC 地址——这是后续 Paging 的关键参数。<br>
+    <strong>CLK (28bit)</strong>：外设的本地时钟值——手机需要此外设时钟来计算<strong>Paging 时的跳频序列</strong>。<br>
+    <strong>CoD (3B)</strong>：Class of Device——告诉手机"我是什么设备"（0x200404=音频/免提, 0x080104=电脑/桌面, 0x000504=手机）。<br>
+    <strong>Page Scan Mode</strong>：外设的 Paging Scan 模式（R0/R1/R2——影响后续 Paging 的速度）。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">Inquiry 为什么比 BLE Advertising 慢得多？</div>
+  BLE 广告在<strong>3 个固定信道</strong>上发——手机只监听 3 个信道，发现极快（~50ms）。BR/EDR 在<strong>32 个信道</strong>上跳频——手机要覆盖所有 32 个信道才能确保发现任意外设。一个完整的 Inquiry 扫描周期 = 1.28s~10.24s（取决于 Inquiry Length）。<strong>这就是为什么传统蓝牙设备在手机设置页面中"出来得慢"</strong>——比 BLE 设备慢 10-100 倍。
+</div>
+
+<!-- ═══ Ch4: Paging ═══ -->
+<h2 class="sh">4. 阶段 2: Paging — 建立连接</h2>
+<p class="ss">用户点击设备名称 → 手机发起 <strong>Paging</strong>——这是 BR/EDR 连接建立的核心。Paging 的成功依赖于手机<strong>精确计算外设的跳频序列</strong>——这个信息来自 Inquiry 阶段获取的 BD_ADDR + CLK。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Paging 跳频序列的计算</h4>
+    <div class="lbl">BD_ADDR + CLK → 跳频算法 → 32 个 Paging 信道的序列</div>
+    <p>手机通过外设的 BD_ADDR 和 CLK（从 FHS 包获得），运行与基带规范相同的<strong>信道选择算法</strong>——计算出外设当前正在监听哪 32 个 Paging 信道（分为 A/B 两组，各 16 个）。<br>
+    <strong>计算精度依赖于 CLK 的准确性</strong>：手机从收到 FHS 到发送 Page 之间有延迟 → 需要<strong>估计外设时钟的漂移量</strong>（CLK offset 补偿）→ 用补偿后的时钟值重新计算跳频序列。如果时钟估计偏差太大 → 手机在错误信道上发 Page → 外设收不到 → Paging 失败。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Paging 的握手过程：ID → ID → FHS → ID → POLL</h4>
+    <div class="lbl">Train A → Train B → 完整握手 — 标准流程约 2.56s</div>
+    <p><strong>Train A (16 个信道 × 128 次 = 10ms)</strong>：手机在计算的 16 个 A-train 信道上轮流发送 <strong>ID 包</strong>（含外设的 Device Access Code）——每个信道重复 128 次（10ms）。<br>
+    <strong>Train B (16 个信道 × 128 次 = 10ms)</strong>：如果 Train A 无响应 → 在 16 个 B-train 信道上重复。<br>
+    <strong>外设收到 ID 包</strong>（匹配自己的 DAC）→ <strong>625μs 后回复另一个 ID 包</strong>（同一信道上——确认收到）。<br>
+    <strong>手机收到外设的 ID 回复</strong> → 312.5μs 后发送 <strong>FHS 包</strong>（包含手机自己的 BD_ADDR + CLK——外设据此计算此后的跳频序列）。<br>
+    <strong>外设回复 ID 包</strong>（确认收到 FHS）→ 外设<strong>切换到手机的时钟和跳频序列</strong>——连接建立！<br>
+    <strong>手机发送 POLL 包</strong>（第一个 ACL 数据包，确认外设已同步）→ 外设回复 NULL 包 → 进入 Connection 状态。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// Paging 的完整空中包交换序列 (每个槽 625μs)</span>
+
+<i>Master (手机)</i>                            <i>Slave (外设)</i>
+  │                                                │
+  │── ID (DAC) ──→  Train A: 16 信道循环发           │  <span class="cm">外设在某个信道上监听</span>
+  │── ID (DAC) ──→  Train B: 16 信道循环发           │
+  │                                                │
+  │── ID (DAC) ──→ <i>外设在这个信道上!</i>            →│
+  │                                                │  匹配 DAC!
+  │←── ID ────────────────────────────────────────│  <span class="cm">T+625μs: 回复 ID 确认</span>
+  │                                                │
+  │── FHS (Master BD_ADDR+CLK) ──────────────────→│  <span class="cm">T+312.5μs: 发 FHS</span>
+  │                                                │  外设记录手机参数
+  │←── ID (确认收到 FHS) ────────────────────────│  <span class="cm">T+625μs: 确认</span>
+  │                                                │  <b>外设切换到手机时钟!</b>
+  │── POLL (第一个 ACL 包) ───────────────────────→│  <span class="cm">T+625μs: 确认同步</span>
+  │←── NULL (ACL 空包) ──────────────────────────│  <span class="cm">连接建立!</span>
+  │                                                │
+  │<b>🟢 ACL 连接建立 — 进入 Connection 状态</b>          │</div>
+
+<!-- ═══ Ch5: Connection State ═══ -->
+<h2 class="sh">5. 阶段 3: Connection 状态 — ACL/SCO 链路与 Piconet</h2>
+<p class="ss">连接建立后，手机成为 <strong>Master</strong>，外设成为 <strong>Slave</strong>。Master 控制整个 <strong>Piconet</strong>（微微网）的时钟和跳频序列——所有 Slave 都同步到 Master 的时钟。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Piconet — 微微网</h4>
+    <div class="lbl">1 Master + 最多 7 Active Slaves + 最多 255 Parked Slaves</div>
+    <p>一个 Piconet 由<strong>一个 Master 控制</strong>。所有 Slave 同步到 Master 的跳频序列和时钟。Master 在<strong>偶数 slot</strong> 发送，Slave 在<strong>奇数 slot</strong> 回复。<strong>每个 Slave 有一个 3-bit AM_ADDR (Active Member Address)</strong>——在 Piconet 内唯一标识自己（范围 1~7，0 留给广播）。<br>
+    <strong>Scatternet (分散网)</strong>：一个设备可以同时属于多个 Piconet，在不同 Piconet 间分时切换（需同步跳频序列）。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>ACL 链路</h4>
+    <div class="lbl">Asynchronous Connection-Less — 数据包交换</div>
+    <p>ACL 是<strong>尽力而为</strong>的分组交换链路——一个 Master 和 Slave 之间<strong>只有一条 ACL 链路</strong>。支持 DM1/DH1/DM3/DH3/DM5/DH5 六种包类型（DM=中速率带 FEC, DH=高速无 FEC, 数字=占用 slot 数）。<br>
+    <strong>ARQ (Automatic Repeat reQuest)</strong>：每个 ACL 包都有 CRC，接收端检查 → 错误则<strong>在下一个 slot 中</strong>通过 ACK/NACK 告知发送端 → 发送端重传。这意味着 ACL 的可靠性由 <strong>基带层 ARQ</strong> 保证——上层 L2CAP/RFCOMM 不需要自己处理重传。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SCO/eSCO 链路</h4>
+    <div class="lbl">Synchronous Connection-Oriented — 实时语音</div>
+    <p>SCO 是<strong>电路交换</strong>链路——在固定 slot 上预留带宽。Master 和 Slave 之间<strong>最多 3 条 SCO 链路</strong>（对应 64Kbps PCM 语音）。<br>
+    <strong>SCO 不重传</strong>——丢包就丢了（语音中 1-2 个包丢失几乎无感知）。延迟极低（~1.25ms）。<br>
+    <strong>eSCO (Extended SCO)</strong>：支持重传窗口——在预留 slot 之后还有一段重传机会。适合需要一定可靠性但仍要保证延迟的音频场景（如 A2DP 音乐——使用 ACL 上的 AVDTP 而非 SCO）。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch6: SDP ═══ -->
+<h2 class="sh">6. 阶段 4: SDP — 服务发现协议</h2>
+<p class="ss">连接建立后，手机<strong>只知道外设的 BD_ADDR 和 Class of Device</strong>——对外设能提供什么服务（Profile）一无所知。SDP 就是用来回答"你能做什么"的协议。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>SDP 的查询模型：Service Record 树</h4>
+    <div class="lbl">每个 Service 由 UUID 唯一标识 · 属性 ID-Value 对描述细节</div>
+    <p>外设维护一个 SDP 数据库——每个支持的 Profile 对应一条 <strong>Service Record</strong>。每条 Service Record 由多个 <strong>Attribute (ID + Value)</strong> 组成：<br>
+    <strong>ServiceRecordHandle (0x0000)</strong>：该 Record 的唯一 32-bit 标识。<br>
+    <strong>ServiceClassIDList (0x0001)</strong>：Service 的 UUID 列表（如 SPP=0x1101, A2DP_Sink=0x110B, HFP=0x111E）。<br>
+    <strong>ProtocolDescriptorList (0x0004)</strong>：使用哪些协议栈——如 SPP 的协议栈 = [L2CAP, RFCOMM]。<br>
+    <strong>RFCOMM Channel (自定义属性)</strong>：RFCOMM 服务端的 Channel 号（如 Channel=1）——手机后续连接 RFCOMM 时需要。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>SDP 请求-响应流程</h4>
+    <div class="lbl">Service Search → Attribute Request → 逐个 Record 获取</div>
+    <p><strong>Step 1: SDP_ServiceSearchRequest</strong>——手机发送目标 UUID（如 0x1101=SPP）→ 外设返回<strong>匹配的 ServiceRecordHandle 列表</strong>。<br>
+    <strong>Step 2: SDP_ServiceAttributeRequest</strong>——手机发送 Handle + 想要的 Attribute ID 列表（如 0x0004 ProtocolDescriptorList）→ 外设返回对应的 Attribute Value。<br>
+    <strong>Step 3: 解析 RFCOMM Channel</strong>——手机从 ProtocolDescriptorList 中提取 RFCOMM 的 Server Channel 号（如 1）。<br>
+    <strong>SDP 本身走 L2CAP</strong>——使用固定的 PSM (Protocol Service Multiplexer) = 0x0001。SDP 走 ACL 链路。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// SDP 查询 SPP Service 的完整交互</span>
+
+<b>Step 1: 搜索 SPP Service (UUID=0x1101)</b>
+  Master  → SDP_ServiceSearchRequest (UUID=0x1101)        [L2CAP PSM=0x0001]
+  Slave   → SDP_ServiceSearchResponse:
+              ServiceRecordHandle[0] = 0x00010000          <i>// 找到 1 个匹配</i>
+              TotalRecordCount = 1
+
+<b>Step 2: 获取该 Record 的 ProtocolDescriptorList (AttrID=0x0004)</b>
+  Master  → SDP_ServiceAttributeRequest (Handle=0x00010000, AttrIDs=[0x0004])
+  Slave   → SDP_ServiceAttributeResponse:
+              Attribute 0x0004 (ProtocolDescriptorList):
+                [0] Protocol=0x0100 (L2CAP)
+                [1] Protocol=0x0003 (RFCOMM), Parameter=0x01  <i>// Channel=1!</i>
+
+<b>Step 3: 手机获得关键信息</b>
+  SPP 服务可用 · RFCOMM Channel = 1
+  → 下一步: 手机打开 L2CAP 连接到 PSM=0x0003 (RFCOMM)
+  → 在 L2CAP 上发起 RFCOMM 连接 → Channel 1</div>
+
+<!-- ═══ Ch7: L2CAP + RFCOMM ═══ -->
+<h2 class="sh">7. 阶段 5: L2CAP + RFCOMM — 数据通道建立</h2>
+<p class="ss">SDP 告诉了手机"RFCOMM Channel = 1"——现在手机要在此之上建立真正的数据传输通道。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>L2CAP — 逻辑链路控制与适配</h4>
+    <div class="lbl">多路复用 · 分片重组 · QoS 协商</div>
+    <p>L2CAP 在 ACL 链路上提供<strong>多个逻辑通道</strong>——每个通道由 16-bit <strong>CID (Channel Identifier)</strong> 标识。CID 0x0001 = 信令通道（用于创建/配置数据通道），CID 0x0040~0xFFFF = 动态分配的数据通道。<br>
+    <strong>手机连接 RFCOMM 的流程</strong>：① 发送 L2CAP_ConnectReq (PSM=0x0003 — RFCOMM 的协议标识, Source CID=0x0040) ② 外设回复 L2CAP_ConnectRsp (Dest CID=0x0041, Result=SUCCESS) ③ 双方互发 L2CAP_ConfigReq/Rsp 协商 MTU 等参数。<br>
+    <strong>L2CAP 层支持分片重组 (SAR)</strong>——上层 RFCOMM 可以发送任意大小的帧，L2CAP 自动分片为适合基带包的 chunk 并在接收端重组。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>RFCOMM — 串口仿真协议</h4>
+    <div class="lbl">基于 L2CAP 的 RS-232 串口仿真 · 多路复用 · 流控</div>
+    <p>RFCOMM 在 L2CAP 通道上<strong>模拟 RS-232 串口</strong>——提供 9 针串口的所有信号（TX/RX/RTS/CTS/DTR/DSR/DCD/RI）。每个 RFCOMM 会话由 <strong>DLCI (Data Link Connection Identifier, 6-bit)</strong> 标识——一个 L2CAP 通道上可以有<strong>多个 RFCOMM DLCI</strong>（多路串口）。<br>
+    <strong>RFCOMM 连接建立</strong>：① SABM (Set Asynchronous Balanced Mode) 帧——手机请求建立 DLCI=0 (控制通道) ② 外设回复 UA (Unnumbered Acknowledgement) ③ 在 DLCI=0 上交换 PN (Parameter Negotiation) 帧——协商后续数据通道的 DLCI 号、帧大小、credit 流控参数 ④ 在协商好的 DLCI (如 2, 6, 10...) 上建立数据通道。<br>
+    <strong>Credit-Based Flow Control</strong>：RFCOMM 不会让发送方淹没接收方——接收方给发送方一定数量的<strong>credits</strong>——每发一帧消耗一个 credit → credit 用完必须等接收方补充。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// 手机建立 SPP 连接的完整协议栈路径</span>
+
+<i>L2CAP 层:</i>
+  Master  → L2CAP_ConnectReq (PSM=0x0003, SCID=0x0040)  <span class="cm">// PSM 0x0003 = RFCOMM</span>
+  Slave   → L2CAP_ConnectRsp (DCID=0x0041, Result=0x0000)
+  Master  → L2CAP_ConfigReq (MTU=672)
+  Slave   → L2CAP_ConfigRsp (MTU=672)
+  <i>→ L2CAP 通道建立: CID 0x0040 ↔ 0x0041</i>
+
+<i>RFCOMM 层 (在 L2CAP CID 0x0040 之上):</i>
+  Master  → SABM (DLCI=0)          <span class="cm">// 建立控制通道</span>
+  Slave   → UA (DLCI=0)            <span class="cm">// 确认</span>
+  Master  → PN_Req (DLCI=0, I=2, CL=4, Priority=7, K=7)  <span class="cm">// 协商参数: DLCI=2, 帧大小 127B, 初始 credit=7</span>
+  Slave   → PN_Rsp (DLCI=0, I=2, CL=4, Priority=7, K=7)  <span class="cm">// 同意</span>
+  Master  → SABM (DLCI=2)          <span class="cm">// 建立数据通道 DLCI=2</span>
+  Slave   → UA (DLCI=2)
+  <i>→ RFCOMM 数据通道建立: DLCI=2</i>
+
+<i>SPP 透传数据 (在 RFCOMM DLCI=2 之上):</i>
+  Master  → UIH (DLCI=2, Data="AT+STATUS\r\n")   <span class="cm">// 发送 AT 命令或透传数据</span>
+  Slave   → UIH (DLCI=2, Data="OK\r\n")          <span class="cm">// 回复</span></div>
+
+<!-- ═══ Ch8: 配对与安全 ═══ -->
+<h2 class="sh">8. 安全配对 — PIN 码与 SSP 安全简单配对</h2>
+<p class="ss">BR/EDR 的配对经历了从 PIN 码到 SSP (Secure Simple Pairing) 的演进——BLE 的配对模型很大程度上借鉴了 BR/EDR 的 SSP。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Legacy Pairing (PIN 码)</h4>
+    <div class="lbl">蓝牙 2.0 及之前 — 双方输入相同的 PIN 码</div>
+    <p>用户在外设上输入 PIN 码（如 0000 或 1234）→ 手机上也输入相同的 PIN → 双方基于 PIN + BD_ADDR + 随机数通过 E21/E22 算法生成 Link Key → 互相认证。<strong>安全弱点</strong>：4 位 PIN 只有 10000 种可能——窃听配对过程后可暴力破解 Link Key。固定 PIN 码（0000/1234）的设备尤其脆弱。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>SSP (Secure Simple Pairing)</h4>
+    <div class="lbl">蓝牙 2.1+ — 四种关联模型</div>
+    <p><strong>Just Works</strong>（无 UI 设备）——无需用户交互。无 MITM 保护。<br>
+    <strong>Numeric Comparison</strong>（双方都有显示器）——双方显示 6 位数字，用户确认一致。有 MITM 保护——最安全。<br>
+    <strong>Passkey Entry</strong>（一方有键盘）——一方显示 6 位数字，另一方输入。<br>
+    <strong>Out of Band (OOB)</strong>（NFC 辅助）——通过 NFC 交换密钥。<br>
+    SSP 使用 <strong>ECDH (P-192/P-256)</strong> 密钥交换——即使窃听也无法破解（不同于 Legacy PIN 码的可暴力破解）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Bonding — 记住对方</h4>
+    <div class="lbl">配对一次 → 存储 Link Key → 后续自动认证</div>
+    <p>配对完成后双方将<strong>Link Key 永久存储到 Flash</strong>——下次连接时：① 手机发送 LMP_au_rand (随机挑战) ② 外设用存储的 Link Key 计算 SRES (Signed Response) ③ 手机验证 SRES → <strong>认证通过</strong>——整个过程在基带层完成 (~10ms)，用户<strong>完全无感知</strong>。<br>
+    如果任何一方丢失了 Link Key → 需要<strong>重新配对</strong>（外设清除 Bonding 或手机"忘记设备"）。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch9: 完整时间线 ═══ -->
+<h2 class="sh">9. 完整时间线 — 从开机到 SPP 数据传输</h2>
+<p class="ss">追踪一个传统蓝牙串口设备从开机到手机通过 SPP 发送第一条 AT 命令的完整过程。</p>
+
+<div class="chain"><span class="cm">// 传统蓝牙 SPP 设备连接全生命周期</span>
+
+<i>Phase 1: Inquiry — 设备发现</i>
+  T+0ms     手机用户打开蓝牙设置，点击"搜索设备"
+  T+50ms    手机 HCI Inquiry 命令 → Controller 在 32 Inquiry 信道上发送 ID 包
+  T+400ms   外设在 CH12 上收到 ID 包 (匹配 GIAC 0x9E8B33)
+  T+401ms   外设等待 625μs → 回复 FHS 包:
+              BD_ADDR=AA:BB:CC:11:22:33, CLK=0x123456, CoD=0x080104 (电脑)
+  T+450ms   手机 HCI Inquiry Result Event → Host 记录设备
+  ...
+  T+5800ms  Inquiry 完成 (持续 5.8 秒扫描所有设备)
+  T+5900ms  手机显示设备列表 → 用户看到 "BT-Serial-Device"
+  <i>→ Inquiry 总耗时: ~6 秒 (典型)</i>
+
+<i>Phase 2: Paging — 建立 ACL 连接</i>
+  T+6200ms  用户点击设备 → 手机发起 Paging
+  T+6200ms  手机用 BD_ADDR+CLK 计算 Page 跳频序列
+  T+6250ms  Train A+B 完成 → 外设在 CH45 上收到 Page ID
+  T+6251ms  外设回 ID → 手机发 FHS → 外设回 ID → 手机发 POLL
+  T+6260ms  ACL 连接建立! 手机成为 Master
+  <i>→ Paging 总耗时: ~60ms (计算正确时极快)</i>
+
+<i>Phase 3: SDP — 服务发现</i>
+  T+6280ms  手机发送 SDP_ServiceSearchRequest (UUID=0x1101 SPP)
+  T+6320ms  外设回复 ServiceRecordHandle=0x00010000
+  T+6340ms  手机发送 SDP_ServiceAttributeRequest (Handle=0x00010000, Attr=0x0004)
+  T+6380ms  外设回复 ProtocolDescriptorList: [L2CAP, RFCOMM Ch=1]
+  <i>→ SDP 总耗时: ~100ms</i>
+
+<i>Phase 4: L2CAP + RFCOMM 通道建立</i>
+  T+6400ms  手机发送 L2CAP_ConnectReq (PSM=0x0003) → 外设回 Rsp
+  T+6440ms  L2CAP ConfigReq/Rsp (MTU=672)
+  T+6460ms  RFCOMM SABM (DLCI=0) → UA → PN_Req → PN_Rsp → SABM(DLCI=2) → UA
+  <i>→ RFCOMM 建立总耗时: ~100ms</i>
+
+<i>Phase 5: SPP 数据传输 (用户态的 AT 命令)</i>
+  T+6480ms  手机 App 调用 write(fd, "AT+BAUD=115200\r\n")
+  T+6490ms  RFCOMM UIH (DLCI=2, Data="AT+BAUD=115200\r\n")
+  T+6500ms  外设回复 RFCOMM UIH (DLCI=2, Data="OK\r\n")
+  T+6510ms  App 收到 "OK" → SPP 连接完全就绪!
+  <i>→ 从用户点击到首次数据传输: ~300ms</i></div>
+
+<div class="callout warning">
+  <div class="ct">⚠ BR/EDR 连接的最常见失败原因</div>
+  <strong>1. Inquiry 找不到设备</strong>——外设未开启 Inquiry Scan（如只在 Page Scan 模式）→ 外设只在 32 个 Page 信道上监听，不在 Inquiry 信道上监听 → 手机 Inquiry 收不到 FHS → 设备列表中不出现。<br>
+  <strong>2. Paging 超时</strong>——Inquiry 和 Paging 之间的间隔太长 → 外设时钟漂移 → 手机计算的跳频序列与实际不符 → Page ID 全发在错误信道上 → Paging 超时（5.12s）。解决：Inquiry 完成后<strong>立即 Paging</strong>（时钟漂移 < 1ms）。<br>
+  <strong>3. SDP 查询返回空</strong>——外设注册了 SPP 服务但未在 SDP 数据库中正确注册 Service Record → 手机 SDP search 返回 0 条 → App 报错"设备不支持 SPP"。
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">传统蓝牙 BR/EDR 连接全生命周期 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

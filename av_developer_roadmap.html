@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音视频开发专家成长路线 — 知识体系盘点与进阶指南</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 56px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 24px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px; padding: 22px 20px; transition: all .3s; }
+.cd:hover { border-color: var(--gc,#6c63ff); background: rgba(255,255,255,.04);
+  transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size: 15px; font-weight: 800; color: #e0e0ff; margin-bottom: 4px; }
+.cd .lbl { font-size: 11.5px; color: var(--gc,#6c63ff); font-weight: 600; margin-bottom: 10px; }
+.cd p { font-size: 12px; color: #9999bb; line-height: 1.75; }
+.cd code { font-size: 10.5px; } .cd em { color: #6c63ff; font-style: normal; font-weight: 600; }
+.cd ul { margin: 6px 0 0 16px; font-size: 11.5px; color: #8888aa; line-height: 1.8; }
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 80px 28px; position: relative; overflow: hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image: linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+
+.gauge-bar { height: 8px; border-radius: 4px; margin: 4px 0 8px; }
+.gauge-fill { height: 100%; border-radius: 4px; }
+.gf-g { background: linear-gradient(90deg, #34d399, #34d399); }
+.gf-y { background: linear-gradient(90deg, #fbbf24, #fbbf24); }
+.gf-r { background: linear-gradient(90deg, #f87171, #f87171); }
+.gf-b { background: linear-gradient(90deg, #a78bfa, #a78bfa); }
+
+.missing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+@media(max-width:700px){ .missing-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(24px,5vw,36px);font-weight:900">音视频开发专家成长路线</h2>
+  <p class="sec-sub">知识体系盘点 · 已有基础 · 关键补齐项 · 从"会用"到"资深"的差距分析</p>
+
+  <div class="card-grid c3" style="margin-top:20px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>已有文档: 60+ 篇</h4><div class="sub">覆盖 8 大领域</div>
+      <p>音频采集 · 视频编解码 · 流媒体协议 · LiveKit/WebRTC · Linux 内核 · 蓝牙 BLE · 图像传感器/ISP · 调试与性能</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>需要深化的领域: 4 个</h4><div class="sub">WebRTC · 音频处理 · 编码调优 · 网络传输</div>
+      <p>WebRTC 深度架构与拥塞控制 · 音频 3A 算法原理 · 编码器参数调优与 ROI · QUIC/SRT/RTP 协议深度</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>需要补全的领域: 2 个</h4><div class="sub">GPU 渲染加速 · AI 推理集成</div>
+      <p>OpenGL/Metal/Vulkan 渲染管线 · GPU 视频前后处理 · 端侧 AI 推理 (TFLite/ONNX) 与视频分析</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 已有知识盘点 ══ -->
+<h2 class="sh">1. docs/PawRTC 已有知识体系盘点</h2>
+<p class="ss">当前 60+ 篇文档覆盖 8 大领域 — 按成熟度分级: ★★★ 完善 · ★★ 需深化 · ★ 需补全</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:14%">领域</th><th style="width:12%">成熟度</th><th>已有文档</th><th style="width:30%">覆盖内容</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Linux 内核</strong></td><td class="y">★★</td><td>25+ 篇</td><td><strong>已覆盖</strong>: MMC · GPIO · I2C/SPI/UART · DMA · USB Gadget · Input · MIPI CSI-2 · 内存管理 · 文件系统 · 启动流程 · IPC · 调试 · SDK设计<br><strong>仍缺失的核心子系统</strong>: 中断处理 (top/bottom half) · CCF 时钟框架 · regulator 电压调节器 · pinctrl · DRM/KMS 显示 · ASoC 音频驱动 · DMA-API+CMA · Workqueue/kthread · 实时 Linux · 内核 Tracing (详情见 §4)</td></tr>
+    <tr><td><strong>视频编解码</strong></td><td class="y">★★</td><td>av_codec_guide · h264_blockiness_demo · mp4_container_deep_dive · av_quality_assessment</td><td>H.264 原理 (帧内/帧间/变换/量化/熵编码/环路滤波) · GOP · 码率控制概念 · H.264/H.265/AV1/VVC 演进 · MP4 容器深度 · 画质评估 (PSNR/SSIM/VMAF)</td></tr>
+    <tr><td><strong>视频采集</strong></td><td class="g">★★★</td><td>linux_v4l2_video_learn · image_isp_guide · Linux_Image_Sensor · Linux_MIPI_CSI2 · video_pipeline_complete</td><td>V4L2 架构 · ioctl API · videobuf2 深度 (状态机/四种mem_ops/DMA ISR) · CMOS Sensor 光电原理 · Bayer/HDR · ISP Pipeline · MIPI CSI-2 协议栈 · D-PHY/C-PHY</td></tr>
+    <tr><td><strong>音频</strong></td><td class="r">★</td><td>linux_alsa_audio_learn</td><td>ALSA 基础 (PCM/Control/Mixer) · 音频参数 (采样率/位深/通道) · 仅入门级别</td></tr>
+    <tr><td><strong>流媒体传输</strong></td><td class="y">★★</td><td>streaming_protocols_learn · webrtc_weak_network_learn · e2e_latency_learn · end_side_video_issues · av_sync_learn</td><td>RTMP/HLS/RTSP/RTP 基础 · WebRTC 弱网优化 · 端到端延迟分析 · 音视频同步 · 端侧视频问题定位</td></tr>
+    <tr><td><strong>LiveKit/WebRTC</strong></td><td class="y">★★</td><td>livekit_* (18篇) · av_sync_learn</td><td>LiveKit 架构总览 · 加密体系 (AES/ECDHE/ECDSA/HMAC/SHA256/DTLS) · WebSocket · IPC 设计 · 流媒体交互 · 云端适配 · 本地回放 · 弱网优化</td></tr>
+    <tr><td><strong>GStreamer/FFmpeg</strong></td><td class="g">★★★</td><td>Linux_GStreamer_FFmpeg · Linux_AV_RingBuffer</td><td>GStreamer Pipeline 架构 (Elements/Pads/Caps/Bus) · FFmpeg libav* 体系 · 对比与选型 · 环形缓冲区设计</td></tr>
+    <tr><td><strong>蓝牙 BLE</strong></td><td class="g">★★★</td><td>Bluetooth/ 9 篇</td><td>BLE 协议栈深度 · 连接生命周期 · 兼容性调试 · 抓包分析 · BR/EDR · BlueZ 架构</td></tr>
+  </tbody>
+  </table>
+</div>
+
+
+<!-- ══ Ch2: 已有 vs 缺失矩阵 ══ -->
+<h2 class="sh">2. 资深音视频专家的能力模型</h2>
+<p class="ss">从招聘 JD 和高阶面试中提炼的 10 大核心能力维度 — 对标当前知识储备</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:18%">能力维度</th><th style="width:10%">当前级别</th><th>已有能力</th><th style="width:30%">向"资深"的差距</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1. 视频编码</strong></td><td class="y"><strong>T2</strong><br>会用能讲</td><td>H.264 原理清晰 · 了解 H.265/AV1 · 画质评估指标</td><td class="r"><strong>→ T4</strong>: 编码器参数深度调优 (x264/x265 preset/tune/rc-lookahead) · ROI 编码 · SVC 可伸缩编码 · 场景检测自适应 · 码控算法源码级理解</td></tr>
+    <tr><td><strong>2. 音频处理</strong></td><td class="r"><strong>T1</strong><br>入门了解</td><td>ALSA 基础 API · 采样率/位深/通道概念</td><td class="r"><strong>→ T4</strong>: 音频 3A 原理 (AEC/ANS/AGC) · Opus 编解码 · 回声消除 · 音频延迟优化 · 多路混音 · 音频重采样 · PulseAudio/PipeWire</td></tr>
+    <tr><td><strong>3. 视频采集</strong></td><td class="g"><strong>T3</strong><br>较为扎实</td><td>V4L2 深度 · Sensor 原理 · ISP Pipeline · MIPI CSI-2 · videobuf2 深入</td><td class="y"><strong>→ T4:</strong> 3A 算法调优 (AE/AWB/AF) · HDR 模式选择 · 多 Sensor 同步 · 低照度优化</td></tr>
+    <tr><td><strong>4. 流媒体协议</strong></td><td class="y"><strong>T2</strong><br>概念掌握</td><td>RTMP/HLS/RTSP/RTP 基础 · WebRTC 弱网概念</td><td class="r"><strong>→ T4:</strong> QUIC/HTTP3 · SRT · RTP/RTCP 协议栈源码级 · FEC/NACK · JitterBuffer 实现 · GCC/BBR 拥塞控制算法</td></tr>
+    <tr><td><strong>5. WebRTC</strong></td><td class="y"><strong>T2</strong><br>LiveKit 应用层</td><td>LiveKit 架构 · 加密 · DTLS · 信令 · 云端适配</td><td class="r"><strong>→ T4:</strong> PeerConnection 内核 · ICE/STUN/TURN 穿透 · SDP 协商 · Simulcast/SVC · NetEQ 音频抖动缓冲 · 带宽估计算法源码</td></tr>
+    <tr><td><strong>6. 容器格式</strong></td><td class="y"><strong>T2</strong><br>MP4 掌握</td><td>MP4 容器深度 (Box 结构/FTYP/MOOV/MDAT) · Annex-B vs AVCC</td><td class="y"><strong>→ T3:</strong> MKV/WebM · FLV · TS (MPEG2-TS) 深度 · CMAF 低延迟分片 · HLS/DASH 封装策略</td></tr>
+    <tr><td><strong>7. GPU/渲染</strong></td><td class="r"><strong>T0</strong><br>几乎空白</td><td>暂无</td><td class="r"><strong>→ T3:</strong> OpenGL ES / Vulkan 渲染管线 · EGL/GLSurface · GPU 视频前后处理 (缩放/旋转/色彩空间) · 硬件编码器对接 (VAAPI/NVENC/V4L2 M2M) · 零拷贝纹理共享</td></tr>
+    <tr><td><strong>8. 性能优化</strong></td><td class="y"><strong>T2</strong><br>调试有经验</td><td>GDB/core dump · ASan/TSan · strace/perf · 崩溃分析</td><td class="y"><strong>→ T3:</strong> 音视频 pipeline 性能剖析 · DMA 零拷贝链路优化 · 内存池化 · Cache 优化 · 多线程 pipeline 架构设计 · 延迟预算分析</td></tr>
+    <tr><td><strong>9. AI/ML 集成</strong></td><td class="r"><strong>T0</strong><br>几乎空白</td><td>暂无</td><td class="r"><strong>→ T2:</strong> 端侧推理框架 (TFLite/ONNX/ncnn) · 视频分析 (检测/跟踪/识别) · NPU/GPU 推理 · DeepStream/MediaPipe · 预处理 pipeline</td></tr>
+    <tr><td><strong>10. 系统架构</strong></td><td class="y"><strong>T2</strong><br>SDK 设计有理解</td><td>SDK 设计模式 · IPC 机制 · SDK 架构分析</td><td class="y"><strong>→ T3:</strong> 大型音视频系统架构 · 多路并发 · 故障隔离 · 降级策略 · 容量规划 · 高可用设计</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div style="text-align:center;margin:12px 0;font-size:11px;color:#555">
+  T0=空白 · T1=入门 · T2=掌握基础 · T3=较为扎实 · T4=资深源码级 · T5=专家(可主导设计)
+</div>
+
+
+<!-- ══ Ch3: 关键补齐项详解 ══ -->
+<h2 class="sh">3. 关键补齐项详解 — 从"会用"到"资深"</h2>
+<p class="ss">按优先级排序 — P0 (面试高频+日常工作急需) → P1 (进阶必备) → P2 (进阶加分)</p>
+
+<h3 style="font-size:1.2rem;color:#f87171;font-weight:700;margin:28px 0 10px">🔴 P0 — 高优先级 (面试必问 + 日常核心)</h3>
+
+<div class="missing-grid">
+  <div class="cd" style="--gc:#f87171">
+    <h4>WebRTC 深度架构</h4><div class="lbl">优先级 P0 — 直播/视频通话核心</div>
+    <p><strong>缺失内容:</strong><br>
+    ① PeerConnection 内核 — SDP Offer/Answer 协商、ICE Candidate 收集、DTLS-SRTP 密钥交换<br>
+    ② <strong>拥塞控制</strong> — GCC (Google Congestion Control) 算法: 基于延迟的估计器 + 基于丢包的估计器 → 目标码率<br>
+    ③ <strong>Simulcast</strong> — 同时编码 3 路不同分辨率 (720p/360p/180p) → SFU 选择性转发<br>
+    ④ <strong>SVC</strong> (可伸缩编码) — 时域/空域/质量分层<br>
+    ⑤ <strong>NetEQ</strong> — 音频抖动缓冲与丢包补偿 (PLC)<br>
+    ⑥ <strong>带宽估计</strong> — REMB/TWCC 接收端/发送端带宽估计<br>
+    <strong>面试频率</strong>: 极高 — 几乎是音视频岗位的"必答题"</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>音频 3A 算法原理</h4><div class="lbl">优先级 P0 — IPC 产品核心竞争力</div>
+    <p><strong>缺失内容:</strong><br>
+    ① <strong>AEC (回声消除)</strong> — LMS/NLMS 自适应滤波 · 双讲检测 · 非线性处理 · 延迟估计<br>
+    ② <strong>ANS (降噪)</strong> — 谱减法 · Wiener 滤波 · 深度学习降噪 (RNNoise)<br>
+    ③ <strong>AGC (自动增益)</strong> — 模拟增益 vs 数字增益 · 压缩/扩展曲线<br>
+    ④ <strong>音频链路延迟</strong> — ALSA 采集→3A→编码→网络 的端到端延迟分析<br>
+    ⑤ <strong>多路混音</strong> — 多路 PCM 合成、溢出处理<br>
+    <strong>面试频率</strong>: 高 — 有音频产品经验的公司必问</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>编码器深度调优</h4><div class="lbl">优先级 P0 — 决定画质/码率/延迟的三角平衡</div>
+    <p><strong>缺失内容:</strong><br>
+    ① <strong>x264/x265 调参</strong> — preset (ultrafast→placebo) · tune (zerolatency/film/grain...) · rc-lookahead · scenecut · keyint · bframes<br>
+    ② <strong>码率控制算法深度</strong> — CBR/VBR/CRF/CQP 的内部实现: QP 映射 · VBV 缓冲模型 · 前瞻分析<br>
+    ③ <strong>ROI 编码</strong> — 人脸/运动区域低 QP · 背景高 QP → 感知画质不变, 码率降低 20-40%<br>
+    ④ <strong>低延迟编码</strong> — zerolatency 模式 · 无 B 帧 · 单帧编码延迟<br>
+    <strong>面试频率</strong>: 高 — 码率控制和 preset/tune 是标配问题</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>RTP/RTCP 协议深度</h4><div class="lbl">优先级 P0 — 所有流媒体协议的地基</div>
+    <p><strong>缺失内容:</strong><br>
+    ① <strong>RTP 包头</strong> — SSRC/CSRC · PT · Sequence Number · Timestamp (与采样率的关系)<br>
+    ② <strong>RTCP SR/RR</strong> — 发送端/接收端报告 · NTP→RTP 时间戳映射 · jitter 计算<br>
+    ③ <strong>RTCP 反馈</strong> — NACK (重传请求) · PLI (关键帧请求) · REMB/TWCC (带宽估计) · TMMBR<br>
+    ④ <strong>JitterBuffer</strong> — 自适应去抖 · 丢包补偿 · 帧重排序<br>
+    <strong>面试频率</strong>: 高 — RTP 是音视频传输的"共同语言"</p>
+  </div>
+</div>
+
+<h3 style="font-size:1.2rem;color:#fbbf24;font-weight:700;margin:28px 0 10px">🟡 P1 — 中优先级 (进阶必备)</h3>
+
+<div class="missing-grid">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>音频编解码 Opus</h4><div class="lbl">优先级 P1 — WebRTC 唯一强制音频编码</div>
+    <p><strong>缺失内容:</strong><br>
+    ① Opus 架构 — SILK (语音) + CELT (音乐) 混合编码 · 自动模式切换<br>
+    ② 参数调优 — bitrate/complexity/bandwidth/DTX/FEC<br>
+    ③ Opus vs AAC vs G.711 — 延迟/质量/码率对比<br>
+    ④ 音频编码对通话质量的影响链路分析</p>
+  </div>
+  <div class="cd" style="--cg:#fbbf24">
+    <h4>QUIC/HTTP3 协议</h4><div class="lbl">优先级 P1 — 下一代传输协议</div>
+    <p><strong>缺失内容:</strong><br>
+    ① QUIC 架构 — 基于 UDP · 0-RTT 握手 · 连接迁移 · 多路复用无队头阻塞<br>
+    ② 与 TCP+TLS 对比 — 延迟/吞吐/弱网表现<br>
+    ③ WebTransport — 基于 QUIC 的实时流媒体传输<br>
+    ④ QUIC 在 WebRTC 中的应用前景</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ABR 自适应码率</h4><div class="lbl">优先级 P1 — 点播/直播的核心策略</div>
+    <p><strong>缺失内容:</strong><br>
+    ① ABR 算法 — BOLA/MPC/BBR · 缓冲区模型 · 切换决策<br>
+    ② HLS/DASH 分片策略 — 分片时长 · 关键帧对齐 · 多码率 ladder<br>
+    ③ CMAF — 低延迟分片 · LL-HLS · LL-DASH<br>
+    ④ 播放器侧 ABR — 带宽估计→切换决策→无缝切换</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>MKV/WebM 容器</h4><div class="lbl">优先级 P1 — WebRTC 录制 + 点播</div>
+    <p><strong>缺失内容:</strong><br>
+    ① Matroska 容器深度 — EBML 编码 · Cluster/Block/SimpleBlock<br>
+    ② WebM — VP8/VP9 + Opus + MKV 子集<br>
+    ③ 录制方案对比 — MKV vs MP4 vs FLV vs TS<br>
+    ④ mkvmerge/mkvinfo 工具</p>
+  </div>
+</div>
+
+<h3 style="font-size:1.2rem;color:#a78bfa;font-weight:700;margin:28px 0 10px">🟣 P2 — 进阶加分 (区分优秀与卓越)</h3>
+
+<div class="missing-grid">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>GPU 渲染与加速</h4><div class="lbl">优先级 P2 — 视频前后处理加速</div>
+    <p>① <strong>OpenGL ES / Vulkan</strong> — Shader 编程 · 纹理操作 · FBO · 渲染管线<br>
+    ② <strong>GPU 视频处理</strong> — 缩放 (Lanczos/Bilinear) · 色彩空间转换 (NV12→RGB) · 旋转/镜像 · 叠加 (OSD)<br>
+    ③ <strong>零拷贝纹理共享</strong> — EGLImage · DRM PRIME · DMA-BUF<br>
+    ④ <strong>硬件编码器对接</strong> — VAAPI · NVENC · V4L2 M2M · MediaCodec<br>
+    ⑤ <strong>Android Surface/HardwareBuffer</strong></p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>端侧 AI 推理集成</h4><div class="lbl">优先级 P2 — 智能 IPC 的差异化能力</div>
+    <p>① <strong>推理框架</strong> — TFLite / ONNX Runtime / ncnn / MNN<br>
+    ② <strong>视频分析 Pipeline</strong> — 解码→预处理 (resize/normalize)→推理→后处理 (NMS/跟踪)→业务<br>
+    ③ <strong>常见模型</strong> — 人脸检测 (RetinaFace/BlazeFace) · 目标检测 (YOLO/MobileNet) · 姿态估计<br>
+    ④ <strong>NPU/GPU 加速</strong> — 量化 (INT8/FP16) · 算子优化<br>
+    ⑤ <strong>DeepStream/MediaPipe</strong> — NVIDIA/Google 的端到端推流+pipeline框架</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>多线程 Pipeline 架构</h4><div class="lbl">优先级 P2 — 视频服务器的核心架构</div>
+    <p>① <strong>Stage-based Pipeline</strong> — 采集→编码→打包→发送, 每阶段独立线程+有界队列<br>
+    ② <strong>无锁队列</strong> — SPMC (单生产者多消费者) · MPMC · 环形缓冲<br>
+    ③ <strong>背压机制</strong> — 下游慢→上游丢帧或降质→阻塞采集<br>
+    ④ <strong>延迟预算</strong> — 每阶段分配延迟上限 · 端到端延迟建模<br>
+    ⑤ <strong>C++ 并发模式</strong> — 线程池 · Actor 模型 · 消息传递</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>音视频质量测试体系</h4><div class="lbl">优先级 P2 — 从经验判断到量化评估</div>
+    <p>① <strong>客观质量</strong> — PSNR/SSIM/VMAF 工具链 · 批量化测试 · 回归检测<br>
+    ② <strong>主观质量</strong> — MOS (Mean Opinion Score) · ACR/DCR 测试方法<br>
+    ③ <strong>性能指标</strong> — 编码延迟 · 端到端延迟 · 帧率稳定性 · 码率准确性<br>
+    ④ <strong>弱网仿真</strong> — tc netem · Network Link Conditioner · 丢包/延迟/抖动模型<br>
+    ⑤ <strong>自动化测试</strong> — CI/CD 集成 · 黄金样本对比 · 容忍度阈值</p>
+  </div>
+</div>
+
+
+<!-- ══ Ch4: Linux 内核补充清单 ══ -->
+<h2 class="sh">4. Linux 内核 — 还需要补充的关键子系统</h2>
+<p class="ss">已有 25+ 篇内核文档 · 但仍缺少 10 个与音视频/嵌入式开发直接相关的核心子系统</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:8%">优先级</th><th style="width:20%">子系统</th><th style="width:25%">对音视频开发的重要性</th><th>需要掌握的关键点</th><th>当前状态</th></tr></thead>
+  <tbody>
+    <tr><td class="g"><strong>P0</strong></td><td><strong>中断处理</strong><br><small>top half / bottom half</small></td><td>摄像头 Vsync 中断、音频 DMA 中断、编码器完成中断 — <strong>所有外设驱动的基础</strong></td><td>request_irq/request_threaded_irq · tasklet · workqueue · 中断上下文约束 (不能睡眠) · IRQF 标志位 · 中断共享 · 中断亲和性 (smp_affinity)</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td class="g"><strong>P0</strong></td><td><strong>时钟框架 (CCF)</strong><br><small>Common Clock Framework</small></td><td>Sensor MCLK、MIPI PCLK、I2S BCLK、编码器核心时钟 — <strong>设置错误 → 无图像/花屏/无声音</strong></td><td>clk_get/clk_set_rate/clk_enable · 时钟树 (PLL→divider→gate) · assigned-clocks (DT) · 时钟 notifier · 精度要求</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td class="g"><strong>P0</strong></td><td><strong>regulator 框架</strong><br><small>电压调节器子系统</small></td><td>Sensor AVDD/DVDD/DOVDD 供电、MIPI PHY 供电 — <strong>供电时序错误 → Sensor 不工作</strong></td><td>regulator_get/regulator_enable · regulator_set_voltage · DT 绑定 (xxx-supply) · 供电树 · 上电时序 (摄像头 sensor 常有 3 路供电)</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td class="g"><strong>P0</strong></td><td><strong>DMA-API &amp; CMA</strong><br><small>直接内存访问 + 连续内存分配器</small></td><td>视频帧缓冲的物理连续性 — <strong>DMA 无法访问非连续物理内存 → 采集失败</strong></td><td>dma_alloc_coherent/dma_map_sg · DMA 方向 (TO_DEVICE/FROM_DEVICE) · 缓存一致性 (dma_sync_*) · CMA 区域大小配置 · dma_set_mask</td><td class="y">部分 — vb2 中提到但未独立讲解</td></tr>
+    <tr><td class="y"><strong>P1</strong></td><td><strong>DRM / KMS</strong><br><small>Direct Rendering Manager</small></td><td>显示输出 — Camera→ISP→DRM 零拷贝预览链路的<strong>最后环节</strong></td><td>DRM 框架 (CRTC/Plane/Encoder/Connector) · KMS 原子模式设置 · dumb buffer · PRIME (dmabuf 共享) · flip/page_flip · vsync</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td class="y"><strong>P1</strong></td><td><strong>ASoC</strong><br><small>ALSA System on Chip</small></td><td>嵌入式音频驱动框架 — <strong>仅会 ALSA 用户态 API 不够驱动级 debug</strong></td><td>DAI (Digital Audio Interface) · codec/platfom/machine 三层驱动 · DAPM 动态音频电源管理 · I2S/PCM 接口 · audio graph card (DT)</td><td class="r">✗ 未覆盖 — 仅 ALSA 用户态入门</td></tr>
+    <tr><td class="y"><strong>P1</strong></td><td><strong>Device Tree 深度</strong><br><small>绑定编写 + Overlay + 调试</small></td><td>几乎所有外设 (sensor/CSI/编码器) 的硬件描述 — <strong>配置错误 → 驱动不 probe</strong></td><td>绑定规范 (YAML schema) · phandle/gpio/regulator 引用 · pinmux 配置 · assigned-clocks · overlay (动态加载) · dtc 编译 · /proc/device-tree 调试</td><td class="y">部分 — 分散在各文档中</td></tr>
+    <tr><td class="y"><strong>P1</strong></td><td><strong>pinctrl 子系统</strong><br><small>引脚复用与电气配置</small></td><td>Sensor/SPI/I2C/UART 引脚功能复用 — <strong>配置错误 → 硬件无信号</strong></td><td>pinmux (ALT 模式切换) · pinconf (上下拉/驱动强度/施密特) · pin group · DT 绑定 (pinctrl-0)</td><td class="y">部分 — GPIO 文档中提过但不够深入</td></tr>
+    <tr><td class="y"><strong>P1</strong></td><td><strong>Workqueue &amp; kthread</strong><br><small>内核线程与延迟工作</small></td><td>Sensor 驱动的周期性轮询、编码器异步回调、视频 pipeline 后台任务</td><td>alloc_workqueue/schedule_work · system_wq vs 自定义 wq · delay_work · kthread_create/kthread_run · 内核线程与用户线程的区别</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td style="color:#a78bfa"><strong>P2</strong></td><td><strong>实时 Linux (PREEMPT_RT)</strong><br><small>抢占式实时内核</small></td><td>音频/视频 pipeline 的低延迟保证 — <strong>工业 IPC 画面延迟的兜底方案</strong></td><td>PREEMPT_RT 补丁原理 · spinlock→rt_mutex 转换 · 中断线程化 · cyclictest 延迟测量 · 实时调度策略 (SCHED_FIFO/RR)</td><td class="r">✗ 未覆盖</td></tr>
+    <tr><td style="color:#a78bfa"><strong>P2</strong></td><td><strong>内核 Tracing</strong><br><small>ftrace · tracepoint · eBPF</small></td><td>定位 V4L2 ioctl 延迟、DMA 传输瓶颈、中断风暴 — <strong>从黑盒调试到可视化追踪</strong></td><td>ftrace (function_graph/trace_printk) · tracepoint (v4l2/mmc/dma 子系统) · eBPF/bpftrace 动态插桩 · perf 内核事件</td><td class="y">部分 — perf/strace 已覆盖但缺内核 tracer</td></tr>
+    <tr><td style="color:#a78bfa"><strong>P2</strong></td><td><strong>RCU 机制</strong><br><small>Read-Copy-Update</small></td><td>理解内核中无处不在的 RCU — <strong>读内核源码和定位 OOPS 的基础</strong></td><td>rcu_read_lock/unlock · synchronize_rcu · call_rcu · SRCU (sleepable RCU) · grace period</td><td class="r">✗ 未覆盖</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c3" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>🔄 中断处理 — 驱动开发的基石</h4><div class="lbl">request_irq → top half → bottom half</div>
+    <p>嵌入式音视频驱动大量依赖中断: Sensor Vsync(帧同步)、音频 DMA 完成(缓冲切换)、编码器完成(码流就绪)。<strong>必须掌握</strong>:<br>
+    ① <code>request_irq()</code> vs <code>request_threaded_irq()</code> — 后者自动创建中断线程, handler 在硬中断上下文, thread_fn 在线程上下文<br>
+    ② <strong>tasklet</strong> (轻量, 不可睡眠) vs <strong>workqueue</strong> (重量, 可睡眠) — 视频 DMA 完成通常用 tasklet, 编码器回调用 workqueue<br>
+    ③ 中断上下文限制: 不能睡眠、不能调 schedule()、不能用 mutex、GFP_ATOMIC 内存</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>🔧 CCF + regulator + pinctrl — SoC 三大基础框架</h4><div class="lbl">没有这三个, Sensor 根本起不来</div>
+    <p>摄像头 Sensor 的典型启动依赖链:<br>
+    ① <strong>regulator_enable</strong>(vana/vdig/vddl) — 按 datasheet 时序逐个上电<br>
+    ② <strong>clk_prepare_enable</strong>(mclk) — 给 Sensor 提供主时钟 (通常 24MHz)<br>
+    ③ <strong>gpiod_set_value</strong>(reset, 1) — 拉高复位引脚 → Sensor 开始工作<br>
+    ④ <strong>pinctrl</strong> — 确保 I2C/MIPI data lane 引脚复用正确<br>
+    这四步中任何一步配置错误 → Sensor probe 失败 → /dev/video0 不存在</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>📺 DRM/KMS + ASoC — 显示与音频的"另一半"</h4><div class="lbl">V4L2 管采集, 它们管输出</div>
+    <p>完整的音视频链路 = <strong>V4L2(采集)</strong> + <strong>DRM(显示)</strong> + <strong>ASoC(音频)</strong>:<br>
+    ① DRM: Camera→ISP→DMA→GPU纹理→KMS 原子提交→显示。PRIME dmabuf 实现零拷贝。<br>
+    ② ASoC: CPU DAI(音频接口)→codec DAI(编解码芯片)→DAPM(动态电源)。I2S/PCM 时序配置。<br>
+    ③ <strong>面试价值</strong>: 能讲清楚 V4L2→DRM 零拷贝预览链路 = 资深水平的标志。</p>
+  </div>
+</div>
+
+
+<!-- ══ Ch5: 学习路线图 ══ -->
+<h2 class="sh">5. 建议学习路线图</h2>
+<p class="ss">从当前水平到资深音视频专家 — 按阶段 · 按优先级 · 理论 + 实践</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:8%">阶段</th><th style="width:10%">时间</th><th>学习内容</th><th style="width:22%">实践项目</th><th>产出物</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Phase 1</strong></td><td>2-3 月</td>
+      <td><strong>WebRTC 深度</strong>: PeerConnection · SDP · ICE · GCC拥塞控制 · Simulcast<br>
+      <strong>RTP/RTCP</strong>: 协议栈源码 · JitterBuffer · NACK/FEC<br>
+      <strong>编码器调优</strong>: x264 preset/tune/rc · CBR/VBR/CRF 算法</td>
+      <td>搭建一个简易 SFU (基于 mediasoup/livekit) · 实现码率自适应切换 · 编写 WebRTC 抓包分析脚本</td>
+      <td>WebRTC 深度文档 · 编码器调优指南 · JitterBuffer 实现笔记</td></tr>
+    <tr><td><strong>Phase 2</strong></td><td>2-3 月</td>
+      <td><strong>音频 3A</strong>: AEC/ANS/AGC 原理 · Opus 编解码 · 音频延迟分析<br>
+      <strong>音视频同步</strong>: PTS/DTS 对齐 · SR 时钟恢复 · 唇音同步<br>
+      <strong>ABR 算法</strong>: BOLA/MPC · HLS/DASH 分片 · CMAF</td>
+      <td>IPC 设备音频链路延迟优化 · 实现 AEC 回声消除 · 多路混音测试</td>
+      <td>音频 3A 原理文档 · Opus 编码调优指南 · 唇音同步校准方法</td></tr>
+    <tr><td><strong>Phase 3</strong></td><td>2-3 月</td>
+      <td><strong>GPU 渲染</strong>: OpenGL ES 渲染管线 · Shader · 纹理操作 · EGL<br>
+      <strong>硬件编码</strong>: VAAPI/NVENC/V4L2 M2M · DMA-BUF 零拷贝<br>
+      <strong>性能优化</strong>: Pipeline 多线程架构 · 无锁队列 · 延迟预算</td>
+      <td>实现 GPU 端 NV12→RGB 转换 · 集成硬件编码器到 Pipeline · 性能对比: CPU vs GPU vs HW Enc</td>
+      <td>GPU 渲染指南 · 零拷贝 Pipeline 设计文档 · 延迟预算分析报告</td></tr>
+    <tr><td><strong>Phase 4</strong></td><td>2-3 月</td>
+      <td><strong>AI 推理</strong>: TFLite/ONNX · YOLO/MobileNet · 预处理 pipeline<br>
+      <strong>容器格式</strong>: MKV/WebM · CMAF · TS 深度<br>
+      <strong>QUIC/HTTP3</strong>: 协议栈 · WebTransport · 与 WebRTC 对比</td>
+      <td>集成端侧人脸检测到 IPC pipeline · 实现 CMAF LL-HLS 低延迟直播 · QUIC vs TCP 弱网对比实验</td>
+      <td>AI 推理集成指南 · CMAF 低延迟方案 · QUIC 实践对比报告</td></tr>
+  </tbody>
+  </table>
+</div>
+
+
+<!-- ══ Ch5: 面试 ══ -->
+<h2 class="sh">6. 面试高频问题 — 对标资深音视频岗位</h2>
+<p class="ss">字节/腾讯/阿里/海康/大华等公司 音视频开发/T3-1 到 T3-3 级别的典型面试题</p>
+
+<div class="ptbl" style="margin-top:16px">
+  <table>
+  <thead><tr><th style="width:8%">#</th><th>问题</th><th style="width:38%">考察点</th><th>当前能否回答</th></tr></thead>
+  <tbody>
+    <tr><td>Q1</td><td>WebRTC 通话中如果出现卡顿，你会从哪些维度排查？</td><td>端到端链路思维: 采集→编码→发送→网络→接收→解码→渲染 · 区分是丢包、延迟还是编码瓶颈</td><td class="y">部分 (有弱网优化知识, 但缺 WebRTC 内核链路)</td></tr>
+    <tr><td>Q2</td><td>H.264 编码器中 preset 和 tune 分别控制什么？zerolatency 模式为什么能降低延迟？</td><td>preset=编码速度/质量平衡 · tune=场景优化 · zerolatency=禁B帧+单帧编码+无前瞻</td><td class="r">不够 — 缺编码器参数深度理解</td></tr>
+    <tr><td>Q3</td><td>音频回声是怎么产生的？AEC 的基本原理是什么？</td><td>声学回声路径→自适应滤波器→NLMS算法→双讲检测</td><td class="r">几乎无法回答 — 音频 3A 是空白</td></tr>
+    <tr><td>Q4</td><td>GCC (Google Congestion Control) 是如何工作的？</td><td>基于延迟估计 (Trendline) + 基于丢包估计 → 目标码率 · REMB vs TWCC</td><td class="r">基本无法回答 — 缺拥塞控制深度</td></tr>
+    <tr><td>Q5</td><td>RTP Timestamp 和 NTP Timestamp 的关系？RTCP SR 包的作用？</td><td>RTP Timestamp=采样率相关 · NTP=绝对时间 · SR=建立两者映射 → 音视频同步的基础</td><td class="y">部分 — 有同步概念但缺 RTP 深度</td></tr>
+    <tr><td>Q6</td><td>如何设计一个支持 1000 路并发观看的直播系统？</td><td>边缘节点 · CDN 分发 · ABR · 转码 · 录制 · 故障切换</td><td class="y">部分 — 有 LiveKit 经验但缺大规模架构</td></tr>
+    <tr><td>Q7</td><td>DMA-BUF 是什么？如何在 Camera→GPU→Encoder 之间实现零拷贝？</td><td>dma_buf 框架 · DRM PRIME · V4L2 DMABUF · 跨设备 fd 传递</td><td class="g">可以回答 (vb2 DMABUF + DMA 驱动深度)</td></tr>
+    <tr><td>Q8</td><td>如何测量和优化端到端视频延迟？</td><td>各阶段插桩 · 帧时间戳追踪 · 延迟预算分配 · 瓶颈定位</td><td class="y">部分 — 有 e2e 延迟文档但缺实战优化经验</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🔧 短期可以快速提升的点 (1-2 星期见效)</div>
+  <strong>1. 补全 WebRTC 深度</strong>: 阅读 mediasoup/livekit-server 源码 → 理解 SFU 内部工作原理。<br>
+  <strong>2. 编码器参数速成</strong>: 拿一段测试视频, 系统测试 x264 每个 preset + tune 组合的码率/PSNR/编码时间 → 建立直觉。<br>
+  <strong>3. GCC 拥塞控制</strong>: 阅读 Google WebRTC GCC 论文 + 源码 webrtc/modules/congestion_controller/ → 画流程图。<br>
+  <strong>4. RTP 协议栈</strong>: 用 Wireshark 抓一个 WebRTC 通话 → 逐个分析 RTP/RTCP 包 → 理解每个字段的实时变化。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  Audio/Video Developer Roadmap — 知识体系盘点与进阶指南 · 2026-06
+</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

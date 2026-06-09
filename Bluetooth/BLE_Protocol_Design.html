@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE 应用传输协议设计 — 从 OTA 到音频流</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}
+.sec{min-height:auto;padding:60px 28px 40px}
+.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.canvas-wrap{width:100%;max-width:960px;background:rgba(0,0,0,.12);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.03);margin-top:24px;opacity:0;transform:translateY(30px);transition:all 1s .3s}
+.canvas-wrap.vis{opacity:1;transform:translateY(0)}.canvas-wrap canvas{width:100%;height:100%;display:block}
+.ptbl{margin:14px 0 !important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+
+/* Protocol byte-diagram tables */
+.pf{max-width:960px;width:100%;margin:16px auto;overflow-x:auto}
+.pf table{border-collapse:collapse;width:100%;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11px}
+.pf thead th{background:rgba(108,99,255,.1);color:#a78bfa;font-weight:700;padding:8px 6px;text-align:center;border:1px solid rgba(255,255,255,.06);white-space:nowrap;font-size:10px}
+.pf tbody td{padding:8px 10px;text-align:center;border:1px solid rgba(255,255,255,.04);color:#c8c8e8}
+.pf .hdr{background:rgba(248,113,113,.08);color:#fca5a5;font-weight:600}
+.pf .idx{background:rgba(251,191,36,.06);color:#fbbf24;font-weight:600}
+.pf .pay{background:rgba(52,211,153,.06);color:#34d399;font-weight:600}
+.pf .crc{background:rgba(56,189,248,.06);color:#38bdf8;font-weight:600}
+.pf .cmd{background:rgba(167,139,250,.08);color:#a78bfa;font-weight:600}
+.pf .sz{color:#6666aa;font-size:10px}
+.pf .note{text-align:left;font-size:10.5px;color:#8888aa;line-height:1.5;padding:6px 10px;font-family:-apple-system,"Noto Sans SC",sans-serif}
+
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s8 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">协议基础</a><span class="sep"></span>
+  <a href="#s3">OTA 固件</a><span class="sep"></span>
+  <a href="#s4">小数据</a><span class="sep"></span>
+  <a href="#s5">音频流</a><span class="sep"></span>
+  <a href="#s6">配置矩阵</a><span class="sep"></span>
+  <a href="#s7">性能优化</a><span class="sep"></span>
+  <a href="#s8">IPC 实战</a>
+</nav>
+
+<!-- ═══ S1: Hero ═══ -->
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">BLE 应用传输协议设计</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">BLE 4.x/5.x 只定义了物理层和链路层——应用层传输协议需要<strong>自己设计</strong>。OTA 升级、小数据上报、音频流传输需要完全不同的帧格式、分片策略、确认机制和差错控制。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">PHY</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">Link Layer</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">L2CAP</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">ATT/GATT</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399"><strong>应用传输层</strong></span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">OTA · 数据 · 音频</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">MTU 23~247</div><div class="l">ATT 单包上限 (B)</div></div>
+    <div class="stat"><div class="n">7.5ms~4s</div><div class="l">连接间隔范围</div></div>
+    <div class="stat"><div class="n">3 种场景</div><div class="l">OTA · 数据 · 音频</div></div>
+    <div class="stat"><div class="n">2M PHY</div><div class="l">BLE 5.0 高速模式</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: 协议基础 ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">BLE 传输基础：MTU · 连接间隔 · GATT 约束</h2>
+  <p class="sec-sub" id="s2s">为什么 BLE 应用层必须自己设计传输协议——ATT/GATT 只提供"读写特征值"的原子操作，<strong>没有流控、没有分片重组、没有校验、没有会话管理</strong>。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>MTU 约束</h4>
+      <div class="sub">ATT_MTU - 3 = 应用层可用字节</div>
+      <p>默认 MTU=23 → 应用层仅 <strong>20 字节</strong>可用——一个完整的 JSON 状态包都放不下。BLE 4.2+ 支持协商到 MTU=247 → 应用层 <strong>244 字节</strong>。这是协议分片设计的第一个硬约束——任何超过 MTU-3 的数据必须拆包。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>连接间隔</h4>
+      <div class="sub">7.5ms ~ 4s — 吞吐与功耗的博弈</div>
+      <p>BLE 不是持续连接——两个设备以固定间隔在约定时刻醒来通信（Connection Event）。每 Event 可交换多包（受 DLE 和控制器队列深度限制）。<strong>7.5ms</strong>：1.4Mbps 但功耗高（不休眠）。<strong>100ms+</strong>：功耗极低但吞吐极低。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>GATT 串行约束</h4>
+      <div class="sub">同时只能有一个未完成的 GATT 事务</div>
+      <p>ATT 是严格请求-响应：Write Request → <strong>必须等</strong> Write Response → 才能发下一个。<strong>Write Without Response (Write Command) 可连续发</strong>但无确认——适合音频/OTA 流式数据——但需要应用层自己实现确认。</p>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" data-reveal style="height:300px">
+    <canvas id="c1"></canvas>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- S2b: 帧边界 — 为什么 BLE 不需要而 TCP/UART 必须 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="sec s2" id="s2b" style="padding-top:20px">
+  <h2 class="sec-title" id="s2bt" style="font-size:clamp(20px,3vw,28px)">为什么 BLE 不需要帧边界而 TCP/UART 必须？</h2>
+  <p class="sec-sub" id="s2bs" style="margin-bottom:18px">根本区别不在于"协议"——在于<strong>协议栈下层有没有帮你做消息边界的保留和还原</strong>。</p>
+
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>TCP/UART：字节流的困境 — 逐字节追踪真实场景</h4>
+      <div class="sub">应用层发了两条消息，传输层合并成一个数据块发出去了</div>
+      <p><strong>发送端</strong>：应用调用 <code>write(fd, "REBOOT", 6)</code> → 内核 TCP 栈将这 6 字节放入发送缓冲区。<strong>100μs 后</strong>，应用再调用 <code>write(fd, "STATUS", 6)</code> → 又 6 字节追加到同一个发送缓冲区。TCP 为了效率，把这 <strong>12 字节合并成一个 TCP 段</strong>发出去了（Nagle 算法 + 缓冲积累）。<br>
+      <strong>接收端</strong>：调用 <code>read(fd, buf, 128)</code> → <strong>一次性读到 12 字节</strong>：<code>"REBOOTSTATUS"</code>。接收端应用<strong>完全不知道</strong>这是两个 6 字节的消息——它只看到一个 12 字节的字节流。<br>
+      <strong>更糟的情况</strong>：发送端写 100 字节，接收端第一次 read 只拿到 40 字节（TCP 段还没到齐），第二次 read 再拿 60 字节——<strong>一条消息被拆成两次接收</strong>。这就是字节流的核心问题：<strong>write 的边界 != read 的边界</strong>。应用层必须自己在数据中嵌入边界信息——长度前缀或分隔符——才能重新切分出原始消息。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>BLE：消息保留 — 逐层追踪一帧数据怎么到达的</h4>
+      <div class="sub">每一层协议都有明确的消息长度字段，下层自动帮上层还原</div>
+      <p><strong>发送端，自顶向下</strong>：<br>
+      ① 应用层：<code>gatt_write_char(handle, "REBOOT", 6)</code><br>
+      ② ATT 层：封装为 ATT PDU = <strong>[Opcode:1B][Handle:2B][Value:6B]</strong>。ATT PDU 头部的 Opcode 隐式指定了 PDU 格式——接收端据此知道 Value 有 6 字节。<br>
+      ③ L2CAP 层：封装为 L2CAP SDU = <strong>[Length:2B][CID:2B][ATT_PDU:9B]</strong>。Length = 11 (CID 2B + ATT 9B)。<br>
+      ④ LL 层：L2CAP SDU 共 13 字节(Length 2B + 11B)。假设 LL MTU=27，13B < 27B → <strong>无需分片</strong>。封装为一个 LL Data PDU = [Header:2B][Payload:13B][MIC:4B]。<br><br>
+      <strong>接收端，自底向上</strong>：<br>
+      ⑤ LL 层：收到 LL Data PDU → 校验 MIC → 提取 Payload(13B) → 上传 L2CAP。<br>
+      ⑥ L2CAP 层：读 [Length:2B] = 11 → <strong>精确知道这个 SDU 有 11 字节有效载荷</strong> → 提取 CID + ATT_PDU → 上传 ATT。<br>
+      ⑦ ATT 层：读 [Opcode:1B] → 查表得知这是 Write Command → <strong>根据 Opcode 定义的格式</strong>解析 [Handle:2B][Value:6B] → 触发回调 <code>on_write(handle, value, len=6)</code>。<br>
+      ⑧ 应用层：收到 <code>value="REBOOT", len=6</code>——<strong>与发送端完全一致的 6 字节消息</strong>。即使 LL 层做了分片（L2CAP SDU > MTU 时），LL 层也会<strong>先重组再上传</strong>——L2CAP 层以上<strong>永远收不到半包</strong>。</p>
+    </div>
+  </div>
+
+  <!-- 关键对比 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:20px 0 8px">一图看懂：同样的发送，TCP vs BLE 接收端看到什么</h4>
+  <div class="cblock" style="max-width:960px;font-size:10.5px;line-height:1.85;margin-top:6px"><span class="cm">发送端连续发送两条消息: msg1="REBOOT"(6B)  msg2="STATUS"(6B)</span>
+
+<span class="st">TCP 接收端 — 字节流, 边界完全丢失:</span>
+  read() 可能返回: "REBOOT"      <span class="cm">← 刚好等于第一条 (运气好)</span>
+  read() 可能返回: "REBOOTSTATUS" <span class="cm">← 两条粘在一起 (常见)</span>
+  read() 可能返回: "REBO"         <span class="cm">← 第一条被截断 (TCP 分片)</span>
+              + "OTSTATUS"    <span class="cm">← 后半段跟第二条粘在一起</span>
+  <span class="st">→ 应用层必须改造数据: 加 Length 前缀或分隔符, 自己拼回原始消息</span>
+
+<span class="st">BLE 接收端 — 消息边界保留, 每次回调拿到完整的一条:</span>
+  on_write(handle, "REBOOT", 6)  <span class="cm">← 第一条, 完整 6 字节</span>
+  on_write(handle, "STATUS", 6)  <span class="cm">← 第二条, 完整 6 字节</span>
+  <span class="st">→ 应用层不需要任何帧边界处理, 消息边界由 BLE 协议栈保证</span></div>
+
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>那 BLE 协议帧里到底需不需要什么？</h4>
+      <div class="sub">两个维度：长度 和 类型 — 结论不同</div>
+      <p><strong>Length 不需要</strong>：ATT 层回调的 <code>len</code> 参数已经精确告知本帧有多少字节。在帧内再编码一个 Length = 完全冗余——ATT 层替你做了。<br>
+      <strong>Frame Type 取决于架构</strong>：不同帧类型走<strong>不同 GATT Characteristic</strong>（Handle#10=Data, Handle#11=Control）→ <strong>不需要</strong> Type 字节——Handle 已区分。同一 Handle 上复用多种帧（如音频流）→ <strong>需要</strong> 首字节 Type。<br>
+      <strong>CRC/Checksum 取决于场景</strong>：OTA 需要 CRC16（链路层 CRC24 只覆盖单个 LL PDU，应用层数据跨多个 LL PDU 后无法保证端到端完整性）；小数据不需要（单包 = 单个 LL PDU，CRC24 已覆盖）；音频流不需要（丢帧可接受，PLC 填补）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>回到本质：为什么 BLE 能做到 TCP 做不到的事？</h4>
+      <div class="sub">BLE 有 L2CAP SAR 和 ATT 消息模型 — TCP 没有等价物</div>
+      <p><strong>L2CAP SAR (Segmentation And Reassembly)</strong> 是 BLE 协议栈内置的分片重组机制——它保证：不管 LL 层分了多少片，重组后上传的一定是<strong>完整的 L2CAP SDU</strong>。TCP 没有"消息边界"的概念——TCP 只保证字节按序到达，不保证"一次 send = 一次 recv"。<br>
+      <strong>ATT 的消息模型</strong>：ATT PDU 的 Opcode 定义了 PDU 结构——接收端 ATT 层<strong>根据 Opcode 查表</strong>就知道 Handle 从哪开始、Value 有多长。每个 Opcode 对应的 PDU 格式是固定的——这本质上是<strong>协议层级的类型-长度编码</strong>，只是做在了 ATT 协议内部而非应用层 payload 中。<br>
+      <strong>总结</strong>：不是 BLE "不需要"帧边界——而是 BLE 把帧边界的工作<strong>下沉到了 ATT/L2CAP 层</strong>，对应用层透明。TCP/UART 没有这些中间层，帧边界的责任<strong>完全落在应用层</strong>。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">本文档协议帧的设计原则</div>
+    ① <strong>不在 Payload 中编码 Length</strong>——ATT 回调已提供 <code>len</code>。<br>
+    ② <strong>帧类型优先用 GATT Handle 区分</strong>——OTA Data vs Control、Command vs Status 走不同 Handle → 零字节开销。<br>
+    ③ <strong>仅在同一 Handle 上复用多种帧时用首字节 Type</strong>——如音频流（0x00/0x02/0xFF）。<br>
+    ④ <strong>仅 OTA 需要 Payload CRC</strong>——因为是跨 LL PDU 组装的大块数据，链路层 CRC24 不覆盖端到端。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- S3: OTA 固件升级 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">场景 1: OTA 固件升级</h2>
+  <p class="sec-sub" id="s3s">传输几百 KB 到几 MB 的固件镜像——一块数据错误就可能导致设备变砖。<strong>可靠性第一，速度第二</strong>。</p>
+
+  <!-- 协议分帧图 -->
+  <p style="max-width:960px;width:100%;font-size:11px;color:#6666aa;margin:20px 0 6px">
+    <strong>GATT 路由</strong>: OTA Data Characteristic (Handle#0x0012) 承载 Block 帧 · OTA Control Characteristic (Handle#0x0013) 承载 ACK/Control 帧 · <strong>两个不同的 Handle → 不需要帧内 Type 字节</strong>。每个帧仅含纯业务数据。
+  </p>
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">OTA Data Block 帧格式 (Handle#0x0012, Write Without Response, MTU=247 时 Payload 最大 236B)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th>偏移</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4 .. N+3</th><th>N+4</th><th>N+5</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="hdr" style="font-size:12px">字段</td>
+      <td class="idx" colspan="2">Block Index<br><span class="sz">uint16 LE</span></td>
+      <td class="idx" colspan="2">Data Length<br><span class="sz">uint16 LE</span></td>
+      <td class="pay">Payload<br><span class="sz">N = Data Length 字节</span></td>
+      <td class="crc" colspan="2">CRC16<br><span class="sz">uint16 LE</span></td>
+    </tr>
+    <tr>
+      <td class="sz">大小</td><td class="sz" colspan="2">2 字节</td><td class="sz" colspan="2">2 字节</td><td class="sz">N 字节 (≤236)</td><td class="sz" colspan="2">2 字节</td>
+    </tr>
+    <tr>
+      <td class="note" colspan="8">
+        <strong>Block Index</strong>: 从 0 递增的序号。接收端用于检测乱序（非连续 Index → 请求重传缺失 Block）、去重（收到重复 Index → 丢弃）、断点续传（重连时接收端上报 Highest Continuous Index → 发送端从此处继续）。<br>
+        <strong>Data Length</strong>: 实际有效载荷长度。最后一个 Block 通常 < 236 字节。接收端据此知道 Payload 边界——不能依赖 MTU 推断长度。<br>
+        <strong>CRC16</strong>: CCITT CRC16 (多项式 0x1021, 初始值 0xFFFF)。覆盖范围: Block Index (2B) + Data Length (2B) + Payload (N B)。每 Block 独立校验——接收端检测到 CRC 不匹配 → 将该 Block Index 标记为缺失 → 在 ACK 中请求重传该 Block，而非整个固件。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <!-- ACK 帧 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">接收端 ACK 确认帧格式 (GATT Write Request, 需 Response 确认送达)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th>偏移</th><th>0</th><th>1</th><th>2</th><th>3</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="hdr" style="font-size:12px">字段</td>
+      <td class="idx" colspan="2">Highest Continuous Index<br><span class="sz">uint16 LE</span></td>
+      <td class="cmd" colspan="2">Missing Bitmap<br><span class="sz">uint16 LE</span></td>
+    </tr>
+    <tr>
+      <td class="note" colspan="5">
+        <strong>Highest Continuous Index</strong>: 已连续收到的最高 Block 序号（不含缺口）。发送端据此判断"哪段是完成的"——此序号之前的所有 Block 都不需要重传。
+        <strong>Missing Bitmap</strong>: 16-bit 位图, bit0 = Index (Highest+1), bit1 = (Highest+2), ... bit15 = (Highest+16)。1 = 缺失/CRC错误, 0 = 已收到。<br>
+        <strong>示例</strong>: Highest=100, Bitmap=0x0012 (bit1+bit4) → Block 101 和 Block 104 缺失 → 发送端重传这两个 Block 后继续。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>ACK 触发时机：不是每个 Block 都 ACK</h4>
+      <div class="sub">每 16 个 Block 或 500ms 超时 → 发一次 ACK</div>
+      <p>4200 次 Block 全部逐包 ACK → 额外 4200 × 2 × 15ms = 126s 往返延迟——不可接受。改为<strong>累积 ACK + 缺失位图</strong>：每收到 16 个新 Block（或 500ms 无新 Block 超时）发一次 ACK——ACK 次数从 4200 降到 ~263 次——节省 93% 的 ACK 往返开销。<br>
+      <strong>超时 ACK 的必要性</strong>：如果发送端刚好发完最后 5 个 Block 等待 ACK → 永远达不到 16 个阈值 → 500ms 超时触发 ACK → 接收端确认收完。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>OTA 状态机：四阶段生命周期</h4>
+      <div class="sub">IDLE → TRANSFER → VERIFY → APPLY</div>
+      <p><strong>IDLE</strong>：App 发送 Start OTA Request（含固件版本、大小、CRC32 期望值）。设备检查版本号（禁止降级）、检查剩余 Flash 空间 → 回复 ACK 或 REJECT。<br>
+      <strong>TRANSFER</strong>：Block-by-Block 传输。接收端边收边写入 Flash（双缓冲：一个 Page 收满 → 整页写入 → 切换另一 Page 继续收）。<br>
+      <strong>VERIFY</strong>：所有 Block 收完。接收端计算整个固件的 CRC32 → 与 Start OTA 中的期望值比对 → 不匹配 → 返回错误码 → App 重传。<br>
+      <strong>APPLY</strong>：CRC32 验证通过。设备设置 Boot Flag → 重启 → Bootloader 检测 Flag → 校验固件签名 → 拷贝到运行区 → 清除 Flag → 跳转新固件。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 每个 Block 独立 CRC 的必要性 — 链路层 CRC 不够</div>
+    BLE 链路层已有 3 字节 CRC24 校验每个 LL PDU。但链路层 CRC 只保证<strong>单个 LL PDU</strong> 的完整性——当一个应用层 Block 跨越多个 LL PDU 时，<strong>每个 PDU 的 CRC 都正确不等于整个 Block 的端到端完整性</strong>（ATT/GATT 层不做校验聚合）。应用层 CRC16 覆盖整个 Block 的所有字节——是 OTA 可靠性的最后防线。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- S4: 小数据传输 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">场景 2: 小数据传输 — 命令与状态</h2>
+  <p class="sec-sub" id="s4s">包 < 20B · 频率 0.1~100Hz · 延迟敏感 · <strong>不需要分片</strong>。协议设计的核心是零开销编码、向后兼容的命令体系和快速确认。</p>
+
+  <!-- 命令帧 -->
+  <p style="max-width:960px;width:100%;font-size:11px;color:#6666aa;margin:20px 0 6px">
+    <strong>GATT 路由</strong>: Command Characteristic (Handle#0x0010, Write) 承载命令帧 · Status Characteristic (Handle#0x0011, Notify) 承载 TLV 上报帧 · <strong>不同 Handle → 帧类型由 Handle 隐式确定</strong>。命令是 Write Request（带 Response 确认），状态是 Notify（无确认）。
+  </p>
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">命令下发帧格式 (Handle#0x0010, GATT Write Request)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th>偏移</th><th>0</th><th>1</th><th>2 .. 1+ParamLen</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="hdr" style="font-size:12px">字段</td>
+      <td class="cmd">Command ID<br><span class="sz">uint8</span></td>
+      <td class="idx">Param Length<br><span class="sz">uint8</span></td>
+      <td class="pay">Parameters<br><span class="sz">ParamLen 字节</span></td>
+    </tr>
+    <tr>
+      <td class="note" colspan="4">
+        <strong>Command ID 分配规则</strong>: 0x00~0x7F = 通用命令 (重启/恢复出厂/查询状态/进入OTA)；0x80~0xBF = 功能命令 (拍照/LED/电机/蜂鸣)；0xC0~0xFE = 厂商扩展；0xFF = 保留。<br>
+        <strong>Parameters 编码</strong>: 各命令自定义。拍照命令 → 0 字节 Param (仅 CmdID 足够)；设置灵敏度 → 1 字节 Param (0-100)；WiFi 配网信息 → N 字节Param (SSID+Password)。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <!-- 响应帧 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">命令响应帧格式 (设备 → App, GATT Write Response 携带的 value)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th>偏移</th><th>0</th><th>1</th><th>2 .. 1+DataLen</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="hdr" style="font-size:12px">字段</td>
+      <td class="cmd">Command ID<br><span class="sz">uint8</span></td>
+      <td class="idx">Status Code<br><span class="sz">uint8</span></td>
+      <td class="pay">Response Data<br><span class="sz">可选, DataLen 字节</span></td>
+    </tr>
+    <tr>
+      <td class="note" colspan="4">
+        <strong>Status Code 定义</strong>: 0x00 = SUCCESS (命令已执行)；0x01 = ERR_PARAM (参数无效)；0x02 = ERR_STATE (当前状态下不可执行, 如 OTA 中不能拍照)；0x03 = ERR_BUSY (设备忙, 稍后重试)；0x04 = ERR_TIMEOUT (执行超时)；0x05 = ERR_NOT_SUPPORTED (固件不支持此命令)；0x10~0xFF = 厂商自定义错误。<br>
+        <strong>Response Data</strong>: 查询命令需携带返回数据。如 CmdID=查询电池 → Data=1B (0-100)；CmdID=拍照 → Data=0B (仅 Status 即可)；CmdID=查询固件版本 → Data=3B (主.次.修订号)。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <!-- TLV 上报帧 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">状态上报帧格式 (设备 → App, GATT Notify, TLV 编码)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th colspan="3">TLV #1</th><th colspan="3">TLV #2</th><th>...</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="cmd">Type<br><span class="sz">uint8</span></td><td class="idx">Len<br><span class="sz">uint8</span></td><td class="pay">Value<br><span class="sz">Len 字节</span></td>
+      <td class="cmd">Type<br><span class="sz">uint8</span></td><td class="idx">Len<br><span class="sz">uint8</span></td><td class="pay">Value<br><span class="sz">Len 字节</span></td>
+      <td class="sz">...</td>
+    </tr>
+    <tr>
+      <td class="note" colspan="7">
+        <strong>TVL 比固定偏移的优势</strong>: 固件升级新增一个状态字段 → 旧 App 遇到不认识的 Type → 读取 Len → 跳过 Len 字节 → 继续解析下一个 TLV → 完全向后兼容。固定偏移量方案新增字段 → 所有偏移全部错位。<br>
+        <strong>Type 分配</strong>: 0x01=电池, 0x02=温度, 0x03=RSSI, 0x04=活动计数, 0x05=错误码, 0x10~0x1F=传感器数据, 0x80~=厂商扩展。<br>
+        <strong>Notify vs Indicate</strong>: Notify 无确认——状态上报用 Notify（丢一帧下一秒再来）；Indicate 需确认——关键状态变更（如进入 OTA 模式前的 final ACK）用 Indicate。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">小数据场景为什么不需要分片、重传和 CRC？</div>
+    <strong>不分片</strong>: 单包 20B (default MTU) 或 244B (negotiated) → 命令和状态都在单包内 → GATT 层的原子操作保证"要么整包到、要么整包不到"。<br>
+    <strong>不应用层重传</strong>: Write Request 有 ATT 内置超时重传 (30s supervision timeout)。Write Response 回带 Status → 命令是否执行成功在 ATT 层原子确认。<br>
+    <strong>不应用层 CRC</strong>: 单包数据 = 单个 L2CAP PDU = 单个 LL PDU → 链路层 CRC24 覆盖完整 → 端到端完整性在 LL 层已保证。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- S5: 编码音频流 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">场景 3: 编码音频流传输</h2>
+  <p class="sec-sub" id="s5s">AAC/Opus 编码后每秒 2~32 KB/s。丢一帧音频 = 听感卡顿而非功能失败——<strong>允许丢帧，不能容忍延迟累积</strong>。</p>
+
+  <!-- 音频帧 -->
+  <p style="max-width:960px;width:100%;font-size:11px;color:#6666aa;margin:20px 0 6px">
+    <strong>GATT 路由</strong>: Audio Stream Characteristic (Handle#0x0020, Write Without Response) <strong>单一 Handle 承载所有音频帧</strong>——音频数据帧、编码配置帧、流结束帧复用同一 Handle。因此<strong>第一个字节作为 Frame Type</strong> 区分帧类型（0x00=音频, 0x02=配置, 0xFF=结束）。
+  </p>
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#e0e0ff;margin:24px 0 8px">音频流帧格式 (Handle#0x0020, Write Without Response, 连续发送)</h4>
+  <div class="pf">
+  <table>
+  <thead><tr><th>偏移</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4 .. 3+PayloadLen</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="hdr" style="font-size:12px">字段</td>
+      <td class="cmd">Frame Type<br><span class="sz">uint8</span></td>
+      <td class="idx">Sequence<br><span class="sz">uint8</span></td>
+      <td class="crc" colspan="2">Timestamp Delta<br><span class="sz">uint16 LE, ms</span></td>
+      <td class="pay">Encoded Payload<br><span class="sz">PayloadLen 字节</span></td>
+    </tr>
+    <tr>
+      <td class="note" colspan="6">
+        <strong>Frame Type</strong>: 0x00 = 音频帧 (AAC/Opus), 0x01 = 静音帧 (SID, Comfort Noise), 0x02 = 配置帧 (Codec 参数变更), 0xFF = 流结束。<br>
+        <strong>Sequence (0~255 回绕)</strong>: Write Without Response 无 ACK → 链路层丢包不通知应用层。接收端检测 Seq 跳跃 (收到 5→8, 缺 6,7) → 统计丢帧率 → 解码端对丢失帧位置做 PLC 插值。检测到重复 Seq → 去重。<br>
+        <strong>Timestamp Delta</strong>: 相对上一帧的时间增量 (ms)。Connection Event 的突发到达 (几帧同时到) → 接收端按累计时间戳分散排列播放时间——消除 BLE 传输带来的时域抖动。
+      </td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>环形发送队列 + 老化丢弃策略</h4>
+      <div class="sub">编码快于发送 → 队列积压 → 丢弃最老帧而非阻塞</div>
+      <p><strong>队列设计</strong>: 预分配 8-16 个音频帧 buffer（每帧 ~200B，总计 3.2KB）。编码器写入环形队列 → BLE 发送线程取出发送。发送线程检查每帧的累计时间戳——<strong>与当前时间差 > 200ms → 直接丢弃</strong>。跳过老帧后 Sequence 不连续 → 接收端通过 Seq 跳跃感知丢帧 → PLC 填补。<br>
+      <strong>关键设计决策</strong>: 不重传、不等待、不阻塞编码器。音频延迟 > 200ms → 双向对讲不可用——<strong>宁可丢帧引起微卡，不可累积延迟</strong>。这是音频流与 OTA 协议设计最根本的区别。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>为什么必须用 Write Command 而不是 Indicate？</h4>
+      <div class="sub">Indicate 每秒最多 66 帧 < 编码 50fps → 不可控积压</div>
+      <p>GATT Indicate 有 ATT 层强制确认：发一帧 → 等 Confirm → 一个 Connection Event (15ms) 只能完成 <strong>1 次 Indicate 往返</strong> → 理论最大 66 帧/秒 (1/0.015)。加上 ATT 处理延迟 + 重传 → 实际 ~40 帧/秒 → <strong>低于 50fps 编码速率</strong> → 队列持续积压 → 延迟无限增长。<br>
+      <strong>Write Command 方案</strong>: 无确认 → 每 Event 可连续发 3-5 帧 → 实际有效 >150 帧/秒 → 远超编码速率 → 队列始终保持低水位 (0-2 帧) → 端到端延迟 < 40ms。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f472b6">
+      <h4>音频编码参数协商帧 (带内控制)</h4>
+      <div class="sub">Frame Type=0x02 — 不另开 GATT 通道</div>
+      <p>不需要单独的 GATT Characteristic 来控制音频参数——编码参数变更通过<strong>带内控制帧</strong>在同一个 Write Command 流中传递。Payload 包含: 1B Codec (0=AAC-LC, 1=Opus, 2=LC3) + 1B Bitrate Index (0~15 对应档次) + 1B Sample Rate (0=8K,1=16K,2=24K,3=48K) + 1B Frame Duration (0=10ms,1=20ms)。<br>
+      发送端在任何时候插入此帧 → 接收端收到后调整解码器 → 后续音频帧使用新参数。带内控制比独立 GATT 通道的优势：<strong>时序上与音频流天然同步</strong>——参数切换点精确落在两个音频帧之间。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>PLC 丢包隐藏 — 不重传的底气</h4>
+      <div class="sub">Packet Loss Concealment 在解码端填补丢失帧</div>
+      <p>接收端检测到 Seq 跳跃 → 不是请求重传 → 而是调用 PLC 算法：<strong>基于前后帧的基频和频谱</strong>插值生成丢失帧的近似波形。AAC 和 Opus 解码器内置 PLC（启用 <code>AAC_PLC</code> 或 <code>OPUS_SET_PACKET_LOSS_PERC</code>）。<br>
+      PLC 对单帧丢失效果极好（几乎无感知），连续 2-3 帧丢失听感微卡，连续 >5 帧丢失 → 明显断续但<strong>不引入额外延迟</strong>。而重传 5 帧 → RTT × 5 = 75ms 额外延迟 + 等待 → 对讲体验完全不可用。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 音频流的 Sequence 不是可靠性机制——是诊断和统计工具</div>
+    Sequence 不用于确认（无 ACK/NACK），不用于重传。它的唯一作用是：① 接收端统计丢帧率（丢帧率 > 5% → 触发自适应降码率）② 解码端确定需要 PLC 填补的具体位置（Seq=7 丢了 → PLC 在 6 和 8 之间插值）③ 发送端诊断——每次 Connection Event 后记录发出的 Seq 范围 → 控制器队列满导致丢帧 → 日志中可见 Seq 间隙 = 控制器队列深度不足 → 调整队列深度参数。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: Config Matrix ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">三场景 BLE 配置矩阵</h2>
+  <p class="sec-sub" id="s6s">同样的硬件，不同场景需要完全不同的参数——这是 BLE 性能优化的核心。</p>
+  <div class="ptbl" style="margin-top:24px">
+  <table>
+  <thead><tr><th>配置维度</th><th>OTA 固件升级</th><th>小数据传输</th><th>编码音频流</th></tr></thead>
+  <tbody>
+    <tr><td class="g">连接间隔</td><td class="g">7.5 ~ 15ms (最短)</td><td class="y">30 ~ 100ms (平衡)</td><td class="y">15 ~ 20ms (低延迟)</td></tr>
+    <tr><td>Slave Latency</td><td>0 (不跳过 Event)</td><td class="g">3 ~ 10 (省电)</td><td>0 ~ 2 (微延迟)</td></tr>
+    <tr><td class="g">PHY</td><td class="g">2M (LE 2M)</td><td>1M (LE 1M)</td><td class="g">2M (LE 2M)</td></tr>
+    <tr><td>MTU</td><td class="g">247 (最大)</td><td>23 ~ 65 (默认够用)</td><td class="g">247 (最大)</td></tr>
+    <tr><td class="g">GATT 操作</td><td class="g">Write Without Response</td><td>Write Request / Indicate</td><td class="g">Write Without Response</td></tr>
+    <tr><td>分片</td><td class="r">需要 (Block Index + CRC)</td><td class="g">不需要</td><td class="g">不需要 (单帧 < MTU)</td></tr>
+    <tr><td>应用层确认</td><td class="r">累积 ACK + 缺失位图</td><td>GATT Response = 确认</td><td class="r">不确认 (PLC 替代)</td></tr>
+    <tr><td>应用层 CRC</td><td class="r">CRC16 每 Block</td><td class="g">不需要 (LL CRC 足够)</td><td class="y">不需要 (丢帧可接受)</td></tr>
+    <tr><td>重传策略</td><td>NACK → 发送端重传缺失 Block</td><td>ATT 层超时自动重传</td><td class="g">不重传 (PLC 插值)</td></tr>
+    <tr><td>流量控制</td><td class="g">ACK 驱动的滑动窗口</td><td>请求-响应自然流控</td><td class="r">老化丢弃 + 环形队列</td></tr>
+    <tr><td>连接参数更新</td><td class="r">进入 OTA 前切换到高速参数</td><td class="g">保持省电参数</td><td class="r">音频期间切换到低延迟参数</td></tr>
+  </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: Performance ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">传输性能优化</h2>
+  <p class="sec-sub" id="s7s">默认 BLE 配置的吞吐远低于硬件能力——以下优化可以将有效吞吐从 ~50Kbps 提升到 ~800Kbps。</p>
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>连接间隔设最小</h4><div class="sub">15ms → 7.5ms: 吞吐接近翻倍</div>
+      <p>每个 Event 有 1-2ms 无线电开销（死时间）。间隔越短，Event 密度越高 → 吞吐越高。OTA/音频用 7.5-15ms。iOS 最低只允许 15ms（Apple 硬限制）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>批量 Write Without Response</h4><div class="sub">每 Event 连续发 4-6 包不等 Response</div>
+      <p>Write Command 无 Response → 同一 Event 可连发直到控制器队列满。2M PHY + DLE + 15ms 间隔 → ~640Kbps 有效吞吐。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>DLE 使能 (BLE 4.2+)</h4><div class="sub">LL PDU 从 27B → 251B, 吞吐 2-3x</div>
+      <p>Data Length Extension 将链路层 payload 扩展到 251B。每 Event 可发更多 ATT 包。对上层协议透明（ATT/GATT 不感知），但效果巨大——OTA 传输时间缩短 75%。</p>
+    </div>
+  </div>
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f472b6"><h4>PHY 协商 (BLE 5.0)</h4><div class="sub">2M PHY 物理层码率翻倍</div><p>1Msps→2Msps 符号率。实际有效吞吐 700K→1.4Mbps。代价：接收灵敏度 -3dB（距离稍短）。近距离(<5m)用 2M、远距离自动回退 1M。</p></div>
+    <div class="g-card" style="--gc:#f87171"><h4>缓存 GATT Handle</h4><div class="sub">跳过 Discovery → 首次通信 3s→100ms</div><p>首次连接后缓存所有 Characteristic Handle 到本地——后续重连跳过 GATT Discovery。仅在 Service Changed Indication 触发时重新 Discovery。iOS 做一次完整 Discovery 耗时 2-5 秒。</p></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S8: IPC 实战 ═══ -->
+<div class="sec s8" id="s8">
+  <h2 class="sec-title" id="s8t">IPC 实战：蓝牙项圈三通道协议设计</h2>
+  <p class="sec-sub" id="s8s">LinkricAI IPC 通过 BLE 与 Petkit P3D 项圈通信——<strong>小数据状态 + 命令下发 + OTA 升级</strong>三通道混合场景。</p>
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24"><h4>通道 1: 状态上报 (Notify)</h4><div class="sub">电量/温度/RSSI/活动量 · 0.1~1Hz · TLV 编码</div><p>项圈周期性推送状态——走 GATT Notify（无需确认）。TLV 编码保证向后兼容。单包 < 20B。</p></div>
+    <div class="g-card" style="--gc:#38bdf8"><h4>通道 2: 命令下发 (Write Req)</h4><div class="sub">寻铃/灯光/灵敏度 · 1B CmdID + Status</div><p>App 下发控制命令。Write Request + Write Response 保证确认。超时 500ms → 重试 3 次 → 仍失败 → 通知用户。</p></div>
+    <div class="g-card" style="--gc:#a78bfa"><h4>通道 3: 项圈 OTA</h4><div class="sub">~200KB 固件 · Block 分片 + CRC16 + ACK</div><p>Block Index + Data + CRC16 + 累积 ACK 位图。OTA 前切换高速参数 (15ms+2M+MTU247)，完成后恢复省电模式。</p></div>
+  </div>
+  <div class="callout info" style="max-width:960px;margin-top:12px"><div class="ct">BLE 应用传输协议 Checklist</div>
+  □ <strong>MTU 协商</strong>: 连接后立即 Exchange MTU → 目标 247。检查协商结果——某些设备限制 65/128<br>
+  □ <strong>DLE 使能</strong>: BLE 4.2+ 默认开启，验证双方支持<br>
+  □ <strong>连接参数</strong>: 正常 100ms 省电；OTA/音频切 15ms+2M PHY；完成后恢复<br>
+  □ <strong>Handle 缓存</strong>: 首次 Discovery 后缓存 → 重连跳过 (3s→100ms)<br>
+  □ <strong>分片策略</strong>: 单包 < MTU-3 直发；超限则 Block 编号 + CRC + 累积 ACK<br>
+  □ <strong>校验策略</strong>: OTA = CRC16/Block；小数据 = LL CRC 足够；音频 = 不校验<br>
+  □ <strong>重传策略</strong>: OTA = NACK+重传；命令 = ATT 超时重试；音频 = PLC 不重传<br>
+  □ <strong>兼容性</strong>: TLV 编码 (数据)、CmdID 范围预留 (命令)——保证新老固件兼容<br>
+  □ <strong>错误处理</strong>: GATT 错误 → 重试 3 次 → 断连重连 → 仍失败 → 通知用户
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  BLE 应用传输协议设计 · 从 OTA 到音频流 &nbsp;|&nbsp;
+  <a href="../index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="../e2e_latency_learn.html">端到端延迟优化 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card, .canvas-wrap').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+
+(function() {
+  const c = document.getElementById('c1'); if(!c) return;
+  const ctx = c.getContext('2d'); let W,H, t=0;
+  function resize() {
+    const rect = c.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
+    W=rect.width; H=300; c.width=W*dpr; c.height=H*dpr; c.style.width=W+'px'; c.style.height=H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); window.addEventListener('resize', resize);
+  function drawLayer(x,y,w,h,label,color,desc){
+    ctx.fillStyle=color;ctx.globalAlpha=0.1;ctx.beginPath();ctx.roundRect(x,y,w,h,6);ctx.fill();
+    ctx.strokeStyle=color;ctx.globalAlpha=0.3;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#d0d0f0';ctx.globalAlpha=0.9;ctx.font='bold 12px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='left';ctx.fillText(label,x+12,y+18);
+    ctx.fillStyle='#7777aa';ctx.globalAlpha=0.6;ctx.font='10px -apple-system,"Noto Sans SC",sans-serif';ctx.fillText(desc,x+w-170,y+18);ctx.globalAlpha=1;
+  }
+  function animate(){t+=0.016;ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#e0e0ff';ctx.font='bold 14px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('BLE 协议栈 + Connection Event 时序 (连接间隔=15ms)',W/2,24);
+    const ly=48,lw=W*0.38;
+    drawLayer(20,ly,lw,42,'应用传输层','#f87171','OTA / 小数据 / 音频帧');
+    drawLayer(20,ly+48,lw,42,'ATT / GATT','#f472b6','Write / Notify / Indicate');
+    drawLayer(20,ly+96,lw,42,'L2CAP','#a78bfa','分片重组 · MTU 协商');
+    drawLayer(20,ly+144,lw,42,'Link Layer','#38bdf8','CRC24 · 重传 · 加密');
+    drawLayer(20,ly+192,lw,42,'PHY','#34d399','1M / 2M / Coded');
+    const ry=60,rw=W*0.55,rx=W*0.43;
+    ctx.fillStyle='#7777aa';ctx.globalAlpha=0.6;ctx.font='bold 11px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';
+    ctx.fillText('Connection Events (15ms 间隔)',rx+rw/2,ry-8);ctx.fillText('每 Event 可发 3-5 ATT 包 (DLE)',rx+rw/2,ry+30);ctx.fillText('Event 之间完全休眠 (省电)',rx+rw/2,ry+140);ctx.fillText('Slave Latency=0: 每个 Event 都必须响应',rx+rw/2,ry+165);
+    const evW=18,gap=62;
+    for(let i=0;i<8;i++){const ex=rx+10+i*gap;const active=(t*15+i*0.3)%1<0.3;ctx.fillStyle=active?'#38bdf8':'rgba(255,255,255,.06)';ctx.globalAlpha=active?0.6:0.15;ctx.beginPath();ctx.rect(ex,ry+55,evW,30);ctx.fill();ctx.fillStyle='#5555aa';ctx.globalAlpha=0.5;ctx.font='8px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText(i,ex+evW/2,ry+100);}
+    ctx.fillText('Connection Event Index',rx+rw/2,ry+115);
+    ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(rx+10,ry+45);ctx.lineTo(rx+rw-10,ry+45);ctx.stroke();
+    ctx.fillStyle='#5555aa';ctx.globalAlpha=0.4;ctx.font='9px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='left';ctx.fillText('ACTIVE (TX/RX)',rx+10,ry+42);ctx.fillText('SLEEP (省电)',rx+rw-90,ry+42);
+    ctx.fillStyle='#fbbf24';ctx.globalAlpha=0.7;ctx.font='bold 11px -apple-system,"Noto Sans SC",sans-serif';ctx.textAlign='center';ctx.fillText('有效吞吐 = Event/s * Event包数 * (MTU-3)',rx+rw/2,ry+200);ctx.fillText('15ms间隔: 67 Event/s * 4包 * 244B = 65 KB/s (520 Kbps)',rx+rw/2,ry+220);ctx.globalAlpha=1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

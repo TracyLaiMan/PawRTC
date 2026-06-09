@@ -141,8 +141,62 @@
   </table>
 </div>
 
-<!-- ══ Ch2: SD 协议 ══ -->
-<h2 class="sh">2. SD 卡协议 — 初始化序列与命令体系</h2>
+<!-- ══ Ch2: 硬件接口 ══ -->
+<h2 class="sh">2. SD 卡硬件接口 — 引脚 · 电气特性 · PCB 布局</h2>
+<p class="ss">SD 卡不只是软件协议——<strong>硬件层面的信号质量、供电和 PCB 布局</strong>直接决定了卡能否稳定工作在高速模式。软件调不通时，70% 是硬件问题。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>引脚定义 — 9-pin 物理接口</h4>
+    <div class="lbl">SD 模式 vs SPI 模式 — 同一组引脚，不同功能</div>
+    <p><strong>SD 模式 (4-bit)</strong>：<strong>CLK</strong> (Pin5, Host→Card 时钟)、<strong>CMD</strong> (Pin2, 双向命令/响应)、<strong>DAT0</strong> (Pin7, 双向数据)、<strong>DAT1</strong> (Pin8)、<strong>DAT2</strong> (Pin9)、<strong>DAT3</strong> (Pin1)。<br>
+    <strong>SPI 模式</strong>：CLK→SCLK, CMD→MOSI, DAT0→MISO, DAT3→CS。SPI 模式仅 1-bit 且无 CRC 保护——速率低但 MCU 可直接驱动（无需 SD 控制器）。<br>
+    <strong>其他引脚</strong>：Pin4=VDD (3.3V 供电), Pin3/6=GND, Pin10-11=卡检测 (机械开关)。DAT1 在 SDIO 模式复用为中断线。DAT3 在初始化前用作卡检测 (50kΩ 上拉)。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>电压域与供电要求</h4>
+    <div class="lbl">3.3V 默认 · 1.8V 高速 · 双电源域 · 去耦</div>
+    <p><strong>VDD (Pin4)</strong>：主供电 2.7V~3.6V。初始化阶段固定 3.3V。UHS-I 模式下信号切换到 1.8V 但 VDD 保持 3.3V——<strong>信号电压和供电电压是两回事</strong>。<br>
+    <strong>VDDIO (Host 侧)</strong>：SoC 的 SD 控制器 I/O 电源域——必须可切换到 1.8V (通过 GPIO 控制的 LDO 或 PMIC 输出)。内核通过 <code>vqmmc-supply</code> 描述此电源。<br>
+    <strong>去耦电容</strong>：VDD 引脚附近必须放置 <strong>0.1μF + 10μF</strong> 并联——卡座的 VDD 到 GND 之间走线尽可能短。SD 卡在写入时电流尖峰可达 200mA/100ns——无去耦→电压跌落→CRC 错误。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>信号电平与上拉电阻</h4>
+    <div class="lbl">开漏(OD) vs 推挽(PP) · 上拉强度 · 电平转换</div>
+    <p><strong>CMD 和 DAT 线有双重驱动模式</strong>：初始化阶段 (≤400kHz) 使用 <strong>开漏模式</strong>——Host 和 Card 都可以拉低总线。需要外部上拉电阻 (10kΩ~100kΩ) 拉到 VDDIO。<strong>数据传输阶段</strong>切换到 <strong>推挽模式</strong>——驱动能力强、边沿陡、适合高速。<br>
+    <strong>上拉电阻值选择</strong>：阻值太大 (100kΩ)→上升沿太慢 (RC 时间常数太大→边沿不满足时序)；阻值太小 (1kΩ)→静态功耗大。推荐 10kΩ~50kΩ。<br>
+    <strong>SoC 内部上拉</strong>：多数 SoC 的 SD 控制器内置可配置上拉 (如 Rockchip 的 bias-pull-up)。设备树中 <code>bias-pull-up</code> 属性启用。</p>
+  </div>
+</div>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>时钟树 — SD 卡时钟从哪来</h4>
+    <div class="lbl">SoC PLL → SD 控制器分频器 → CLK 引脚</div>
+    <p>SD 卡的 CLK 由 SoC 的 <strong>SD/MMC 控制器内部时钟分频器</strong>生成——时钟源通常来自系统 PLL (如 400MHz) → 经分频器产生目标频率。初始化时要求 ≤400kHz——通常分频到 375kHz (400MHz/1066)。高速模式需要 50MHz (400MHz/8)，SDR104 需要 208MHz——PLL 需支持此频率。<br>
+    <strong>关键约束</strong>：① 时钟占空比必须是 50%±5%（SD 规范要求）② 时钟必须在 CMD0 之前就开始 toggle（≥74 个周期）③ 频率切换必须平滑——不能有毛刺（glitch-free clock mux）。设备树中通过 <code>max-frequency</code> 和 <code>assigned-clock-rates</code> 配置。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>PCB 布局要点</h4>
+    <div class="lbl">等长走线 · 阻抗控制 · 串扰隔离 · 参考层</div>
+    <p><strong>走线长度匹配</strong>：CLK 和 CMD/DAT0~3 的走线长度差应 <strong>≤ 10mm</strong> (50MHz 时，10mm → ~50ps 延迟差 → 远小于半个时钟周期 10ns——安全裕度充足)。SDR104 (208MHz) 时要求更严 <strong>≤ 5mm</strong>。<br>
+    <strong>特性阻抗</strong>：SD 信号线设计为 <strong>50Ω ±10%</strong> 单端阻抗。<strong>串联端接电阻</strong>：在 Host 侧每条信号线上串联 22Ω~33Ω——抑制信号反射和过冲。放置位置靠近 Host (SoC) 而非卡座。<br>
+    <strong>串扰隔离</strong>：CLK 是敏感信号——与 DAT 线间距 ≥ 3× 线宽。CLK 两侧用地线包围（guard trace）。如果 CLK 耦合到 DAT——数据采样时刻的电平跳变→误码。<br>
+    <strong>地参考平面</strong>：SD 信号下方必须有<strong>连续的地平面</strong>——不能跨越地平面分割。分割地→回流路径断裂→EMI 辐射↑ + 信号完整性↓。</p>
+  </div>
+</div>
+
+<div class="callout warning" style="margin-top:12px">
+  <div class="ct">⚠ SD 卡硬件调试 Checklist — 示波器逐项排查</div>
+  <strong>1. 供电</strong>：VDD 纹波 < 50mVpp (用示波器 AC 耦合测)。写入时如果纹波 >100mV → 去耦不足。<br>
+  <strong>2. CLK 信号</strong>：示波器探头点 CLK 引脚——确认电压摆幅 (≥ 0.75×VDDIO)、占空比 (45%~55%)、无振铃/过冲。400kHz 初始化时 CLK 应有稳定方波——如果没波形→检查 SoC 时钟配置。<br>
+  <strong>3. CMD 响应</strong>：发 CMD0 后 CMD 线上应有响应脉冲 (卡在 Idle 状态回复 0x01)。如果 CMD 一直高→卡未上电或未复位→查 VDD 和 CMD 上拉。<br>
+  <strong>4. DAT 线</strong>：未选中卡时 DAT0-3 应该被上拉电阻拉到高电平。如果某条 DAT 线一直低→可能是焊接短路或 IO 方向配置错误。<br>
+  <strong>5. 卡检测</strong>：<code>cat /sys/kernel/debug/mmc0/ios</code> 查看 card detect 状态。如果用 GPIO 检测→<code>cat /sys/class/gpio/gpioXX/value</code> 确认插拔时电平变化。
+</div>
+
+<!-- ══ Ch3: SD 协议 ═══ -->
+<h2 class="sh">3. SD 卡协议 — 初始化序列与命令体系</h2>
 <p class="ss">上电 → CMD0 → CMD8 → ACMD41 → CMD2 → CMD3 → SCR → 总线切换 — 从 Idle 到 Transfer 状态</p>
 
 <div class="cg c2">
@@ -189,7 +243,7 @@
 </div>
 
 <!-- ══ Ch3: Linux SD 检测流程 ══ -->
-<h2 class="sh">3. Linux SD 卡检测 — mmc_rescan → mmc_attach_sd</h2>
+<h2 class="sh">4. Linux SD 卡检测 — mmc_rescan → mmc_attach_sd</h2>
 <p class="ss">MMC 子系统三层协同 · mmc_rescan 多协议探测 · mmc_sd_init_card 完整初始化 · sysfs 调试</p>
 
 <div class="chain">
@@ -245,7 +299,7 @@ dmesg | grep mmc
 <span class="cm">#  mmcblk0: p1 p2</span></div>
 
 <!-- ══ Ch4: FAT32 磁盘布局 ══ -->
-<h2 class="sh">4. FAT32 磁盘布局 — BPB · FAT 表 · 目录项 · 簇链</h2>
+<h2 class="sh">5. FAT32 磁盘布局 — BPB · FAT 表 · 目录项 · 簇链</h2>
 <p class="ss">从第 0 扇区到文件数据 — FAT32 的五层磁盘结构完整解析</p>
 
 <div class="cg c3">
@@ -317,7 +371,7 @@ dmesg | grep mmc
 <span class="cm">// seq 字节: 高 6 位=序号(1开始), bit6=最后一个槽(0x40)</span></div>
 
 <!-- ══ Ch5: Linux VFAT 驱动 ══ -->
-<h2 class="sh">5. Linux VFAT 驱动 — fs/fat/ 源码架构</h2>
+<h2 class="sh">6. Linux VFAT 驱动 — fs/fat/ 源码架构</h2>
 <p class="ss">内核中 FAT 文件系统的实现 · 超级块/Inode/FAT 表操作 · 簇分配与回收</p>
 
 <div class="cg c3">
@@ -379,7 +433,7 @@ mount -t vfat -o iocharset=utf8,fmask=0133,dmask=0022 /dev/mmcblk0p1 /mnt
 <span class="cm">// uid=1000,gid=1000: 设置所有文件归属</span></div>
 
 <!-- ══ Ch6: 实战工具 ══ -->
-<h2 class="sh">6. 实战工具 — 分区 · 格式化 · 检查 · 修复</h2>
+<h2 class="sh">7. 实战工具 — 分区 · 格式化 · 检查 · 修复</h2>
 <p class="ss">从裸 SD 卡到可挂载文件系统 — fdisk / mkfs.vfat / fsck.vfat / dosfslabel 完整工作流</p>
 
 <div class="sg">
@@ -427,7 +481,7 @@ dosfslabel /dev/mmcblk0p1 NEW_NAME    <span class="cm">// 写卷标</span>
 </div>
 
 <!-- ══ Ch7: 调试诊断 ══ -->
-<h2 class="sh">7. 调试与诊断</h2>
+<h2 class="sh">8. 调试与诊断</h2>
 <p class="ss">SD 卡常见故障速查 · FAT 文件系统修复 · dd 备份恢复</p>
 
 <div class="ptbl" style="margin-top:16px">

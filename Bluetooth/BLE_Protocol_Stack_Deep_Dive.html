@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE 协议栈深度剖析 — 从 PHY 到 GATT 的每一层</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.chain{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:10.5px;line-height:1.65;color:#b0b0d0;white-space:pre;overflow-x:auto}
+.chain b{color:#a78bfa;font-weight:600}.chain i{color:#34d399;font-style:normal}.chain u{color:#fbbf24;text-decoration:none}
+.mb{margin:14px 0;font-size:11px;color:#b0b0d0;line-height:1.8}
+.mb .r{display:flex;align-items:center;margin:2px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.mb .a{width:175px;flex-shrink:0;color:#555577;font-size:10.5px}
+.mb .b{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 10px;font-size:10.5px;font-weight:600;margin:0 8px;min-width:80px}
+.mb .c1{background:rgba(108,99,255,.15);color:#a78bfa}.mb .c2{background:rgba(52,211,153,.12);color:#34d399}
+.mb .c3{background:rgba(251,191,36,.1);color:#fbbf24}.mb .c4{background:rgba(248,113,113,.1);color:#f87171}
+.mb .c5{background:rgba(56,189,248,.12);color:#38bdf8}.mb .c6{background:rgba(244,114,182,.1);color:#f472b6}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">BLE 协议栈深度剖析</h2>
+  <p class="sec-sub">系统化知识体系 — Controller (PHY+LL+HCI) · Host (L2CAP+ATT+SM+GAP) · Application (GATT+Profiles)</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>PHY</strong><br><small>物理层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)"><strong>LL</strong><br><small>链路层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>HCI</strong><br><small>接口层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>L2CAP</strong><br><small>复用层</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>ATT/SM</strong><br><small>属性+安全</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>GATT/GAP</strong><br><small>应用接口</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">Controller</div><div class="l">PHY + LL + HCI lower</div></div>
+    <div class="stat"><div class="n">Host</div><div class="l">L2CAP + ATT + SM + GAP</div></div>
+    <div class="stat"><div class="n">HCI</div><div class="l">Host-Controller 分界线</div></div>
+    <div class="stat"><div class="n">7 层</div><div class="l">完整协议栈</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ═══ Ch1: 全景 ═══ -->
+<h2 class="sh">1. BLE 协议栈的三层分块与物理边界</h2>
+<p class="ss">理解 BLE 协议栈的第一件事不是学每层的协议——而是<strong>搞清楚哪层在芯片硬件里跑、哪层在主机 OS 里跑、哪层之间的通信你可以在 Wireshark 中看到</strong>。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Controller (控制器)</h4>
+    <div class="lbl">BLE 芯片硬件 — PHY + LL + HCI 下半层</div>
+    <p><strong>物理位置</strong>：BLE 芯片内部的<strong>硬件状态机 + 嵌入式固件</strong>（如 nRF52 的 SoftDevice、TI CC2540 的 BLE Stack ROM）。<br>
+    <strong>包含的层</strong>：<strong>PHY</strong>（射频收发、GFSK 调制、2.4GHz 信道跳频）→ <strong>Link Layer</strong>（状态机、PDU 构建/解析、CRC、ARQ 重传、加密/解密、跳频控制）。<br>
+    <strong>特性</strong>：<strong>硬实时</strong>——LL 层的 150μs T_IFS 响应必须由硬件保证（CPU 调度延迟 >100μs 无法满足）。Controller 通常运行在<strong>裸金属或小型 RTOS</strong> 上——不跑 Linux。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Host (主机)</h4>
+    <div class="lbl">主处理器 OS — L2CAP + ATT + SM + GAP + GATT</div>
+    <p><strong>物理位置</strong>：运行在主 CPU 的操作系统协议栈中（Linux BlueZ、Android Bluetooth Stack、Zephyr BLE Host）。<br>
+    <strong>包含的层</strong>：<strong>L2CAP</strong>（逻辑链路复用）→ <strong>ATT</strong>（属性协议——GATT 的基础）→ <strong>SM</strong>（安全管理——配对/加密密钥管理）→ <strong>GAP</strong>（角色定义——Central/Peripheral/Broadcaster/Observer）→ <strong>GATT</strong>（属性数据库——Service/Char/Descriptor 的树形结构）。<br>
+    <strong>特性</strong>：<strong>非实时</strong>——可以在 Linux 内核中运行（BlueZ）或在用户态运行。GATT Discovery 慢（几秒）完全可接受——不像 LL 层需要 150μs 响应。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>HCI — 分割线</h4>
+    <div class="lbl">Host Controller Interface — 物理或虚拟的桥</div>
+    <p><strong>物理 HCI</strong>：通过<strong>UART (H4/H5 协议)</strong> 或 <strong>USB</strong> 连接 Host CPU 和 BLE 芯片（如树莓派用 UART 连 nRF52840）。Android HCI Snoop Log 抓的就是这层。<br>
+    <strong>虚拟 HCI</strong>：Host 和 Controller 在同一颗芯片上（如手机 SoC 内置 BLE）——通过共享内存通信，不走物理总线。但 HCI 协议层的格式完全相同——<strong>HCI Log 在物理和虚拟场景下完全一样</strong>。<br>
+    <strong>HCI 的作用</strong>：标准化 Host↔Controller 的通信格式——任何符合 HCI 规范的 Host 可以和任何符合 HCI 规范的 Controller 对接——类似于 USB 的标准化。</p>
+  </div>
+</div>
+
+<div class="mb">
+  <div class="r"><span class="a">Application</span><span class="b c6">App 代码 · GATT API</span><span class="n">gatt_write_char / gatt_read_char · onNotify · Service/Char/Desc 树</span></div>
+  <div class="r"><span class="a">GAP</span><span class="b c5">角色 · 模式 · 安全</span><span class="n">Central/Peripheral/Broadcaster/Observer · Bonding · 连接参数</span></div>
+  <div class="r"><span class="a">GATT</span><span class="b c4">属性数据库</span><span class="n">Service Declaration → Characteristic Declaration → Value + Descriptor</span></div>
+  <div class="r"><span class="a">ATT</span><span class="b c3">属性协议</span><span class="n">Read / Write / Notify / Indicate / Find Info · 请求-响应模型</span></div>
+  <div class="r"><span class="a">SM</span><span class="b c2">安全管理器</span><span class="n">Pairing · Bonding · Encryption (AES-CCM) · Key Distribution (LTK/IRK/CSRK)</span></div>
+  <div class="r"><span class="a">—— HCI ——</span><span class="b">Host↔Controller 接口</span><span class="n">HCI Command/Event/ACL Data · UART(H4/H5)/USB/共享内存</span></div>
+  <div class="r"><span class="a">L2CAP</span><span class="b c1">逻辑链路控制与适配</span><span class="n">CID 多路复用 · 分片重组(SAR) · MTU 协商 · LE Credit Based Flow Control</span></div>
+  <div class="r"><span class="a">Link Layer</span><span class="b c1">设备状态机 · 空中协议</span><span class="n">Advertising/Scanning/Connection · LL Control PDU · ARQ · CRC24 · AES-CCM 加解密</span></div>
+  <div class="r"><span class="a">PHY</span><span class="b c1">物理层</span><span class="n">GFSK 调制 · 40 信道 2MHz · 1M/2M/Coded PHY · 跳频 · 发射功率</span></div>
+</div>
+
+<!-- ═══ Ch2: PHY ═══ -->
+<h2 class="sh">2. PHY 物理层 — 无线电波的"字母表"</h2>
+<p class="ss">PHY 层回答的是最底层的问题：<strong>0 和 1 怎么通过无线电波表示？在哪个频率上发？用什么调制方式？</strong></p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>40 个物理信道</h4>
+    <div class="lbl">2.402~2.480 GHz, 2MHz 间隔, 3 广播 + 37 数据</div>
+    <p>BLE 将 ISM 频段分为 40 个信道，编号 0~39。信道 k 的中心频率 = <strong>2402 + k×2 MHz</strong>。<br>
+    <strong>CH37 (2402), CH38 (2426), CH39 (2480)</strong>——这三个故意选在 WiFi CH1/6/11 的间隙中——最小化 WiFi 干扰。<br>
+    每个信道带宽 2MHz——BLE 使用 GFSK 调制（高斯频移键控）——每个符号表示 1 bit（1M PHY）或 2 bits（2M PHY 用 π/4-DQPSK）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>三种 PHY 模式</h4>
+    <div class="lbl">LE 1M · LE 2M · LE Coded — 速度 vs 距离</div>
+    <p><strong>LE 1M (必选)</strong>：1 Msps 符号率 → ~1 Mbps 原始速率。所有 BLE 设备必须支持。<br>
+    <strong>LE 2M (BLE 5.0)</strong>：2 Msps → ~2 Mbps。灵敏度 -3dB（同距离下信号更弱）。适合短距离高速传输（OTA、音频）。<br>
+    <strong>LE Coded (BLE 5.0, 可选)</strong>：1 Msps 但每个 bit 编码为 2 或 8 个符号（FEC 前向纠错）→ 125 Kbps (S=8) 或 500 Kbps (S=2)。灵敏度 +6dB——通信距离翻倍（长距离模式，适合 IoT 传感器、资产跟踪）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>空中包格式 (PHY 视角)</h4>
+    <div class="lbl">Preamble + Access Address + PDU + CRC</div>
+    <p><strong>Preamble (1-2 字节)</strong>：01010101... 交替序列——接收机用它做<strong>频率同步和 AGC 校准</strong>。1M PHY=1B, 2M PHY=2B。<br>
+    <strong>Access Address (4 字节)</strong>：广播信道固定为 <strong>0x8E89BED6</strong>——所有 ADV_IND 都用这个值。连接建立后，每个连接由 Master 随机生成一个<strong>唯一的 Access Address</strong>（需满足随机性要求——不能全 0/全 1/连续 6 个相同 bit/与 0x8E89BED6 差距太小）。<br>
+    <strong>PDU (2~257 字节)</strong>：实际承载的链路层数据。<br>
+    <strong>CRC (3 字节)</strong>：CRC-24 校验——多项式 x^24+x^10+x^9+x^6+x^4+x^3+x+1。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch3: LL ═══ -->
+<h2 class="sh">3. Link Layer — 设备状态机与空中交互</h2>
+<p class="ss">LL 层是 BLE 协议栈的<strong>核心引擎</strong>——管理设备状态机、PDU 类型、ARQ 重传、加密、跳频。这是 BLE 协议规范中最复杂的部分。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>LL 状态机 — 5 个状态 + 1 个瞬态</h4>
+    <div class="lbl">Standby → Advertising/Scanning/Initiating → Connection</div>
+    <p><strong>Standby (待机)</strong>：默认状态。不发送、不接收。所有状态的起点和终点。<br>
+    <strong>Advertising (广播)</strong>：Peripheral 在 3 个广播信道上周期性发送 ADV_IND。从 Standby 进入——设置 Adv Interval+Adv Data→开始广播。收到 CONNECT_IND→退出进入 Connection。<br>
+    <strong>Scanning (扫描)</strong>：Central 在 3 个广播信道上监听 ADV_IND。被动扫描（只收不发）或主动扫描（发 SCAN_REQ→收 SCAN_RSP）。<br>
+    <strong>Initiating (发起连接)</strong>：Central 收到目标 ADV_IND→在同一信道上发 CONNECT_IND→如果外设收到→双方进入 Connection。这是瞬时状态。<br>
+    <strong>Connection (已连接)</strong>：双方按 Connection Interval 定期通信。此状态下可以发 LL Control PDU（参数更新/加密/Channel Map/PHY 更新/断连）和 LL Data PDU（承载 L2CAP 数据）。<br>
+    <strong>Isochronous (BLE 5.2+, 可选)</strong>：LE Audio 的等时信道——固定的 ISO Interval——无重传（与 SCO 类似但走 BLE）。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>LL PDU 类型 — 两大类</h4>
+    <div class="lbl">LL Data PDU (承载上层数据) + LL Control PDU (链路管理)</div>
+    <p><strong>LL Data PDU</strong>：LLID=0x01 (L2CAP 分片续) 或 0x02 (L2CAP 起始或完整包)。承载 L2CAP 层的数据。Data PDU 受 ARQ 保护——接收端 CRC 错误→NACK→发送端重传（最多重传到 Supervision Timeout 超时）。<br>
+    <strong>LL Control PDU</strong>：LLID=0x03。用于链路管理——包括：<strong>LL_CONNECTION_PARAM_REQ/RSP</strong>（参数更新）、<strong>LL_TERMINATE_IND</strong>（断连+原因码）、<strong>LL_ENC_REQ/RSP</strong>（加密握手）、<strong>LL_FEATURE_REQ/RSP</strong>（特性交换——声明支持哪些可选特性）、<strong>LL_PHY_REQ/RSP</strong>（PHY 切换——2M↔1M↔Coded）、<strong>LL_CHANNEL_MAP_IND</strong>（更新可用信道列表）。<strong>Control PDU 不重传</strong>——发一次，如果对方没收到→由上层处理超时。<br><br>
+    <strong>空包 (Empty PDU)</strong>：LLID=0x00, Payload=0 字节。Connection Event 中无数据时发送——维持连接的"心跳"。每个 Connection Event 必须至少有一对空包交换（Master→Slave + Slave→Master）。如果连续丢失到 Supervision Timeout→断连。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// LL 层的包过滤与 CRC —— 一条空中包的生命周期</span>
+
+<i>发送端 (Controller 内部):</i>
+  L2CAP 数据到达 → LL 封装为 Data PDU (LLID+SN+NESN+Payload)
+  → 追加到发送队列 (每个 Connection Event 取出发送)
+  → Baseband: 计算 CRC24 → 拼接 Preamble+AccessAddr+PDU+CRC → GFSK 调制 → RF 发射
+
+<i>接收端 (Controller 内部):</i>
+  RF 信号 → GFSK 解调 → Preamble 检测 → Access Address 匹配(<b>不匹配→丢弃</b>)
+  → CRC24 校验 → <b>CRC 错 → NAK → 等发送端重传</b>
+  → CRC 对 → ACK → 提取 LLID:
+    LLID=0x01/0x02 (Data) → 去 LL 解密(AES-CCM) → 重组 L2CAP SDU → 上传 Host
+    LLID=0x03 (Control) → 解析 Opcode → 执行相应的链路管理动作
+    LLID=0x00 (Empty)  → 无操作 (心跳确认)
+
+<i>为什么空中抓包中有时看到"重传"?</i>
+  发送端发了 SN=3 → 接收端 CRC 错 → NAK
+  → 发送端重传 SN=3 (同一个包, SN 不变)
+  → 在 Wireshark 中看到连续两个 SN=3 的包 → 第一个 CRC 错(但 nRF Sniffer 看不到 CRC 错误!)
+  → <b>只有 Ellisys 才能看到第一个包的 CRC Error 标注</b></div>
+
+<!-- ═══ Ch4: HCI ═══ -->
+<h2 class="sh">4. HCI — Host 与 Controller 之间的标准语言</h2>
+<p class="ss">HCI 是理解<strong>"为什么我的代码行为与芯片行为看起来不一致"</strong>的关键——HCI Log 告诉你 Host 给 Controller 发了什么命令、Controller 回了什么事件。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>HCI Command (Host → Controller)</h4>
+    <div class="lbl">OpCode(2B) + ParamLen(1B) + Params(N)</div>
+    <p>Host 通过 HCI Command 控制 Controller 的一切行为——没有 HCI Command，Controller 什么都不会做。<br>
+    典型命令：<strong>LE Set Scan Enable</strong> (OpCode 0x200C——开启扫描)、<strong>LE Set Advertising Enable</strong> (0x200A——开启广播)、<strong>LE Create Connection</strong> (0x200D——发起连接)、<strong>LE Read Buffer Size</strong> (0x2002——查询 ACL 包大小限制)、<strong>Reset</strong> (0x0C03——复位 Controller)。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>HCI Event (Controller → Host)</h4>
+    <div class="lbl">EventCode(1B) + ParamLen(1B) + Params(N)</div>
+    <p>Controller 通过 HCI Event 向 Host 报告事件。这是<strong>异步的</strong>——Controller 随时可能发送 Event。<br>
+    典型事件：<strong>Command Complete</strong> (0x0E——命令执行完毕)、<strong>Command Status</strong> (0x0F——命令已接受但未执行完)、<strong>LE Meta Event</strong> (0x3E——所有 BLE 特定事件的容器)：<strong>LE Connection Complete</strong>（连接成功/失败+Status 错误码）、<strong>LE Advertising Report</strong>（扫描到设备+RSSI+AdvData）。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>ACL Data (双向)</h4>
+    <div class="lbl">Handle(2B) + PB/BC Flag(2B) + DataLen(2B) + Data(N)</div>
+    <p>ACL Data 包承载实际的<strong>L2CAP + ATT 数据</strong>。双向传输——Host→Controller 发送给外设，Controller→Host 接收自外设。<br>
+    <strong>PB Flag (Packet Boundary)</strong>：0b00 = L2CAP 起始或完整包；0b01 = L2CAP 分片续（L2CAP SDU 被拆分为多个 ACL 包）。<br>
+    <strong>BC Flag</strong>：广播标志（LE 不使用——为 BR/EDR 保留）。<br>
+    <strong>HCI Log 中最有价值的分析</strong>：ACL Data 包的时序——ATT 层的一次 Write Request → Write Response 往返 = ACL Data(WriteReq) → ACL Data(WriteRsp) 两个包的间隔 = 1 个 Connection Interval。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch5: L2CAP ═══ -->
+<h2 class="sh">5. L2CAP — 多路复用与分片重组</h2>
+<p class="ss">L2CAP 在两个 BLE 设备的 LL 层之上提供<strong>多个逻辑通道</strong>（CID 标识），每个通道承载不同的上层协议（ATT、SM）。同时负责大 SDU 的<strong>分片重组</strong>。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>CID (Channel Identifier)</h4>
+    <div class="lbl">16-bit 逻辑通道号 — 在一对设备间区分不同的上层协议</div>
+    <p><strong>固定 CID</strong>：<strong>0x0004 = ATT</strong>（GATT 数据走这个通道）、<strong>0x0006 = SM</strong>（Security Manager——配对/加密密钥分发）、<strong>0x0005 = L2CAP LE Signaling</strong>（L2CAP 自己的信令——用于 Credit Based Flow Control 和 Connection Parameter Update）。<br>
+    <strong>动态 CID (0x0040~0x007F)</strong>：LE Credit Based Flow Control 模式下分配的面向连接通道——用于 LE Audio 的等时数据传输。<br>
+    <strong>关键认识</strong>：ATT 和 SM 是两个独立的 CID——配对过程中的 Pairing Request/Response 走 CID=0x0006(SM)，配对的密钥分发（LTK）也走 SM。GATT Discovery 和数据交互走 CID=0x0004(ATT)。两者在传输层上<strong>完全独立</strong>——一个通道阻塞不影响另一个。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>SAR — Segmentation and Reassembly</h4>
+    <div class="lbl">L2CAP SDU 自动拆分为适配 LL 的报文——对 ATT 层完全透明</div>
+    <p>ATT 层可以发任意大小的 PDU（如 512 字节的 Read By Group Type Response）——L2CAP 将 512 字节的 SDU 封装后传给 LL 层。LL 层的 Data PDU 最大 Payload 受 DLE 限制（27~251 字节）。L2CAP 自动将 512 字节 SDU <strong>分片为多个 LL Data PDU</strong>——每个 LL PDU 带相同的 CID 和 L2CAP 头（Length=512）。<br>
+    接收端 L2CAP <strong>自动重组</strong>——收集同一 CID 的 LL Data PDU，根据 L2CAP Length 判断是否收齐——收齐后上传 ATT 层。<strong>ATT 层完全不知道分片发生过</strong>。<br>
+    <strong>LL 层的重传与 L2CAP 分片的交互</strong>：如果 LL PDU#2 在空口上丢包→LL 层 ARQ 重传→重传成功→L2CAP 继续收集→上传。LL 层的重传保证了分片链的可靠性。但如果重传超过 Supervision Timeout→整个 SDU 丢失→上层 ATT 超时。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch6: ATT + GATT ═══ -->
+<h2 class="sh">6. ATT (属性协议) + GATT (通用属性配置文件)</h2>
+<p class="ss">这是 BLE 应用开发<strong>接触最多的两层</strong>——ATT 定义了"怎么读怎么写"的操作语义，GATT 定义了"数据在 Server 端如何组织成树形结构"。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>ATT — 属性协议 (协议层)</h4>
+    <div class="lbl">Client-Server 模型 · 请求-响应 · 严格的串行执行</div>
+    <p>ATT 定义了<strong>6 种 PDU 类型的方法</strong>：<strong>Read Request/Response</strong>（读属性值）、<strong>Write Request/Response</strong>（写属性值——需确认）、<strong>Write Command</strong>（写属性值——无需确认）、<strong>Handle Value Notification</strong>（Server 主动推送——无需确认）、<strong>Handle Value Indication/Confirmation</strong>（Server 主动推送——需确认）、<strong>Read By Type Request/Response</strong> 和 <strong>Find Information Request/Response</strong>（用于 GATT Discovery——遍历属性数据库）。<br>
+    <strong>核心约束</strong>：ATT <strong>不允许多个请求同时进行</strong>——Client 发了 Read Request → 必须等 Read Response → 才能发下一个请求。Write Command 和 Handle Value Notification 不受此限制（无响应=不需要等待）。这就是为什么 GATT 操作要排队串行化。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>GATT — 属性数据库 (数据层)</h4>
+    <div class="lbl">Service → Characteristic → Descriptor 三级树形结构</div>
+    <p>GATT Server 维护一个<strong>Attribute 表</strong>——每个 Attribute = [Handle(2B) + UUID(2/4/16B) + Permissions + Value]。Attribute 按 Handle 升序排列。<br>
+    <strong>Service Declaration (UUID=0x2800)</strong>：Attribute 类型 = 0x2800，Value = [Service UUID]。标记一个 Service 的起始 Handle。<br>
+    <strong>Characteristic Declaration (UUID=0x2803)</strong>：Attribute 类型 = 0x2803，Value = [Properties(1B) + Value Handle(2B) + UUID]。标记一个 Characteristic——Properties 声明了 Read/Write/Notify/Indicate 权限，Value Handle 指向实际存储数据的 Attribute。<br>
+    <strong>Characteristic Value</strong>：实际的<strong>数据存储位置</strong>。App 读写的就是这个 Handle。<br>
+    <strong>Descriptor</strong>：附加元数据。最关键的是 <strong>CCCD (UUID=0x2902, Client Characteristic Configuration Descriptor)</strong>——2 字节：0x0000=关闭 Notify/Indicate, 0x0001=启用 Notify, 0x0002=启用 Indicate。</p>
+  </div>
+</div>
+
+<div class="chain"><span class="cm">// GATT 数据库的完整树形结构 (以电池服务 0x180F 为例)</span>
+
+Handle   Attribute Type          Value                    权限
+<span class="nu">0x0001</span>  Primary Service(0x2800)  [UUID=0x1800]             R   <span class="cm">← Generic Access Service</span>
+<span class="nu">0x0002</span>  Char Declaration(0x2803) [R, Handle=0x0003, 0x2A00] R
+<span class="nu">0x0003</span>  Device Name(0x2A00)      "IPC-CAM-001"            R   <span class="cm">← Characteristic Value</span>
+...
+<span class="nu">0x000A</span>  Primary Service(0x2800)  [UUID=0x180F]             R   <span class="cm">← Battery Service 开始</span>
+<span class="nu">0x000B</span>  Char Declaration(0x2803) [Read|Notify, Handle=0x000C, 0x2A19] R
+<span class="nu">0x000C</span>  Battery Level(0x2A19)    85                        R,N <span class="cm">← Characteristic Value (当前85%)</span>
+<span class="nu">0x000D</span>  CCCD(0x2902)            0x0000                    R,W <span class="cm">← Descriptor (App写0x0001启用Notify)</span>
+<span class="nu">0x000E</span>  CPF(0x2904)             [Format=UINT8, Unit=%]    R   <span class="cm">← Characteristic Presentation Format</span>
+<span class="nu">0x000F</span>  Primary Service(0x2800)  [UUID=0xFFE0]             R   <span class="cm">← Custom Service 开始</span>
+
+<span class="cm">// App 读电池电量的完整协议栈路径:</span>
+<i>App 调用</i> readCharacteristic(Handle=0x000C)
+  → Host ATT层: ATT_READ_REQ (Handle=0x000C) → 封装到 CID=0x0004 的 L2CAP SDU
+  → L2CAP 加头(Length+CID) → HCI ACL Data → Controller
+  → Controller LL 层: LL Data PDU (LLID=0x02) → 空口
+  → 外设 Controller: 收包→解密→上传 L2CAP → L2CAP 解析 CID=0x0004→上传 ATT
+  → 外设 ATT: 读 Handle=0x000C → Value=85
+  → 外设: ATT_READ_RSP (Handle=0x000C, Value=[0x55=85])
+  → 沿原路返回 (L2CAP→HCI→LL→空口→手机LL→HCI→L2CAP→ATT→App回调)</div>
+
+<!-- ═══ Ch7: SM ═══ -->
+<h2 class="sh">7. SM (Security Manager) — 配对与加密</h2>
+<p class="ss">SM 负责<strong>设备身份认证和链路加密</strong>——通过独立的 L2CAP CID=0x0006 通信，与 GATT 数据通道完全分离。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>SM 的三个阶段</h4>
+    <div class="lbl">特性交换 → 密钥生成 → 密钥分发</div>
+    <p><strong>Phase 1</strong>：交换 Pairing Request/Response——IO Capabilities（有无键盘/显示器）、OOB 支持、AuthReq（Bonding/MITM/SC 标志位）、密钥长度、要分发的密钥类型。<br>
+    <strong>Phase 2 (LE Legacy)</strong>：基于 TK (Temporary Key) 通过 AES-CMAC 生成 STK (Short Term Key)。Just Works 时 TK=0——安全脆弱。<br>
+    <strong>Phase 2 (LE Secure Connections)</strong>：ECDH (P-256) 密钥交换 + AES-CCM 认证——即使窃听也无法破解。Just Works 仍然无 MITM 保护但防被动窃听。<br>
+    <strong>Phase 3</strong>：通过加密链路分发 LTK (长期密钥, 128-bit, 用于后续连接加密)、IRK (身份解析密钥, 用于 RPA 地址)、CSRK (签名密钥, 用于数据签名)。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>加密：链路层的 AES-CCM</h4>
+    <div class="lbl">SM 协商 LTK → LL 层用 AES-CCM 执行数据加密</div>
+    <p>SM 只负责<strong>生成和交换密钥</strong>——不负责实际数据加密。实际加密在 <strong>LL 层</strong>执行：LL_ENC_REQ/RSP 握手→双方确认使用相同的 LTK→LL 层在<strong>每个 Data PDU</strong>中执行 AES-CCM (Counter with CBC-MAC) 加密和认证。<br>
+    <strong>加密后每个 Data PDU 尾部增加 4 字节 MIC</strong> (Message Integrity Check)——接收端验证 MIC → 错误→丢弃包→MIC Failure 可能导致 LL_TERMINATE_IND (Error=0x0E)。<br>
+    <strong>加密切换的时刻</strong>：LL_START_ENC_REQ → LL_START_ENC_RSP → 从<strong>下一个 Connection Event</strong>开始，所有 Data PDU 加密。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Bonding — 持久化信任</h4>
+    <div class="lbl">配对一次 → 存储密钥 → 后续自动加密</div>
+    <p>Bonding 标志位设置后→配对完成后双方将 LTK/IRK/CSRK + 对端身份信息（BD_ADDR + 地址类型）<strong>持久化存储</strong>（手机侧存到 Secure Enclave/KeyStore，外设侧存到 Flash）。<br>
+    下次连接→加密阶段时<strong>直接从存储中读取 LTK</strong>→加密握手（~30ms）→无需用户交互。<br>
+    <strong>RPA (Resolvable Private Address)</strong>：Bonding 后外设可以使用 RPA 作为广播地址（每次上电生成新的随机地址）→ 手机通过存储的 IRK 运行哈希解析函数→<strong>确定这确实是之前 Bonding 过的设备</strong>→建立连接+自动加密。实现了防追踪+无缝自动连接。</p>
+  </div>
+</div>
+
+<!-- ═══ Ch8: 数据流动 ═══ -->
+<h2 class="sh">8. 一帧数据的完整旅程 — 从 App write 到空口发射</h2>
+<p class="ss">追踪 App 调用 <code>writeCharacteristic(handle, value, 6)</code> 发送 "REBOOT" 到空中电磁波的<strong>自顶向下</strong>完整路径——每一层的封装、每一层的处理。</p>
+
+<div class="chain"><span class="cm">// App 发送 Write Command "REBOOT"(6B) 到 Handle=0x0010 的完整旅程</span>
+
+<b>1. Application Layer (App 代码)</b>
+   App 调用: gatt.writeCharacteristic(handle=0x0010, value="REBOOT")
+   → Android BLE Stack: GATT → ATT_Write_Req 交给 ATT 层
+
+<b>2. ATT Layer (Host)</b>
+   构造 ATT PDU: [Opcode=0x12(WriteReq)][Handle=0x0010][Value=0x5245424F4F54]
+   PDU 大小 = 1+2+6 = 9 字节
+   → 封装到 L2CAP SDU (CID=0x0004) 交给 L2CAP 层
+
+<b>3. L2CAP Layer (Host)</b>
+   封装 L2CAP 头: [Length=0x0009(9B)][CID=0x0004(ATT)]
+   L2CAP SDU 总大小 = 4+9 = 13 字节
+   → L2CAP SDU=13B < MTU=247 → 不需要分片 → 直接交给 HCI
+
+<b>4. HCI Layer (Host → Controller)</b>
+   封装 HCI ACL Data 头: [Handle=0x0040][PB=0b10(起始)][BC=0b00][DataLen=13]
+   通过 UART(H4) 或 USB 发往 Controller
+   在 Android HCI Snoop Log 中会看到这条 ACL Data
+
+<b>5. Link Layer (Controller — 固件)</b>
+   收到 ACL Data → L2CAP SDU(13B) + LL 头
+   → 排队等待下一个 Connection Event
+   → Connection Event 时刻到 → 取出包 → 加密(AES-CCM, LTK)
+   → 构造 LL Data PDU:
+     [LL Header(2B): LLID=0x02, SN=3, NESN=5, MD=0]
+     [Payload(13B+4B MIC)]
+   → 交给 Baseband
+
+<b>6. Baseband + PHY (Controller — 硬件)</b>
+   构造空中包: [Preamble(1B)][AccessAddr(4B)][LL_PDU(17B)][CRC24(3B)]
+   总大小 = 1+4+17+3 = 25 字节
+   → GFSK 调制 → 2.4GHz 射频发射
+   → 在空中占用约 200μs (2M PHY) 或 400μs (1M PHY)
+
+<span class="cm">// 总计: 6 字节用户数据 → 25 字节空中包 → 约 76% 是协议开销</span></div>
+
+<!-- ═══ Ch9: BR/EDR vs BLE ═══ -->
+<h2 class="sh">9. BR/EDR vs BLE 协议栈对照</h2>
+<p class="ss">两者共用 L2CAP 层以上完全相同，但 PHY/LL 层完全不同——这是理解 Dual-Mode 芯片设计的关键。</p>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>层级</th><th>BLE</th><th>BR/EDR</th></tr></thead>
+  <tbody>
+    <tr><td class="g">Application</td><td>GATT Profiles (Battery, HID, ...)</td><td>Profiles (A2DP, HFP, SPP, HID, OBEX)</td></tr>
+    <tr><td>Service Discovery</td><td>GATT Discovery (ATT Read By Type)</td><td><strong>SDP</strong> (Service Discovery Protocol)</td></tr>
+    <tr><td>数据通道</td><td>GATT Characteristic (ATT Read/Write/Notify)</td><td><strong>RFCOMM</strong> 串口仿真</td></tr>
+    <tr><td>传输复用</td><td colspan="2" style="text-align:center;color:#a78bfa"><strong>L2CAP (CID 多路复用) — 两层共用!</strong></td></tr>
+    <tr><td>链路类型</td><td>仅 ACL (异步)</td><td>ACL + <strong>SCO/eSCO</strong> (同步语音)</td></tr>
+    <tr><td>状态机</td><td>Adv/Scan/Init/Connection/Isochronous</td><td>Inquiry/Inquiry Scan + Page/Page Scan + Connection</td></tr>
+    <tr><td>PHY</td><td>GFSK 1M/2M + Coded</td><td>GFSK 1M (BR) + π/4-DQPSK/8DPSK (EDR 2M/3M)</td></tr>
+    <tr><td>跳频</td><td>每 Connection Event 跳一次</td><td>每 625μs slot 跳一次 (1600 hop/s)</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<hr>
+<p style="text-align:center;color:#444466;font-size:12px;margin-top:40px">BLE 协议栈深度剖析 — 系统化知识体系 &nbsp;|&nbsp; 2026 · 持续更新</p>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>
