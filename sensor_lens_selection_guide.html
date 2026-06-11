@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPC Sensor 与镜头选型指南 — 从参数对比到光学匹配</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.ptbl{margin:14px 0 !important}
+.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{
+  background:linear-gradient(180deg, rgba(108,99,255,.12), rgba(108,99,255,.04));
+  color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);
+  position:sticky;top:0;white-space:nowrap;
+}
+.ptbl tbody td{
+  padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;
+  border-bottom:1px solid rgba(255,255,255,.03);
+}
+.ptbl tbody tr:first-child td{padding-top:14px}
+.ptbl tbody tr:last-child td{border-bottom:none;padding-bottom:14px}
+.ptbl tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}
+.ptbl tbody td code{font-size:11px;background:rgba(108,99,255,.08);padding:2px 7px;border-radius:4px}
+.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0;white-space:nowrap}
+.ptbl .g{color:#34d399 !important;font-weight:700 !important}
+.ptbl .y{color:#fbbf24 !important;font-weight:700 !important}
+.ptbl .r{color:#f87171 !important;font-weight:700 !important}
+.ptbl .w{color:#e0e0ff !important;font-weight:700 !important}
+
+/* Winner badge */
+.winner{display:inline-block;font-size:10px;font-weight:700;padding:1px 8px;border-radius:10px;
+  background:rgba(52,211,153,.15);color:#34d399;margin-left:6px;vertical-align:middle}
+
+/* Stage card */
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:12px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}
+.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}
+.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:8px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+
+/* Content block */
+.content-block{max-width:960px;width:100%}
+
+/* Formula */
+.formula{display:inline-block;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);border-radius:8px;padding:4px 12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:#a78bfa;margin:4px 2px}
+
+/* Decision tree */
+.dec-tree{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px 24px;max-width:960px;width:100%;font-family:"JetBrains Mono",monospace;font-size:11.5px;color:#b0b0d0;line-height:2;margin:16px 0;overflow-x:auto;white-space:pre}
+
+/* Sensor stack visual */
+.sensor-stack{display:flex;flex-direction:column;gap:2px;max-width:600px;width:100%;margin:16px auto;font-size:11px;font-weight:600}
+.sensor-stack>div{padding:10px 16px;border-radius:6px;text-align:center}
+.sensor-stack .ml{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15);color:#a78bfa}
+.sensor-stack .cf{background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.1);color:#e0e0ff}
+.sensor-stack .pd{background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.2);color:#22d3ee}
+.sensor-stack .si{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.15);color:#34d399}
+
+/* Comparison table highlight */
+.hl-best{background:rgba(52,211,153,.06) !important}
+.hl-best td:first-child{color:#34d399 !important}
+
+/* Summary card */
+.summary-card{background:linear-gradient(135deg,rgba(108,99,255,.06),rgba(34,211,238,.04));border:1px solid rgba(108,99,255,.15);border-radius:14px;padding:22px 26px;max-width:960px;width:100%;margin:16px 0}
+
+/* Split layout */
+.split-row{display:flex;gap:20px;max-width:960px;width:100%;flex-wrap:wrap;margin:16px 0}
+.split-half{flex:1;min-width:300px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px}
+
+/* Code inline */
+.ref{font-family:"JetBrains Mono",monospace;font-size:11px;color:#6c63ff}
+
+/* Bar chart visual */
+.bar-chart{display:flex;flex-direction:column;gap:8px;max-width:600px;width:100%;margin:12px 0}
+.bar-row{display:flex;align-items:center;gap:10px}
+.bar-label{font-size:11px;color:#b0b0d0;width:90px;text-align:right;flex-shrink:0;font-weight:600}
+.bar-track{flex:1;height:18px;background:rgba(255,255,255,.03);border-radius:9px;overflow:hidden}
+.bar-fill{height:100%;border-radius:9px;font-size:9px;font-weight:700;color:#fff;display:flex;align-items:center;padding-left:8px;transition:width 1.5s}
+</style>
+</head>
+<body>
+
+<!-- ===== Hero ===== -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h1 style="font-size:clamp(24px,4vw,36px);font-weight:900;color:#e0e0ff;margin-bottom:8px">IPC Sensor 与镜头选型指南</h1>
+    <p style="font-size:14px;color:#7777aa;line-height:1.7;max-width:700px">
+      从应用场景出发，系统性讲解 CMOS 图像传感器与镜头的光学匹配方法。
+      涵盖 SmartSens SC231AI / SC223A / SC2337P、GalaxyCore GC2053 / GC2083、OmniVision OS02G10 的详细对比与选型建议。
+    </p>
+    <div class="site-tags" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+      <span>Sensor 选型</span><span>镜头光学</span><span>CRA 匹配</span><span>IPC 硬件</span><span>SC231AI</span><span>GC2053</span><span>暗光对比</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ 1. Sensor 选型 ═══════ -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h2 class="col-title">一、Sensor 选型 — 8 个关键维度</h2>
+    <p class="col-desc">Sensor、ISP、镜头三者耦合。先定应用场景 → 再选 Sensor 规格 → 最后匹配镜头光学参数。</p>
+
+    <!-- 1.1 分辨率 -->
+    <div class="stage-card" style="--sc:#34d399"><div class="stage-num">1</div>
+    <div class="stage-body">
+      <h4>分辨率 (Resolution)</h4>
+      <div class="en">Resolution — 不是越高越好</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>使用场景</th><th>推荐分辨率</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>家庭看护 / 门铃</td><td>2MP (1920×1080)</td><td>足够看清人脸</td></tr>
+            <tr><td>庭院 / 门口</td><td>3~4MP</td><td>兼顾细节和存储</td></tr>
+            <tr><td>商铺 / 停车场</td><td>4~5MP</td><td>需要车牌/人脸细节</td></tr>
+            <tr><td>大场景 / 周界</td><td>8MP 或双摄拼接</td><td>大范围覆盖</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>⚠️ 同样光学尺寸下，分辨率越高→单像素越小→感光能力越弱→夜视越差。2MP 是家用 IPC 甜点。</p>
+    </div></div>
+
+    <!-- 1.2 像素尺寸 -->
+    <div class="stage-card" style="--sc:#fbbf24"><div class="stage-num">2</div>
+    <div class="stage-body">
+      <h4>像素尺寸 (Pixel Size)</h4>
+      <div class="en">Pixel Size — 暗光表现的决定性因素之一</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>像素尺寸</th><th>感光能力</th><th>暗光表现</th><th>典型场景</th></tr></thead>
+          <tbody>
+            <tr><td><span class="g">2.9μm</span></td><td>★★★★★</td><td>优秀</td><td>SC223A — 夜视全彩、无补光</td></tr>
+            <tr><td><span class="w">2.8μm</span></td><td>★★★★☆</td><td>优秀</td><td>SC231AI / GC2053 / OS02G10</td></tr>
+            <tr><td><span class="y">2.7μm</span></td><td>★★★☆☆</td><td>良好</td><td>SC2337P / GC2083</td></tr>
+            <tr><td><span class="r">2.0μm</span></td><td>★★☆☆☆</td><td>一般</td><td>4MP 传感器（1/3"）</td></tr>
+            <tr><td>1.45μm</td><td>★☆☆☆☆</td><td>差</td><td>仅限光线充足的场景</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>每个像素都是「光子桶」。尺寸越大，收集的光子越多。SC231AI 的 2.8μm 比 SC2337P 的 2.7μm 多约 7% 受光面积，配合 BSI 工艺，感光度差距可达 24.8%。</p>
+    </div></div>
+
+    <!-- 1.3 光学尺寸 -->
+    <div class="stage-card" style="--sc:#38bdf8"><div class="stage-num">3</div>
+    <div class="stage-body">
+      <h4>光学尺寸 (Optical Format)</h4>
+      <div class="en">Optical Format — 定义 Sensor 对角线长度，决定兼容镜头规格</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>格式</th><th>对角线</th><th>典型搭配</th></tr></thead>
+          <tbody>
+            <tr><td><span class="g">1/2.8"</span></td><td>6.4mm</td><td>SC223A — 2MP + 2.9μm（同尺寸最大像素）</td></tr>
+            <tr><td><span class="w">1/2.9"</span></td><td>6.2mm</td><td>SC231AI / GC2053 / OS02G10 — 2MP + 2.8μm</td></tr>
+            <tr><td><span class="y">1/3"</span></td><td>5.6mm</td><td>SC2337P / GC2083 — 2MP + 2.7μm</td></tr>
+            <tr><td>1/2.7"</td><td>6.7mm</td><td>4MP + 2.0μm（如 SC431AI）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>光学尺寸越大→可用镜头像圈越大→单像素可以做得更大→暗光表现越好。</p>
+    </div></div>
+
+    <!-- 1.4 感光度 -->
+    <div class="stage-card" style="--sc:#a78bfa"><div class="stage-num">4</div>
+    <div class="stage-body">
+      <h4>感光度 (Sensitivity)</h4>
+      <div class="en">Sensitivity — 暗光成像的决定性参数</div>
+      <p>感光度表示传感器在单位光照下输出的信号电压 (mV/lux·s)，是最直接反映暗光性能的指标。</p>
+      <div class="bar-chart">
+        <div class="bar-row">
+          <div class="bar-label">SC231AI</div>
+          <div class="bar-track"><div class="bar-fill" style="width:100%;background:linear-gradient(90deg,#6c63ff,#a78bfa)">7387</div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">SC223A</div>
+          <div class="bar-track"><div class="bar-fill" style="width:99%;background:linear-gradient(90deg,#6c63ff,#a78bfa)">7330</div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">GC2053</div>
+          <div class="bar-track"><div class="bar-fill" style="width:52%;background:#fbbf24">3870</div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">GC2083</div>
+          <div class="bar-track"><div class="bar-fill" style="width:44%;background:#f87171">3240</div></div>
+        </div>
+      </div>
+      <p style="margin-top:12px">
+        <strong>SC231AI 的感光度是 GC2053 的 1.9 倍、GC2083 的 2.3 倍。</strong>
+        在同样的暗光环境下，SC231AI 输出的信号幅度接近 GC2053 的两倍，画面干净通透，GC2053 则可能糊成一片噪点。
+      </p>
+    </div></div>
+
+    <!-- 1.5 像素工艺 BSI vs FSI -->
+    <div class="stage-card" style="--sc:#f472b6"><div class="stage-num">5</div>
+    <div class="stage-body">
+      <h4>像素工艺 — BSI vs FSI</h4>
+      <div class="en">BSI (Back-Side Illumination) vs FSI (Front-Side Illumination)</div>
+      <div class="split-row">
+        <div class="split-half" style="border-color:rgba(108,99,255,.2)">
+          <h5 style="color:#a78bfa;font-size:14px;margin-bottom:8px">BSI 背照式</h5>
+          <div class="sensor-stack">
+            <div class="ml">微透镜</div>
+            <div class="cf">滤色片</div>
+            <div class="pd">光电二极管 (PD) ← 无遮挡</div>
+            <div class="si">金属布线层</div>
+          </div>
+          <p style="font-size:11px;color:#9999bb;margin-top:8px">量子效率 ~70% | 暗光王者</p>
+        </div>
+        <div class="split-half" style="border-color:rgba(248,113,113,.2)">
+          <h5 style="color:#f87171;font-size:14px;margin-bottom:8px">FSI 前照式</h5>
+          <div class="sensor-stack">
+            <div class="ml">微透镜</div>
+            <div class="cf">滤色片</div>
+            <div class="si" style="background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.2);color:#f87171">金属布线层 ← 遮挡光线</div>
+            <div class="pd">光电二极管 (PD)</div>
+          </div>
+          <p style="font-size:11px;color:#9999bb;margin-top:8px">量子效率 ~50% | 成本更低</p>
+        </div>
+      </div>
+      <p>BSI 让光电二极管直接在光线路径上，避免金属走线的遮挡。SC231AI 是 BSI，SC223A/GC2053/GC2083 是 FSI。这是感光度差距的根本原因。</p>
+    </div></div>
+
+    <!-- 1.6 功耗 -->
+    <div class="stage-card" style="--sc:#fb923c"><div class="stage-num">6</div>
+    <div class="stage-body">
+      <h4>功耗 (Power Consumption)</h4>
+      <div class="en">Power — 电池产品的关键约束，有线产品可适度放宽</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>Sensor</th><th>典型功耗 @30fps</th><th>评价</th></tr></thead>
+          <tbody>
+            <tr class="hl-best"><td>SC231AI</td><td><span class="g">&lt; 75 mW</span></td><td>极低，适合电池</td></tr>
+            <tr><td>GC2053</td><td>98 mW</td><td>低</td></tr>
+            <tr><td>OS02G10</td><td>~110 mW</td><td>中等</td></tr>
+            <tr><td>GC2083</td><td>128 mW</td><td>中等偏高</td></tr>
+            <tr><td>SC2337P</td><td>101 mW</td><td>低</td></tr>
+            <tr><td>SC223A</td><td>~154 mW</td><td>偏高（有线可忽略）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>非电池产品，功耗不是首要约束。SC223A 功耗虽高但画质接近 SC231AI，是性价比最优解。</p>
+    </div></div>
+
+    <!-- 1.7 接口 -->
+    <div class="stage-card" style="--sc:#34d399"><div class="stage-num">7</div>
+    <div class="stage-body">
+      <h4>接口 (Interface)</h4>
+      <div class="en">MIPI / DVP — 对接 SoC 的选择</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>接口</th><th>速率</th><th>引脚数</th><th>适用</th></tr></thead>
+          <tbody>
+            <tr><td><span class="g">MIPI CSI-2</span></td><td>~1.5Gbps/lane</td><td>4~6</td><td>主流 SoC（推荐）</td></tr>
+            <tr><td>DVP</td><td>~200Mbps</td><td>12+</td><td>老旧/低端 SoC</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>MIPI 是首选。DVP 仅在对接老平台时使用。SC231AI 只支持 MIPI；SC223A / GC2053 / GC2083 / SC2337P 同时支持 MIPI + DVP。</p>
+    </div></div>
+
+    <!-- 1.8 功能特性 -->
+    <div class="stage-card" style="--sc:#fbbf24"><div class="stage-num">8</div>
+    <div class="stage-body">
+      <h4>功能特性 (Features)</h4>
+      <div class="en">Features — 需要什么功能就选什么 Sensor</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>需求</th><th>需要的 Sensor 能力</th><th>支持型号</th></tr></thead>
+          <tbody>
+            <tr><td>帧同步 / 多摄</td><td>EFSYNC / Slave Mode</td><td>SC2337P ✅ | GC2053/GC2083 ✅</td></tr>
+            <tr><td>2×2 Binning（暗光降分辨率）</td><td>Binning 模式</td><td>SC2337P ✅ | OS02G10 ✅</td></tr>
+            <tr><td>高帧率（≥60fps）</td><td>高速读出</td><td>SC231AI ✅ (60fps)</td></tr>
+            <tr><td>超低功耗待机</td><td>Sleep Mode</td><td>SC231AI ✅ | SC2337P ✅</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═══════ 2. Sensor 横向对比 ═══════ -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h2 class="col-title">二、六大 2MP Sensor 横向对比</h2>
+    <p class="col-desc">覆盖 SmartSens、OmniVision、GalaxyCore 三大品牌主力安防 2MP 传感器</p>
+
+    <div class="ptbl" style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>参数</th><th>SC231AI</th><th>SC223A</th><th>OS02G10</th><th>GC2053</th><th>GC2083</th><th>SC2337P</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>像素工艺</td>
+            <td class="g">BSI</td><td>FSI</td><td class="g">BSI</td><td>FSI</td><td>FSI</td><td>FSI</td>
+          </tr>
+          <tr>
+            <td>光学尺寸</td>
+            <td>1/2.9"</td><td class="g">1/2.8"</td><td>1/2.9"</td><td>1/2.9"</td><td class="r">1/3"</td><td class="r">1/3"</td>
+          </tr>
+          <tr>
+            <td>像素尺寸</td>
+            <td>2.8μm</td><td class="g">2.9μm</td><td>2.8μm</td><td>2.8μm</td><td>2.7μm</td><td>2.7μm</td>
+          </tr>
+          <tr>
+            <td>感光度</td>
+            <td class="g">7387</td><td class="g">7330</td><td class="y">未公开</td><td class="y">3870</td><td class="r">3240</td><td class="r">5919</td>
+          </tr>
+          <tr>
+            <td>动态范围</td>
+            <td class="g">83 dB</td><td>80 dB</td><td>~80 dB</td><td>81 dB</td><td class="r">74 dB</td><td>76 dB</td>
+          </tr>
+          <tr>
+            <td>信噪比</td>
+            <td class="g">41 dB</td><td>39 dB</td><td>~38 dB</td><td>38 dB</td><td>37 dB</td><td>36 dB</td>
+          </tr>
+          <tr>
+            <td>最大帧率</td>
+            <td class="g">60fps</td><td>30fps</td><td>30fps</td><td>30fps</td><td>30fps</td><td>30fps</td>
+          </tr>
+          <tr>
+            <td>功耗 @30fps</td>
+            <td class="g">&lt;75 mW</td><td>154 mW</td><td>~110 mW</td><td>98 mW</td><td>128 mW</td><td>101 mW</td>
+          </tr>
+          <tr>
+            <td>CRA</td><td>未公开</td><td>15°</td><td>15°</td><td>12°</td><td>未公开</td><td>15°</td>
+          </tr>
+          <tr>
+            <td>接口</td><td>MIPI</td><td>MIPI+DVP</td><td>MIPI+DVP</td><td>MIPI+DVP</td><td>MIPI+DVP</td><td>MIPI+DVP</td>
+          </tr>
+          <tr>
+            <td>技术代际</td><td class="g">SmartClarity-3<br/>2023</td><td>DSI-2<br/>2021</td><td>OmniPixel3-HS<br/>2022</td><td>标准 FSI<br/>2020</td><td>标准 FSI<br/>2022</td><td>Pro 系列<br/>2024</td>
+          </tr>
+          <tr>
+            <td>参考单价</td><td>~$3.5-5</td><td class="g">~$2 (¥15)</td><td>~$3-4</td><td>~$2-3</td><td class="g">~$1.5-2.5</td><td>~$2-3</td>
+          </tr>
+          <tr>
+            <td>定位</td><td>旗舰 AI</td><td class="g">最佳性价比</td><td>BSI 平衡</td><td>星光入门</td><td>极致低成本</td><td>安防 Pro</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="summary-card" style="margin-top:20px">
+      <h4 style="font-size:14px;font-weight:800;color:#e0e0ff;margin-bottom:8px">核心结论</h4>
+      <ul style="font-size:12.5px;color:#b0b0d0;line-height:1.8;padding-left:18px;margin:0">
+        <li><strong>画质王者</strong>：SC231AI — 感光度 7387+BSI+60fps，旗舰首选</li>
+        <li><strong>最佳性价比</strong>：SC223A — 感光度 7330（差 &lt;1%），价格低约 50%</li>
+        <li><strong>BSI 平衡之选</strong>：OS02G10 — BSI 工艺 + OmniVision 品牌，12 英寸晶圆供货稳</li>
+        <li><strong>星光入门</strong>：GC2053 — 感光度 3870，81dB DR，低价中画质尚可</li>
+        <li><strong>极致降本</strong>：GC2083 — 价格最低，仅适合有补光的环境</li>
+        <li><strong>不推荐</strong>：SC2337P — 被 SC223A 全面碾压（感光度差 24%、DR 低 4dB、像素更小）</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ 3. 镜头选型 ═══════ -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h2 class="col-title">三、镜头选型 — 6 个核心要素</h2>
+    <p class="col-desc">镜头决定了有多少光能到达 Sensor，是画质链路的第一个瓶颈</p>
+
+    <!-- 3.1 焦距 -->
+    <div class="stage-card" style="--sc:#34d399"><div class="stage-num">1</div>
+    <div class="stage-body">
+      <h4>焦距 (Focal Length)</h4>
+      <div class="en">Focal Length — 决定视角和监控距离</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>焦距</th><th>水平视角<br/>(1/2.9")</th><th>最佳监控距离</th><th>场景</th></tr></thead>
+          <tbody>
+            <tr><td>2.8mm</td><td>~95°</td><td>3~5m</td><td>室内 / 门口 / 走廊</td></tr>
+            <tr><td>3.6mm</td><td>~75°</td><td>5~10m</td><td>庭院 / 大厅</td></tr>
+            <tr><td>6mm</td><td>~45°</td><td>10~20m</td><td>停车场 / 周界</td></tr>
+            <tr><td>8mm</td><td>~33°</td><td>20~30m</td><td>出入口 / 闸机</td></tr>
+            <tr><td>12mm</td><td>~22°</td><td>30~50m</td><td>远距离识别</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>FOV 计算公式：<span class="formula">FOV = 2 × arctan( Sensor宽度 / (2 × 焦距) )</span></p>
+    </div></div>
+
+    <!-- 3.2 光圈 -->
+    <div class="stage-card" style="--sc:#fbbf24"><div class="stage-num">2</div>
+    <div class="stage-body">
+      <h4>光圈 (F-Number)</h4>
+      <div class="en">Aperture — 决定进光量</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>光圈</th><th>F 值</th><th>进光量</th><th>暗光表现</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td>超大光圈</td><td>F1.0</td><td>★★★★★</td><td>极优</td><td>景深浅、像差大、成本高</td></tr>
+            <tr><td class="g">大光圈</td><td class="g">F1.4</td><td>★★★★☆</td><td>优秀</td><td>安防推荐</td></tr>
+            <tr><td class="w">中等</td><td class="w">F1.6</td><td>★★★☆☆</td><td>良好</td><td>安防推荐</td></tr>
+            <tr><td>中等偏小</td><td>F1.8</td><td>★★☆☆☆</td><td>一般</td><td>成本优先</td></tr>
+            <tr><td class="r">小光圈</td><td class="r">F2.0+</td><td>★☆☆☆☆</td><td>差</td><td>不推荐暗光用</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>安防镜头最佳区间：F1.4~F1.8。光圈越大→景深越浅、像差越大、成本越高。</p>
+    </div></div>
+
+    <!-- 3.3 像面尺寸 -->
+    <div class="stage-card" style="--sc:#38bdf8"><div class="stage-num">3</div>
+    <div class="stage-body">
+      <h4>像面尺寸 (Image Circle)</h4>
+      <div class="en">Image Circle — 必须≥Sensor 光学尺寸，否则有暗角</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>Sensor 光学尺寸</th><th>镜头像面最小要求</th><th>推荐镜头</th></tr></thead>
+          <tbody>
+            <tr><td>1/2.9" (SC231AI, GC2053)</td><td>1/2.7" 或 1/2.9"</td><td>1/2.7" 像面镜头</td></tr>
+            <tr><td>1/2.8" (SC223A)</td><td>1/2.7" 或 1/2.8"</td><td>1/2.7" 像面镜头</td></tr>
+            <tr><td>1/3" (SC2337P, GC2083)</td><td>1/3"</td><td>1/3" 像面镜头</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="r">⚠️ 像面尺寸不足 → 四角黑影/Vignette → 不可接受。</p>
+    </div></div>
+
+    <!-- 3.4 CRA 匹配 -->
+    <div class="stage-card" style="--sc:#f472b6"><div class="stage-num">4</div>
+    <div class="stage-body">
+      <h4>CRA 匹配 (Chief Ray Angle)</h4>
+      <div class="en">CRA Matching — 容易被忽略的关键参数</div>
+      <p>镜头的出射角 (CRA) 必须 ≤ Sensor 的主光线入射角 (CRA)，否则画面边缘明显偏暗。</p>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>Sensor</th><th>Sensor CRA</th><th>镜头 CRA 要求</th><th>匹配结果</th></tr></thead>
+          <tbody>
+            <tr><td>SC223A</td><td>15°</td><td>≤ 15°</td><td class="g">推荐 12~15° 镜头</td></tr>
+            <tr><td>OS02G10</td><td>15°</td><td>≤ 15°</td><td class="g">推荐 12~15° 镜头</td></tr>
+            <tr><td>SC2337P</td><td>15°</td><td>≤ 15°</td><td class="g">推荐 12~15° 镜头</td></tr>
+            <tr><td>GC2053</td><td>12°</td><td>≤ 12°</td><td class="y">需要低 CRA 镜头</td></tr>
+            <tr><td>SC231AI</td><td>未公开</td><td>需向 FAE 确认</td><td class="y">建议实测</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>GC2053 的 CRA 只有 12°，镜头选择范围受限——需要专门的低 CRA 镜头。SC223A 的 15° CRA 兼容性更好。</p>
+    </div></div>
+
+    <!-- 3.5 IR-Cut 兼容性 -->
+    <div class="stage-card" style="--sc:#a78bfa"><div class="stage-num">5</div>
+    <div class="stage-body">
+      <h4>IR-Cut 兼容性</h4>
+      <div class="en">IR-Cut Compatibility — 日夜切换的关键</div>
+      <p>日夜全彩 IPC 的核心功能。选镜头时需关注：</p>
+      <ul style="font-size:12.5px;color:#b0b0d0;line-height:1.8">
+        <li><strong>共焦设计</strong>：IR-Cut 切换后，后焦不偏移，画面不虚焦</li>
+        <li><strong>红外镀膜</strong>：可见光 + 近红外波段 MTF 都要好</li>
+        <li><strong>推荐全玻璃镜头</strong>（All-Glass），高温不跑焦</li>
+      </ul>
+    </div></div>
+
+    <!-- 3.6 镜片材质 -->
+    <div class="stage-card" style="--sc:#fb923c"><div class="stage-num">6</div>
+    <div class="stage-body">
+      <h4>镜片材质与镀膜</h4>
+      <div class="en">Lens Material — 影响温度稳定性和像质</div>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>材质</th><th>特点</th><th>推荐场景</th></tr></thead>
+          <tbody>
+            <tr><td class="g">全玻璃 (All-Glass)</td><td>耐温好，不跑焦，寿命长</td><td>室外 IPC（推荐）</td></tr>
+            <tr><td class="y">玻璃+塑胶 (3G1P)</td><td>成本低，高温可能跑焦</td><td>室内 IPC</td></tr>
+            <tr><td>全塑胶</td><td>成本最低，易跑焦</td><td>不推荐安防用</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═══════ 4. Sensor + 镜头匹配 ═══════ -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h2 class="col-title">四、Sensor + 镜头光学匹配</h2>
+    <p class="col-desc">三个核心匹配公式，确保光学链路正确闭合</p>
+
+    <div class="stage-card" style="--sc:#34d399"><div class="stage-num">1</div>
+    <div class="stage-body">
+      <h4>焦距换算 — 确定视角</h4>
+      <p>根据需要的水平 FOV 反推焦距：</p>
+      <p><span class="formula">f = Sensor宽度 / (2 × tan(FOV/2))</span></p>
+      <p style="font-size:12px;color:#7777aa;margin-top:6px">例：SC231AI (1/2.9", 宽~5.3mm)，需要 90° FOV → f = 5.3/(2×tan45°) ≈ 2.65mm → 选 2.8mm 镜头 ✓</p>
+    </div></div>
+
+    <div class="stage-card" style="--sc:#fbbf24"><div class="stage-num">2</div>
+    <div class="stage-body">
+      <h4>像素密度 vs 镜头分辨率</h4>
+      <p>镜头的极限分辨率（MTF）必须匹配 Sensor 的像素密度，否则浪费 Sensor 分辨率：</p>
+      <p><span class="formula">Nyquist 频率 = 1000 / (2 × 像素尺寸μm) lp/mm</span></p>
+      <div class="ptbl" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Sensor</th><th>像素尺寸</th><th>Nyquist 频率</th><th>镜头 MTF 要求</th><th>难度</th></tr></thead>
+          <tbody>
+            <tr><td>SC223A</td><td>2.9μm</td><td>172 lp/mm</td><td>MTF > 0.3 @172lp/mm</td><td class="g">低</td></tr>
+            <tr><td>SC231AI / GC2053 / OS02G10</td><td>2.8μm</td><td>179 lp/mm</td><td>MTF > 0.3 @179lp/mm</td><td>中等</td></tr>
+            <tr><td>SC2337P / GC2083</td><td>2.7μm</td><td>185 lp/mm</td><td>MTF > 0.3 @185lp/mm</td><td class="y">较高</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>SC223A 的 2.9μm 大像素对镜头要求最低——配普通 3G1P 镜头即可发挥 Sensor 性能。</p>
+    </div></div>
+
+    <div class="stage-card" style="--sc:#f472b6"><div class="stage-num">3</div>
+    <div class="stage-body">
+      <h4>像面覆盖确认</h4>
+      <p>镜头像面 ≥ Sensor 光学尺寸，且 CRA 匹配，是选型的最低可接受条件：</p>
+      <div class="ptbl" style="margin-top:10px">
+        <table>
+          <thead><tr><th>匹配项</th><th>要求</th><th>不满足的后果</th></tr></thead>
+          <tbody>
+            <tr><td>像面尺寸</td><td>镜头像面 ≥ Sensor 光学尺寸</td><td class="r">四角暗角 / Vignette</td></tr>
+            <tr><td>CRA</td><td>镜头出射角 ≤ Sensor 入射角</td><td class="r">边缘亮度衰减 / Lens Shading</td></tr>
+            <tr><td>镜头分辨率</td><td>MTF@Nyquist > 0.3</td><td class="y">Sensor 分辨率浪费 / 画面糊</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═══════ 5. 决策树 ═══════ -->
+<section class="sec">
+  <div class="container" style="max-width:960px">
+    <h2 class="col-title">五、选型决策树</h2>
+    <p class="col-desc">从应用场景出发，快速收敛到最佳 Sensor + 镜头组合</p>
+
+    <div class="dec-tree">
+开始
+ │
+ ├─ 电池供电？
+ │  ├─ Yes → SC231AI (&lt;75mW) + 2.8mm F1.4 1/2.7" 镜头
+ │  └─ No  → 继续
+ │
+ ├─ 需要全彩夜视？
+ │  ├─ Yes → BSI 优先（SC231AI/OS02G10）或 SC223A
+ │  │        + 大光圈镜头（≥F1.4）
+ │  │        + 暖光补光灯
+ │  └─ No  → 红外补光 + IR-Cut 镜头
+ │
+ ├─ 监控距离？
+ │  ├─ &lt;5m（室内/门铃）→ 2.8mm 广角镜头
+ │  ├─ 5~15m（庭院）     → 3.6~6mm 镜头
+ │  └─ &gt;15m（周界）    → 6~12mm 长焦镜头
+ │
+ ├─ 需要人脸识别？
+ │  ├─ Yes → ≥2MP，保证 ≥100 pixel/face
+ │  └─ No  → 2MP 够用
+ │
+ ├─ SoC 接口支持？
+ │  ├─ MIPI → SC231AI / SC223A / OS02G10 / GC2053 / GC2083
+ │  └─ DVP  → SC223A / OS02G10 / GC2053 / GC2083 / SC2337P
+ │
+ └─ 预算？
+    ├─ ¥15 芯片 → SC223A（感光度最高 7330）
+    ├─ ¥12 芯片 → GC2053（星光入门 3870）
+    ├─ ¥10 芯片 → GC2083（极致低成本）
+    └─ ¥25+   → SC231AI（画质旗舰）</div>
+
+    <div class="summary-card" style="margin-top:24px">
+      <h4 style="font-size:14px;font-weight:800;color:#e0e0ff;margin-bottom:6px">推荐矩阵</h4>
+      <div class="ptbl">
+        <table>
+          <thead><tr><th>需求</th><th>推荐 Sensor</th><th>推荐镜头</th><th>理由</th></tr></thead>
+          <tbody>
+            <tr><td>画质对标 SC231AI，省钱</td><td class="g">SC223A (~¥15)</td><td>2.8mm F1.4, 1/2.7"</td><td>感光度差 &lt;1%，价差 ~50%</td></tr>
+            <tr><td>需要 BSI + 品牌</td><td>OS02G10 (~$3-4)</td><td>2.8mm F1.6, 1/2.7"</td><td>BSI + OVT 品牌供货稳</td></tr>
+            <tr><td>极致降本，有补光</td><td>GC2083 (~$1.5-2.5)</td><td>2.8mm F1.8, 1/3"</td><td>价格最低但暗光靠补光灯</td></tr>
+            <tr><td>低成本 + 尚可暗光</td><td>GC2053 (~$2-3)</td><td>2.8mm F1.6, 1/2.7"</td><td>81dB DR，星光入门</td></tr>
+            <tr><td>高画质 + 60fps</td><td class="g">SC231AI (~$3.5-5)</td><td>2.8mm F1.6, 1/2.7"</td><td>无可替代，旗舰首选</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  Built with raw HTML + CSS · Immersive Dark Style · No framework. No build step.<br>
+  <a href="https://github.com/nicekate" target="_blank">GitHub</a>
+</footer>
+
+<script>
+// Intersection Observer for scroll-reveal
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('vis');
+      obs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.15 });
+document.querySelectorAll('.stage-card').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>

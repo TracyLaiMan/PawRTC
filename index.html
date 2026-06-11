@@ -111,7 +111,7 @@ html{scroll-behavior:smooth}
   <h1 class="site-title">PawRTC</h1>
   <p class="site-sub">音视频 · Linux 内核 · BLE 蓝牙 · 流媒体协议 — 嵌入式全栈技术知识体系</p>
   <div class="hero-stats">
-    <div class="stat"><div class="n">72</div><div class="l">技术文档</div></div>
+    <div class="stat"><div class="n">73</div><div class="l">技术文档</div></div>
     <div class="stat"><div class="n">8</div><div class="l">专题分类</div></div>
     <div class="stat"><div class="n">22</div><div class="l">Linux 内核</div></div>
     <div class="stat"><div class="n">8</div><div class="l">BLE 蓝牙</div></div>
@@ -129,9 +129,15 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 1. Linux 媒体采集 ═══════ -->
 <section class="sec" id="linux-media">
-  <h2 class="col-title">Linux 媒体采集<span class="sec-count">3 篇</span></h2>
-  <p class="col-desc">从 ALSA/V4L2 内核接口到用户态采集链路，拆解 IPC 设备音视频数据如何从硬件到达应用层</p>
+  <h2 class="col-title">Linux 媒体采集<span class="sec-count">4 篇</span></h2>
+  <p class="col-desc">从 Sensor 硬件选型到 V4L2 用户态采集链路，拆解 IPC 设备音视频数据如何从光学镜头到达应用层</p>
   <div class="col-grid">
+    <a class="col-card" style="--cc:#34d399" href="sensor_lens_selection_guide.html">
+      <span class="icon">&#x1F4F7;</span>
+      <h3>Sensor &amp; 镜头选型指南</h3>
+      <span class="cnt">完整</span>
+      <p>SC231AI / SC223A / GC2053 / GC2083 对比，CRA 匹配，焦距·光圈·像面选型实战</p>
+    </a>
     <a class="col-card" style="--cc:#34d399" href="linux_alsa_audio_learn.html">
       <span class="icon">&#x1F3A4;</span>
       <h3>ALSA 音频采集</h3>
@@ -155,7 +161,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 2. 编解码与容器 ═══════ -->
 <section class="sec" id="codec">
-  <h2 class="col-title">编解码与容器<span class="sec-count">6 篇</span></h2>
+  <h2 class="col-title">编解码与容器<span class="sec-count">7 篇</span></h2>
   <p class="col-desc">H.264 码流结构、MP4 容器解析、块效应诊断——理解视频数据的物理形态</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#fbbf24" href="av_codec_guide.html">
@@ -193,6 +199,12 @@ html{scroll-behavior:smooth}
       <h3>SVC 可伸缩视频编码</h3>
       <span class="cnt">完整</span>
       <p>时域 / 空域 / 质量分层、H.264 Annex G、WebRTC SVC 适配</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="ipc_encoder_config_guide.html">
+      <span class="icon">&#x2699;&#xFE0F;</span>
+      <h3>IPC 编码参数配置实战</h3>
+      <span class="cnt">完整</span>
+      <p>分辨率·帧率·GOP·CBR/VBR/CVBR·双码流·Rockchip MPP·场景自适应</p>
     </a>
   </div>
 </section>
