@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISP 3A 算法 — 自动曝光·白平衡·对焦 · 直观理解</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.doc { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+.sh { font-size: 1.75rem; font-weight: 800; margin: 60px 0 6px;
+  background: linear-gradient(135deg,#e0e0ff,#6c63ff);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ss { font-size: 14px; color: #7777aa; margin-bottom: 28px; line-height: 1.7; }
+.cg { display: grid; gap: 16px; margin: 20px 0; }
+.cg.c2 { grid-template-columns: 1fr 1fr; } .cg.c3 { grid-template-columns: 1fr 1fr 1fr; }
+@media(max-width:700px){ .cg.c2,.cg.c3 { grid-template-columns: 1fr; } }
+.cd { background: rgba(255,255,255,.022); border:1px solid rgba(255,255,255,.05);
+  border-radius:12px; padding:22px 20px; transition:all .3s; }
+.cd:hover { border-color:var(--gc,#6c63ff); background:rgba(255,255,255,.04);
+  transform:translateY(-2px); box-shadow:0 6px 24px rgba(0,0,0,.2); }
+.cd h4 { font-size:15px; font-weight:800; color:#e0e0ff; margin-bottom:4px; }
+.cd .lbl { font-size:11.5px; color:var(--gc,#6c63ff); font-weight:600; margin-bottom:10px; }
+.cd p { font-size:12.5px; color:#9999bb; line-height:1.75; }
+.cd code { font-size:10.5px; } .cd em { color:#6c63ff; font-style:normal; font-weight:600; }
+.cd strong { color:#d0d0f0; }
+.cb { background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.05);
+  border-radius:10px; padding:20px 24px; margin:18px 0;
+  font-family:"JetBrains Mono","Fira Code",monospace;
+  font-size:11.5px; line-height:1.78; overflow-x:auto; color:#c8c8e8; white-space:pre; }
+.cb .kw { color:#a78bfa; font-weight:600; } .cb .ty { color:#38bdf8; font-weight:600; }
+.cb .cm { color:#555577; font-style:italic; } .cb .st { color:#34d399; }
+.cb .nu { color:#fbbf24; } .cb .ma { color:#fbbf24; font-weight:600; }
+.hero { min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; padding:80px 28px; position:relative; overflow:hidden; }
+.hero::before { content:''; position:absolute; inset:0;
+  background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div class="hero">
+<div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+<div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+<div class="particle" style="left:50%;animation-duration:14s;animation-delay:1s"></div>
+<div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+<div class="particle" style="left:88%;animation-duration:13s;animation-delay:4s"></div>
+<h2 class="sec-title" style="font-size:clamp(26px,5vw,38px);font-weight:900">ISP 3A 算法 — 直观理解</h2>
+<p class="sec-sub">自动曝光 AE · 自动白平衡 AWB · 自动对焦 AF — 不依赖数学理论, 用直觉和类比理解每步的"为什么"</p>
+<div class="card-grid c3" style="margin-top:20px">
+<div class="g-card" style="--gc:#fbbf24"><h4>AE 自动曝光</h4><div class="sub">让画面不太亮也不太暗</div><p>核心问题: 在给定光照下, 选多大的<em>积分时间 (快门) + 增益 (ISO)</em> 才能让画面达到目标亮度? 类比: 眼睛的瞳孔自动调节。</p></div>
+<div class="g-card" style="--gc:#34d399"><h4>AWB 自动白平衡</h4><div class="sub">让"白色"在任何光下都显示为白色</div><p>核心问题: 光源色温不同导致偏色, 如何<em>估计光源颜色</em>然后反向补偿? 类比: 大脑自动适应白炽灯的暖黄色。</p></div>
+<div class="g-card" style="--gc:#a78bfa"><h4>AF 自动对焦</h4><div class="sub">让拍摄主体清晰锐利</div><p>核心问题: 如何找到镜头的最佳位置使目标区域<em>反差最大/相位差为零</em>? 类比: 手动拧对焦环直到画面最清晰的那一刻。</p></div>
+</div>
+<div class="scroll-hint">↓</div>
+</div>
+
+<div class="doc">
+
+<!-- ══ Ch1: 3A Overview ══ -->
+<h2 class="sh">1. 3A 在 ISP Pipeline 中的位置</h2>
+<p class="ss">3A 不是独立模块 — 它们与 ISP 流水线深度集成, 形成"采集→统计→决策→控制"的闭环</p>
+
+<div class="cg c2">
+<div class="cd" style="--gc:#a78bfa">
+<h4>ISP Pipeline 中的 3A 闭环</h4><div class="lbl">Sensor → RAW → ISP → 统计 → 3A 决策 → 控制 → Sensor</div>
+<p><strong>Step 1 — 采集统计</strong>: ISP 从当前帧提取<strong>统计信息</strong>: 亮度直方图 (AE)、RGB 均值 (AWB)、对比度/相位 (AF)。这些统计是<strong>硬件加速</strong>的 — 不需要 CPU 逐像素计算, ISP 内部有专用的统计引擎 (HIST/IIR/AF stats)。<br>
+<strong>Step 2 — 3A 决策</strong>: CPU/固件读取统计数据 → 运行 3A 算法 → 计算下一步的控制参数。<br>
+<strong>Step 3 — 控制执行</strong>: 写 Sensor 寄存器 (曝光时间/增益) · 写镜头 VCM (对焦位置) · 写 ISP 寄存器 (白平衡增益/digital gain)。<br>
+<strong>反馈周期</strong>: 通常每帧或每 N 帧 (2~4 帧) 运行一次, 因为有<strong>帧延迟</strong> (当前帧的统计反映的是上一帧的参数效果)。</p>
+</div>
+<div class="cd" style="--gc:#34d399">
+<h4>3A 之间的互相影响 — 为什么不是独立调?</h4><div class="lbl">AE 改变亮度 → AWB 统计变化 → AF 对比度变化</div>
+<p><strong>AE → AWB</strong>: 曝光改变 → RGB 值整体缩放 → AWB 的灰色统计需要重新计算 (不能直接用上一帧的增益)。<br>
+<strong>AE → AF</strong>: 曝光不足 → 画面暗 → 噪声大 → 对比度信息不可靠 → AF 可能误判。<br>
+<strong>AF → AE</strong>: 对焦过程中画面模糊 → 邻像素混合 → 亮度统计可能偏离对焦后状态。<br>
+<strong>AWB → AE</strong>: 白平衡增益改变 RGB 通道的相对亮度 → 影响 AE 的亮度计算 (Y = 0.299R+0.587G+0.114B)。<br>
+<strong>收敛顺序</strong>: 实践中通常 <strong>AE 先收敛 → AWB 次之 → AF 最后</strong> (因为 AE 影响最大, 曝光不对则一切统计不可靠)。</p>
+</div>
+</div>
+
+<div class="callout info">
+<div class="ct">3A 统计的硬件卸载 — 为什么不能 CPU 逐像素算?</div>
+ISP 芯片内部有<strong>专用的统计引擎 (Statistics Engine)</strong>, 在 Bayer 域或 YUV 域直接做硬件累加/直方图/IIR 滤波。对于 1080p@30fps (~62M 像素/秒), 逐像素 CPU 计算 VS 硬件统计: 硬件 1ms 完成 vs CPU 20ms+。这就是为什么嵌入式 IPC 的 3A 调优本质上是<strong>配置 ISP 的统计窗口 + 设置 3A 固件参数</strong>, 而非写底层像素算法。
+</div>
+
+<!-- ══ Ch2: AE ══ -->
+<h2 class="sh">2. AE (自动曝光) — 让画面"刚刚好"的亮度</h2>
+<p class="ss">核心: 测量当前画面亮度 → 如果太暗就增加曝光、太亮就减少曝光。难点在于"测哪里"和"怎么调"</p>
+
+<div class="cg c3">
+<div class="cd" style="--gc:#f87171">
+<h4>测光: 测量"哪里"的亮度?</h4><div class="lbl">全局平均 vs 中心加权 vs 矩阵测光 vs 点测光</div>
+<p><strong>全局平均</strong>: 所有像素亮度取平均 → 最简单, 但逆光人脸会黑。<br><strong>中心加权</strong>: 画面中心权重高, 边缘低 → 经典相机测光。<br><strong>矩阵/多区测光</strong>: 分 N×N 格子, 每格独立统计 → 排除异常值 (天空过亮, 阴影过暗) → 取可信区的平均。<br><strong>点测光</strong>: 只测画面 1~5% 区域 (一般是中心) → 用于逆光人像。ISP 中通过<strong>配置统计窗口 (AE Window)</strong>来实现。</p>
+</div>
+<div class="cd" style="--gc:#fbbf24">
+<h4>目标亮度: 什么是"刚刚好"?</h4><div class="lbl">18% 灰 — 摄影学的"中间灰"</div>
+<p>摄影学标准: <strong>18% 反射率的"中灰色"</strong> 是人眼感知的"正常亮度"。AE 的目标就是让画面平均亮度落在这个值附近。<br>
+在 ISP 中, 目标亮度定义为<strong>亮度直方图的目标百分位</strong>: 例如 "让 50% 的像素的亮度值落在目标区间"。<br>
+<strong>实践</strong>: 目标亮度不是固定的 — 白天户外可以偏暗, 夜景可以偏亮 (人眼夜景更敏感), 通过<strong>曝光补偿表 (EV Table)</strong>来调整。</p>
+</div>
+<div class="cd" style="--gc:#34d399">
+<h4>调节手段: 积分时间 + 增益</h4><div class="lbl">快门优先 · 增益优先 · 防闪烁</div>
+<p><strong>积分时间 (快门)</strong>: 传感器像素收集光子的时长。越长越亮, 但运动模糊越严重。首选调节手段 (因为增加信号不增加噪声)。<br><strong>增益 (ISO)</strong>: 模拟/数字放大信号。会同时放大信号和噪声 → 暗光下才使用。<br>
+<strong>光圈</strong>: 手机上固定光圈 (如 f/1.8) → 不可调。相机的可变光圈由机械马达控制 → AE 需配合光圈步进。<br>
+<strong>防闪烁 (Anti-Flicker)</strong>: 电网 50Hz/60Hz 导致灯光周期性亮暗。解决: 积分时间锁定为<strong>电网周期的整数倍</strong> (50Hz→10ms, 60Hz→8.33ms)。</p>
+</div>
+</div>
+
+<div class="h3" style="font-size:1.15rem;font-weight:700;color:#a78bfa;margin:28px 0 10px;padding-left:12px;border-left:3px solid #a78bfa">AE 收敛策略 — 为什么不是"一步到位"?</div>
+
+<div class="cg c2">
+<div class="cd" style="--gc:#a78bfa">
+<h4>快慢两段调节 — 避免亮度震荡</h4><div class="lbl">大步快调 (离目标远) → 小步微调 (接近目标) → 死区锁定</div>
+<p><strong>Phase 1 — 大步快调 (Coarse)</strong>: 当亮度与目标差 > 阈值 (如 30%), 用大步长 (如改变 2 档曝光) 快速逼近。这一阶段画面会明显变亮/变暗。<br>
+<strong>Phase 2 — 小步微调 (Fine)</strong>: 差值 < 阈值, 步长减半 (如 0.5 档) → 避免 overshoot 导致的亮度来回摆动 (hunting)。<br>
+<strong>Phase 3 — 死区 (Deadband)</strong>: 差值 < 最小阈值 (如 5%) → 不做任何调整 → 避免因噪声波动导致的<strong>无意义微调</strong>。<br>
+<strong>阻尼 (Damping)</strong>: 连续 N 帧都朝同一方向时才调整, 防止单帧统计噪声导致误调。</p>
+</div>
+<div class="cd" style="--gc:#fbbf24">
+<h4>防闪烁 (Anti-Flicker / Anti-Banding)</h4><div class="lbl">50Hz 灯光 = 10ms 周期 → 积分时间必须是 10ms 整数倍</div>
+<p>交流电灯光 (LED/荧光灯) 亮度以 2× 电网频率闪烁: 50Hz 电网 → 100Hz 闪烁 (周期 10ms), 60Hz → 120Hz (周期 8.33ms)。<br>
+如果积分时间 <strong>不是</strong> 闪烁周期的整数倍 → 不同行的像素捕获到不同相位的光 → 画面出现<strong>明暗交替的条纹 (Banding)</strong>。<br>
+<strong>解决方案</strong>: AE 算法检测到 banding → 强制积分时间 = 10ms/8.33ms 的<strong>整数倍</strong> (50Hz 用 10ms/20ms/30ms…)。代价: 无法使用任意积分时间 → 在某些亮度下转向调增益。<br>
+<strong>自动检测</strong>: 对比连续帧的亮度波动 → 若波动频率 = 100Hz/120Hz → 确认有 flicker → 启用防闪烁策略。</p>
+</div>
+</div>
+
+<div class="callout warning">
+<div class="ct">⚠️ AE 最常见的坑 — 画面亮度来回摆动 (Hunting/Oscillation)</div>
+<strong>根因</strong>: 调节步长太大 + 帧延迟 (当前帧的统计反映上一帧的参数) + 没有死区 → 曝光参数在目标值两侧<strong>来回振荡</strong>。<br>
+<strong>诊断</strong>: 打印每帧的 Y_mean → 若呈正弦波状波动 → 减小步长 + 增加阻尼帧数 + 增大死区范围。<br>
+<strong>极端场景</strong>: 场景中出现<strong>闪烁光源</strong> (警灯/霓虹灯/电视屏幕) → 亮度本身在快速变化 → AE 无法区分"场景变化"还是"我调错了" → 需要<strong>延长收敛时间</strong>或切换到手动曝光。
+</div>
+
+<!-- ══ Ch3: AWB ══ -->
+<h2 class="sh">3. AWB (自动白平衡) — 让"白纸"在任何光下都是白色的</h2>
+<p class="ss">核心: 估计当前光源的颜色 → 反向补偿。一张白纸在阳光下是白色, 在白炽灯下是暖黄色 — AWB 的任务就是"把白炽灯下的白纸变回白色"</p>
+
+<div class="cg c3">
+<div class="cd" style="--gc:#a78bfa">
+<h4>灰度世界假设 (Gray World)</h4><div class="lbl">"大自然平均来说是灰色的"</div>
+<p><strong>核心思想</strong>: 在足够丰富的场景中, 红、绿、蓝三个通道的<strong>平均值应该相等</strong>。如果不等 → 说明有偏色 → 计算使三者相等的增益。<br>
+<strong>算法</strong>: 算 R/G/B 各通道均值 → 取三均值的中位作为"理想灰" → 每通道增益 = 灰/通道均值。例如: R=200,G=100,B=80 → 灰=(200+100+80)/3=127 → R_gain=127/200=0.64, G_gain=1.27, B_gain=1.58。<br>
+<strong>失效场景</strong>: 大草坪 (全是绿色) → 算法会认为"绿色太多了, 需要减绿" → 草坪变成紫色。大蓝天同理。</p>
+</div>
+<div class="cd" style="--gc:#34d399">
+<h4>完美反射假设 (White Patch)</h4><div class="lbl">"画面中最亮的点就是白色"</div>
+<p><strong>核心思想</strong>: 场景中最亮的物体<strong>通常是白色/镜面反射</strong> → 它的颜色直接反映光源颜色。<br>
+<strong>算法</strong>: 找亮度 top 1~5% 的像素 → 假设它们是"白色" → 直接算使它们变纯白的增益: R_gain=255/max_R, G_gain=255/max_G, B_gain=255/max_B。<br>
+<strong>失效场景</strong>: 场景中有红色霓虹灯 (最亮但非白) → 白平衡会把画面调成偏青。<br>
+<strong>改进</strong>: 只在接近灰轴 (Cr/Cb ≈ 0) 的候选像素中做完美反射 → 排除彩色光源的干扰。</p>
+</div>
+<div class="cd" style="--gc:#fbbf24">
+<h4>色温估计法 (最鲁棒)</h4><div class="lbl">统计像素在色度空间的分布 → 匹配到最近的标准光源</div>
+<p><strong>核心思想</strong>: 不同色温的光源在 <strong>R/G vs B/G</strong> 色度空间中落在一条<strong>黑体辐射曲线 (Planckian Locus)</strong> 上。统计场景中"可能是灰色"的像素 → 它们的色度集中在哪个色温点 → 就假设光源是这个色温。<br>
+<strong>灰色像素的判定</strong>: 在 YCbCr 空间中, 白色/灰色像素的 Cr/Cb ≈ 0 (没有色度)。选出 |Cr|<阈值 且 |Cb|<阈值 的像素作为候选灰点。<br>
+<strong>鲁棒性</strong>: 草坪/蓝天不会被选为灰点 (它们的 Cr/Cb 不接近零) → 比灰度世界鲁棒得多。这是<strong>当前 ISP 最常用的 AWB 算法</strong>。</p>
+</div>
+</div>
+
+<div class="callout success" style="margin-top:14px">
+<div class="ct">AWB 的工程实践 — 三个最重要的参数</div>
+<strong>① 灰点判定阈值 (Cr/Cb 窗口)</strong>: 太小 → 找不到足够灰点 → 统计不可靠。太大 → 彩色物体混入 → 偏色。通常 Cr/Cb 在 ±0.1 范围内。<br>
+<strong>② 色温范围 (CCT Range)</strong>: 限制白平衡的校正范围 (如 2500K~7500K) → 低于 2500K 的场景 (如日落) 保留暖色调, 不过度校正。<br>
+<strong>③ 切换平滑 (Temporal Filter)</strong>: 场景切换时 (室内→室外), 白平衡增益不能突变 → 用 IIR 滤波平滑过渡: <code>gain[n]=α·gain[n-1]+(1-α)·gain_calculated[n]</code>, α=0.9~0.95。
+</div>
+
+<!-- ══ Ch4: AF ══ -->
+<h2 class="sh">4. AF (自动对焦) — 让主体清晰锐利</h2>
+<p class="ss">核心: 找到镜头位置使得目标区域的细节最多 (反差最大 / 相位差为零)。两种主流技术: 反差检测 (CDAF) 和相位检测 (PDAF)</p>
+
+<div class="cg c2">
+<div class="cd" style="--gc:#a78bfa">
+<h4>反差检测 AF (CDAF) — 爬山算法</h4><div class="lbl">"画面越清晰 → 高频分量越多 → 对焦越好"</div>
+<p><strong>原理</strong>: 对焦准确时, 物体的边缘<strong>最锐利</strong> → 相邻像素的<strong>亮度差最大</strong> → 高频分量最强。AF 统计引擎计算 ROI 区域的<strong>高通滤波响应值 (FV, Focus Value)</strong>。<br>
+<strong>爬山法</strong>: ① 粗扫 (大步长) 找到 FV 峰值大致位置 → ② 细扫 (小步长) 在峰值附近精确找顶 → ③ 如果没有比上一步的 FV 大 → 说明已经越过了峰值 → 回退一步。<br>
+<strong>缺点</strong>: ① 需要越过峰值才知道"已经过了" → 来回摆动 → 速度慢 ② 暗场景噪声大 → FV 值不可靠 → 可能对到错误位置。</p>
+</div>
+<div class="cd" style="--gc:#fbbf24">
+<h4>相位检测 AF (PDAF) — 一次算出方向和距离</h4><div class="lbl">"左眼和右眼看到的同一物体, 水平错位了多少?"</div>
+<p><strong>原理</strong>: Sensor 上嵌入了<strong>遮罩像素对 (Shielded Pixel Pairs)</strong> — 每对像素, 一个只能看到镜头<strong>左侧</strong>的光, 另一个只能看到<strong>右侧</strong>的光。对焦准确时 → 左右看到的图像<strong>完全相同</strong> (无错位)。离焦时 → 左右图像有<strong>水平错位 (Phase Difference)</strong> → 错位量正比于离焦量 → <strong>一步就可算出需要移动多少</strong>。<br>
+<strong>优势</strong>: 不需要爬山 → 速度极快 (几十 ms)。<br>
+<strong>缺点</strong>: 需要专用 PDAF sensor (成本更高) + 暗光下信噪比低 → 相位差检测不准 → 退化到 CDAF。</p>
+</div>
+</div>
+
+<div class="h3" style="font-size:1.15rem;font-weight:700;color:#a78bfa;margin:28px 0 10px;padding-left:12px;border-left:3px solid #a78bfa">激光对焦 (Laser AF / ToF) — 辅助手段</div>
+<div class="cg c2">
+<div class="cd" style="--gc:#f87171">
+<h4>ToF (飞行时间) 测距</h4><div class="lbl">发射红外激光脉冲 → 测量反射回来的时间 → 距离 = c×t/2</div>
+<p>在近距离 (< 2~5 米) 场景, ToF 传感器可以<strong>直接给出物体距离</strong>。AF 据此设镜头到对应对焦位置 → 几乎<strong>零延迟</strong>。<br>
+<strong>典型应用</strong>: 手机近摄 (美食/文档) — 激光对焦 + CDAF 微调 → 又快又准。<br>
+<strong>局限</strong>: 远距离 (>5m) 激光能量衰减 → 不准。黑色/透明物体吸收/透射激光 → 无法测距。</p>
+</div>
+<div class="cd" style="--gc:#34d399">
+<h4>AF 窗口 (ROI) 配置</h4><div class="lbl">不是全屏对焦 — 只对 ROI 区域计算 FV</div>
+<p><strong>多窗口 AF</strong>: ISP 在画面上设置多个 AF 窗口 (如 9 宫格), 每个窗口独立计算 FV → AF 算法选择<strong>最近距离的物体</strong> (或<strong>人脸检测到的窗口</strong>) 作为对焦目标。<br>
+<strong>人脸优先 AF</strong>: 人脸检测 (FD) 引擎输出人脸区域 → AF 自动将窗口对准人脸 → 保证人脸清晰。<br>
+<strong>触控对焦</strong>: 用户点击画面某处 → AF 窗口移到该位置 → 重新对焦。</p>
+</div>
+</div>
+
+<!-- ══ Ch5: ISP 调优 ══ -->
+<h2 class="sh">5. 3A 调优实战 — 从参数到画面</h2>
+<p class="ss">理解 3A 算法之后, 真正的挑战在调优 — 不同的光照/场景/镜头需要不同的参数策略</p>
+
+<div class="ptbl">
+<table>
+<thead><tr><th style="width:14%">模块</th><th style="width:20%">调优参数</th><th>作用</th><th>如何调</th></tr></thead>
+<tbody>
+<tr><td rowspan="3"><strong>AE</strong></td><td>AE Target (目标亮度)</td><td>画面整体亮度水平 (Y 值)</td><td>户外 50~70, 室内 40~55, 夜间 30~40 (0~255 范围)<br>太亮→过曝, 太暗→暗部细节丢失</td></tr>
+<tr><td>Exposure Strategy (曝光策略)</td><td>积分时间优先 vs 增益优先的切换点</td><td>运动场景: 优先用短积分+高增益 (防运动模糊)<br>静态场景: 优先用长积分+低增益 (防噪声)</td></tr>
+<tr><td>Anti-flicker Frequency</td><td>设置 50Hz / 60Hz / 自动检测</td><td>根据目标地区电网频率固定或自动检测<br>中国/欧洲: 50Hz · 北美/日本: 60Hz</td></tr>
+<tr><td rowspan="3"><strong>AWB</strong></td><td>Gray Point Threshold (灰点阈值)</td><td>Cr/Cb 在多大范围内判为灰点</td><td>太窄→统计量不足→AWB 不稳定<br>太宽→彩色物体被误判为灰点→偏色</td></tr>
+<tr><td>CCT Range (色温范围)</td><td>允许白平衡校正的色温上下限</td><td>下限 2500K: 低于此不校正(保留暖色调)<br>上限 7500K: 高于此不校正(保留冷色调)</td></tr>
+<tr><td>Temporal Smoothing α</td><td>增益平滑因子 (0.9~0.99)</td><td>α 越大→切换越慢越平滑, 但响应变慢<br>α 越小→响应快但画面闪烁</td></tr>
+<tr><td rowspan="2"><strong>AF</strong></td><td>AF Window Position/Size</td><td>对焦区域位置和大小</td><td>人脸检测: 自动追踪人脸<br>默认: 中心区 30%×30%<br>文档扫描: 全屏 AF</td></tr>
+<tr><td>CDAF Step Size</td><td>爬山算法的粗细步长</td><td>大 step: 粗扫快但可能跳过峰值<br>小 step: 精确但慢</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="cb">
+<span class="cm">/* ===== ISP 3A 调试常用命令 (以 Ingenic T31 平台为例) ===== */</span>
+<span class="cm"># 查看当前 AE 状态 (亮度目标, 积分时间, 增益)</span>
+cat /proc/isp/ae
+<span class="cm"># AE State: Target=128, ExpTime=15000us, Again=1.0x, Dgain=2.0x, Luma=125</span>
+
+<span class="cm"># 查看当前 AWB 状态 (色温估计, RGB 增益)</span>
+cat /proc/isp/awb
+<span class="cm"># AWB State: CCT=4500K, R_gain=1.52, G_gain=1.00, B_gain=1.75</span>
+
+<span class="cm"># 强制锁定 AE (调试用)</span>
+echo <span class="nu">1</span> > /proc/isp/ae_lock
+
+<span class="cm"># 设置 AE 目标亮度 (Y 值, 0~255)</span>
+echo <span class="nu">128</span> > /proc/isp/ae_target
+
+<span class="cm"># 查看当前 AF 状态</span>
+cat /proc/isp/af
+<span class="cm"># AF State: Position=350, FV=12345, Status=FOCUSED</span></div>
+
+<div class="callout warning">
+<div class="ct">⚠️ 3A 联动调优 — 最常见的踩坑场景</div>
+<strong>场景 1: 低光 + AWB 偏色 + AF 失败</strong>: 暗场景→AE 加大增益→噪声放大→灰点检测不准→AWB 漂移→同时对比度信息不可靠→AF 无法对焦。解决: 低光照时优先<strong>锁定 AE 和 AWB</strong>, 仅让 AF 操作 (可能需要补光灯)。<br>
+<strong>场景 2: 色温突变 (室内→室外)</strong>: AWB 平滑因子 α=0.95→过渡需要 ~2 秒→用户看到明显色偏→投诉。解决: 检测到色温突变 (>500K 变化) → 临时降低 α 到 0.7 → 快速收敛。<br>
+<strong>场景 3: 强逆光人脸</strong>: AE 全局平均→天空过亮→缩减曝光→人脸全黑。解决: 用人脸检测区域做<strong>局部加权 AE</strong> (人脸区权重 ×3~5) → 保证人脸正常曝光。
+</div>
+
+<hr>
+<p style="text-align:center;color:#555;font-size:11px;padding:32px 0 8px">
+  ISP 3A Algorithms — 自动曝光 · 白平衡 · 对焦 · 2026-06
+</p>
+</div>
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.g-card,.cd,.st').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>

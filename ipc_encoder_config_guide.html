@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPC 编码参数配置实战 — 从分辨率到码率控制</title>
+<link rel="stylesheet" href="immersive_dark_style.css">
+<style>
+.scroll-hint{cursor:pointer}.sec{min-height:auto;padding:60px 28px 40px}.hero-sec{min-height:100vh;justify-content:center}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.stage-card{display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:14px;padding:20px;margin:8px 0;transition:all .35s;opacity:0;transform:translateX(-20px);max-width:960px;width:100%}
+.stage-card.vis{opacity:1;transform:translateX(0)}.stage-card:hover{background:rgba(255,255,255,.04);border-color:var(--sc,#6c63ff)}
+.stage-num{min-width:42px;height:42px;border-radius:50%;background:var(--sc,#6c63ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0;opacity:.85}
+.stage-body{flex:1}.stage-body h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.stage-body .en{font-size:10px;color:#6666aa;margin-bottom:6px;letter-spacing:.5px}
+.stage-body p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.ptbl{margin:14px 0!important}.ptbl table{border-collapse:separate;border-spacing:0;width:100%}
+.ptbl thead th{background:linear-gradient(180deg,rgba(108,99,255,.12),rgba(108,99,255,.04));color:#a78bfa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:12px 14px;border-bottom:2px solid rgba(108,99,255,.18);white-space:nowrap}
+.ptbl tbody td{padding:10px 14px;color:#b0b0d0;font-size:12.5px;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+.ptbl tbody tr:hover td{background:rgba(108,99,255,.04)}.ptbl tbody td:first-child{font-weight:600;color:#d0d0e0}
+.ptbl .g{color:#34d399!important;font-weight:700!important}.ptbl .y{color:#fbbf24!important;font-weight:700!important}.ptbl .r{color:#f87171!important;font-weight:700!important}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(8,6,22,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;transform:translateY(-100%);transition:transform .4s}
+.topnav.show{transform:translateY(0)}.topnav a{font-size:11px;font-weight:600;color:#7777aa;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .25s;white-space:nowrap}
+.topnav a:hover{color:#d0d0f0;background:rgba(108,99,255,.1)}.topnav .sep{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 2px}
+.footer{padding:40px 28px;text-align:center;color:#555577;font-size:12px;border-top:1px solid rgba(255,255,255,.04)}
+.footer a{color:#6c63ff;text-decoration:none}.footer a:hover{text-decoration:underline}
+.sec.s1 .sec-title{background:linear-gradient(135deg,#e0e0ff,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s2 .sec-title{background:linear-gradient(135deg,#e0e0ff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s3 .sec-title{background:linear-gradient(135deg,#e0e0ff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s4 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s5 .sec-title{background:linear-gradient(135deg,#e0e0ff,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s6 .sec-title{background:linear-gradient(135deg,#e0e0ff,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sec.s7 .sec-title{background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+</style>
+</head>
+<body>
+
+<nav class="topnav" id="topnav">
+  <a href="#s1">全景</a><span class="sep"></span>
+  <a href="#s2">分辨率+帧率</a><span class="sep"></span>
+  <a href="#s3">码率控制</a><span class="sep"></span>
+  <a href="#s4">GOP 与帧类型</a><span class="sep"></span>
+  <a href="#s5">双码流配置</a><span class="sep"></span>
+  <a href="#s6">平台实战</a><span class="sep"></span>
+  <a href="#s7">场景自适应</a>
+</nav>
+
+<div class="sec hero-sec s1" id="s1">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:4s"></div>
+
+  <h2 class="sec-title" id="s1t" style="font-size:clamp(28px,5vw,48px);font-weight:900">IPC 编码参数配置实战</h2>
+  <p class="sec-sub" id="s1s" style="max-width:700px">编码参数<strong>没有"万能最优值"</strong>——每一组参数都是在画质、延迟、码率、功耗之间做权衡。理解每个参数的影响才是配置的关键。</p>
+
+  <div class="flow-row" style="margin:28px auto;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24">分辨率+帧率</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f87171">GOP 结构</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8">码率控制</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa">Profile/Level</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399">双码流</span><span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6">场景自适应</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">5 组核心参数</div><div class="l">分辨率·GOP·码控·帧率·码率</div></div>
+    <div class="stat"><div class="n">3 种码控模式</div><div class="l">CBR · VBR · CVBR</div></div>
+    <div class="stat"><div class="n">双码流</div><div class="l">主码流 + 子码流</div></div>
+    <div class="stat"><div class="n">2 种平台</div><div class="l">Rockchip MPP · FFmpeg</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S2: 分辨率+帧率 ═══ -->
+<div class="sec s2" id="s2">
+  <h2 class="sec-title" id="s2t">分辨率与帧率 — 码率的"容器"</h2>
+  <p class="sec-sub" id="s2s">分辨率和帧率决定了<strong>编码前的数据量上限</strong>——选对了事半功倍，选错了后面所有调参都是白费。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>分辨率选择</h4>
+      <div class="sub">像素数量直接决定编码的计算量</div>
+      <p><strong>1080p (1920×1080)</strong>：主流 IPC 标配。人脸识别需要 ≥150px 面部宽度→1080p 可看清 5-8m 内人脸。码率建议 1.5~4Mbps (H.264) 或 1~2.5Mbps (H.265)。<br>
+      <strong>4MP (2560×1440)</strong>：细节提升 78%（相比 1080p），但编码计算量 ↑78%。码率 3~6Mbps。车牌识别推荐。<br>
+      <strong>720p (1280×960)</strong>：计算量是 1080p 的 60%。码率 0.8~2Mbps。适合子码流或低成本产品。<br>
+      <strong>原则</strong>：分辨率 = 场景需求决定（监控范围、识别距离）——不是越高越好。高分辨率 + 低码率 → 编码块效应严重 → 反而不如"合适分辨率 + 充足码率"。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>帧率选择</h4>
+      <div class="sub">每多 1fps = 编码计算量 +3.3% + 码率 +1~2%</div>
+      <p><strong>30fps</strong>：流畅视频的黄金标准。运动物体（行人/车辆）轨迹平滑。IPC 主码流标配。<br>
+      <strong>25fps</strong>：PAL 制标准（欧洲/中国）。几乎感知不到与 30fps 的差异——但编码负载降 17%。<br>
+      <strong>15fps</strong>：静态监控场景（仓库、停车场夜间）——帧间变化极小→15fps 足够。码率约为 30fps 的 70%（而非 50%——因为 I 帧占比增加）。<br>
+      <strong>8-10fps</strong>：子码流/AI 检测流。编码负载低——适合多路同时编码。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>分辨率 × 帧率 × 码率关系表</h4>
+      <div class="sub">H.264 编码器在典型场景 (中等复杂度) 的建议值</div>
+      <p><strong>1080p@30fps</strong> → 2.0~4.0 Mbps · 编码负载 100% (基准)<br>
+      <strong>1080p@15fps</strong> → 1.4~2.8 Mbps · 编码负载 ~55%<br>
+      <strong>720p@30fps</strong> → 1.2~2.5 Mbps · 编码负载 ~60%<br>
+      <strong>4MP@30fps</strong> → 4.0~8.0 Mbps · 编码负载 ~178%<br>
+      <strong>4MP@15fps</strong> → 2.8~5.6 Mbps · 编码负载 ~100%<br>
+      <strong>640×360@15fps</strong> (子码流) → 0.2~0.4 Mbps · 编码负载 ~15%</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S3: 码率控制 ═══ -->
+<div class="sec s3" id="s3">
+  <h2 class="sec-title" id="s3t">码率控制 — CBR vs VBR vs CVBR</h2>
+  <p class="sec-sub" id="s3s">码率控制决定了<strong>编码器如何分配比特</strong>——在相同的目标码率下，不同的码控策略产出的画质差异巨大。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>CBR (恒定码率)</h4>
+      <div class="sub">每帧目标大小固定 — 画质波动 · 码率严格可控</div>
+      <p><strong>原理</strong>：编码器维持<strong>恒定的输出码率</strong>——通过调整 QP（量化参数）实现：场景复杂→QP 增大→每个宏块用更少的 bit→画质下降；场景简单→QP 减小→画质提升。<br>
+      <strong>优势</strong>：码率严格可控——适合<strong>带宽受限</strong>场景（4G 上行、多路同时传输）。网络带宽可精确预估。<br>
+      <strong>劣势</strong>：<strong>画质波动大</strong>——静态画面（黑夜、无人）画质极好（浪费码率），动态画面（人多、车多）画质骤降（块效应）。<br>
+      <strong>IPC 适用</strong>：子码流（网络预览——码率预算是硬约束）。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>VBR (可变码率)</h4>
+      <div class="sub">恒定 QP — 码率波动 · 画质一致</div>
+      <p><strong>原理</strong>：编码器维持<strong>恒定的画质水平</strong>（固定 QP 或 CRF 值）——场景复杂→自动分配更多 bit→码率升高；场景简单→自动分配更少 bit→码率降低。<br>
+      <strong>优势</strong>：<strong>画质一致</strong>——动态场景不糊、静态场景不浪费。<br>
+      <strong>劣势</strong>：<strong>码率不可控</strong>——动态场景（风吹树叶、雨雪）码率可能飙到平时的 3-5×→网络拥塞→丢包。不适合实时流。<br>
+      <strong>IPC 适用</strong>：本地 SD 卡录像（带宽不受限——保证录像质量）。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>CVBR (约束 VBR) ★推荐</h4>
+      <div class="sub">VBR 画质 + CBR 上限 — IPC 最佳选择</div>
+      <p><strong>原理</strong>：VBR 模式下自动调整 QP，但<strong>设置码率上限和下限</strong>。静态场景→码率可以降到 min_bitrate（省带宽/省存储）；动态场景→码率可以升高但不允许超过 max_bitrate（保护网络）。<br>
+      <strong>参数示例</strong>：target=2Mbps, min=1Mbps, max=3Mbps——静态场景实际 ~1.2Mbps（省 40%），动态场景 ~2.8Mbps（画质保持）。<br>
+      <strong>IPC 适用</strong>：主码流（兼顾画质和带宽——最佳实践）。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">码率选择的经验公式 — H.264 IPC 场景</div>
+    <strong>主码流</strong>：<code>码率(Mbps) = 像素数/1000000 × 帧率/30 × 运动系数</code>。运动系数：静态场景(室内、仓库)=1.0；一般室外=1.5；交通路口/人流密集=2.0。<br>
+    <strong>例</strong>：1080p@30fps 室外一般 → 1920×1080/1000000=2.07M × 1.5 = <strong>3.1Mbps</strong> 建议。<br>
+    <strong>子码流</strong>：<code>码率 = 主码流码率 / 10</code>（如主码流 3Mbps→子码流 300Kbps）。<br>
+    <strong>H.265/HEVC 比 H.264 节省 ~40% 码率</strong>（同等画质下）。但编码计算量高 1.5-2×——IPC SoC 的硬件编码器需支持。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S4: GOP ═══ -->
+<div class="sec s4" id="s4">
+  <h2 class="sec-title" id="s4t">GOP 结构与帧类型 — I/P/B 的选择</h2>
+  <p class="sec-sub" id="s4s">GOP 结构是<strong>IPC 编码参数中影响面最广</strong>的一个——改了 GOP 长度，延迟、码率、seek 速度、丢包容忍度全部受影响。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>GOP 长度 (I 帧间隔)</h4>
+      <div class="sub">每 N 帧插入一个 I 帧 — N=GOP 长度</div>
+      <p><strong>GOP=30 (1 秒 @30fps)</strong>：标准配置。I 帧间隔 1 秒——seek 延迟 ≤1s，丢包恢复 ≤1s。I 帧开销占总码率 10-20%。<br>
+      <strong>GOP=60 (2 秒)</strong>：更经济——I 帧占比低→同等画质下总码率低 5-10%。但丢包恢复需要 2s（要等到下一个 I 帧才能恢复花屏）。<br>
+      <strong>GOP=15 (0.5 秒)</strong>：低延迟——WebRTC/IPC 实时预览推荐。I 帧频繁→seek 快（0.5s）、丢包恢复快。但总码率高 10-15%。<br>
+      <strong>GOP=1 (全 I 帧)</strong>：零延迟——无帧间依赖。seek 不受限、丢包只影响单帧。但<strong>码率暴增 5-10×</strong>——只在极低延迟场景（远程操控、无人机 FPV）使用。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>B 帧 — IPC 场景不推荐</h4>
+      <div class="sub">B 帧需要等待未来帧——引入 1-3 帧编码延迟</div>
+      <p><strong>B 帧的问题</strong>：① 编码延迟——B 帧要<strong>等后面的 P/I 帧先编码完</strong>才能参考→引入 1-3 帧延迟（33-99ms @30fps）② 解码延迟——接收端也要等参考帧到齐才能解码 ③ 计算量——B 帧的双向运动估计比 P 帧的单项复杂 1.5-2×。<br>
+      <strong>适用场景</strong>：非实时场景（本地录像——延迟不敏感，B 帧的压缩增益 15-25% 有价值）。<br>
+      <strong>不适用</strong>：实时预览、双向对讲——延迟 > 50ms 不可接受。IPC 实时流推荐 <strong>I-P-P-P...无 B 帧</strong> 的 GOP 结构——最低延迟。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead><tr><th>场景</th><th>推荐 GOP</th><th>B 帧</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td class="g">实时预览 (WebRTC)</td><td class="g">15~30 (0.5~1s)</td><td class="r">禁用</td><td>低延迟+快速恢复+无编码延迟</td></tr>
+      <tr><td class="g">本地 SD 卡录像</td><td class="g">30~60 (1~2s)</td><td>可选 (2 B-frames)</td><td>存储优先省码率·画质优先</td></tr>
+      <tr><td>云存储上传</td><td>30~60 (1~2s)</td><td class="r">禁用</td><td>网络传输可靠性优先——B帧丢引用影响大</td></tr>
+      <tr><td class="g">AI 检测流 (子码流)</td><td class="g">15~30</td><td class="r">禁用</td><td>IDR 帧携带 SPS/PPS——AI 检测从任意 IDR 取第一帧即可启动</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S5: 双码流 ═══ -->
+<div class="sec s5" id="s5">
+  <h2 class="sec-title" id="s5t">双码流配置 — 主码流 + 子码流</h2>
+  <p class="sec-sub" id="s5s">IPC 相机几乎都支持<strong>至少两路同时编码</strong>——主码流（高质量录像+实时预览）和子码流（AI 检测+弱网预览+多路预览）。两路编码器的<strong>参数配置思路完全不同</strong>。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>主码流 (Main Stream) — 质量优先</h4>
+      <div class="sub">1080p@30fps, 2~4Mbps, GOP=30, CVBR</div>
+      <p><strong>目标</strong>：最高画质——用于 SD 卡录像和 WiFi/LAN 实时预览。<br>
+      <strong>参数建议</strong>：分辨率=1080p/4MP、帧率=30fps、码控=CVBR (target=3Mbps/min=1.5Mbps/max=4.5Mbps)、GOP=30 (1s)、Profile=High、编码器优先级=最高。<br>
+      <strong>关键约束</strong>：SD 卡写入时码率不能超过卡的最大持续写入速度（Class 10 = 10MB/s——远超编码码率，不是瓶颈。瓶颈是 SD 卡的随机写延迟——频繁 seek 导致写入速度波动）。主码流用 CVBR 为 SD 卡写入提供了码率可预测性。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>子码流 (Sub Stream) — 效率优先</h4>
+      <div class="sub">640×360@15fps, 200~400Kbps, GOP=15, CBR</div>
+      <p><strong>目标</strong>：最低带宽占用——用于 4G 远程预览、AI 检测（人脸/车牌/运动）、NVR 多路预览。<br>
+      <strong>参数建议</strong>：分辨率=640×360 (或 D1 720×576)、帧率=15fps（AI 检测——15fps 足够；降低编码负载）、码控=<strong>CBR</strong> (固定 300Kbps——4G 上行带宽硬约束)、GOP=15 (0.5s——AI 检测模型需要快速的 IDR 恢复)、Profile=Main或 Baseline（兼容旧解码器）。<br>
+      <strong>关键约束</strong>：子码流的编码负载 → 编码器优先级=低。CPU/编码器资源不足时<strong>先降子码流帧率</strong>（15→10fps），保护主码流。</p>
+    </div>
+  </div>
+
+  <div class="ptbl" style="margin-top:16px">
+    <table>
+    <thead><tr><th>参数</th><th>主码流 (高质量)</th><th>子码流 (高效率)</th><th>差异原因</th></tr></thead>
+    <tbody>
+      <tr><td class="g">分辨率</td><td class="g">1920×1080</td><td>640×360 (或 704×576)</td><td>主: 高清录像 + 大屏预览 · 子: 小窗预览 + AI 最低要求</td></tr>
+      <tr><td>帧率</td><td class="g">25~30 fps</td><td>10~15 fps</td><td>AI 识别 15fps 足够 · 省编码功耗</td></tr>
+      <tr><td class="g">码控</td><td class="g">CVBR</td><td>CBR</td><td>主: 平衡画质与存储 · 子: 4G 带宽硬约束</td></tr>
+      <tr><td>目标码率</td><td class="g">2~4 Mbps</td><td>0.2~0.4 Mbps</td><td>码率比 ≈ 10:1 是经验最优</td></tr>
+      <tr><td class="g">GOP</td><td class="g">30 (1s)</td><td>15 (0.5s)</td><td>子: AI 需要快速 IDR 恢复 · 主: 压缩优先</td></tr>
+      <tr><td>B 帧</td><td class="r">禁用</td><td class="r">禁用</td><td>实时流禁 B 帧——延迟不可接受</td></tr>
+      <tr><td class="g">Profile</td><td class="g">High</td><td>Main / Baseline</td><td>子: 兼容旧手机解码器</td></tr>
+      <tr><td>编码器优先级</td><td class="g">最高</td><td>低</td><td>资源不足→先降子码流</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S6: 平台实战 ═══ -->
+<div class="sec s6" id="s6">
+  <h2 class="sec-title" id="s6t">平台实战 — Rockchip MPP + FFmpeg</h2>
+  <p class="sec-sub" id="s6s">IPC 产品最常用的两种编码器平台——<strong>Rockchip MPP</strong>（硬件编码，嵌入式 SoC）和 <strong>FFmpeg/libx264</strong>（软件编码，服务器/PC）。</p>
+
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Rockchip MPP (硬件 H.264/H.265)</h4>
+      <div class="sub">RV1106/RV1109/RK3588 — MPP API 参数配置</div>
+      <div class="cblock" style="margin-top:6px;font-size:10px;line-height:1.65"><span class="cm">// Rockchip MPP 编码器初始化 — 核心参数</span>
+<span class="kw">MppEncCfg</span> cfg;
+<span class="fn">mpp_enc_cfg_init</span>(&amp;cfg);
+
+<span class="cm">// 基础参数</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"prep:width"</span>,    <span class="nu">1920</span>);
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"prep:height"</span>,   <span class="nu">1080</span>);
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:mode"</span>,       MPP_ENC_RC_MODE_VBR);
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:bps_target"</span>, <span class="nu">3000000</span>);  <span class="cm">// 3Mbps</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:bps_max"</span>,    <span class="nu">4500000</span>);  <span class="cm">// 上限 4.5Mbps</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:bps_min"</span>,    <span class="nu">1500000</span>);  <span class="cm">// 下限 1.5Mbps</span>
+
+<span class="cm">// GOP 和帧类型</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:gop"</span>,        <span class="nu">30</span>);  <span class="cm">// GOP=30 (1s@30fps)</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"split:mode"</span>,    <span class="nu">0</span>);   <span class="cm">// 0=NoSplit (单slice)</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"profile:level"</span>, <span class="nu">42</span>);  <span class="cm">// High Profile, Level 4.2</span>
+
+<span class="cm">// 低延迟优化 (实时预览)</span>
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"rc:quality"</span>,    MPP_ENC_RC_QUALITY_BEST);
+<span class="fn">mpp_enc_cfg_set_s32</span>(cfg, <span class="st">"prep:rotation"</span>, <span class="nu">0</span>);  <span class="cm">// 不旋转 (除非 Sensor 方向特殊)</span></div>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>FFmpeg / libx264 (软件编码)</h4>
+      <div class="sub">x264 preset + tune — 配置思路与 MPP 一致</div>
+      <div class="cblock" style="margin-top:6px;font-size:10px;line-height:1.65"><span class="cm"># FFmpeg 命令行 — IPC 编码参数映射</span>
+ffmpeg -f v4l2 -input_format nv12 -video_size <span class="nu">1920</span>x<span class="nu">1080</span> \
+       -framerate <span class="nu">30</span> -i /dev/video0 \
+       <span class="cm"># H.264 编码器参数</span>
+       -c:v libx264 \
+       -preset <span class="st">ultrafast</span> \        <span class="cm"># 编码速度最快→延迟最低 (vs medium/slow)</span>
+       -tune <span class="st">zerolatency</span> \       <span class="cm"># 零延迟调优: 无B帧+单线程+关闭lookahead</span>
+       -profile:v high \
+       -level:v <span class="nu">4.2</span> \
+       <span class="cm"># 码率控制</span>
+       -b:v <span class="nu">3</span>M \                   <span class="cm"># 目标码率 3Mbps</span>
+       -maxrate <span class="nu">4.5</span>M \              <span class="cm"># VBV 上限</span>
+       -bufsize <span class="nu">6</span>M \                <span class="cm"># VBV 缓冲大小 (2× 目标码率)</span>
+       <span class="cm"># GOP 结构</span>
+       -g <span class="nu">30</span> \                      <span class="cm"># GOP=30 (1s@30fps)</span>
+       -keyint_min <span class="nu">30</span> \              <span class="cm"># 最小 I 帧间隔 = GOP (禁止过早插I帧)</span>
+       -sc_threshold <span class="nu">0</span> \            <span class="cm"># 关闭场景切换检测 (固定 GOP)</span>
+       -bf <span class="nu">0</span> \                      <span class="cm"># B 帧=0 (IPC 实时流禁B帧!)</span>
+       -refs <span class="nu">1</span> \                    <span class="cm"># 参考帧=1 (降低延迟)</span>
+       <span class="cm"># 输出</span>
+       -f rtsp rtsp://<span class="nu">10.31.3.144</span>:<span class="nu">554</span>/stream1</div>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">⚠ 硬件编码 vs 软件编码的选择</div>
+    <strong>IPC 产品强烈推荐硬件编码 (Rockchip MPP / 海思 MPP / Ingenic)</strong>——原因：① 编码延迟 2-5ms vs 软件 5-15ms ② CPU 负载几乎为零（CPU 只做配置和控制，数据面全在硬件+DMA）③ 功耗低（专用硬件 > 通用 CPU 的能效比 10-100×）④ 编码质量持平（现代硬件编码器的画质已接近 x264 medium preset）。<br>
+    <strong>只有以下场景用软件编码</strong>：① PC/服务器端编码（无硬件编码器可用）② 需要 x264 的高级参数调优（硬件编码器参数有限）③ 非实时场景——延迟不敏感。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══ S7: 场景自适应 ═══ -->
+<div class="sec s7" id="s7">
+  <h2 class="sec-title" id="s7t">场景自适应编码 — 不是一组参数走天下</h2>
+  <p class="sec-sub" id="s7s">日夜切换、晴雨变化、场景复杂度——一组固定的编码参数<strong>不可能在所有条件下都最优</strong>。场景自适应是画质竞争力的关键。</p>
+
+  <div class="card-grid c3" style="margin-top:24px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>日夜切换</h4>
+      <div class="sub">白天参数 vs 夜晚参数 — 完全不同的优化方向</div>
+      <p><strong>白天模式</strong>（彩色，照度充足）：画面细节丰富（树叶/人脸纹理）→编码复杂度高→需要较大的目标码率（如 3Mbps）。I 帧 QP 可以较小（高质量参考帧）。<br>
+      <strong>夜晚模式</strong>（IR 黑白，低照度）：画面噪声大（暗光 Sensor 的读出噪声↑）→编码器的<strong>运动估计失效</strong>——噪声被误判为"运动"→很多宏块走 Inter 预测但实际上应该走 Intra → P 帧变大→码率异常。<br>
+      <strong>解决</strong>：夜晚模式：① 提高 I 帧 QP（噪声多——高 QP 有助于平滑噪声→减少编码波动）② 适度<strong>增加去噪强度</strong>（ISP 的 2D/3D NR——编码前降噪——减少无效运动矢量）③ 提高目标码率 20-30%（补偿噪声带来的编码效率下降）。</p>
+    </div>
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>运动检测 → 动态 GOP</h4>
+      <div class="sub">静态场景可以拉长 GOP · 运动场景必须缩短 GOP</div>
+      <p><strong>静态场景</strong>（无人仓库、夜间停车场）：画面几乎不变→P 帧几乎全是 Skip Block（直接复制参考帧，零 bit）→P 帧极小（5-15KB）→可以<strong>安全拉长 GOP 到 60-120</strong>（2-4s）→减少 I 帧占比→总码率降低 15-25%。<br>
+      <strong>动态场景</strong>（人流、交通）：画面快速变化→P 帧包含大量运动矢量→→帧间依赖复杂→<strong>缩短 GOP 到 15</strong>——快速切入 IDR 允许解码器从丢包中快速恢复。<br>
+      <strong>运动检测的实现</strong>：① 编码器输出每帧的 intra/inter 宏块比例 ② 连续 N 帧 Inter 比例 < 30%（画面静止）→拉长 GOP ③ Inter 比例 > 80%（运动剧烈）→缩短 GOP。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>带宽自适应</h4>
+      <div class="sub">网络恶化 → 动态降参数 · 网络恢复 → 恢复参数</div>
+      <p><strong>GCC/拥塞检测触发</strong>：① 丢包率 > 5% → 快速降目标码率（×0.85）→ 同时降帧率（30→20fps——降低码率的 2 倍杠杆）② 丢包率 > 2% 持续 > 3s → 切换子码流分辨率（640×360）作为主预览流 ③ 丢包率 < 0.5% 持续 > 5s → 恢复码率（×1.05 逐步回升）。<br>
+      <strong>不推荐的方案</strong>：网络恶化时<strong>只降码率不降帧率</strong>→码率降低→每帧 bit 骤减→QP 狂升→画质崩塌（严重块效应）。降帧率 + 适度降码率 → 保持单帧画质。</p>
+    </div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<footer class="footer">
+  IPC 编码参数配置实战 &nbsp;|&nbsp;
+  <a href="index.html">← 返回 AV Stack</a> &nbsp;|&nbsp;
+  <a href="e2e_latency_learn.html">端到端延迟优化 →</a>
+</footer>
+
+<script>
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('vis'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.sec-title, .sec-sub, .g-card, .stage-card').forEach(el => obs.observe(el));
+const topnav = document.getElementById('topnav');
+new IntersectionObserver((entries) => {
+  entries.forEach(e => topnav.classList.toggle('show', !e.isIntersecting));
+}, { threshold: 0 }).observe(document.querySelector('#s1'));
+document.querySelectorAll('.topnav a').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'}); });
+});
+</script>
+</body>
+</html>

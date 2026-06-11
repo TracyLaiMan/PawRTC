@@ -111,9 +111,9 @@ html{scroll-behavior:smooth}
   <h1 class="site-title">PawRTC</h1>
   <p class="site-sub">音视频 · Linux 内核 · BLE 蓝牙 · 流媒体协议 — 嵌入式全栈技术知识体系</p>
   <div class="hero-stats">
-    <div class="stat"><div class="n">73</div><div class="l">技术文档</div></div>
+    <div class="stat"><div class="n">84</div><div class="l">技术文档</div></div>
     <div class="stat"><div class="n">8</div><div class="l">专题分类</div></div>
-    <div class="stat"><div class="n">22</div><div class="l">Linux 内核</div></div>
+    <div class="stat"><div class="n">24</div><div class="l">Linux 内核</div></div>
     <div class="stat"><div class="n">8</div><div class="l">BLE 蓝牙</div></div>
   </div>
   <div class="site-tags">
@@ -129,14 +129,20 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 1. Linux 媒体采集 ═══════ -->
 <section class="sec" id="linux-media">
-  <h2 class="col-title">Linux 媒体采集<span class="sec-count">4 篇</span></h2>
-  <p class="col-desc">从 Sensor 硬件选型到 V4L2 用户态采集链路，拆解 IPC 设备音视频数据如何从光学镜头到达应用层</p>
+  <h2 class="col-title">Linux 媒体采集<span class="sec-count">5 篇</span></h2>
+  <p class="col-desc">从 Sensor 光学原理到 V4L2 用户态采集链路，拆解 IPC 设备音视频数据如何从像素到达应用层</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#34d399" href="sensor_lens_selection_guide.html">
       <span class="icon">&#x1F4F7;</span>
       <h3>Sensor &amp; 镜头选型指南</h3>
       <span class="cnt">完整</span>
       <p>SC231AI / SC223A / GC2053 / GC2083 对比，CRA 匹配，焦距·光圈·像面选型实战</p>
+    </a>
+    <a class="col-card" style="--cc:#34d399" href="Linux/Linux_Image_Sensor.html">
+      <span class="icon">&#x1F4F8;</span>
+      <h3>CMOS Image Sensor</h3>
+      <span class="cnt">完整</span>
+      <p>像素光电原理 · 传感器架构 · 关键参数 · Bayer/CFA · V4L2 驱动 · 3A 算法</p>
     </a>
     <a class="col-card" style="--cc:#34d399" href="linux_alsa_audio_learn.html">
       <span class="icon">&#x1F3A4;</span>
@@ -211,7 +217,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 3. 视频处理管线 ═══════ -->
 <section class="sec" id="pipeline">
-  <h2 class="col-title">音频与视频处理<span class="sec-count">8 篇</span></h2>
+  <h2 class="col-title">音频与视频处理<span class="sec-count">10 篇</span></h2>
   <p class="col-desc">Sensor → ISP → Encoder → Muxer → Stream，嵌入式 IPC 完整音视频处理链路与问题诊断</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#f472b6" href="video_pipeline_complete.html">
@@ -262,12 +268,24 @@ html{scroll-behavior:smooth}
       <span class="cnt">完整</span>
       <p>Mic 原理 · Speaker 特性 · 数字音频 · IEC 标准 · 灵敏度 · SNR · PCB 走线</p>
     </a>
+    <a class="col-card" style="--cc:#f472b6" href="isp_3a_algorithms_guide.html">
+      <span class="icon">&#x2600;&#xFE0F;</span>
+      <h3>ISP 3A 算法直观理解</h3>
+      <span class="cnt">完整</span>
+      <p>AE 自动曝光 · AWB 白平衡 · AF 自动对焦 — 直觉类比理解每一步的"为什么"</p>
+    </a>
+    <a class="col-card" style="--cc:#f472b6" href="Linux/Linux_GStreamer_FFmpeg.html">
+      <span class="icon">&#x1F3AC;</span>
+      <h3>GStreamer &amp; FFmpeg 对比</h3>
+      <span class="cnt">完整</span>
+      <p>架构 · Pipeline · API · 命令行 · 硬件加速 · 选型决策</p>
+    </a>
   </div>
 </section>
 
 <!-- ═══════ 4. 实时流媒体 & WebRTC ═══════ -->
 <section class="sec" id="streaming">
-  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">11 篇</span></h2>
+  <h2 class="col-title">实时流媒体 &amp; WebRTC<span class="sec-count">13 篇</span></h2>
   <p class="col-desc">WebRTC 协议栈、LiveKit SFU 架构、弱网对抗——从信令到媒体传输的全链路</p>
   <div class="col-grid">
     <a class="col-card" style="--cc:#38bdf8" href="livekit_protocols_learn.html">
@@ -305,6 +323,18 @@ html{scroll-behavior:smooth}
       <h3>Simulcast 多层编码</h3>
       <span class="cnt">完整</span>
       <p>多 SSRC · RID/MID · SFU 选路 · SDP 协商 · 编码器三层配置 · IPC 2 层实践</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="webrtc_jitterbuffer_learn.html">
+      <span class="icon">&#x1F4E6;</span>
+      <h3>JitterBuffer 深度剖析</h3>
+      <span class="cnt">完整</span>
+      <p>NetEQ · VideoJB · 延迟估计 · PLC · 收敛算法 — 抖动消除与自适应缓冲</p>
+    </a>
+    <a class="col-card" style="--cc:#38bdf8" href="webrtc_peerconnection_internals.html">
+      <span class="icon">&#x1F50C;</span>
+      <h3>PeerConnection 内核</h3>
+      <span class="cnt">完整</span>
+      <p>三线程模型 · 控制器模式 · SDP 协商 · ICE 连通性 · DTLS 握手 · 端到端连接时间线</p>
     </a>
     <a class="col-card" style="--cc:#38bdf8" href="livekit_cloud_adaptation.html">
       <span class="icon">&#x2601;&#xFE0F;</span>
@@ -385,7 +415,7 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 6. Linux 内核与驱动 ═══════ -->
 <section class="sec" id="linux-kernel">
-  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">22 篇</span></h2>
+  <h2 class="col-title">Linux 内核与驱动<span class="sec-count">24 篇</span></h2>
   <p class="col-desc">进程管理 · 内存管理 · 文件系统 · 设备驱动 · 调试诊断 — 嵌入式 Linux 系统全栈</p>
   <div class="col-grid">
 
@@ -432,6 +462,12 @@ html{scroll-behavior:smooth}
       <h3>内核与用户态通信</h3>
       <span class="cnt">完整</span>
       <p>netlink / ioctl / sysfs / procfs / debugfs — 5 种数据传输通道对比</p>
+    </a>
+    <a class="col-card" style="--cc:#f97316" href="Linux/Linux_Synchronization_Async.html">
+      <span class="icon">&#x1F504;</span>
+      <h3>同步·异步·资源竞争</h3>
+      <span class="cnt">完整</span>
+      <p>spinlock / mutex / RCU / memory barrier / workqueue / io_uring / lockdep</p>
     </a>
 
     <!-- Sub: 设备驱动 -->
@@ -484,6 +520,12 @@ html{scroll-behavior:smooth}
       <span class="cnt">完整</span>
       <p>晶振 · PLL · 分频器 · CCF Provider/Consumer · 设备树 · IPC 10+时钟全景</p>
     </a>
+    <a class="col-card" style="--cc:#fb923c" href="Linux/Linux_UART_I2C_SPI.html">
+      <span class="icon">&#x1F30D;</span>
+      <h3>UART · I2C · SPI 通信协议</h3>
+      <span class="cnt">完整</span>
+      <p>三大嵌入式通信协议 · 硬件电气特性 · Linux 驱动子系统 · Device Tree 绑定</p>
+    </a>
 
     <!-- Sub: 存储 & 文件系统 -->
     <div class="sub-head"><h4>存储 &amp; 文件系统</h4></div>
@@ -510,6 +552,12 @@ html{scroll-behavior:smooth}
       <h3>SDIO 驱动框架</h3>
       <span class="cnt">完整</span>
       <p>SDIO 总线模型、Function 枚举、WiFi/BLE 复合设备、中断传输</p>
+    </a>
+    <a class="col-card" style="--cc:#fbbf24" href="Linux/Linux_NAND_Flash.html">
+      <span class="icon">&#x1F4BE;</span>
+      <h3>NAND Flash 存储</h3>
+      <span class="cnt">完整</span>
+      <p>硬件特性 · MTD 子系统 · UBI 磨损均衡 · UBIFS 文件系统 · 设备树 · 调试工具</p>
     </a>
 
     <!-- Sub: 调试 & 日志 -->
@@ -587,27 +635,33 @@ html{scroll-behavior:smooth}
 
 <!-- ═══════ 8. 工程实践 ═══════ -->
 <section class="sec" id="engineering">
-  <h2 class="col-title">工程实践<span class="sec-count">1 篇</span></h2>
-  <p class="col-desc">CI/CD、版本管理——嵌入式产品落地的工程基础设施</p>
+  <h2 class="col-title">工程实践<span class="sec-count">4 篇</span></h2>
+  <p class="col-desc">职业成长路线、CI/CD、SDK 架构设计——嵌入式产品落地的工程基础设施</p>
   <div class="col-grid">
+    <a class="col-card" style="--cc:#10b981" href="av_developer_roadmap.html">
+      <span class="icon">&#x1F4CD;</span>
+      <h3>音视频开发专家成长路线</h3>
+      <span class="cnt">完整</span>
+      <p>知识体系盘点 · 已有基础 · 关键补齐项 · 从"会用"到"资深"的差距分析</p>
+    </a>
+    <a class="col-card" style="--cc:#10b981" href="Linux/Linux_SDK_Design_Patterns.html">
+      <span class="icon">&#x1F3D7;&#xFE0F;</span>
+      <h3>Linux/RTOS SDK 设计</h3>
+      <span class="cnt">完整</span>
+      <p>分层架构 · API 设计 · 版本迭代 · ABI 兼容 · 可测试性 · 开发者体验</p>
+    </a>
+    <a class="col-card" style="--cc:#10b981" href="LinkricAI/LinkricAI_ACS_SDK_Architecture.html">
+      <span class="icon">&#x1F916;</span>
+      <h3>LinkricAI ACS SDK 架构</h3>
+      <span class="cnt">完整</span>
+      <p>模块设计 · 消息流转 · 多态与工厂 · 生命周期 · 线程模型</p>
+    </a>
     <a class="col-card ext-link" style="--cc:#10b981" href="https://github.com/nicekate/avstack/blob/main/docs/如何从0-1构建GitLab-CI-CD-Pipeline.md" target="_blank" rel="noopener">
       <span class="icon">&#x1F680;</span>
       <h3>GitLab CI/CD</h3>
       <span class="cnt">Markdown</span>
       <p>从零构建嵌入式项目的持续集成与交付流水线</p>
     </a>
-    <div class="col-card planned" style="--cc:#10b981">
-      <span class="icon">&#x1F4E6;</span>
-      <h3>版本发布流程</h3>
-      <span class="cnt">规划中</span>
-      <p>嵌入式产品版本发布、tag 管理与交付物清单</p>
-    </div>
-    <div class="col-card planned" style="--cc:#10b981">
-      <span class="icon">&#x1F3D7;&#xFE0F;</span>
-      <h3>Buildroot 构建体系</h3>
-      <span class="cnt">规划中</span>
-      <p>交叉编译工具链、rootfs 定制、package 管理</p>
-    </div>
   </div>
 </section>
 
