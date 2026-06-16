@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MP4 容器格式深度解析 — 从 Box 树到 fMP4</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#08061a;color:#c0c0d8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.75}
+.sec{max-width:1040px;margin:0 auto;padding:80px 24px 60px}
+.sec.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+h2{font-size:clamp(26px,3.8vw,42px);font-weight:800;text-align:center;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px}
+h3{font-size:clamp(16px,2vw,19px);font-weight:700;color:#e0e0ff;margin:8px 0 4px}
+p{font-size:13px;color:#aaaacc;line-height:1.8}
+p.sub{text-align:center;color:#7777aa;max-width:680px;margin:0 auto 24px}
+p.sub strong{color:#e0e0ff}
+
+.cards{display:grid;gap:16px;margin:18px 0}
+.cards.c2{grid-template-columns:1fr 1fr}
+.cards.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:768px){.cards.c2,.cards.c3{grid-template-columns:1fr}}
+
+.card{background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 24px}
+.card:hover{border-color:rgba(108,99,255,.2)}
+.card h4{font-size:14px;font-weight:700;color:#e0e0ff;margin:0 0 4px}
+.card .sub{font-size:11.5px;color:#7777aa;margin-bottom:10px;text-align:left}
+.card p{font-size:12.5px;color:#b0b0d0;line-height:1.75}
+.card.accent{border-left:3px solid var(--accent,#6c63ff);padding-left:20px}
+
+.callout{border-radius:10px;padding:18px 22px;margin:18px 0;line-height:1.8;font-size:12.5px}
+.callout .ct{font-weight:700;margin-bottom:4px;font-size:13px}
+.callout.info{background:rgba(108,99,255,.05);border:1px solid rgba(108,99,255,.12)}
+.callout.info .ct{color:#a78bfa}
+.callout.success{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.12)}
+.callout.success .ct{color:#34d399}
+.callout.warning{background:rgba(251,191,36,.04);border:1px solid rgba(251,191,36,.12)}
+.callout.warning .ct{color:#fbbf24}
+
+.tbl-wrap{overflow-x:auto;margin:16px 0}
+table{width:100%;border-collapse:separate;border-spacing:0;background:rgba(255,255,255,.012);border-radius:10px;overflow:hidden;font-size:12.5px}
+thead th{background:rgba(108,99,255,.07);color:#a78bfa;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:12px 14px;text-align:left;border-bottom:1px solid rgba(108,99,255,.12)}
+tbody td{padding:10px 14px;color:#b0b0d0;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.03)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even) td{background:rgba(255,255,255,.008)}
+tbody td:first-child{font-weight:600;color:#d0d0e0}
+.g{color:#34d399!important;font-weight:700}
+.y{color:#fbbf24!important;font-weight:700}
+
+.canvas-wrap{background:rgba(255,255,255,.012);border-radius:14px;border:1px solid rgba(255,255,255,.04);margin:24px auto;max-width:960px;position:relative}
+.canvas-wrap canvas{display:block;width:100%;height:100%}
+
+code{font-size:11px;background:rgba(108,99,255,.1);padding:2px 7px;border-radius:4px;color:#c8c8ff;font-family:'JetBrains Mono','Cascadia Code',monospace}
+pre{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:14px 18px;font-size:11px;line-height:1.9;overflow-x:auto;margin:8px 0;font-family:'JetBrains Mono','Cascadia Code',monospace;color:#b0b0d0}
+.tree{font-family:'JetBrains Mono','Cascadia Code',monospace;font-size:11.5px;line-height:2;color:#b0b0d0;padding:4px 0;white-space:pre}
+</style>
+</head>
+<body>
+
+<!-- ================================================================ -->
+<!-- HERO -->
+<!-- ================================================================ -->
+<div class="sec hero">
+  <h2 style="font-size:clamp(30px,5vw,48px)">MP4 容器格式深度解析</h2>
+  <p class="sub" style="font-size:clamp(14px,1.8vw,17px)">从 ISO BMFF 规范到 stbl 六表运作<br>从 FastStart 到 fMP4 流媒体片段</p>
+</div>
+
+<!-- ================================================================ -->
+<!-- S1: 容器 vs 编码 — 建立认知框架 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>容器 ≠ 编码 —— 三层分离</h2>
+  <p class="sub">MP4 是<strong>容器</strong>——不决定视频怎么压缩，只决定压缩后的数据怎么<strong>组织和索引</strong></p>
+
+  <div class="cards c3">
+    <div class="card accent" style="--accent:#a78bfa"><h4>像素层 — 原始图像</h4><div class="sub">YUV / RGB 采样数据</div><p>1080p@30fps，YUV420 每像素 12bit<br>一帧 ≈ 3.1 MB 原始数据<br>这是编码器的<strong>输入</strong></p></div>
+    <div class="card accent" style="--accent:#fbbf24"><h4>编码层 — 压缩码流</h4><div class="sub">H.264 / H.265 / AAC / Opus</div><p>将原始图像压缩为码流<br>一帧 H.264 ≈ 10-100 KB<br>压缩比 50-500×</p></div>
+    <div class="card accent" style="--accent:#34d399"><h4>容器层 — 组织索引</h4><div class="sub">MP4 / MKV / TS / FLV</div><p>打包编码数据 + 建立索引<br>"第 5 秒的帧在文件第 98304 字节"<br><strong>定位、同步、元数据</strong></p></div>
+  </div>
+
+  <div class="callout info">
+    <div class="ct">编码器只管压缩，容器管"怎么找到数据"</div>
+    H.264 编码器输出一串 NAL Unit——没有时间戳、没有"哪段是音频哪段是视频"的标记。容器做的事：<strong>给这些数据加目录、加书签、加标签</strong>——让播放器能快速 seek 到任意秒数、区分音视频轨、知道何时播放哪帧。
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S2: 第一层 — MP4 文件的物理结构 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>第一层：MP4 文件的物理结构 —— 三块拼图</h2>
+  <p class="sub">任何 MP4 文件都由<strong>三块</strong>构成：<strong style="color:#f87171">ftyp</strong>（格式声明）、<strong style="color:#fbbf24">moov</strong>（元数据索引）、<strong style="color:#34d399">mdat</strong>（编码数据）</p>
+
+  <div class="canvas-wrap" style="height:330px"><canvas id="c0"></canvas></div>
+
+  <div class="cards c3">
+    <div class="card accent" style="--accent:#f87171">
+      <h4>ftyp — 文件类型标识</h4>
+      <div class="sub">File Type Box · 始终在文件最开头</div>
+      <p>包含 <strong>major_brand</strong>（如 "mp42"）和<strong>兼容品牌列表</strong>（"isom""avc1"等）。播放器<strong>第一个就读取 ftyp</strong>——如果自己的解码器不支持该 brand，直接拒绝播放。大小通常 20-32 字节。</p>
+    </div>
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>moov — 元数据容器</h4>
+      <div class="sub">Movie Box · 文件的大脑</div>
+      <p>包含<strong>所有轨道的描述</strong>（编码格式、分辨率、帧率、时长）和<strong>完整的样本索引表</strong>（每个帧在 mdat 中的位置和大小）。播放器 seek 时<strong>只读 moov</strong>——不碰 mdat。通常 &lt; 1MB。</p>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>mdat — 编码数据仓库</h4>
+      <div class="sub">Media Data Box · 文件的正文</div>
+      <p>存放<strong>实际的编码数据</strong>——H.264 NAL Unit 和 AAC 帧按 Chunk 交错排列（V₁ A₁ A₂ V₂ …）。mdat 内部<strong>没有 Box 结构</strong>——它就是一个巨型 blob，完全依赖 moov 中的 stbl 表来索引数据位置。</p>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="ct">关键认知：moov 是目录，mdat 是正文</div>
+    就像一本书——<strong>moov = 目录</strong>（告诉你第 3 章在第 150 页），<strong>mdat = 正文</strong>（第 150 页的实际文字）。想跳到第 3 章？先查目录，再翻到对应页——不需要把整本书读一遍。
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S3: 第二层 — Box 的基本结构 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>第二层：Box 的基本结构 —— 一切皆为 Box</h2>
+  <p class="sub">MP4 文件 = <strong>一棵嵌套的 Box 树</strong>。每个 Box 都有完全相同的 8 字节头部格式</p>
+
+  <div class="canvas-wrap" style="height:210px"><canvas id="c0b"></canvas></div>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#a78bfa">
+      <h4>Box 头部 = 8 字节</h4>
+      <div class="sub">统一格式，极简设计</div>
+      <pre><span style="color:#888">字节     含义</span>
+00-03    <span style="color:#34d399">size</span>     Box 总字节数（含自身这 4 字节）
+04-07    <span style="color:#fbbf24">type</span>     四字符码（"moov""mdat""ftyp"…）
+08-..    <span style="color:#a78bfa">payload</span> 子 Box（Container 型）或具体数据（Leaf 型）</pre>
+      <p style="font-size:11px;color:#666;margin-top:6px">如果 size=1 → 后 8 字节为 64 位扩展大小（>4GB 的 mdat）。size=0 → Box 延伸到文件末尾。</p>
+    </div>
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>两种 Box 类型</h4>
+      <div class="sub">Container（容器）vs Leaf（叶子）</div>
+      <p><strong>Container Box</strong>：moov、trak、mdia、minf、stbl、edts——payload 全部是子 Box，自身不存业务数据。<br><br>
+      <strong>Leaf Box</strong>：mvhd、tkhd、stsd、stts、stsz、stco——payload 是具体的元数据数值。<br><br>
+      <strong>特殊 — mdat</strong>：payload 是原始编码数据（NAL Unit / AAC 帧），<strong>没有 Box 包装</strong>。由 moov 中的 stbl 表来索引每个 Chunk 的位置和大小。</p>
+    </div>
+  </div>
+
+  <div class="callout success">
+    <div class="ct">Box 树的解析不需要状态机——这是 MP4 设计最优雅的地方</div>
+    解析器只需要一个循环：① 读 4 字节 size ② 读 4 字节 type ③ 若 type 是已知的 Container → 递归解析子 Box；若 type 是已知的 Leaf → 按规范解释 payload ④ 跳过 size - 8 字节到下一个 Box。整个过程<strong>每个 Box 自描述</strong>。
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S4: 第三层 — moov 内部结构 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>第三层：moov 内部 —— 轨道体系</h2>
+  <p class="sub">moov 内部按<strong>轨道（trak）</strong>组织——每个 trak 对应一个音频流或视频流</p>
+
+  <div class="canvas-wrap" style="height:380px"><canvas id="c1"></canvas></div>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>moov 的直接子 Box</h4>
+      <div class="tree"><span style="color:#fbbf24">moov</span>
+├── <span style="color:#a78bfa">mvhd</span>   影片全局信息 — 创建时间、时长、首选速率、时间标尺
+├── <span style="color:#34d399">trak</span>   视频轨道（至少一个）
+├── <span style="color:#34d399">trak</span>   音频轨道（至少一个）
+└── udta   用户自定义数据（封面、版权、作者标签）</div>
+      <p style="font-size:11px;color:#666;margin-top:6px">mvhd 中的 <strong>timescale</strong> 是整个影片的时间基准——所有时间戳都以 timescale 为单位。例如 timescale=1000 → 所有时间以毫秒计。</p>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>单个 trak（轨道）的内部层次</h4>
+      <div class="tree"><span style="color:#34d399">trak</span>
+├── <span style="color:#60a5fa">tkhd</span>   轨道属性 — 轨道ID、宽度、高度、音量
+├── edts   编辑列表 — 可选，用于裁剪或延迟
+└── <span style="color:#f87171">mdia</span>   媒体信息容器
+    ├── mdhd   媒体时间标尺 + 时长 + 语言代码
+    ├── hdlr   处理器类型 — "vide"（视频）/ "soun"（音频）
+    └── <span style="color:#38bdf8">minf</span>   媒体信息容器
+        ├── vmhd   视频媒体头（仅视频轨）
+        ├── smhd   音频媒体头（仅音频轨）
+        ├── dinf   数据信息 — 数据引用（dref）
+        └── <span style="color:#a78bfa">stbl</span>   ★ 样本表 — MP4 的心脏</div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="ct">为什么分两层时间标尺？—— mvhd.timescale vs mdhd.timescale</div>
+    <strong>mvhd.timescale</strong> 是影片级时间（用于章节、字幕同步），通常设为 1000（毫秒）。<br>
+    <strong>mdhd.timescale</strong> 是媒体级时间（用于精确帧定位），通常设为帧率的整数倍——如 30fps → timescale=30000 → 每帧=1000 单位 → 支持 1/30000 秒精度。
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S5: 第四层 — stbl 六表详解 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>第四层：stbl — MP4 的心脏（六张索引表）</h2>
+  <p class="sub">stbl 回答一个终极问题：<strong>"要播第 3.5 秒的画面，数据在文件的哪个位置？"</strong></p>
+
+  <div class="canvas-wrap" style="height:210px"><canvas id="c2"></canvas></div>
+
+  <div class="cards c3">
+    <div class="card accent" style="--accent:#34d399">
+      <h4>stsd — 编码器配置</h4>
+      <div class="sub">Sample Description · "用什么解码？"</div>
+      <p>stbl 的<strong>第一张表</strong>。告诉播放器：这是 H.264 还是 H.265？SPS/PPS 参数在哪？对 H.264 → 内含 <strong>avcC Box</strong> 存储 SPS 和 PPS（解码器初始化必需）。一个轨通常只有一种编码→stsd 通常只有 1 个 entry。</p>
+    </div>
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>stts — 解码时间表</h4>
+      <div class="sub">Time-to-Sample · "第 N 帧的 DTS 是？"</div>
+      <p>将每个<strong>样本（帧）</strong>映射到<strong>解码时间戳 (DTS)</strong>。采用<strong>压缩表</strong>格式存储："连续 50 个样本，每个持续 512 个时间单位"。恒定帧率时 <strong>stts 只有 1 条记录</strong>。</p>
+    </div>
+    <div class="card accent" style="--accent:#f87171">
+      <h4>ctts — 合成时间偏移</h4>
+      <div class="sub">Composition Offset · "B 帧的显示时间差多少？"</div>
+      <p><strong>仅含 B 帧时才存在。</strong>B 帧的显示序 ≠ 解码序（PTS ≠ DTS）→ ctts 记录每个样本的 PTS−DTS 偏移量。无 B 帧时此表不存在。同样采用压缩表格式。</p>
+    </div>
+  </div>
+
+  <div class="cards c3">
+    <div class="card accent" style="--accent:#a78bfa">
+      <h4>stsc — 样本→Chunk 映射</h4>
+      <div class="sub">Sample-to-Chunk · "第 N 帧在哪个 Chunk？"</div>
+      <p>Chunk = 文件中<strong>连续存放的一组样本</strong>。stsc 格式："从 Chunk X 起，每 Chunk 含 Y 个样本，持续 Z 个 Chunk"。大多数文件每 Chunk=1 帧→stsc 只有 1 条记录。</p>
+    </div>
+    <div class="card accent" style="--accent:#f87171">
+      <h4>stsz — 样本大小表</h4>
+      <div class="sub">Sample Size · "第 N 帧数据多大？"</div>
+      <p>每个样本的<strong>字节数</strong>。CBR 音频用恒定大小模式（只需表头一个值）。视频帧大小剧烈变化（I 帧 80KB vs P 帧 10KB）→ 必须逐帧存储。</p>
+    </div>
+    <div class="card accent" style="--accent:#38bdf8">
+      <h4>stco + stss — 偏移 + 关键帧</h4>
+      <div class="sub">Chunk Offset + Sync Sample</div>
+      <p><strong>stco</strong>：每个 Chunk 在文件中的<strong>绝对偏移量</strong>。>4GB 文件用 co64（64 位）。<strong>stss</strong>：哪些样本是<strong>IDR / I 帧</strong>（随机访问点）。seek 时先查 stss → 找最近 I 帧 → 从那里开始解码。</p>
+    </div>
+  </div>
+
+  <h3 style="color:#fbbf24;margin-top:32px">查表链完整演示：时间 3.5s → 文件偏移</h3>
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>六步查询</h4>
+      <div style="font-size:13px;line-height:2.4;color:#c0c0d8">
+        <strong style="color:#fbbf24">① stts</strong>：3.5s × 30000 = 105000 → <strong>样本 #105</strong><br>
+        <strong style="color:#f87171">② ctts</strong>：样本 #105 偏移 = 0（P 帧无偏移）<br>
+        <strong style="color:#a78bfa">③ stsc</strong>：#105 ÷ 1 帧/Chunk → <strong>Chunk #105</strong><br>
+        <strong style="color:#38bdf8">④ stco</strong>：Chunk #105 → <strong>文件偏移 983040</strong><br>
+        <strong style="color:#f87171">⑤ stsz</strong>：样本 #105 → <strong>24567 字节</strong><br>
+        <strong style="color:#a78bfa">⑥ stss</strong>：最近 I 帧 = #100 → 从 #100 开始解码
+      </div>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>为什么不是"每个样本直接存偏移"？</h4>
+      <p>1080p 2h 电影 ≈ 21.6 万帧。若每帧存 4 字节偏移 → <strong>864KB 索引</strong>。<br><br>引入 Chunk 聚合：一个 Chunk 含 30 帧（1 GOP）→ 7200 个 Chunk → 索引仅 <strong>29KB</strong>（省 30×）。<br><br>这是<strong>空间换 I/O 的折中</strong>——索引越小，moov 读取得越快，首帧显示越快。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S6: mdat + FastStart -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>mdat — 编码数据的仓库 + FastStart</h2>
+  <p class="sub">moov 是目录，mdat 是正文。编码数据按 Chunk<strong>交错存放</strong></p>
+
+  <div class="cards c3">
+    <div class="card accent" style="--accent:#34d399">
+      <h4>内部无 Box 结构</h4>
+      <div class="sub">原始编码数据直接存放</div>
+      <p>H.264：AVCC 格式——每个 NAL Unit 前有 4 字节长度前缀（不用起始码，解析更快）。AAC：连续 raw AAC 帧。mdat 完全依赖 stbl 表来定位每个 Chunk。</p>
+    </div>
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>音视频交错排列</h4>
+      <div class="sub">V₁ A₁ A₂ V₂ A₃ A₄ V₃ …</div>
+      <p>顺序读取即可同时获取音视频——减少磁盘寻道。网络流式播放时至关重要（HTTP 请求连续范围）。非交错存储只适合本地文件。</p>
+    </div>
+    <div class="card accent" style="--accent:#a78bfa">
+      <h4>Annex B vs AVCC — 两种 NAL 分隔方式</h4>
+      <div class="sub">同样的 H.264 数据，两种"包装"格式</div>
+      <p><strong>Annex B</strong>：00 00 00 01 起始码分隔 → 适合流式传输，丢包后可重新同步。<br><strong>AVCC</strong>：4 字节长度前缀 → 已知长度直接跳转，适合容器随机访问。<br>MP4 用 AVCC，原始 .h264 文件和 TS 流用 Annex B。</p>
+    </div>
+  </div>
+
+  <h3 style="color:#34d399;margin-top:28px">FastStart — moov 前置是流式播放的前提</h3>
+
+  <div class="canvas-wrap" style="height:170px"><canvas id="c3b"></canvas></div>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#f87171">
+      <h4>默认：moov 在末尾 → 无法边下边播</h4>
+      <p>编码器先写 mdat → 文件关闭前才写 moov（因为 stbl 需要所有帧的最终大小和偏移）。<br>文件结构：<strong>ftyp → mdat(巨大) → moov</strong>。<br>播放器必须<strong>下载完整文件</strong>才能读到 moov → 无法边下边播。几 GB 的电影 = 几分钟等待。</p>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>FastStart：moov 前置 → 即时播放</h4>
+      <p>后处理将 moov 搬到 ftyp 之后：<strong>ftyp → moov → mdat</strong>。<br>播放器先下载 moov（&lt; 1MB）→ 立刻知道所有帧位置 → 对所需 mdat 范围发起 <strong>HTTP Range 请求</strong> → <strong>秒级开始播放</strong>。<br><br>FFmpeg 加 <code>-movflags +faststart</code> 即可。</p>
+    </div>
+  </div>
+
+  <h3 style="color:#a78bfa;margin-top:32px">深入理解：为什么 Annex B 和 AVCC 不合并？—— 流式传输 vs 随机访问</h3>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>Annex B — 为"不知道从哪开始的接收者"设计</h4>
+      <div class="sub">起始码 00 00 00 01 → 可自同步，适合流式传输</div>
+      <pre>NAL 1:  <span style="color:#fbbf24">00 00 00 01</span> [H.264 数据...]
+NAL 2:  <span style="color:#fbbf24">00 00 00 01</span> [H.264 数据...]
+NAL 3:  <span style="color:#fbbf24">00 00 00 01</span> [H.264 数据...]</pre>
+      <p style="font-size:12px;color:#b0b0d0;margin-top:8px">
+        <strong>核心优势：自同步。</strong>接收者可以在<strong>任意时刻</strong>开始接收——扫描字节流找到下一个 00 00 00 01 就能定位 NAL 边界。<br><br>
+        <strong>适用场景</strong>：① 广播/IPTV（TS 流）——接收者随时可能换台 ② RTP 实时传输——UDP 丢包后需重新同步 ③ 原始 .h264 文件——简单、无需额外元数据。<br><br>
+        <strong>致命弱点</strong>：要定位第 47 个 NAL Unit → 必须从开头扫描，逐个计数起始码 → <strong>O(n) 复杂度</strong>，无法随机访问。
+      </p>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>AVCC — 为"知道目标位置的容器"设计</h4>
+      <div class="sub">4 字节长度前缀 → O(1) 跳转，适合容器存储</div>
+      <pre>NAL 1:  <span style="color:#34d399">00 00 01 A5</span> [421 字节的 H.264 数据...]
+NAL 2:  <span style="color:#34d399">00 00 00 42</span> [66 字节的 H.264 数据...]
+NAL 3:  <span style="color:#34d399">00 00 03 E8</span> [1000 字节的 H.264 数据...]</pre>
+      <p style="font-size:12px;color:#b0b0d0;margin-top:8px">
+        <strong>核心优势：O(1) 随机访问。</strong>已知目标 NAL 的偏移 → 读 4 字节长度 → 读 N 字节数据 → 下一个 NAL 偏移 = 当前偏移 + 4 + N。不需要扫描任何字节。<br><br>
+        <strong>适用场景</strong>：① MP4/MKV 容器——stbl 表已索引每个 Chunk 的文件偏移，AVCC 让容器可以直接跳转读 NAL ② 需要快速 seek 的场景——跳帧时不需从 I 帧开始逐 NAL 扫描。<br><br>
+        <strong>致命弱点</strong>：如果从中间开始接收（漏了前面的长度前缀）→ <strong>完全无法恢复同步</strong>——4 字节长度值可能恰好等于 00 00 00 01，但没有上下文你无法区分它是"长度"还是"起始码"。
+      </p>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="ct">为什么不合并？—— 因为"流式传输"和"容器存储"是两种截然不同的使用模式</div>
+    <strong>流式传输</strong>（Annex B）的核心需求是<strong>容错和自同步</strong>——接收者可能在任何时刻加入、UDP 可能丢包、广播没有回传通道。起始码让接收者能"盲目"恢复同步。<br><br>
+    <strong>容器存储</strong>（AVCC）的核心需求是<strong>快速定位和解析效率</strong>——播放器已有完整的索引（stbl），知道每个 Chunk 的精确偏移和大小。长度前缀让解析器用一条 CPU 指令（读 4 字节整数）替代字节扫描循环。<br><br>
+    <strong>MP4 选择 AVCC 还有一个精妙之处</strong>：SPS/PPS 不放在 mdat 的 NAL 流里，而是单独存在 moov→trak→mdia→minf→stbl→stsd→avcC Box 中。这样解码器初始化时不需要扫描 mdat 找 SPS/PPS——直接读 avcC 即可。这是 Annex B 做不到的。
+  </div>
+
+  <h3 style="color:#f87171;margin-top:28px">关键追问：Annex B 流中，编码数据本身不会恰好等于 00 00 00 01 吗？</h3>
+  <p style="color:#8888aa;font-size:12px;margin-bottom:14px">会。H.264 编码后的 bit 串完全可能凑出 00 00 00 01。但标准用一个巧妙的机制杜绝了这种歧义——<strong>竞争防止字节（Emulation Prevention Byte）</strong>。</p>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#f87171">
+      <h4>问题：编码数据可能恰好出现 00 00 00 01</h4>
+      <div class="sub">那样解码器就会错误地认为这里是一个新的 NAL 起始边界</div>
+      <div class="highlight" style="line-height:2.2">
+<span style="color:#888">编码器输出（未处理）：</span>
+... 45 A6 <span style="color:#f87171">00 00 00 01</span> 8C 2F ...
+              ↑ 这只是像素数据！
+         解码器会误判为 NAL 边界 → 解析错乱</div>
+      <p style="font-size:11px;color:#666;margin-top:6px">H.264 码流是变长熵编码后的二进制——任何字节序列都可能出现。如果不加处理，起始码 00 00 00 01 无法和"恰好等于这个值的编码数据"区分。</p>
+    </div>
+    <div class="card accent" style="--accent:#34d399">
+      <h4>解决：插入 0x03 竞争防止字节</h4>
+      <div class="sub">编码器在遇到 00 00 后紧跟 00/01/02/03 时，插入一个 0x03</div>
+      <div class="highlight" style="line-height:2.2">
+<span style="color:#888">原始数据：</span>
+... 45 A6 00 00 <span style="color:#fbbf24">00</span> 8C 2F ...
+              ↑ 像素数据恰好是 00
+
+<span style="color:#888">插入 0x03 后（写入码流）：</span>
+... 45 A6 00 00 <span style="color:#34d399">03</span> 00 8C 2F ...
+              ↑ 编码器插入的"防竞争字节"
+
+<span style="color:#888">解码器读取时：</span>
+看到 00 00 03 → 丢掉 03 → 还原为 00 00 00</div>
+      <p style="font-size:11px;color:#666;margin-top:6px"><strong>规则</strong>：编码器扫描 NAL payload，每遇到 <strong>00 00</strong> 且下一个字节 ∈ {00, 01, 02, 03}，在 00 00 之后插入一个 <strong>0x03</strong>。解码器做相反操作——读到 00 00 03 → 丢弃 03，后一个字节保留。</p>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="ct">为什么连 00 00 02 和 00 00 03 也要防止？</div>
+    H.264 定义了四种"禁止模式"：<strong>00 00 00</strong>、<strong>00 00 01</strong>（NAL 起始码）、<strong>00 00 02</strong>（slice 边界标记，某些 profile 使用）、<strong>00 00 03</strong>（保留）。全部都要防止——因为未来扩展可能用到。<br><br>
+    <strong>这就是 Annex B 能在"盲同步"下工作的原因</strong>：解码器可以无条件信任——<strong>码流中出现的每一个 00 00 00 01 都一定是 NAL 起始码，绝不可能是编码数据</strong>。这个保证是靠编码器多花那 1 个字节（每个 00 00 0X 多花 0x03）换来的。在大部分视频中，这个开销不到总码率的 0.1%。
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S7: fMP4 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>fMP4（Fragmented MP4）—— 直播和流媒体的标准</h2>
+  <p class="sub">普通 MP4 = 一个 moov + 一个完整的 mdat（写完不能改）。<strong>fMP4 = 多个独立可解码的片段</strong></p>
+
+  <div class="canvas-wrap" style="height:230px"><canvas id="c3"></canvas></div>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#38bdf8">
+      <h4>结构对比</h4>
+      <div class="tree" style="font-size:10.5px"><span style="color:#888">普通 MP4:</span>  ftyp → <span style="color:#fbbf24">moov</span> → <span style="color:#34d399">mdat</span>（一整块，写死不能改）
+
+<span style="color:#888">fMP4:</span>     ftyp → <span style="color:#fbbf24">moov</span>(含mvex) → <span style="color:#38bdf8">moof</span>₁+<span style="color:#34d399">mdat</span>₁
+                   → <span style="color:#38bdf8">moof</span>₂+<span style="color:#34d399">mdat</span>₂ → …（可持续生成）</div>
+      <p style="font-size:11px;color:#666;margin-top:6px">fMP4 的 moov 只含<strong>轨道描述</strong>（编码格式、timescale），<strong>不含 stbl 索引</strong>。索引功能由每个 moof 里的 trun 表承担。</p>
+    </div>
+    <div class="card accent" style="--accent:#a78bfa">
+      <h4>moof 内部（取代 stbl 的角色）</h4>
+      <div class="tree" style="font-size:10.5px"><span style="color:#38bdf8">moof</span>
+├── <span style="color:#fbbf24">mfhd</span>   片段序列号（递增）
+└── <span style="color:#f87171">traf</span>   轨道片段（每轨一个）
+    ├── tfhd   轨道 ID + 默认参数
+    ├── <span style="color:#34d399">trun</span>   ★ 片段样本表——等同普通 MP4 的 stbl
+    │   每帧记录：大小、时长、偏移、关键帧标志
+    └── tfdt   本片段的起始 DTS</div>
+    </div>
+  </div>
+
+  <div class="tbl-wrap"><table>
+  <thead><tr><th>应用场景</th><th>容器格式</th><th>结构</th></tr></thead>
+  <tbody>
+    <tr><td>本地存储</td><td>普通 MP4</td><td>一个 moov + 一个 mdat</td></tr>
+    <tr><td>HTTP 点播</td><td>FastStart MP4</td><td>moov 前置 + mdat</td></tr>
+    <tr><td class="g">DASH / HLS</td><td class="g">fMP4 片段</td><td class="g">init段 + 媒体段 × N</td></tr>
+    <tr><td class="g">LiveKit / WebRTC</td><td class="g">fMP4 流</td><td class="g">连续 moof+mdat 流式写入</td></tr>
+    <tr><td>RTMP 直播</td><td>FLV（非 MP4）</td><td>Header + Tag 流</td></tr>
+  </tbody></table></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- S8: 实战 -->
+<!-- ================================================================ -->
+<div class="sec">
+  <h2>实战：用命令行工具查看 MP4 内部</h2>
+
+  <div class="cards c2">
+    <div class="card accent" style="--accent:#a78bfa">
+      <h4>ffprobe — 查看 Box 树和流信息</h4>
+      <pre># Box 树 + 流信息
+ffprobe -show_format -show_streams file.mp4
+
+# 每一帧的详细信息
+ffprobe -show_frames -select_streams v:0 file.mp4
+
+# JSON 格式（方便程序解析）
+ffprobe -print_format json -show_format \
+  -show_streams file.mp4
+
+# 只看是否已 FastStart
+ffprobe -show_format file.mp4 2>&1 \
+  | grep faststart</pre>
+    </div>
+    <div class="card accent" style="--accent:#fbbf24">
+      <h4>hexdump — 肉眼识别 Box 头部</h4>
+      <pre>$ hexdump -C file.mp4 | head -8
+00000000  <span style="color:#34d399">00 00 00 20</span> <span style="color:#fbbf24">66 74 79 70</span> 69 73 6f 6d  │... ftypisom│
+         ↑ size=32    ↑ type="ftyp"   ↑ payload="isom"
+00000020  <span style="color:#34d399">00 00 20 08</span> <span style="color:#fbbf24">6d 6f 6f 76</span> 00 00 00 6c  │.. .moov...l│
+         ↑ size=8200  ↑ type="moov"</pre>
+      <p style="font-size:11px;color:#666;margin-top:6px">Box 头部永远是 8 字节：4 字节 size（大端序）+ 4 字节 ASCII type。可以肉眼直接读出任何 Box 类型。</p>
+    </div>
+  </div>
+
+  <div class="callout warning">
+    <div class="ct">⚠ 所有 Web 播放的 MP4 必须加 FastStart</div>
+    FFmpeg 编码时加 <code>-movflags +faststart</code>。如果是已有的 MP4 文件，可用 <code>ffmpeg -i input.mp4 -c copy -movflags +faststart output.mp4</code> 无损重写（只移动 moov 位置，不重新编码）。
+  </div>
+</div>
+
+<script>
+// ===== roundRect polyfill =====
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === 'number') r = { tl: r, tr: r, br: r, bl: r };
+    this.beginPath(); this.moveTo(x + r.tl, y); this.lineTo(x + w - r.tr, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r.tr); this.lineTo(x + w, y + h - r.br);
+    this.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h); this.lineTo(x + r.bl, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r.bl); this.lineTo(x, y + r.tl);
+    this.quadraticCurveTo(x, y, x + r.tl, y); this.closePath();
+  };
+}
+
+function $(id) { return document.getElementById(id); }
+
+// ===== Shared drawing helpers =====
+function box(ctx, x, y, w, h, label, color, sub, opt) {
+  opt = opt || {};
+  ctx.fillStyle = 'rgba(8,6,26,0.8)'; ctx.strokeStyle = color; ctx.lineWidth = opt.lw || 2;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, opt.r || 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = opt.tc || '#fff';
+  ctx.font = (opt.fw || 'bold') + ' ' + (opt.fs || 13) + 'px ' + (opt.ff || 'monospace');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (label) ctx.fillText(label, x + w/2, y + h/2);
+  if (sub) { ctx.fillStyle = '#777'; ctx.font = (opt.ss || 9) + 'px sans-serif'; ctx.fillText(sub, x + w/2, y + h + (opt.sy || 14)); }
+}
+
+function arrow(ctx, x1, y1, x2, y2) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - 6, y2); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 9, y2 - 5); ctx.lineTo(x2 - 9, y2 + 5); ctx.closePath(); ctx.fill();
+}
+
+function setup(cvid) {
+  var cv = $(cvid); if (!cv) return null;
+  var W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  var ctx = cv.getContext('2d'); ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+  return { cv: cv, ctx: ctx, W: W, H: H };
+}
+
+// ===== C0: 文件物理结构 (ftyp → moov → mdat) =====
+function drawC0() {
+  var s = setup('c0'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  var bw = Math.min(700, W*0.82), bx = (W - bw)/2;
+  var yTop = 20, yBot = H - 10;
+
+  var ftypW = bw * 0.22, ftypH = 38;
+  var moovH = 52, mdatH = 52;
+  var gap1 = 40, gap2 = 36;
+
+  // Dynamic vertical centering with text overhead
+  var textH = 40; // space for description text below moov + mdat
+  var totalH = ftypH + gap1 + moovH + textH + gap2 + mdatH + textH;
+  var y0 = Math.max(8, (H - totalH) / 2);
+
+  // --- ftyp (small, at top center) ---
+  var fy = y0, fx = (W - ftypW) / 2;
+  box(c, fx, fy, ftypW, ftypH, 'ftyp', '#f87171', null, {fs:15, r:10});
+  c.fillStyle = '#aaa'; c.font = '12px sans-serif'; c.textAlign = 'left';
+  c.fillText('文件类型声明   约 20-32 字节   "我是 MP4 v2"', fx + ftypW + 18, fy + ftypH/2 + 4);
+
+  // arrow
+  c.strokeStyle = 'rgba(255,255,255,0.1)'; c.lineWidth = 2;
+  var a1 = fy + ftypH, a2 = fy + ftypH + gap1;
+  c.beginPath(); c.moveTo(W/2, a1 + 4); c.lineTo(W/2, a2 - 8); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.15)';
+  c.beginPath(); c.moveTo(W/2, a2); c.lineTo(W/2 - 6, a2 - 10); c.lineTo(W/2 + 6, a2 - 10); c.closePath(); c.fill();
+
+  // --- moov (the big one with description below) ---
+  var my = fy + ftypH + gap1;
+  box(c, bx, my, bw, moovH, 'moov', '#fbbf24', null, {fs:17, r:10});
+  c.fillStyle = '#bbb'; c.font = '13px sans-serif'; c.textAlign = 'center';
+  c.fillText('元数据 & 索引（文件的大脑）', W/2, my + moovH + 14);
+  c.fillStyle = '#888'; c.font = '11px sans-serif';
+  c.fillText('包含所有轨道描述 + stbl 样本表。播放器 seek 时只读 moov（< 1MB），不碰 mdat。', W/2, my + moovH + 30);
+
+  // arrow
+  var b1 = my + moovH + 38;
+  c.strokeStyle = 'rgba(255,255,255,0.1)'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(W/2, b1); c.lineTo(W/2, b1 + gap2 - 24); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.15)';
+  c.beginPath(); c.moveTo(W/2, b1 + gap2 - 20); c.lineTo(W/2 - 6, b1 + gap2 - 30); c.lineTo(W/2 + 6, b1 + gap2 - 30); c.closePath(); c.fill();
+
+  // --- mdat ---
+  var dy = b1 + gap2 - 20;
+  box(c, bx, dy, bw, mdatH, 'mdat', '#34d399', null, {fs:17, r:10});
+  c.fillStyle = '#bbb'; c.font = '13px sans-serif'; c.textAlign = 'center';
+  c.fillText('编码数据仓库（文件的正文）', W/2, dy + mdatH + 14);
+  c.fillStyle = '#888'; c.font = '11px sans-serif';
+  c.fillText('H.264 NAL Unit + AAC 帧按 Chunk 交错存放。内部无 Box 结构，由 moov 的 stbl 表索引每个 Chunk 位置。', W/2, dy + mdatH + 30);
+
+  // File boundary markers
+  c.fillStyle = '#555'; c.font = '11px sans-serif'; c.textAlign = 'center';
+  c.fillText('— 文件开头 —', W/2, yTop);
+  c.fillText('— 文件结尾 —', W/2, yBot);
+}
+
+// ===== C0b: Box 头部结构可视化 =====
+function drawC0b() {
+  var s = setup('c0b'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  // === Container Box example ===
+  var lx = 20, ly = 28, lw = (W - 60) / 2;
+
+  // Container Box wrapper
+  c.fillStyle = 'rgba(255,255,255,0.01)'; c.strokeStyle = '#a78bfa'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(lx, ly, lw, 168, 12); c.fill(); c.stroke();
+  c.fillStyle = '#a78bfa'; c.font = 'bold 13px sans-serif'; c.textAlign = 'left';
+  c.fillText('Container Box（容器型）', lx + 14, ly + 22);
+  c.fillStyle = '#888'; c.font = '10px sans-serif';
+  c.fillText('payload = 子 Box 列表', lx + 14, ly + 38);
+
+  // Header visualization
+  var hx = lx + 14, hy = ly + 52, hw = lw - 28, hh = 28;
+  c.fillStyle = 'rgba(8,6,26,0.9)'; c.strokeStyle = '#fbbf24'; c.lineWidth = 1.5;
+  c.beginPath(); c.roundRect(hx, hy, hw, hh, 6); c.fill(); c.stroke();
+  c.fillStyle = '#34d399'; c.font = 'bold 11px monospace'; c.textAlign = 'center';
+  c.fillText('size (4B)', hx + hw/6, hy + hh/2 + 4);
+  c.fillStyle = '#fbbf24';
+  c.fillText('type (4B)', hx + hw/2, hy + hh/2 + 4);
+  c.fillStyle = '#a78bfa';
+  c.fillText('子 Box 1 … 子 Box N', hx + hw*5/6, hy + hh/2 + 4);
+  c.fillStyle = '#888'; c.font = '9px sans-serif';
+  c.fillText('← 8 字节标准头 →', hx + hw/2, hy + hh + 12);
+
+  // Sub-boxes
+  var sx = hx + 8, sy = hy + hh + 24;
+  ['子 Box 1 (mvhd)', '子 Box 2 (trak)', '子 Box 3 (udta)'].forEach(function(n, i) {
+    box(c, sx, sy + i*24, hw - 16, 18, n, '#888', null, {fs:9, r:4, lw:0.8, tc: '#aaa', ff: 'sans-serif'});
+  });
+
+  // === Leaf Box example ===
+  var rx = lx + lw + 20;
+  c.fillStyle = 'rgba(255,255,255,0.01)'; c.strokeStyle = '#34d399'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(rx, ly, lw, 168, 12); c.fill(); c.stroke();
+  c.fillStyle = '#34d399'; c.font = 'bold 13px sans-serif'; c.textAlign = 'left';
+  c.fillText('Leaf Box（叶子型）', rx + 14, ly + 22);
+  c.fillStyle = '#888'; c.font = '10px sans-serif';
+  c.fillText('payload = 具体数值', rx + 14, ly + 38);
+
+  // Header
+  var hx2 = rx + 14, hy2 = ly + 52;
+  c.fillStyle = 'rgba(8,6,26,0.9)'; c.strokeStyle = '#fbbf24'; c.lineWidth = 1.5;
+  c.beginPath(); c.roundRect(hx2, hy2, lw - 28, hh, 6); c.fill(); c.stroke();
+  c.fillStyle = '#34d399'; c.font = 'bold 11px monospace'; c.textAlign = 'center';
+  c.fillText('size (4B)', hx2 + (lw-28)/6, hy2 + hh/2 + 4);
+  c.fillStyle = '#fbbf24';
+  c.fillText('type (4B)', hx2 + (lw-28)/2, hy2 + hh/2 + 4);
+  c.fillStyle = '#34d399';
+  c.fillText('具体数据值', hx2 + (lw-28)*5/6, hy2 + hh/2 + 4);
+
+  // Example data
+  var dx = hx2 + 8, dy = hy2 + hh + 24;
+  c.fillStyle = 'rgba(8,6,26,0.9)'; c.strokeStyle = '#34d399'; c.lineWidth = 1;
+  c.beginPath(); c.roundRect(dx, dy, lw - 44, 50, 6); c.fill(); c.stroke();
+  c.fillStyle = '#ccc'; c.font = '10px monospace'; c.textAlign = 'left';
+  c.fillText('例如 mvhd:', dx + 10, dy + 18);
+  c.fillStyle = '#888'; c.font = '9px monospace';
+  c.fillText('timescale = 1000', dx + 10, dy + 34);
+  c.fillText('duration = 3600000 (1小时)', dx + 10, dy + 48);
+
+  // Bottom summary
+  c.fillStyle = '#fbbf24'; c.font = 'bold 12px sans-serif'; c.textAlign = 'center';
+  c.fillText('每个 Box = 8 字节头 (size+type) + payload。Container 存子 Box，Leaf 存数值。', W/2, H - 10);
+}
+
+// ===== C3b: FastStart 前后对比 =====
+function drawC3b() {
+  var s = setup('c3b'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  var y1 = 24, y2 = 110, hh = 36;
+
+  // Top: default (moov at end)
+  c.fillStyle = '#f87171'; c.font = 'bold 13px sans-serif'; c.textAlign = 'left';
+  c.fillText('默认（moov 在末尾）', 24, y1 - 6);
+  c.fillStyle = '#888'; c.font = '11px sans-serif'; c.textAlign = 'right';
+  c.fillText('必须下载完整文件才能播放 ❌', W - 24, y1 - 6);
+
+  // ftyp
+  box(c, 24, y1, 60, hh, 'ftyp', '#f87171', null, {fs:11, r:6});
+  // mdat (large)
+  var mdW = W - 208;
+  box(c, 96, y1, mdW, hh, 'mdat（巨大，必须先下载完）', '#34d399', null, {fs:11, ff:'sans-serif', tc:'#ccc', r:6});
+  // moov (small, at end)
+  box(c, 96 + mdW + 12, y1, 90, hh, 'moov', '#fbbf24', null, {fs:11, r:6});
+
+  // Bottom: FastStart (moov at beginning)
+  c.fillStyle = '#34d399'; c.font = 'bold 13px sans-serif'; c.textAlign = 'left';
+  c.fillText('FastStart（moov 前置）', 24, y2 - 6);
+  c.fillStyle = '#888'; c.font = '11px sans-serif'; c.textAlign = 'right';
+  c.fillText('先下载 moov → HTTP Range 拉所需 mdat → 秒级开始播放 ✓', W - 24, y2 - 6);
+
+  box(c, 24, y2, 60, hh, 'ftyp', '#f87171', null, {fs:11, r:6});
+  box(c, 96, y2, 120, hh, 'moov（先读到索引）', '#fbbf24', null, {fs:11, ff:'sans-serif', tc:'#ccc', r:6});
+  box(c, 228, y2, W - 252, hh, 'mdat（按需 Range 请求）', '#34d399', null, {fs:11, ff:'sans-serif', tc:'#ccc', r:6});
+
+  c.fillStyle = '#888'; c.font = '11px sans-serif'; c.textAlign = 'center';
+  c.fillText('FFmpeg: -movflags +faststart  |  MP4Box 默认即 FastStart', W/2, H - 6);
+}
+
+// ===== C1: moov 内部 → trak → minf → stbl =====
+function drawC1() {
+  var s = setup('c1'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  // Left: moov tree
+  var lx = 20, ly = 24, lw = W * 0.52;
+  c.fillStyle = 'rgba(255,255,255,0.01)'; c.strokeStyle = '#fbbf24'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(lx, ly, lw, 340, 12); c.fill(); c.stroke();
+  c.fillStyle = '#fbbf24'; c.font = 'bold 15px monospace'; c.textAlign = 'left';
+  c.fillText('moov — Movie Box', lx + 16, ly + 26);
+
+  // moov children
+  var kids = [
+    { x: lx+16, y: ly+44, w: lw-32, h: 22, l: 'mvhd — 影片全局：时长、时间标尺、创建/修改时间', c: '#a78bfa' },
+    { x: lx+16, y: ly+76, w: lw-32, h: 120, l: 'trak — 视频轨道', c: '#34d399' },
+    { x: lx+16, y: ly+206, w: lw-32, h: 100, l: 'trak — 音频轨道', c: '#34d399' },
+    { x: lx+16, y: ly+316, w: lw-32, h: 22, l: 'udta — 用户数据：封面、版权、标签', c: '#666' },
+  ];
+  kids.forEach(function(k) {
+    if (k.h < 40) {
+      box(c, k.x, k.y, k.w, k.h, k.l, k.c, null, {fs:10,ss:8,ff:'sans-serif',tc:'#ccc',lw:1,r:5});
+    } else {
+      c.fillStyle = 'rgba(255,255,255,0.01)'; c.strokeStyle = k.c; c.lineWidth = 1.5;
+      c.beginPath(); c.roundRect(k.x, k.y, k.w, k.h, 8); c.fill(); c.stroke();
+      c.fillStyle = k.c; c.font = 'bold 12px monospace'; c.textAlign = 'left';
+      c.fillText(k.l, k.x + 12, k.y + 20);
+      // Sub-items for trak
+      var sub = [
+        ['tkhd — 轨道ID、分辨率、音量', '#60a5fa'],
+        ['edts — 编辑列表（可选，裁剪/延迟）', '#666'],
+        ['mdia → minf → stbl — ★ 媒体信息→样本表', '#fbbf24'],
+      ];
+      var sy = k.y + 34;
+      sub.forEach(function(sb) {
+        box(c, k.x + 12, sy, k.w - 24, 20, sb[0], sb[1], null, {fs:9,ss:7,ff:'sans-serif',tc:'#bbb',lw:0.8,r:4});
+        sy += 24;
+      });
+    }
+  });
+
+  // Right: stbl detail
+  var rx = lx + lw + 20, ry = ly, rw = W - rx - 16;
+  c.fillStyle = 'rgba(255,255,255,0.01)'; c.strokeStyle = '#a78bfa'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(rx, ry, rw, 340, 12); c.fill(); c.stroke();
+  c.fillStyle = '#a78bfa'; c.font = 'bold 15px monospace'; c.textAlign = 'left';
+  c.fillText('stbl — Sample Table', rx + 14, ry + 26);
+  c.fillStyle = '#888'; c.font = '11px sans-serif';
+  c.fillText('六张表协同定位每一帧', rx + 14, ry + 44);
+
+  var stblT = [
+    ['stsd', '编码格式 + SPS/PPS', '#34d399'],
+    ['stts', '时间 → 样本号（DTS）', '#fbbf24'],
+    ['ctts', '显示时间偏移（B帧专用）', '#f87171'],
+    ['stsc', '样本号 → Chunk号', '#a78bfa'],
+    ['stsz', '每个样本的字节数', '#f87171'],
+    ['stco', 'Chunk 在文件中的字节偏移', '#38bdf8'],
+    ['stss', '哪些是 I 帧（随机访问点）', '#a78bfa'],
+  ];
+  var sty = ry + 60;
+  stblT.forEach(function(t) {
+    box(c, rx + 14, sty, rw - 28, 28, t[0], t[2], t[1], {fs:11,ss:9,ff:'monospace',tc:'#fff',lw:1.2,r:5});
+    sty += 34;
+  });
+}
+
+// ===== C2: stbl 查表链 =====
+function drawC2() {
+  var s = setup('c2'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  var steps = [
+    { l: '时间\n3.5s', s: '输入', cl: '#888' },
+    { l: 'stts', s: '→ 样本#105', cl: '#fbbf24' },
+    { l: 'stsc', s: '→ Chunk#105', cl: '#a78bfa' },
+    { l: 'stco', s: '→ 偏移983040', cl: '#38bdf8' },
+    { l: 'stsz', s: '→ 大小24567B', cl: '#f87171' },
+    { l: '读文件', s: '输出→解码', cl: '#34d399' },
+  ];
+  var bw = 120, bh = 70, totalW = steps.length*bw + (steps.length-1)*14;
+  var sx = (W - totalW)/2, sy = 36;
+
+  steps.forEach(function(st, i) {
+    var bx = sx + i*(bw + 14);
+    box(c, bx, sy, bw, bh, st.l, st.cl, st.s, {fs:14,ss:10,sy:16,r:10});
+    if (i < steps.length - 1) {
+      var ax = bx + bw + 2;
+      c.strokeStyle = 'rgba(200,200,220,0.3)'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(ax, sy + bh/2); c.lineTo(ax + 8, sy + bh/2); c.stroke();
+      c.fillStyle = 'rgba(200,200,220,0.35)';
+      c.beginPath(); c.moveTo(ax + 10, sy + bh/2); c.lineTo(ax + 5, sy + bh/2 - 4); c.lineTo(ax + 5, sy + bh/2 + 4); c.closePath(); c.fill();
+    }
+  });
+
+  c.fillStyle = '#fbbf24'; c.font = 'bold 13px sans-serif'; c.textAlign = 'center';
+  c.fillText('stbl 六表查询链：时间 → 样本号 → Chunk号 → 文件偏移 → 数据大小', W/2, sy + bh + 36);
+  c.fillStyle = '#888'; c.font = '11px sans-serif';
+  c.fillText('播放器 seek 时只读 moov（< 1MB），不碰 mdat。ctts 仅 B 帧时存在，stss 仅随机访问时查阅', W/2, sy + bh + 54);
+}
+
+// ===== C3: fMP4 =====
+function drawC3() {
+  var s = setup('c3'); if (!s) return;
+  var c = s.ctx, W = s.W, H = s.H;
+
+  // Regular MP4
+  c.fillStyle = '#e0e0ff'; c.font = 'bold 14px sans-serif'; c.textAlign = 'left';
+  c.fillText('普通 MP4', 24, 30);
+  box(c, 24, 42, 50, 28, 'ftyp', '#f87171', null, {fs:11,r:6});
+  box(c, 82, 42, 90, 28, 'moov', '#fbbf24', null, {fs:11,r:6});
+  box(c, 180, 42, W-204, 28, 'mdat（一整块，写完后不能再修改）', '#34d399', null, {fs:11,ff:'sans-serif',tc:'#ccc',r:6});
+
+  // fMP4
+  c.fillStyle = '#e0e0ff'; c.font = 'bold 14px sans-serif'; c.textAlign = 'left';
+  c.fillText('fMP4（分片 MP4）', 24, 128);
+  box(c, 24, 142, 50, 28, 'ftyp', '#f87171', null, {fs:11,r:6});
+  box(c, 82, 142, 105, 28, 'moov+mvex', '#fbbf24', '轨道模板', {fs:11,ss:8,sy:14,r:6});
+
+  var fx = 198;
+  for (var i = 1; i <= 4; i++) {
+    var mw = 115;
+    box(c, fx, 142, mw, 12, 'moof'+i, '#38bdf8', null, {fs:9,lw:1.2,r:3});
+    box(c, fx, 156, mw, 14, 'mdat'+i, '#34d399', null, {fs:9,lw:1.2,tc:'#bbb',r:3});
+    if (i < 4) { c.strokeStyle = 'rgba(255,255,255,0.06)'; c.lineWidth = 1; c.setLineDash([3,5]); c.beginPath(); c.moveTo(fx+mw+4,144); c.lineTo(fx+mw+4,168); c.stroke(); c.setLineDash([]); }
+    fx += mw + 6;
+  }
+
+  c.fillStyle = '#888'; c.font = '11px sans-serif'; c.textAlign = 'center';
+  c.fillText('每个 moof+mdat 对 = 独立可解码片段 → 直播编码器持续生成 → CDN 缓存 → 播放器按需拉取', W/2, 196);
+  c.fillText('DASH / HLS / LiveKit 均基于 fMP4', W/2, 214);
+}
+
+function drawAll() { drawC0(); drawC0b(); drawC1(); drawC2(); drawC3(); drawC3b(); }
+window.addEventListener('load', drawAll);
+window.addEventListener('resize', drawAll);
+</script>
+</html>

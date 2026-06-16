@@ -303,56 +303,223 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- S6: H.264 帧内预测 ★ -->
-<!-- ============================================================ -->
+<!-- S6: H.264 帧内预测 -->
 <div class="sec" id="s6">
   <h2 class="sec-title" id="s6t">H.264 帧内预测</h2>
-  <p class="sec-sub" id="s6s">利用当前帧内已编码的相邻像素预测当前块——消除<strong>空间冗余</strong>。H.264 支持 4×4（9种方向模式）、8×8（9种）、16×16（4种）三种粒度</p>
+  <p class="sec-sub" id="s6s">I 帧不参考其他帧——只靠<strong>同一帧内已编码的相邻像素</strong>来预测。完整流程：<strong>预测 → 残差 → 变换 → 量化 → 熵编码</strong>。</p>
 
-  <div class="cv-wrap" id="intraWrap" style="height:380px">
-    <canvas id="intraCanvas"></canvas>
-  </div>
-
-  <div class="card-grid c3" style="margin-top:20px">
-    <div class="g-card" style="--gc:#a78bfa">
-      <h4>4×4 亮度块 · 9 种方向</h4>
-      <div class="sub">最精细预测粒度</div>
-      <p>0:垂直 ↓, 1:水平 →, 2:DC, 3:左下对角, 4:右下对角, 5:右垂直偏, 6:下水平偏, 7:左垂直偏, 8:上水平偏。<br>每种模式从<strong>相邻已编码像素</strong>沿特定方向外推。</p>
+  <div class="card-grid c2" style="margin-top:24px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>理论依据：图像的空间冗余</h4>
+      <div class="sub">相邻像素高度相似 → 用邻居"预测" → 只传输预测误差</div>
+      <p>任意自然图像中，一个像素和它上方、左侧的邻居值<strong>非常接近</strong>——这是物理世界连续性决定的——物体表面颜色不会在 1 像素距离内突变。编码器利用此规律：<strong>不编码每个像素的绝对值，而是用已编码邻居生成预测值，只编码预测值和真实值的微小差异（残差）。</strong>预测越准→残差越小→DCT 后能量集中在低频→量化后大量系数归零→熵编码只需极少 bit。</p>
     </div>
     <div class="g-card" style="--gc:#fbbf24">
-      <h4>16×16 亮度块 · 4 种</h4>
-      <div class="sub">平坦区域粗粒度</div>
-      <p>0:垂直, 1:水平, 2:DC, 3:Plane(平面)。<br>Plane 模式对<strong>渐变区域</strong>效果最好，在水平和垂直方向同时平滑过渡。大面积天空/墙壁常用。</p>
+      <h4>参考像素：编码顺序决定范围</h4>
+      <div class="sub">从左到右、从上到下 → 只有上方 + 左侧是已知的</div>
+      <p>H.264 以宏块为单位按光栅顺序编码。轮到当前 4×4 块时——它<strong>上方一行 8 个像素</strong>和<strong>左侧一列 4 个像素</strong>（含左上角共 13 个）已经编码并重建完毕。标准命名为 <strong>A~H（上）、I~L（左）、M（左上角）</strong>。右边和下边还没编码——不能用作参考。<br>编解码器对这 13 个参考像素的值<strong>完全一致</strong>——这是解码端能完美重建的基础。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>9 种预测方向</h4>
+      <div class="sub">每种模式 = 一条确定的复制规则——从参考像素沿方向"填满"当前块</div>
+      <p><strong>模式0(垂直)</strong>：每列从上往下复制正上方像素——a=A, b=B, c=C, d=D...适用水平纹理。<br>
+      <strong>模式1(水平)</strong>：每行从左往右复制正左方像素——a=I, e=J...适用垂直纹理。<br>
+      <strong>模式2(DC)</strong>：全部 16 像素 = 所有参考像素的平均值——纯色区域的"安全选择"。<br>
+      <strong>模式3~8</strong>：45°对角方向(2种) + 垂直/水平 ±26° 微调方向(4种)——适配斜向纹理。</p>
+    </div>
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>模式决策：纯数学 9 选 1</h4>
+      <div class="sub">Cost = SATD + λ × bits(mode) — 不是 AI，是数学计算</div>
+      <p>编码器把 9 种模式<strong>全部走一遍</strong>，每种计算：<strong>SATD</strong>（残差 Hadamard 变换后绝对值之和——衡量"编码残差要花多少 bit"）+ <strong>λ × bits(mode)</strong>（编码 mode 标识本身的开销）。<strong>代价最小的模式胜出</strong>。对渐变块——垂直模式 SATD≈3→5 bit；水平模式 SATD≈350→354 bit。编码器不知道画面内容——只认代价数字。</p>
+    </div>
+  </div>
+
+  <h2 class="sec-title" style="font-size:clamp(18px,2.5vw,24px);margin-top:36px">理论依据：什么是"空间冗余"？</h2>
+  <p class="sec-sub" style="margin-bottom:20px">帧内预测之所以有效，根源于自然界图像的<strong>空间连续性</strong>——相邻像素值高度相关。</p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>用一张真实照片理解</h4>
+      <div class="sub">放大任意照片——相邻像素值几乎相同</div>
+      <p>把一张 1080p 照片放大到能看到单个像素的程度。取画面中<strong>蓝色的天空区域</strong>：相邻 10 个像素的值可能是 <strong>128, 128, 129, 128, 127, 128, 128, 129, 128, 128</strong>——几乎全等，只有 ±1 的波动。再取<strong>人脸皮肤区域</strong>：相邻像素也在 ±2-3 以内。这就是<strong>空间冗余</strong>——像素值不是独立的随机数，而是<strong>高度相关、缓慢变化</strong>的。<br>
+      <strong>为什么？</strong>因为物理世界本身是连续的——物体的表面颜色、光照变化、纹理过渡都是<strong>渐进的</strong>——不会在 1 像素距离内从纯黑跳到纯白。这给编码器提供了巨大的压缩空间：<strong>"既然邻居像素和当前像素差不多，我直接用邻居来'代表'当前像素——只存微小的差异"</strong>。</p>
     </div>
     <div class="g-card" style="--gc:#34d399">
-      <h4>8×8 色度块</h4>
-      <div class="sub">与16×16亮度共用4模式</div>
-      <p>色度 UV 使用与 16×16 亮度相同的 4 种模式，块尺寸为 8×8。YUV420 下色度分辨率只有亮度 1/4，8×8 色度对应 16×16 亮度宏块。</p>
+      <h4>空间冗余 vs 时间冗余</h4>
+      <div class="sub">帧内预测利用空间冗余 · 帧间预测利用时间冗余</div>
+      <p><strong>空间冗余</strong>（帧内）：同一帧内，相邻像素值接近。帧内预测用左/上邻居预测当前块。压缩比 ~7:1。<br>
+      <strong>时间冗余</strong>（帧间）：相邻帧之间，同一位置的像素值接近（物体位移很小）。帧间预测用前一帧的对应区域预测当前块。压缩比 ~20:1~60:1——远高于帧内，因为<strong>帧间相似性远强于帧内相似性</strong>（物体在两帧之间几乎不变，而相邻像素即使在同帧内也可能因为物体边界而完全不同）。<br>
+      <strong>为什么 I 帧比 P 帧大很多？</strong>I 帧只能利用空间冗余（相邻像素相似），P 帧可以同时利用空间和时间冗余（相邻帧更相似）。这就是 I 帧大小约是 P 帧 5-10 倍的原因。</p>
     </div>
   </div>
 
-  <div class="ptbl" style="max-width:960px;width:100%;margin-top:16px">
-    <table>
-    <thead>
-      <tr><th>预测类型</th><th>块尺寸</th><th>模式数量</th><th>适用场景</th><th>编码效率</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>I4MB (Intra 4×4)</td><td>4×4 亮度</td><td class="g">9 种方向</td><td>纹理复杂区域、细节丰富</td><td>高（逐块最优）</td></tr>
-      <tr><td>I8MB (Intra 8×8)</td><td>8×8 亮度</td><td class="g">9 种方向</td><td>中等纹理、过渡区域</td><td>中（High Profile）</td></tr>
-      <tr><td>I16MB (Intra 16×16)</td><td>16×16 亮度</td><td>4 种（V/H/DC/Plane）</td><td>平坦区域、天空、墙壁</td><td>低（粗粒度）</td></tr>
-      <tr><td>色度 Intra</td><td>8×8 色度</td><td>4 种（同 I16MB）</td><td>色度分量（U/V）</td><td>—</td></tr>
-    </tbody>
-  </table>
+  <div class="cv-wrap" id="intraWrap" style="height:340px;margin-top:20px">
+    <canvas id="intraCanvas"></canvas>
+  </div>
+  <div class="slider-row" style="margin-top:4px">
+    <label>拖动切换预测模式:</label>
+    <span class="sl-v" id="intraModeLabel" style="min-width:130px;text-align:left">0: 垂直 ↓</span>
+    <input type="range" min="0" max="8" value="0" id="intraModeSlider" oninput="setIntraMode(this.value)" style="width:200px">
   </div>
 
-  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
-    <div class="ct">帧内预测的本质：空间邻居的智能拷贝</div>
-    编码器遍历所有可用预测模式，选择<strong>SATD（Hadamard 变换后绝对差和）最小的模式</strong>作为最优模式。预测越准 → 残差越小 → 量化后越接近零 → 码率越低。
+  <!-- Block size explanation -->
+  <h2 class="sec-title" style="font-size:clamp(18px,2.5vw,24px);margin-top:36px">不是只有 4×4——H.264 支持 3 种块尺寸</h2>
+  <p class="sec-sub" style="margin-bottom:16px">前面用 4×4 举例是因为它模式最多（9 种）——最容易讲清楚原理。但 H.264 实际支持 <strong>4×4、8×8、16×16</strong> 三种尺寸，编码器会根据画面内容<strong>自动选择最优尺寸</strong>。</p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>4×4 (I4MB) — 精细模式</h4>
+      <div class="sub">9 种方向 · 每个块独立选最优方向</div>
+      <p>一个 16×16 宏块被划分为 <strong>16 个 4×4 子块</strong>——每个子块可以独立选择自己最优的预测方向。<strong>纹理复杂的区域</strong>（草地、树叶、文字）使用 4×4——因为纹理方向在每个 4×4 小块内是统一的——小块能精确匹配。<strong>代价</strong>：16 个块 × 每个需编码 mode 标识（~4 bit）= <strong>64 bit 的模式开销</strong>。纹理简单时这 64 bit 是浪费。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>16×16 (I16MB) — 粗粒度模式</h4>
+      <div class="sub">仅 4 种模式 · 整个宏块一个模式搞定</div>
+      <p>整个 16×16 宏块<strong>只选一个预测模式</strong>——模式开销仅 ~4 bit（vs 4×4 的 64 bit）。适合<strong>平坦区域</strong>（天空、白墙、人脸皮肤）——这些区域纹理方向在 16×16 范围内高度一致，用 4×4 反而浪费 mode bit。<strong>4 种模式</strong>：垂直、水平、DC（均值）、Plane（渐变——水平和垂直方向同时平滑过渡，专门处理天空/光照渐变）。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>8×8 (I8MB) — 折中方案</h4>
+      <div class="sub">High Profile 专属 · 9 种方向</div>
+      <p>4 个 8×8 子块，每个独立选方向——模式开销介于 4×4 和 16×16 之间。适合<strong>中等复杂度的纹理过渡区域</strong>——不如 4×4 精细、但比 16×16 更灵活。<strong>仅 H.264 High Profile 支持</strong>（Baseline/Main Profile 没有 I8MB）。IPC 产品通常用 High Profile——可以开启 I8MB 提升压缩效率。</p>
+    </div>
   </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">编码器如何选择块尺寸？— 也是算代价</div>
+    编码器把每种尺寸都试一遍：对 16×16 宏块，比较 <strong>I16MB（1个模式）的代价 vs I4MB（16个4×4模式）的代价 vs I8MB（4个8×8模式）的代价</strong>——选最小的。<br>
+    平坦区域：I16MB 的画质和 I4MB 几乎一样，但 I16MB 省了 ~60 bit 的模式开销 → I16MB 胜出。<br>
+    纹理区域：I4MB 的预测精度远优于 I16MB（9 方向 vs 4 方向）→ 残差小很多 → 省下的残差 bit 远超多花的 60 bit 模式开销 → I4MB 胜出。
+  </div>
+
+  <h2 class="sec-title" style="font-size:clamp(18px,2.5vw,24px);margin-top:36px">预测和残差到底怎么算？— 像 Excel 公式一样简单</h2>
+  <p class="sec-sub" style="margin-bottom:20px">假设上方参考像素已编码完成：<strong>A=100, B=105, C=110, D=115</strong>。当前 4×4 块有 16 个待编码像素。下面用<strong>模式0(垂直)</strong>逐个演示。</p>
+
+  <!-- Visual block comparison -->
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>📷 原始像素块</h4>
+      <div class="sub">16个待编码的真实像素值</div>
+      <div class="cblock" style="margin:4px 0;font-size:11px;line-height:2.2;padding:12px 16px;text-align:center">102 107 112 117<br>101 106 111 116<br>100 105 110 115<br> 99 104 109 114</div>
+      <p style="font-size:10px;color:#666;margin-top:6px">从左上 102 到右下 114 逐渐变亮——模拟一个天空渐变的小方块。</p>
+    </div>
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>🔮 预测块 (模式0·垂直)</h4>
+      <div class="sub">每列 = 正上方参考像素向下复制 4 次</div>
+      <div class="cblock" style="margin:4px 0;font-size:11px;line-height:2.2;padding:12px 16px;text-align:center">
+        <span style="color:#6c63ff">A↓</span> <span style="color:#6c63ff">B↓</span> <span style="color:#6c63ff">C↓</span> <span style="color:#6c63ff">D↓</span><br>
+        100 105 110 115<br>100 105 110 115<br>100 105 110 115<br>100 105 110 115
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">第1列 4 个像素全部 = A(100)。第2列全部 = B(105)...<br><strong>解码端拿到 mode=0 → 对同样的 A~D 做完全相同的复制 → 生成完全相同的 16 个预测值。</strong></p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>📐 残差块 = 原始 − 预测</h4>
+      <div class="sub">逐像素相减——这就是需要编码传输的"误差"</div>
+      <div class="cblock" style="margin:4px 0;font-size:11px;line-height:2.2;padding:12px 16px;text-align:center">
+        <span style="color:#f87171">+2 +2 +2 +2</span><br>
+        <span style="color:#f87171">+1 +1 +1 +1</span><br>
+        <span style="color:#34d399"> 0 &nbsp;0 &nbsp;0 &nbsp;0</span><br>
+        <span style="color:#f87171">−1 −1 −1 −1</span>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">第三行全零——预测完美命中！其余行 ±2 以内——<strong>残差极小 = 极易压缩</strong>。<br>DCT → 量化(QP=28,÷8) → <strong>全部归零 → 5 bit 编码完整个块</strong>。</p>
+    </div>
+  </div>
+
+  <!-- Why column 1 = A? -->
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#6c63ff">
+      <h4>🔍 为什么第1列4个像素全部 = A？</h4>
+      <div class="sub">因为"垂直模式"的规则就是：每个像素的预测值 = 它<strong>正上方</strong>的那个参考像素</div>
+      <p>看上方参考像素的位置：<strong>A 在第一列的正上方，B 在第二列的正上方，C 在第三列，D 在第四列</strong>。模式0的规则是"向下复制"——所以第1列的 a, e, i, m 四个像素全部复制 A，第2列的 b, f, j, n 全部复制 B，依此类推。这就是"垂直"的含义——<strong>预测方向是垂直向下的</strong>——每列从上往下复制同一个上方值。</p>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:2.2;padding:8px 12px;background:rgba(0,0,0,.15);border-radius:6px;text-align:center">
+        <span style="color:#34d399">A=100</span>  <span style="color:#34d399">B=105</span>  <span style="color:#34d399">C=110</span>  <span style="color:#34d399">D=115</span>   ← 参考像素<br>
+        <span style="color:#888">↓    ↓    ↓    ↓</span><br>
+        <span style="color:#6c63ff">100</span>  <span style="color:#6c63ff">105</span>  <span style="color:#6c63ff">110</span>  <span style="color:#6c63ff">115</span><br>
+        <span style="color:#6c63ff">100</span>  <span style="color:#6c63ff">105</span>  <span style="color:#6c63ff">110</span>  <span style="color:#6c63ff">115</span>   ← 预测块<br>
+        <span style="color:#6c63ff">100</span>  <span style="color:#6c63ff">105</span>  <span style="color:#6c63ff">110</span>  <span style="color:#6c63ff">115</span><br>
+        <span style="color:#6c63ff">100</span>  <span style="color:#6c63ff">105</span>  <span style="color:#6c63ff">110</span>  <span style="color:#6c63ff">115</span><br>
+      </div>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🔄 如果换成模式1(水平)呢？</h4>
+      <div class="sub">每行的预测值 = 该行<strong>正左方</strong>的参考像素</div>
+      <p>模式1 的规则是"向右复制"——第1行 a,b,c,d 全部复制左侧参考像素 I，第2行 e,f,g,h 复制 J，依此类推。这就是"水平"的含义——预测方向是水平向右的。</p>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:2.2;padding:8px 12px;background:rgba(0,0,0,.15);border-radius:6px;text-align:center">
+        <span style="color:#34d399">I=98</span>→ <span style="color:#6c63ff">98 98 98 98</span><br>
+        <span style="color:#34d399">J=96</span>→ <span style="color:#6c63ff">96 96 96 96</span><br>
+        <span style="color:#34d399">K=94</span>→ <span style="color:#6c63ff">94 94 94 94</span><br>
+        <span style="color:#34d399">L=92</span>→ <span style="color:#6c63ff">92 92 92 92</span><br>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">水平模式完全不适合这个渐变块——预测值 98~92 与原始值 102~114 差距很大→残差大→代价高→不会被选中。</p>
+    </div>
+  </div>
+
+  <!-- Residual arithmetic — clean matrix layout -->
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>✏️ 残差怎么算？三个 4×4 矩阵相减</h4>
+      <div class="sub">残差 = 原始 − 预测 —— 16 个位置，每个位置做一次减法</div>
+      <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin:12px 0;flex-wrap:wrap">
+        <div>
+          <div style="font-size:10px;color:#888;text-align:center;margin-bottom:4px">原始块</div>
+          <div class="cblock" style="margin:0;font-size:11px;line-height:2;padding:8px 14px;text-align:center">102 107 112 117<br>101 106 111 116<br>100 105 110 115<br> 99 104 109 114</div>
+        </div>
+        <div style="font-size:18px;color:#888;font-weight:700">−</div>
+        <div>
+          <div style="font-size:10px;color:#888;text-align:center;margin-bottom:4px">预测块</div>
+          <div class="cblock" style="margin:0;font-size:11px;line-height:2;padding:8px 14px;text-align:center;color:#6c63ff">100 105 110 115<br>100 105 110 115<br>100 105 110 115<br>100 105 110 115</div>
+        </div>
+        <div style="font-size:18px;color:#888;font-weight:700">=</div>
+        <div>
+          <div style="font-size:10px;color:#888;text-align:center;margin-bottom:4px">残差块</div>
+          <div class="cblock" style="margin:0;font-size:11px;line-height:2;padding:8px 14px;text-align:center"><span style="color:#f87171">+2 +2 +2 +2</span><br><span style="color:#f87171">+1 +1 +1 +1</span><br><span style="color:#34d399"> 0  0  0  0</span><br><span style="color:#f87171">−1 −1 −1 −1</span></div>
+        </div>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px">以第一行第一列为例：原始 102 − 预测 100 = <b>+2</b>。逐像素相减即得残差矩阵。第三行全零→预测完美命中。其余行 ±2 以内→残差极小。</p>
+    </div>
+  </div>
+
+  <!-- Reconstruction + Why it saves bits -->
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>🔄 解码端如何还原？预测块 + 残差 = 重建块</h4>
+      <div class="sub">解码端不知道原始像素——但知道 mode + 残差 + 参考像素，三者足够重建</div>
+      <p>解码端从码流读到 <strong>mode=0</strong> 和<strong>残差系数</strong>。<br>① 用自己已解码的参考像素 A~D，执行模式0 的垂直复制规则 → 生成<strong>与编码端完全相同的预测块</strong>。<br>② 残差系数 → 反量化 → IDCT 反变换 → 得到残差矩阵（±2, ±1, 0, −1）。<br>③ <strong>预测块 + 残差 = 重建块</strong>。例如位置 a：预测 100 + 残差 +2 = <strong>102</strong>——恰好等于原始值！如果残差在量化中损失了精度（如 +0.5 被量化为 0），重建值会与原始值有微小偏差——这就是<strong>量化误差</strong>，也是编码器<strong>唯一的有损环节</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>💾 为什么这样能省码率？编码"小数字"比"大数字"便宜</h4>
+      <div class="sub">残差 ±2 比原始值 100~117 需要少得多的 bit 来编码</div>
+      <p>如果<strong>不预测</strong>，直接编码 16 个原始像素值——每个 8 bit——共 128 bit。<br>用了帧内预测后——<strong>不编码原始值，只编码残差</strong>：残差矩阵 ±2/±1/0——DCT 变换后能量集中在左上角 1-2 个低频系数上——量化(QP=28, 除以 8)后<strong>全部归零</strong>——CABAC 对"连续 16 个零"可用 1 bit 编码。加上 mode 标识 4 bit，<strong>总计 5 bit</strong>。<br>128 bit → 5 bit，<strong>压缩了 25 倍</strong>。这就是帧内预测的魔力：<strong>不传像素绝对值，只传"往哪个方向抄"+"抄错的量"。</strong></p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🏆 最终如何选择模式？编码器对9种模式各自算一遍代价</h4>
+      <div class="sub">Cost = SATD(残差) + λ × bits(mode) — 最小者胜出</div>
+      <p>以上面 4×4 块为例，编码器对 9 种模式各自算价：</p>
+      <div class="cblock" style="margin:6px 0;font-size:11px;line-height:2;padding:10px 14px">
+<span style="color:#6c63ff">模式0(垂直)</span>  残差 ±2/±1/0  → SATD≈3   → <b>代价 ≈ 5 bit</b>  ← 最小!<br>
+<span style="color:#fbbf24">模式2(DC)</span>     残差 −5~+12    → SATD≈48  → 代价 ≈ 52 bit<br>
+<span style="color:#34d399">模式1(水平)</span>   残差 +4~+22    → SATD≈350 → 代价 ≈ 354 bit<br>
+<span style="color:#888">模式3~8...</span>    残差各不相同   → SATD 更大 → 代价更高<br>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px">模式0 残差最小→DCT 后几乎全归零→编码代价仅 5 bit→<strong>胜出</strong>。模式1 残差大→DCT 后大量非零→代价 70 倍→淘汰。编码器<strong>不知道画面内容</strong>——它只是机械地运行 9 次"预测→DCT→算代价"循环，挑代价最小的那个 mode 写进码流。</p>
+    </div>
+  </div>
+
+  <!-- Key insight callout -->
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">模式0(垂直)的本质就是 Excel 里的 "=A$1" 向下拖动填充</div>
+    你把 A=100 放在第一行，选中下面 3 行按 Ctrl+D 向下填充——得到 4 个 100。B列同理——4 个 105。这就是模式0的全部逻辑。<br>
+    <strong>预测不是 AI 猜——是"复制粘贴"。</strong>编码器的工作只是从 9 种"复制方向"中挑一个"贴得最像的"。挑的标准是<strong>残差(原始−复制)的绝对值之和最小</strong>。解码端拿到"mode=0"这个指令 + 残差数据 → 执行相同的 Ctrl+D → 得到完全相同的预测块 → 加上残差 → 完美重建。
+  </div>
+
   <div class="scroll-hint">↓</div>
 </div>
 
-<!-- ============================================================ -->
 <!-- S7: H.264 帧间预测 ★ -->
 <!-- ============================================================ -->
 <div class="sec" id="s7">
@@ -370,9 +537,10 @@
       <p>一个 16×16 宏块可划分为：<em>1×16×16</em> · <em>2×16×8</em> · <em>2×8×16</em> · <em>4×8×8</em>。每个 8×8 子块还可分：<em>1×8×8</em> · <em>2×8×4</em> · <em>2×4×8</em> · <em>4×4×4</em>。平坦区域用大块，复杂运动用小块——<strong>码率与精度平衡</strong>。</p>
     </div>
     <div class="g-card" style="--gc:#fbbf24">
-      <h4>亚像素运动估计 · 1/4 像素精度</h4>
-      <div class="sub">亮度：6-tap Wiener 滤波器</div>
-      <p><strong>1/2 像素</strong>：6 抽头滤波 (1, -5, 20, 20, -5, 1)/32<br><strong>1/4 像素</strong>：相邻半像素点线性平均<br>色度：1/8 像素精度，双线性插值。<br>亚像素精度使压缩效率提升 15-20%。</p>
+      <h4>为什么帧间支持 16×8、8×16 而帧内不支持？</h4>
+      <div class="sub">帧间参考的是"已完成的整个参考帧"——没有依赖关系</div>
+      <p><strong>帧内预测的限制</strong>：子块之间<strong>有严格的编码顺序依赖</strong>——子块 1 必须先编码，子块 2 才能用子块 1 的重建像素做参考。这要求子块按光栅顺序排列——所以帧内只能用规则的 4×4/8×8/16×16 正方形划分。<br>
+      <strong>帧间预测的自由</strong>：所有子块参考的是<strong>同一个已完成的前一帧</strong>——子块之间<strong>没有依赖关系</strong>，可以任意形状划分。16×8（水平分割）适合<strong>水平运动边界</strong>（如天空和地面以不同速度移动）；8×16（垂直分割）适合<strong>垂直运动边界</strong>（如门框内外的物体运动不一致）。大块（16×16）省 MV bit，小块（4×4）匹配复杂运动——编码器自动选择代价最小的划分方式。</p>
     </div>
   </div>
 
@@ -394,6 +562,77 @@
     <div class="ct">运动估计的搜索范围是双刃剑</div>
     更大搜索范围（如 ±64 像素）→ 更好匹配 → 更低码率，但搜索时间与范围平方成正比。<br>x264 默认 <code>merange=16</code>，H.265 可用 64。快速运动场景需更大范围。<br>加速技术：钻石搜索、六边形搜索、TZ Search——核心思想是先粗搜再精搜。
   </div>
+
+  <!-- 帧间编码完整流程 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#38bdf8;margin:32px 0 8px">帧间编码完整流程 — 从一个 16×16 宏块到码流</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">用一个具体例子走完 P 帧宏块的编码全流程——理解编码器"在参考帧中找到了什么"、"如何用运动矢量+残差表示当前块"。</p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>Step 1: 当前块 vs 参考帧</h4>
+      <div class="sub">当前帧有一个 16×16 宏块，参考帧是前一帧的重建图像</div>
+      <p><strong>当前块（待编码）</strong>：画面中一个人的<strong>头部</strong>区域——像素值在 80-180 之间变化（皮肤色调+头发边缘）。<br>
+      <strong>参考帧</strong>：<strong>前一帧的重建图像</strong>（不是原始帧！是解码后的——编码器内嵌解码器产生的）。前一帧中同样有这个人的头部——但位置稍微偏移了（人在走动）。<br>
+      <strong>核心问题</strong>：参考帧中<strong>哪个位置</strong>的 16×16 像素块与当前块<strong>最相似</strong>？如果找到了——只需记录偏移量（运动矢量 MV）+ 微小的差异（残差）——不需要重新编码整个块。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Step 2: 运动搜索 → 找到最佳匹配</h4>
+      <div class="sub">在参考帧的搜索窗口中逐位置比较，找到 SAD 最小的位置</div>
+      <p><strong>搜索窗口</strong>：以当前块在参考帧中的同位置为中心，±16 像素的范围（可配置）。<br>
+      <strong>搜索过程</strong>：编码器拿着当前 16×16 块的像素值，在搜索窗口内<strong>逐像素滑动</strong>——每滑到一个位置就计算 <strong>SAD（绝对差之和）= Σ|当前块像素 − 参考块像素|</strong>。SAD 越小 = 越相似。<br>
+      <strong>最佳匹配</strong>：在偏移 (−3, −2) 处找到了 SAD=450 的最小值——这意味着<strong>前一帧中向左 3 像素、向上 2 像素的位置</strong>有一个几乎一样的 16×16 块。这个 (−3, −2) 就是<strong>运动矢量 MV</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Step 3: 残差 + MV → 码流</h4>
+      <div class="sub">编码 MV（几 bit）+ 残差（量化后的 DCT 系数）</div>
+      <p><strong>预测块</strong>：参考帧中 MV(−3,−2) 位置的 16×16 像素块——这就是"预测值"。<br>
+      <strong>残差块</strong>：当前块 − 预测块 = 16×16 的差值矩阵。由于找到了很好的匹配（SAD 很小），残差中大部分值接近 0——只有头发边缘和光照微小变化处有几处非零。<br>
+      <strong>编码输出</strong>：① <strong>MV = (−3, −2)</strong>——用相邻块 MV 做预测编码（MV 本身也有空间冗余——相邻块运动方向通常一致），最终只需 3-5 bit ② <strong>残差 DCT 系数</strong>——量化后大部分归零，CABAC 高效编码。<br>
+      <strong>压缩比</strong>：原本 16×16=256 像素×8bit=2048 bit——现在 MV(4 bit) + 残差(几十 bit) = 总共不到 100 bit——<strong>压缩 20×</strong>。</p>
+    </div>
+  </div>
+
+  <!-- 模式选择 -->
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>🎯 预测模式选择 — Skip / Inter / Intra</h4>
+      <div class="sub">编码器对每个宏块做 3 种决策——选代价最小的</div>
+      <p><strong>① Skip 模式（最佳）</strong>：如果 MV 可以用相邻块预测（MV 差=0）<strong>且</strong>残差全部为零（量化后所有 DCT 系数=0）→ 只编码 1 bit 的 skip flag——这个宏块就完成了。静态场景中 80-90% 的宏块走 Skip——<strong>几乎零码率开销</strong>。<br>
+      <strong>② Inter 模式</strong>：MV 非零或残差有非零系数——编码 MV + 残差。如上面的例子。<br>
+      <strong>③ Intra 模式</strong>：如果运动搜索找不到好的匹配（SAD 太大，如场景切换后的第一帧）→ 放弃帧间预测，<strong>改用帧内预测</strong>。P 帧中的 Intra 宏块通常在 1-5% 之间。<br>
+      <strong>决策依据</strong>：编码器计算每种模式的 <strong>代价 = SAD + λ × bits(mode+MVD)</strong>——λ 由 QP 决定。选代价最小的。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>📐 P 帧 vs B 帧 — 参考方向的差异</h4>
+      <div class="sub">P 帧只向前看 · B 帧向前后双向看</div>
+      <p><strong>P 帧</strong>：只参考<strong>前一个 I 或 P 帧</strong>（List0）。编码流程如 Step 1-3。当前块只有一个参考帧可选→搜索一次→找到最佳 MV→编码 MV+残差。<br>
+      <strong>B 帧</strong>：同时参考<strong>前一帧(前向 List0) 和 后一帧(后向 List1)</strong>。对每个块做<strong>两次运动搜索</strong>——分别在 List0 和 List1 中找最佳匹配→比较两个 MV 的代价→选更优的。还可以对两个最佳匹配做<strong>加权平均</strong>（Bi-prediction）——预测更准确→残差更小。这就是 B 帧压缩比比 P 帧高 ~2.5× 的原因。<br>
+      <strong>代价</strong>：B 帧的"后向参考帧"在<strong>显示序上在 B 帧之后</strong>——意味着 B 帧必须<strong>等待后面的帧先编码完</strong>才能参考→引入编码延迟。这是实时通信不用 B 帧的原因。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;width:100%;margin-top:12px">
+    <div class="ct">帧间编码 vs 帧内编码 — 本质区别一句话</div>
+    <strong>帧内</strong>：从<strong>同一帧的邻居像素</strong>"猜"当前块 → 猜不准（空间相邻但内容可能完全不同）→ 残差大 → 压缩比 ~7:1。<br>
+    <strong>帧间</strong>：从<strong>前一帧的同位置附近</strong>"找"当前块 → 找得准（物体在相邻帧之间位移很小）→ 残差极小甚至为零（Skip）→ 压缩比 ~20:1~60:1。<br>
+    <strong>Skip 是帧间编码的终极形态</strong>：MV=0(或可预测) + 残差全零 = 1 bit 编码整个宏块——这是视频编码能到 100:1 压缩比的核心原因——<strong>大部分画面根本没变</strong>。
+  </div>
+
+  <!-- MV vs Residual -->
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>🗺️ MV（运动矢量）— "在参考帧的哪里找"</h4>
+      <div class="sub">编码器在搜索窗口内找到最佳匹配块的位置偏移量</div>
+      <p>MV 回答的是<strong>"位置"</strong>问题：当前这个 16×16 块的内容，在前一帧的<strong>哪个坐标</strong>能找到最相似的块。例如 MV=(−3,−2) 意思是"向左 3 像素、向上 2 像素的那个位置"。MV 是<strong>整数坐标</strong>（加亚像素精度后可能是半像素/1/4像素位置）。<br>
+      <strong>如果只传 MV、不传残差</strong>：解码端拿到 MV → 从参考帧的 MV 位置取出 16×16 像素 → 直接当作重建块。这个块<strong>不可能完美等于当前块</strong>——因为两帧之间光照微变、物体微旋转——解码端看到的画面会有微小的"不对"——累积几帧后画质迅速恶化。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>📐 残差 — "找到了但还差多少"</h4>
+      <div class="sub">当前块与参考帧中最佳匹配块的逐像素差异</div>
+      <p>残差回答的是<strong>"精度"</strong>问题：即使找到了最相似的块——它和当前块之间仍然有微小差异（光照变化、物体微旋转、传感器噪声）。残差 = 当前块 − MV 位置的参考块。编码器把残差做 DCT→量化→熵编码。<br>
+      <strong>MV 和残差缺一不可</strong>：没有 MV → 解码端不知道去参考帧的哪个位置取块——解码失败。没有残差 → 解码端拿到的是参考帧中"差不多像"的块——缺失了细节差异——画质粗糙。<strong>MV 定位+残差修正 = 完整还原</strong>。两者的 bit 开销完全不同：MV 只需几 bit（预测编码后），残差在 DCT 量化后大部分归零也只需几 bit。</p>
+    </div>
+  </div>
   <div class="scroll-hint">↓</div>
 </div>
 
@@ -402,9 +641,9 @@
 <!-- ============================================================ -->
 <div class="sec" id="s8">
   <h2 class="sec-title" id="s8t">H.264 变换与量化</h2>
-  <p class="sec-sub" id="s8s">将空间域残差变换到频域，再通过量化丢弃人眼不敏感的高频分量——<strong>编码器唯一的有损环节</strong>。QP 每增加 6，量化步长翻倍，码率约减半</p>
+  <p class="sec-sub" id="s8s"><strong>DCT 变换本身无损可逆</strong>——它只是把空间域残差"翻译"成频域系数。真正的压缩来自<strong>量化</strong>（有损，丢弃人眼不敏感的高频）和<strong>熵编码</strong>（无损，统计压缩）。QP 每增加 6，量化步长翻倍，码率约减半</p>
 
-  <div class="cv-wrap" id="dctWrap" style="height:350px">
+  <div class="cv-wrap" id="dctWrap" style="height:380px">
     <canvas id="dctCanvas"></canvas>
   </div>
 
@@ -450,6 +689,318 @@
     <span class="ld"><span class="ls" style="background:#fbbf24"></span>部分保留</span>
     <span class="ld"><span class="ls" style="background:#f87171"></span>归零（损失）</span>
   </div>
+
+  <!-- DCT 基图像可视化 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#a78bfa;margin:36px 0 4px">DCT 系数到底是什么？—— 把图像拆成 16 张"基图像"的加权和</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    DCT 变换的数学本质是：<strong>任意 4×4 像素块 = Σ 系数(u,v) × 基图像(u,v)</strong>，共 16 项求和。<br>
+    每个 <strong>基图像(u,v)</strong> 是一个 4×4 的固定纹理——由余弦函数生成。系数越大 → 该纹理在图像块中占比越多。<br>
+    下面展示了全部 16 个基图像：<strong>u=水平频率, v=垂直频率</strong>。白色=正值, 黑色=负值, 灰色=零。
+  </p>
+
+  <div class="cv-wrap" id="basisWrap" style="height:420px">
+    <canvas id="basisCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>📐 DCT 公式（一图胜千言）</h4>
+      <div class="sub">每个 DCT 系数 = 图像块与对应基图像的"相似度"</div>
+      <p>DCT 系数 <code>F(u,v)</code> 的计算=<strong>逐像素相乘再求和</strong>——和"运动搜索中的 SAD"类似，不过是<strong>相乘求和</strong>而非相减求和：<br>
+      <code style="font-size:11px">F(u,v) = C(u)·C(v) · Σ<sub>x=0..3</sub> Σ<sub>y=0..3</sub> 像素(x,y) × cos[(2x+1)uπ/8] × cos[(2y+1)vπ/8]</code><br>
+      <strong>直觉</strong>：这等价于"将 4×4 像素块 与 16 张固定纹理底片 各做一次相关检测"——与某张纹理越像，对应系数越大。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>🔍 逐项解读左上角 4 个基图像</h4>
+      <div class="sub">从 DC 到最高频——直观感受"空间频率"</div>
+      <p>
+        <strong>(0,0) DC</strong>：全白色常值——系数 = 整个块的平均值 × 放大因子。这是最重要的系数，编码器必须精确保留。<br>
+        <strong>(1,0) 水平低频</strong>：左亮右暗——检测"从左到右的渐变"。系数为正→左亮右暗；为负→相反。<br>
+        <strong>(0,1) 垂直低频</strong>：上亮下暗——检测"从上到下的渐变"。<br>
+        <strong>(1,1) 对角低频</strong>：左上亮、右下暗——检测对角方向的缓慢变化。<br>
+        <strong>(3,3) 最高频</strong>（右下角）：像素级快速交替的棋盘格——自然图像中该系数几乎永远≈0。
+      </p>
+    </div>
+  </div>
+
+  <!-- DCT 不是压缩 — 关键澄清 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#f87171;margin:36px 0 4px">⚠ 关键澄清：DCT 不是压缩——只是换了一种坐标系</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    <strong>DCT 变换本身是数学上精确可逆的——不丢失任何信息。</strong>就像你把 (x,y) 直角坐标转成 (r,θ) 极坐标——数据没少，只是换了个角度描述同一个东西。真正产生压缩的是<strong>量化</strong>（有损）和<strong>熵编码</strong>（无损）。
+  </p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>正向DCT：把 16 个像素值 → 16 个"基图像权重"</h4>
+      <div class="sub">F(u,v) = 像素块与基图像(u,v)的相似度 = 逐像素相乘求和</div>
+      <p><strong>公式拆解（逐项理解，而非死记硬背）：</strong><br>
+      <code>F(u,v) = C(u)·C(v) · Σ<sub>x</sub>Σ<sub>y</sub> f(x,y) · cos[(2x+1)uπ/8] · cos[(2y+1)vπ/8]</code><br><br>
+      ① <code>f(x,y)</code>：原始像素值（或残差值）在位置 (x,y) 的值——这是我们已有的数据。<br>
+      ② <code>cos[(2x+1)uπ/8]</code>：基图像在 (x,y) 位置的<strong>水平方向</strong>余弦值——u=0 时全为1，u=3 时快速振荡。<br>
+      ③ <code>cos[(2y+1)vπ/8]</code>：基图像在 (x,y) 位置的<strong>垂直方向</strong>余弦值。<br>
+      ④ <strong>二者乘积</strong>：基图像(u,v)在位置(x,y)的纹理值（−1~+1）。<br>
+      ⑤ <strong>Σ f(x,y) × 纹理(x,y)</strong>：逐像素相乘后求和——本质上就是<strong>"图像块和基图像做点积"</strong>。<br>
+      ⑥ <strong>C(u)·C(v)</strong>：归一化因子（u或v=0时为1/2，否则为1/√2）——保证变换正交、能量守恒。<br><br>
+      <strong>直觉</strong>：正向 DCT = 逐一询问 16 张固定纹理——"图像里有多少这种模式？"——答案就是 16 个 DCT 系数。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>反向DCT：16 个系数 → 加权求和还原像素</h4>
+      <div class="sub">f(x,y) = ΣᵤΣᵥ C(u)C(v) · F(u,v) · cos[(2x+1)uπ/8] · cos[(2y+1)vπ/8]</div>
+      <p><strong>公式含义</strong>：原始像素 f(x,y) = <strong>所有 16 个 DCT 系数各乘上其基图像在 (x,y) 位置的值，再求和。</strong><br><br>
+      展开看：f(x,y) = <span style="color:#a78bfa">F(0,0)×基图像(0,0)(x,y)</span> + <span style="color:#fbbf24">F(0,1)×基图像(0,1)(x,y)</span> + ... + <span style="color:#f87171">F(3,3)×基图像(3,3)(x,y)</span>。<br><br>
+      <strong>关键性质：如果 16 个系数全部精确保留，反向 DCT 能<em>精确还原</em>原始 16 个像素——数学上零误差。</strong><br>
+      就像你知道"这张脸 = 60%爸爸的脸+30%妈妈的脸+10%其他"——只要三个权重都在，就能完美还原这张脸。<br><br>
+      <strong>量化的破坏</strong>：如果 F(3,3)=1 被量化为 0——重建时就少了"基图像(3,3)×1"这一项——丢失的是高频纹理的微小贡献——人眼察觉不到，但数学上确实不可逆了。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🔬 H.264 整数 DCT — 为什么不用浮点余弦？</h4>
+      <div class="sub">矩阵形式：F = H·X·Hᵀ —— 只用加减法和移位</div>
+      <p>H.264 把浮点余弦函数<strong>近似为整数矩阵</strong>：</p>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.8;padding:6px 10px;background:rgba(0,0,0,.15);border-radius:6px;text-align:center">
+        H = [ 1 &nbsp;1 &nbsp;1 &nbsp;1 ]<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;[ 2 &nbsp;1 −1 −2 ]<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;[ 1 −1 −1 &nbsp;1 ]<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;[ 1 −2 &nbsp;2 −1 ]
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px">
+        H 的每一行对应一个余弦频率的整数近似：第1行=全1(DC)，第2行=水平低频变种，第4行=最高频变种。<br>
+        <strong>F_raw = H × X × Hᵀ</strong>——两次 4×4 矩阵乘法，全部用整数加减和移位完成。后续量化步骤会把缩放因子一并处理。
+      </p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>👁️ 为什么"高频=人眼不敏感"？——解剖学证据</h4>
+      <div class="sub">视网膜节细胞的感受野天然就是低通滤波器</div>
+      <p>人眼视网膜上的<strong>节细胞（Ganglion Cells）</strong>有中心-周边拮抗式的感受野——一个细胞同时接收来自中心小区域（兴奋）和周边环形区域（抑制）的信号。<br>
+      效果：<strong>大面积均匀亮度 → 信号强；像素级快速跳变 → 兴奋和抑制几乎抵消 → 信号弱。</strong><br><br>
+      这就是生理学上的"低通滤波"——<strong>人眼天然对高频空间信息不敏感</strong>。DCT 的右下角系数代表的就是这些"人眼天然看不清"的像素级快速跳变。<br>
+      量化利用了这个生物学事实：<strong>高频系数即使被粗略量化甚至归零，重建画面的感知画质几乎不受影响</strong>——因为即使保留了精确值，人眼也分辨不出差别。<br><br>
+      <strong>验证实验</strong>：取一张照片，只保留 DCT 低频 25% 的系数（其余置零）→ 重建图肉眼几乎看不出差异。反过来只保留高频 25%→ 重建图只剩边缘轮廓，内容完全不可辨识。</p>
+    </div>
+  </div>
+
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">压缩发生在哪个环节？——完整数据流</div>
+    <strong>原始像素块 16×8bit = 128 bit</strong><br>
+    → <span style="color:#a78bfa">DCT 变换</span>：得到 16 个系数（每个可能需要更多 bit 精确表示——反而"膨胀"了）——<strong>无损，可逆</strong><br>
+    → <span style="color:#f87171">量化（÷Qstep，四舍五入）</span>：16 个精确值→4 个非零整数+12 个零——<strong>有损！不可逆！这是唯一的有损步骤</strong><br>
+    → <span style="color:#34d399">熵编码（CABAC/CAVLC）</span>：给"零"极短码、"非零值"按其概率分配码长→<strong>无损压缩</strong>，可逆<br>
+    <strong>最终码流：5-50 bit（vs 原始 128 bit）</strong><br>
+    <strong style="color:#fbbf24">结论：DCT 本身不压缩——它只是把数据"整理"成容易被量化和熵编码压缩的形式。</strong>
+  </div>
+
+  <!-- DCT 逐步计算演示 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#6c63ff;margin:36px 0 4px">🔬 DCT 系数到底怎么算出来的？—— 一步一步乘、一步一步加</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:8px">
+    正向 DCT 就是一道<strong>固定菜谱</strong>：取像素块 → 取一张基图像 → 逐格相乘 → 全部加起来 → 乘归一化因子 = 一个 DCT 系数。下面用文档中的残差块演示。<strong>点击 4×4 网格选择要计算哪个系数 (u,v)。</strong>
+  </p>
+
+  <div class="cv-wrap" id="dctCalcWrap" style="height:370px">
+    <canvas id="dctCalcCanvas"></canvas>
+  </div>
+  <div class="ctrls" style="margin-top:8px">
+    <span style="font-size:11px;color:#888;margin-right:8px">选择系数 (u,v):</span>
+  </div>
+
+  <!-- 逆变换说明 -->
+  <div class="card-grid c2" style="margin-top:16px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>🔄 知道了 DCT 系数，怎么还原像素？—— 逆变换</h4>
+      <div class="sub">每个像素 = 所有 16 个系数的贡献之和</div>
+      <p><strong>逆 DCT 公式</strong>（与正向公式结构完全相同，只是把像素和系数角色互换）：<br>
+      <code>f(x,y) = Σ<sub>u</sub>Σ<sub>v</sub> α(u)α(v) · F(u,v) · cos[(2x+1)uπ/8] · cos[(2y+1)vπ/8]</code><br><br>
+      <strong>逐字翻译</strong>：像素 f(x,y) = <span style="color:#f87171">F(0,0)×α₀α₀×B₀₀(x,y)</span> + <span style="color:#fbbf24">F(0,1)×α₀α₁×B₀₁(x,y)</span> + … + <span style="color:#34d399">F(3,3)×α₃α₃×B₃₃(x,y)</span><br><br>
+      <strong>一共 16 项求和</strong>——每个 DCT 系数 F(u,v) "激活"自己的基图像 B_u,v，按权值叠加到 (x,y) 位置上。<br>
+      就像 16 个调音台推子——每个推子控制一轨音频（基图像）的音量（系数），所有轨混合 = 最终听到的声音（像素）。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>📐 归一化因子为什么是 α(0)=1/2, α(k)=1/√2？</h4>
+      <div class="sub">保证变换"正交"——能量守恒 + 逆变换精确还原</div>
+      <p>基图像 B₀₀（DC，全 1）的能量 = 所有 16 个像素值平方和 = 1²×16 = <strong>16</strong>。<br>
+      基图像 B₀₁（垂直低频，余弦振荡）的能量 = Σ cos²((2y+1)π/8) × 4 ≈ 0.5 × 8 = <strong>约 8</strong>。<br><br>
+      <strong>DC 基图像的能量是 AC 基图像的 2 倍。</strong>如果所有基图像能量不同——正向变换后系数的"尺度"就不统一——逆变换时叠回去就会失真。归一化因子就是用来<strong>把不同能量的基图像拉到同一尺度</strong>：α(0)=1/2（削减 DC），α(k>0)=1/√2（削减 AC），使得变换矩阵的每一行能量=1。<br><br>
+      简单验证：α(0)²×16 = (1/4)×16 = 4；α(1)²×8 = (1/2)×8 = 4——归一化后所有基图像的能量统一为 4。</p>
+    </div>
+  </div>
+
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">正向 + 逆向 = 完美闭环（在无量化的情况下）</div>
+    正向 DCT：16 个像素 → <strong>16 次"检测基图像"</strong>（每次乘法+加法+归一化）→ 16 个系数。<br>
+    逆向 DCT：16 个系数 → <strong>16 次"激活基图像"</strong>（每个像素 = 16 项加权叠加）→ 16 个像素。<br>
+    <strong>数学上精确相等：反 DCT(正 DCT(X)) = X。</strong>信息没有任何损失——DCT 只是换了个坐标系，就像你把 (3,4) 转成极坐标 (5, 53°)——位置没变，只是描述方式变了。<br>
+    <strong style="color:#f87171">量化是唯一破坏这个闭环的步骤：量化后的系数 ≠ 原始系数 → 反 DCT 得到的是"近似"像素。</strong>
+  </div>
+
+  <!-- 为什么 DCT 后数据反而更大 + DCT 的真正价值 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#f87171;margin:36px 0 4px">❓ DCT 变换后数据反而更大了？那 DCT 的价值到底是什么？</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    你观察得很准确——<strong>是的，DCT 变换后的系数绝对值往往比原始像素更大</strong>。DC 系数 380 需要 9 bit，而原始残差只有 -1~+2（2-3 bit）。但这不是 bug——这是 DCT 的核心设计目标：<strong>能量集中</strong>。
+  </p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>① 变换前：数据"均匀平庸"</h4>
+      <div class="sub">16 个像素值都差不多大——无法区分重要和不重要</div>
+      <div class="cblock" style="font-size:11px;line-height:2;padding:10px 14px;margin:8px 0;text-align:center">
+        原始残差块（空间域）：<br>
+        +2  +2  +2  +2<br>
+        +1  +1  +1  +1<br>
+        &nbsp;0 &nbsp; 0 &nbsp; 0 &nbsp; 0<br>
+        −1  −1  −1  −1
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">
+        16 个值，范围 −1~+2<br>
+        <strong>每个值都差不多重要</strong>——丢掉任何一个都会明显改变画面。<br>
+        如果直接量化（除以 5）：全部变成 0——画面全毁。<br>
+        <strong>均匀分布 = 量化只能"一刀切" = 高质量和低码率不可兼得。</strong>
+      </p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>② 变换后：能量"极化集中"</h4>
+      <div class="sub">几个系数变得巨大，大部分系数趋近于零</div>
+      <div class="cblock" style="font-size:11px;line-height:2;padding:10px 14px;margin:8px 0;text-align:center">
+        DCT 系数（频域）：<br>
+        <span style="color:#f87171"><strong>380</strong></span> −45 &nbsp;12  −5<br>
+        −38 &nbsp;22  −8 &nbsp; 3<br>
+        &nbsp;15 −10 &nbsp; 5  −2<br>
+        &nbsp;−6 &nbsp; 3  −2 &nbsp;<span style="color:#34d399"><strong>1</strong></span>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">
+        <strong>380（能量占比>95%）vs 1（能量占比<0.01%）</strong><br>
+        原来均匀的 16 个值 → 变成 1 个超大值 + 一堆小值。<br>
+        这就是<strong>能量集中（Energy Compaction）</strong>——DCT 把分散的信息"挤压"到左上角少数几个系数上。
+      </p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>③ 量化收获：差异化处理</h4>
+      <div class="sub">重要的系数精确保留，不重要的系数全部归零</div>
+      <div class="cblock" style="font-size:11px;line-height:2;padding:10px 14px;margin:8px 0;text-align:center">
+        量化后 (QP=25, Qstep≈11.3)：<br>
+        <span style="color:#34d399"><strong>34</strong></span> −4 &nbsp; 1 &nbsp; <span style="color:#f87171">0</span><br>
+        −3 &nbsp; 2 &nbsp;−1 &nbsp; <span style="color:#f87171">0</span><br>
+        &nbsp;1 &nbsp;−1 &nbsp; <span style="color:#f87171">0</span> &nbsp; <span style="color:#f87171">0</span><br>
+        −1 &nbsp; <span style="color:#f87171">0</span> &nbsp; <span style="color:#f87171">0</span> &nbsp; <span style="color:#f87171">0</span>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">
+        <strong>非零系数: 7/16 → CAVLC 约 50 bit</strong><br>
+        QP 再大一点：非零系数 → 3/16 → <strong>约 20 bit</strong><br>
+        380 变成了 34——精度从 9 bit 降到 6 bit——但<strong>画质损失集中在人眼不敏感的高频</strong>。<br>
+        <strong>如果量化原始像素：16 个值全变成 0——画面全毁。</strong>
+      </p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">DCT 的真正价值：不是压缩——是"为量化创造可丢弃的目标"</div>
+    <strong>变换前</strong>：16 个像素，每个都重要 → 量化丢任何一个都疼 → 只能全部精确保留 → 128 bit，没得压缩。<br>
+    <strong>变换后</strong>：1 个 380（极其重要）+ 15 个 −45~1（递减重要）→ 量化把最后 10 个归零 → <strong>画质几乎不变，码率从 128 bit 降到 32 bit</strong>。<br><br>
+    <strong>这就是 DCT 的全部意义</strong>：把"均匀平庸"的数据变成"极化集中"的数据——少数几个大系数承载了几乎全部信息，大量小系数变成可以随意丢弃的"冗余"。没有 DCT，量化就是瞎子——不知道该丢哪个、该留哪个。有了 DCT，量化就变成了精准手术——<strong>只丢右下角、保左上角</strong>。
+  </div>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>💡 回到你的第一个问题：为什么不一开始就用"归一化后的基"？</h4>
+      <div class="sub">其实我们用了——归一化因子已经算进 DCT 系数里了</div>
+      <p>你看到的 DC 系数 380 = <strong>已经归一化后</strong>的值。如果"一开始就统一棍子长度"（即用归一化后的基图像直接做点积），得到的就是 380——这已经是归一化的结果。<br><br>
+      那为什么公式不写成"先用基/长度，再做点积"？因为<strong>分离"点积"和"归一化"两步，工程上更灵活</strong>。H.264 甚至把归一化推迟到量化步骤——变换只做整数加减，归一化和量化合并成一次乘法——省了一次浮点运算。<br><br>
+      <strong>概念上你完全可以理解为"先用归一化后的基做点积"——结果完全一样。只是实现上分开做更高效。</strong></p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>📊 能量集中度验证 — 保留 25% 系数 vs 保留 25% 像素</h4>
+      <div class="sub">如果直接丢弃 75% 的像素 vs 丢弃 75% 的 DCT 系数</div>
+      <p><strong>方案 A（直接丢弃 12/16 像素）</strong>：画面只剩 4 个像素有值，其余全黑 → <strong>画面完全无法看</strong>。<br><br>
+      <strong>方案 B（DCT 后只保留左上角 4/16 系数，其余归零后逆变换）</strong>：重建后的 16 个像素值与原始值<strong>几乎一样</strong>——每个像素都还在，只是高频纹理略微软了一点——人眼几乎看不出差异。<br><br>
+      <strong>这就是 DCT 的能量集中：把 16 个像素的信息"压缩"到 4 个系数里——其余 12 个系数≈0，丢掉也不影响画质。</strong></p>
+    </div>
+  </div>
+
+  <!-- 归一化 — 极简版 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#6c63ff;margin:36px 0 4px">📐 算 DCT 系数时为什么要归一化？—— 不归一化也行，但逆变换会很丑</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:10px">
+    归一化不是"必须的"——<strong>不归一化照样能分解、能还原</strong>。归一化的唯一目的是让<strong>正变换和逆变换的公式对称</strong>。
+  </p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>❌ 不归一化：能用，但逆变换要"各除各的"</h4>
+      <div class="sub">每个系数还原时除的因子不同——公式不对称</div>
+      <div class="cblock" style="font-size:11px;line-height:2;padding:10px 14px;margin:8px 0">
+        <strong>正变换（不做任何归一化）</strong>：<br>
+        DC<sub>raw</sub> = Σ 像素 × 1 = <strong>8</strong><br>
+        AC<sub>raw</sub> = Σ 像素 × cos(...) ≈ <strong>12.6</strong><br><br>
+        <strong>逆变换（要还原，每个系数除不同的数）</strong>：<br>
+        像素(0,0) = DC<sub>raw</sub>×1<strong>/4</strong> + AC<sub>raw</sub>×cos(π/8)<strong>/2</strong> + …<br><br>
+        <span style="color:#f87171">DC 贡献 ÷4，AC 贡献 ÷2，AC₂ 贡献 ÷2…</span><br>
+        <span style="color:#f87171">每个系数的"还原公式"都不同——很丑。</span>
+      </div>
+      <p style="font-size:10px;color:#666">本质：DC 基长度为 4，所以 DC 系数天然是 AC 的 2 倍——这个"放大"必须在逆变换时纠正回来。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>✅ 归一化：正变换先除好，逆变换统一乘回</h4>
+      <div class="sub">正/逆变换使用完全相同的因子——公式对称优雅</div>
+      <div class="cblock" style="font-size:11px;line-height:2;padding:10px 14px;margin:8px 0">
+        <strong>正变换（乘归一化因子）</strong>：<br>
+        DC = DC<sub>raw</sub> <strong>× (1/4)</strong> = 8/4 = <strong>2</strong><br>
+        AC = AC<sub>raw</sub> <strong>× (1/√8)</strong> ≈ 12.6/2.83 ≈ <strong>4.5</strong><br><br>
+        <strong>逆变换（乘同样的归一化因子）</strong>：<br>
+        像素(0,0) = DC×<strong>(1/4)</strong>×1 + AC×<strong>(1/√8)</strong>×cos(π/8) + …<br><br>
+        <span style="color:#34d399">正向乘什么，逆向就乘什么——完全对称。</span><br>
+        <span style="color:#34d399">公式变成：正向 F = A·X·Aᵀ，逆向 X = Aᵀ·F·A</span>
+      </div>
+      <p style="font-size:10px;color:#666">归一化 = 把"逆变换时各除各的"提前到"正变换时各乘各的"——两次乘同一个 α，恰好凑成需要的除数。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">归一化 = 纯粹为了让公式好看 + 让系数可以互相比较</div>
+    不归一化的 DCT <strong>数学上也完全正确</strong>，能分解、能还原。归一化只做了一件事：<strong>把"逆变换时的除法"提前到"正变换时的乘法"</strong>——让正逆变换使用同一组因子 α(u)，实现 A⁻¹ = Aᵀ（矩阵的逆 = 转置，不需要单独计算逆矩阵）。<br><br>
+    <strong>一句话</strong>：不归一化 → 正向简单逆向复杂。归一化 → 正逆向各承担一半，对称优雅。两种方式还原出的像素值<strong>完全一样</strong>。
+  </div>
+
+  <!-- 量化深入讲解 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#fbbf24;margin:36px 0 8px">量化深入 — 为什么"除以一个数再取整"能压缩数据？</h4>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🔢 用日常例子理解量化</h4>
+      <div class="sub">量化 = 降低精度来换取压缩</div>
+      <p>你有 16 个测量值：<strong>23.7, 0.8, −1.2, 0.03, −0.5, 0.01...</strong>——精确到小数点后两位。如果要求你只用<strong>整数</strong>表示它们——除以 5 再四舍五入：<strong>23.7/5≈5, 0.8/5≈0, −1.2/5≈0, 0.03/5≈0...</strong>——16 个精确值变成 1 个整数 + 15 个零！存储零的成本极低（熵编码可以用 1-2 bit 表示"连续 15 个零"），而存储 23.7 这个精确值需要 32 bit。<br><br>
+      量化就是做这件事：<strong>用一个除数 Qstep 把 DCT 系数从"精确值"变成"粗糙整数"</strong>。除数越大 → 越多的系数被四舍五入到零 → 数据量越小 → 但重建精度越低（因为反量化时零还是零，丢失的细节永远回不来了）。</p>
+    </div>
+    <div class="g-card" style="--gc:#f87171">
+      <h4>📐 QP → Qstep 的数学关系</h4>
+      <div class="sub">QP 每增加 6，Qstep 翻倍 = 码率约减半</div>
+      <p><strong>H.264 的 QP-Qstep 公式</strong>：<span class="formula">Qstep(QP) = 2^(QP/6) × 0.625</span>。<br>
+      QP=0 → Qstep=0.625（几乎不量化）；QP=6 → Qstep=1.25；QP=12 → Qstep=2.5；QP=18 → Qstep=5.0；QP=24 → Qstep=10.0；QP=30 → Qstep=20.0；QP=36 → Qstep=40.0；QP=42 → Qstep=80.0；QP=48 → Qstep=160.0；QP=51 → Qstep=224.0。<br>
+      <strong>"QP+6 = 码率减半"的经验规则</strong>：Qstep 翻倍 → 量化后系数值减半 → 熵编码所需 bit 减半 → 总码率约减半。例如 QP=28 和 QP=34 的码率比大约是 2:1——画质也同步下降。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>⚡ 死区量化 (Dead Zone)</h4>
+      <div class="sub">小系数被"提前杀死"——不等四舍五入就归零</div>
+      <p>标准量化公式是 <code>Z = round(Y / Qstep)</code>——但对于绝对值很小的 Y（如 0.3×Qstep），四舍五入后是 0。H.264 实际上使用<strong>带死区的量化</strong>：绝对值 < Qstep×0.625 的系数<strong>直接归零</strong>（即使按四舍五入规则可能是 ±1）。<br>
+      死区的设计理由：① 小系数通常是<strong>噪声</strong>而非真实信号——保留它们浪费码率② 杀死小系数让更多高频位置变成连续的零→熵编码的游程编码效率极高（"连续 N 个零"）。代价：在极低码率下可能产生<strong>纹理丢失</strong>（flat regions）——画面变得"干净但不自然"。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>🔄 量化 → 反量化：不可逆</h4>
+      <div class="sub">量化是有损的——反量化永远回不到原始值</div>
+      <p><strong>编码端</strong>：<code>Z = round(Y / Qstep)</code>。假设 Y=23, Qstep=8 → Z=3。<br>
+      <strong>解码端</strong>：<code>Y' = Z × Qstep = 3 × 8 = 24</code>。<br>
+      <strong>误差 = 24 − 23 = 1</strong>——这就是量化误差（Quantization Error）的来源。QP 越大 → Qstep 越大 → Z 越小 → Y' 与 Y 的差距越大 → 画质越差。<br><br>
+      在 H.264 中，<strong>量化是唯一的不可逆步骤</strong>——预测、变换、熵编码都是可逆的（数学上精确可还原）。一旦量化了，丢失的信息永久消失——反量化只能还原到 Z×Qstep，恢复不了被丢弃的尾数。这就是为什么编码器的"反馈重建通路"中有一个反量化模块——编码器必须<strong>用解码端能看到的 Y'（而非原始 Y）</strong>来构建参考帧——否则编解码器之间会产生漂移。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;width:100%;margin-top:12px">
+    <div class="ct">⚠ 量化是画质与码率的唯一权衡杠杆</div>
+    QP 调低 6 → 码率翻倍 → 画质提升（块效应减少、纹理保留更多）。QP 调高 6 → 码率减半 → 画质下降（块效应出现、细节模糊）。<br>
+    视频编码中<strong>所有其他参数</strong>（GOP 结构、参考帧数、运动搜索范围）对码率的影响最多 ±20%——唯独 QP 可以<strong>在 100× 的范围内</strong>控制码率。<br>
+    <strong>IPC 经验</strong>：主码流 QP 范围 22-30（画质优先），子码流 QP 范围 28-38（码率优先）。夜间 IR 模式可以适当提高 QP（噪声多→高 QP 有助于平滑噪声，反而改善主观画质）。
+  </div>
   <div class="scroll-hint">↓</div>
 </div>
 
@@ -458,47 +1009,350 @@
 <!-- ============================================================ -->
 <div class="sec" id="s9">
   <h2 class="sec-title" id="s9t">H.264 熵编码</h2>
-  <p class="sec-sub" id="s9s">将量化后的系数和语法元素压缩为最终二进制码流——利用统计冗余做<strong>无损压缩</strong>。H.264 支持 CAVLC（变长编码）和 CABAC（算术编码）两种方案</p>
+  <p class="sec-sub" id="s9s">量化后的系数块里 >50% 是零——熵编码就是<strong>给"零"发最短的码，给稀有的大数发长码</strong>，把稀疏的系数矩阵变成紧凑的二进制码流。这是编码器最后一步，纯无损。</p>
 
-  <div class="cv-wrap" id="entWrap" style="height:300px">
-    <canvas id="entCanvas"></canvas>
-  </div>
+  <!-- 熵编码极简理解 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#fbbf24;margin:24px 0 4px">💡 先搞懂：为什么经过预测→DCT→量化后，数据已经小很多了？</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    你困惑的"为什么还是 8 bit"——其实是把<strong>输入格式</strong>和<strong>输出码流</strong>搞混了。下面用一个 4×4 块走完完整流程，看数据量在每个阶段的变化。
+  </p>
 
-  <div class="card-grid c2" style="margin-top:20px">
-    <div class="g-card" style="--gc:#a78bfa">
-      <h4>CAVLC · 变长编码</h4>
-      <div class="sub">Baseline Profile 支持</div>
-      <p>基于 Huffman 编码的上下文自适应方案。用查表方式编码，速度快。<br>利用已编码相邻块的非零系数数量<strong>自适应选择 VLC 码表</strong>。<br>典型节省：比固定码表省 5-10%。</p>
-    </div>
-    <div class="g-card" style="--gc:#34d399">
-      <h4>CABAC · 算术编码</h4>
-      <div class="sub">Main/High Profile 支持</div>
-      <p>三阶段流水线：<strong>① 二值化</strong>→<strong>② 上下文建模</strong>（364 个概率模型）→<strong>③ 二进制算术编码</strong>。<br>编码后更新概率供下个 bin 使用。<br>比 CAVLC 节省 <em>9-14%</em> 码率，但计算复杂度高 ~40%。</p>
-    </div>
-  </div>
-
-  <div class="ptbl" style="max-width:960px;width:100%;margin-top:16px">
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:12px">
     <table>
     <thead>
-      <tr><th>NAL 类型</th><th>nal_unit_type</th><th>分类</th><th>内容</th><th>作用</th></tr>
+      <tr><th>阶段</th><th>数据形态</th><th>数据量</th><th>说明</th></tr>
     </thead>
     <tbody>
-      <tr><td style="color:#fbbf24;font-weight:600">SPS</td><td>7</td><td>非 VCL</td><td>Profile/Level、分辨率、帧率限制</td><td>序列级配置，解码器初始化必需</td></tr>
-      <tr><td style="color:#fbbf24;font-weight:600">PPS</td><td>8</td><td>非 VCL</td><td>熵编码模式、Slice 分组、量化参数</td><td>图像级配置，可多帧共用</td></tr>
-      <tr><td style="color:#34d399;font-weight:600">IDR</td><td>5</td><td>VCL</td><td>I 帧，清空参考帧缓冲</td><td>随机访问起点，seek 必须命中</td></tr>
-      <tr><td style="color:#34d399;font-weight:600">Non-IDR I</td><td>1</td><td>VCL</td><td>I 帧，不清空参考缓冲</td><td>开放 GOP 中的普通 I 帧</td></tr>
-      <tr><td style="color:#34d399;font-weight:600">P Slice</td><td>1</td><td>VCL</td><td>前向预测编码数据</td><td>实时编码的主力帧类型</td></tr>
-      <tr><td style="color:#34d399;font-weight:600">B Slice</td><td>1</td><td>VCL</td><td>双向预测编码数据</td><td>最高压缩比，引入编码延迟</td></tr>
-      <tr><td style="color:#fbbf24;font-weight:600">SEI</td><td>6</td><td>非 VCL</td><td>时间码、缓冲周期、HDR 元数据</td><td>补充信息，不影响解码</td></tr>
-      <tr><td style="color:#fbbf24;font-weight:600">AUD</td><td>9</td><td>非 VCL</td><td>访问单元分隔符</td><td>标识一帧的边界</td></tr>
+      <tr>
+        <td style="color:#f87171;font-weight:600">① 原始像素</td>
+        <td>16 个像素，每个 0-255</td>
+        <td class="r"><strong>128 bit</strong></td>
+        <td>16×8bit。这是<strong>输入格式</strong>——YUV 图像每像素占 8 bit</td>
+      </tr>
+      <tr>
+        <td style="color:#fbbf24;font-weight:600">② 帧内预测 → 残差</td>
+        <td>16 个残差值，范围 −1~+2</td>
+        <td class="y">~48 bit</td>
+        <td>值变小了（预测准），但<strong>还没压缩</strong>——只是数值范围缩小了</td>
+      </tr>
+      <tr>
+        <td style="color:#a78bfa;font-weight:600">③ DCT 变换</td>
+        <td>16 个系数，DC=380，大量≈0</td>
+        <td class="y">仍然 ~48 bit</td>
+        <td><strong>DCT 不压缩！</strong>只是把能量集中——1 个 380 + 一堆小值</td>
+      </tr>
+      <tr>
+        <td style="color:#38bdf8;font-weight:600">④ 量化 (QP=25)</td>
+        <td>7 个非零整数 + 9 个零</td>
+        <td class="g">~50 bit</td>
+        <td>大量系数归零！但非零值还需要 bit 来表示（34, −4, −3…）</td>
+      </tr>
+      <tr>
+        <td style="color:#34d399;font-weight:600"><strong>⑤ 熵编码</strong></td>
+        <td>二进制码流</td>
+        <td class="g"><strong>~32 bit</strong></td>
+        <td><strong>最终压缩结果</strong>。给"零"极短码、非零值按其概率分配码长</td>
+      </tr>
     </tbody>
   </table>
   </div>
 
-  <div class="callout info" style="max-width:960px;width:100%;margin-top:14px">
-    <div class="ct">NAL Unit — H.264 码流的数据单元</div>
-    每个 NAL Unit 以起始码 <code>00 00 00 01</code> 或 <code>00 00 01</code> 开头（Annex B 格式），或 4 字节长度前缀（AVCC/MP4 格式）。<br>
-    <strong>SPS</strong>（序列参数集）定义 Profile/Level、分辨率；<strong>PPS</strong>（图像参数集）定义熵编码模式、Slice 分组；<strong>IDR</strong> 是随机访问起点；<strong>SEI</strong> 携带补充信息。
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">128 bit → 32 bit，不是"每个像素还 8 bit"</div>
+    原始 16 像素 = <strong>128 bit</strong>（输入格式）。经过全流程后 = <strong>32 bit</strong>（码流输出）。<br>
+    32 bit ÷ 16 像素 = <strong>平均每像素 2 bit</strong>——不是 8 bit！<br>
+    你看到的"8 bit"只是原始 YUV 的存储格式（每像素 0-255），它和压缩后的码流是<strong>两个完全不同的东西</strong>。<br>
+    <strong>打个比方</strong>：一本书手稿 500 页（=128 bit）→ 编辑删掉废话剩 100 页（=量化）→ 用速记符号誊写到 20 页（=熵编码）。你拿到的是 20 页的速记稿，不是 500 页的手稿。
+  </div>
+
+  <!-- ===== 熵编码核心思想 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#34d399;margin:36px 0 4px">熵编码一图理解 — 给"零"发短码，给"大数"发长码</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    量化后的 4×4 块长这样：<strong>34, −4, 1, 0, −3, 2, −1, 0, 1, −1, 0, 0, −1, 0, 0, 0</strong>（zigzag 顺序）。<br>
+    熵编码只做一件事：<strong>给高频出现的值分配短码，给低频出现的值分配长码</strong>——就像摩斯密码里 E（最常见字母）用"."、Q（最少见）用"--.-"。
+  </p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#34d399">
+      <h4>核心思想</h4>
+      <div class="sub">量化后 >50% 的系数是零 → "零"是最高频符号 → 给它最短的码</div>
+      <p>在这个 16 个系数里：<strong>9 个是 0</strong>，2 个是 −1，1 个是 34……<br>
+      零出现的概率 ≈ <strong>56%</strong>→ 用 <strong>1-2 bit</strong> 表示"后面连续 9 个零"。<br>
+      34 只出现 1 次 → 概率 ≈ <strong>6%</strong>→ 用更多 bit 表示它。<br>
+      <strong>这就是熵编码的全部思想</strong>——符号出现频率越偏斜，编码效率越高。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>CAVLC 做法</h4>
+      <div class="sub">把系数序列拆成 5 个"语法元素"，各自查表编码</div>
+      <p>不直接编码 16 个系数，而是拆成：<br>
+      ① 有几个非零？尾部有几个 ±1？（coeff_token）<br>
+      ② 那些 ±1 的正负号（T1 signs）<br>
+      ③ 非零系数值是多少？（level）<br>
+      ④ 总共有多少零？（total_zeros）<br>
+      ⑤ 零分布在哪些位置？（run_before）<br>
+      <strong>5 个小问题各用一张码表回答——每个答案很短。</strong></p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>CABAC 做法</h4>
+      <div class="sub">把一切变成"0 或 1"的决策序列，用概率模型压缩</div>
+      <p>① 先把所有语法元素变成二进制（二值化）<br>
+      ② 为每个 bit 选一个概率模型（上下文建模）——"这个位置是 0 的概率大概 90%"<br>
+      ③ 把概率喂给算术编码器——概率越接近 100%，编码成本越接近 0 bit<br>
+      <strong>CABAC 比 CAVLC 省 9-14%——因为它能把概率用到极致。</strong></p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">熵编码 = 专吃"偏斜分布"的无损压缩机</div>
+    如果 16 个系数均匀分布（每个值都不同、都不为零）→ 熵编码<strong>几乎无压缩效果</strong>。<br>
+    如果 16 个系数极度偏斜（12 个零 + 4 个非零）→ 熵编码<strong>大幅压缩</strong>。<br>
+    这就是为什么<strong>前面所有步骤都在为熵编码"铺路"</strong>：预测→残差趋零、DCT→能量集中、量化→大量归零。三个步骤联手制造了一个<strong>高度偏斜的分布</strong>——熵编码一口吞下，吐出极简码流。
+  </div>
+
+  <!-- 熵编码逐步演算 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#6c63ff;margin:36px 0 4px">🔬 熵编码究竟做了什么？—— 一个 4×4 量化块的完整编码过程</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:8px">
+    下面用一个具体的量化系数块，逐步演示从"16 个数"到"二进制码流"的全过程。核心就三步：<strong>zigzag 扫描→统计频率→变长编码</strong>。
+  </p>
+
+  <div class="cv-wrap" id="entWalkWrap" style="height:420px">
+    <canvas id="entWalkCanvas"></canvas>
+  </div>
+
+  <!-- 为什么能省码率 —— 核心对比 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#f87171;margin:24px 0 4px">为什么换一种编码方式就能省 bit？—— 定长 vs 变长，一笔账算清楚</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:8px">
+    图像本身确实是 bit 表示的——<strong>但"怎么表示"决定了用多少 bit</strong>。下面同一个量化后的系数序列，用两种方式编码，看 bit 数差多少。
+  </p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>❌ 定长编码：每个值固定 8 bit</h4>
+      <div class="sub">不管这个值是 0 还是 34——一律 8 bit，一视同仁</div>
+      <div class="cblock" style="font-size:10px;line-height:2.2;padding:10px 14px;margin:8px 0">
+        序列：<strong>5, 0, −2, 0, 1, 0,0,0,0,0,0,0,0,0,0,0</strong><br><br>
+        5  → 00000101 (8 bit)<br>
+        0  → 00000000 (8 bit) &nbsp;<span style="color:#f87171">← 为了一个"零"花了 8 bit！</span><br>
+        −2 → 11111110 (8 bit)<br>
+        0  → 00000000 (8 bit) &nbsp;<span style="color:#f87171">← 又一个 8 bit 的"零"</span><br>
+        1  → 00000001 (8 bit)<br>
+        0  → 00000000 (8 bit)<br>
+        <span style="color:#888">…… 还有 10 个零，各 8 bit ……</span><br><br>
+        <strong>总计：16 × 8 = <span style="color:#f87171">128 bit</span></strong><br>
+        <span style="color:#888">其中 13 个"零"占了 13×8=<strong>104 bit</strong>——81% 的码率花在了"什么都没有"上。</span>
+      </div>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>✅ 变长编码：按频率分配不同长度</h4>
+      <div class="sub">最常见值（0）→ 1 bit；稀罕值（5）→ 3 bit；一口气省下 107 bit</div>
+      <div class="cblock" style="font-size:10px;line-height:2.2;padding:10px 14px;margin:8px 0">
+        同一序列：<strong>5, 0, −2, 0, 1, 0,0,0,0,0,0,0,0,0,0,0</strong><br><br>
+        码表：0→"0"(1bit) &nbsp; 1→"10"(2bit) &nbsp; −2→"110"(3bit) &nbsp; 5→"111"(3bit)<br><br>
+        5  → 111 (3 bit) &nbsp;&nbsp;<span style="color:#34d399">← 比定长省 5 bit</span><br>
+        0  → 0 &nbsp;&nbsp;(1 bit) &nbsp;&nbsp;<span style="color:#34d399">← 比定长省 7 bit！</span><br>
+        −2 → 110 (3 bit) &nbsp;&nbsp;<span style="color:#34d399">← 省 5 bit</span><br>
+        0  → 0 &nbsp;&nbsp;(1 bit) &nbsp;&nbsp;<span style="color:#34d399">← 省 7 bit！</span><br>
+        1  → 10 &nbsp;(2 bit) &nbsp;&nbsp;<span style="color:#34d399">← 省 6 bit</span><br>
+        0  → 0 &nbsp;&nbsp;(1 bit)<br>
+        <span style="color:#888">…… 还有 10 个零，各 1 bit ……</span><br><br>
+        <strong>总计：3+1+3+1+2+11×1 = <span style="color:#34d399">21 bit</span></strong><br>
+        <span style="color:#34d399">128 bit → 21 bit，省了 107 bit (84%)。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">关键理解：码字"10"不是数字 1 的二进制——它只是一个代号</div>
+    数字 1 本身的二进制确实是"1"（1 bit）。但<strong>码字"10"不是把数字 1 转成二进制——它是编码器给"1 这个符号"分配的一个标签</strong>。<br>
+    就像摩斯密码里 E = "."（一个点），这个点不是 E 的什么二进制表示——它就是一个<strong>人为分配的代号</strong>。<br><br>
+    <strong>为什么代号"10"需要 2 bit？</strong>因为解码器需要区分"这是 1"和"这是别的符号"。如果给 1 分配"1"（1 bit），那"11"就分不清是"两个 1"还是"一个 3"。<br>
+    前缀码要求：常用的符号（0）占用了"0"这个短代号；次常用的符号（1）只能占用"10"——以 1 开头、0 结尾，恰好 2 bit。<br>
+    <strong>省 6 bit 是跟定长 8 bit 比的：定长下不管值是 0 还是 1 还是 255，一律 8 bit。变长下值 1 只需要 2 bit 的代号 → 省 6 bit。</strong>
+  </div>
+
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">省码率的本质：让"零"不再值 8 bit</div>
+    定长编码下，13 个零占了 <strong>104 bit</strong>——这些 bit 什么都没传达，纯属浪费。变长编码下同样 13 个零只占 <strong>13 bit</strong>。<br>
+    <strong>变长编码不是"把 bit 变魔术变没了"——它只是拒绝给"零"分配 8 bit。</strong><br>
+    当然代价是：5 这个罕见的数在定长下只需 8 bit，变长下变成 3 bit（可能还需要额外位表示符号和精确值，CAVLC 实际会多一些）。但零的节省远远超过罕见值的额外开销——因为<strong>量化后的数据极度偏斜，零占了绝大多数</strong>。
+  </div>
+
+  <!-- 存储和翻译机制 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#6c63ff;margin:24px 0 4px">🔧 码流怎么存储？解码器怎么翻译？—— 二叉树 + 逐 bit 行走</h4>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>存储：码字首尾相连拼成连续的 bit 串，塞进字节</h4>
+      <div class="sub">中间没有任何分隔符——前缀码性质让解码器能自动切分</div>
+      <div class="cblock" style="font-size:10px;line-height:2;padding:10px 14px;margin:8px 0">
+        编码 A B A C：<br>
+        A→0, B→10, A→0, C→110<br>
+        拼成：<strong>0 10 0 110</strong>  =  <strong>0100110</strong>（7 bit）<br><br>
+        存入 1 个字节（8 bit）：<br>
+        [0][1][0][0][1][1][0][<span style="color:#888">0</span>] ← 末尾补 1 个 0 凑满 8 bit<br>
+        字节值 = 0b01001100 = 0x4C<br><br>
+        <span style="color:#888">在 H.264 中，NAL Unit 用起始码 00 00 00 01 标记边界，解码器从这里开始读。码流末尾有"结束标志"告诉解码器在哪停——末尾填充的 bit 不会被误读。</span>
+      </div>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>翻译：把码表画成一棵二叉树，解码器沿着树走</h4>
+      <div class="sub">读到 0 往左，读到 1 往右——碰到叶子就输出符号，回到根</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.6;padding:8px 12px;margin:4px 0">
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>root</strong><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;∕&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;﹨<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>0</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>1</strong><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;∕&nbsp;&nbsp;&nbsp;&nbsp;﹨<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#34d399">A</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>0</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>1</strong><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;∕&nbsp;&nbsp;&nbsp;&nbsp;﹨<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#34d399">B</span>&nbsp;&nbsp;&nbsp;&nbsp;<strong>0</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>1</strong><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#34d399">C</span>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#34d399">D</span>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px">
+        解码 0100110：第 1 个 bit=0 → 从根向左→到达 <strong>A</strong> ✓ 回到根。<br>
+        第 2 个 bit=1 → 向右→第 3 个=0 → 到达 <strong>B</strong> ✓ 回根。<br>
+        第 4 个=0 → <strong>A</strong> ✓ 第 5 个=1→第 6 个=1→第 7 个=0→ <strong>C</strong> ✓<br>
+        <strong>解码器做的事就是在这棵树上走来走去。</strong>
+      </p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">约定是怎么达成的？—— 三步走：统计→建表→双方抄同一张表</div>
+  </div>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>Step 1: 统计——标准委员会数了成千上万个视频块</h4>
+      <div class="sub">发现"0 出现最多、±1 次之、大数很少见"的统计规律</div>
+      <p>H.264 标准制定时，用大量测试视频跑编码，统计量化后各种系数值出现的次数：<br><br>
+      <strong>统计结果（典型 4×4 量化块）</strong>：<br>
+      值 <strong>0</strong> → 出现概率 <strong>~70%</strong>（最高频！）<br>
+      值 <strong>±1</strong> → 出现概率 <strong>~15%</strong><br>
+      值 <strong>±2~±5</strong> → 出现概率 <strong>~10%</strong><br>
+      值 <strong>≥±6</strong> → 出现概率 <strong>~5%</strong>（很罕见）<br><br>
+      基于这个分布，用 <strong>Huffman 算法</strong>自动生成最优码表——<strong>纯粹数学计算，没有人为设计</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Step 2: 建表——Huffman 算法根据频率自动分配码长</h4>
+      <div class="sub">频率越高→码越短；这是一个纯数学过程</div>
+      <p>Huffman 算法的规则就一条：<strong>每次合并频率最低的两个符号，给它们加一位</strong>。<br><br>
+      对统计结果跑 Huffman 算法 → 自动生成：</p>
+      <div class="cblock" style="font-size:10px;line-height:2;padding:8px 12px;margin:6px 0">
+        出现 <strong>70%</strong> 的符号 → 码长 <strong>1 bit</strong><br>
+        出现 <strong>15%</strong> 的符号 → 码长 <strong>2-3 bit</strong><br>
+        出现 <strong>5%</strong> 的符号 → 码长 <strong>5-6 bit</strong><br>
+        几乎不出现的符号 → 码长 <strong>10+ bit</strong>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px">算法的输出就是一张表：每个符号配一个码字。"0→1, ±1→01x, …"。这表印在 H.264 标准里（附录表格），<strong>全球所有编解码器实现者都抄进去</strong>。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Step 3: 解码——拿到 bit 串，在二叉树上走到叶子即还原</h4>
+      <div class="sub">表 = 二叉树。0 往左 1 往右，到叶子就输出数字</div>
+      <p>这里的 <strong>0 和 1</strong> 是<strong>码流里的 bit</strong>，不是量化系数的值！</p>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.6;padding:6px 10px;margin:4px 0">
+        码流 bit=<strong>0</strong> → 输出 <strong>量化值 0</strong>（1 bit 解码出 1 个系数）<br>
+        码流 bit=<strong>10</strong> → 输出 <strong>量化值 1</strong>（2 bit 解码出 1 个系数）<br>
+        码流 bit=<strong>110</strong>→ 输出 <strong>量化值 −2</strong>（3 bit）<br>
+        码流 bit=<strong>111</strong>→ 输出 <strong>量化值 5</strong>（3 bit）
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:4px"><strong>关键</strong>：解码器不需要知道"码字边界在哪里"。它读一个 bit、在树上走一步、碰到叶子就停——这个机制<strong>自动找到了边界</strong>。这就是前缀码的魔力。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">整个编码→存储→解码的完整闭环（真实数据版）</div>
+    <strong>编码</strong>：量化系数 [5, 0, −2, 0, 1, 0,0,0,0,0,0,0,0,0,0,0] → 查字典 → 5→"111", 0→"0", −2→"110", 0→"0", 1→"10", 后面10个0各→"0" → 拼成 bit 串 <strong>11101100010000000000</strong>（21 bit ≈ 3 字节）→ <strong>写入文件</strong>。<br>
+    <strong>解码</strong>：读文件 → 拿到 3 字节 → 展开为 21 bit → 第1个bit=1→往右→第2个=1→往右→第3个=1→往右→<strong>叶子：值 5</strong> → 第4个bit=0→<strong>叶子：值 0</strong> → 第5个=1→右→第6个=1→右→第7个=0→左→<strong>叶子：值 −2</strong> → … → <strong>精确还原 16 个量化系数</strong>。<br><br>
+    <strong>约定只存在于"双方手里那张相同的表"里——不需要在线协商，不需要传字典。</strong>
+  </div>
+
+  <div class="callout success" style="max-width:960px;margin-top:12px">
+    <div class="ct">熵编码的本质：不是"压缩算法"——是"翻译策略"</div>
+    熵编码<strong>没有丢弃任何信息</strong>——它只是把"原始 16×8=128 bit 的存储格式"翻译成了"按概率分配码长的紧凑格式"。<br>
+    就像电报员发报：常用字用短码（"的"→"．－"），生僻字用长码（"鑫"→"－－．．－－．－"）——内容没少，但总时长大幅缩短。<br>
+    <strong>解码端做完全相反的事</strong>：拿到二进制码流→按同样的概率模型解读→精确还原 16 个量化系数→逆量化→逆 DCT→加重建帧→原始画面。
+  </div>
+
+  <!-- 码表如何约定 — 极简版 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#fbbf24;margin:36px 0 4px">📋 长码短码怎么约定的？—— 一张小表格，编解码双方各存一份</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    假设全世界只有 <strong>4 种符号</strong>：A 最常见（50%），B 次之（25%），C 和 D 罕见。标准委员会设计了一张表——<strong>这张表印在标准文档里，编码器和解码器各抄一份贴在墙上</strong>。
+  </p>
+
+  <!-- 极简编码演示 -->
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>📝 编码：查表 → 把符号替换成码字 → 拼起来</h4>
+      <div class="sub">编码器手里有这张表，逐个符号翻译</div>
+      <div class="cblock" style="font-size:11px;line-height:2.2;padding:10px 14px;margin:8px 0">
+        <strong>码表（贴在墙上）：</strong><br>
+        A (50%) → <strong style="color:#34d399">0</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(1 bit, 最短)<br>
+        B (25%) → <strong style="color:#34d399">10</strong> &nbsp;&nbsp;&nbsp;&nbsp;(2 bit)<br>
+        C (15%) → <strong style="color:#fbbf24">110</strong> &nbsp;&nbsp;&nbsp;(3 bit)<br>
+        D (10%) → <strong style="color:#fbbf24">111</strong> &nbsp;&nbsp;&nbsp;(3 bit)<br><br>
+        <strong>要发送的消息：A B A C</strong><br>
+        A→查表→"0"<br>
+        B→查表→"10"<br>
+        A→查表→"0"<br>
+        C→查表→"110"<br>
+        <strong>拼起来：0100110</strong>（共 1+2+1+3=<strong>7 bit</strong>）<br><br>
+        <span style="color:#888">如果不压缩，4 个符号各用 2 bit（00 01 10 11）= 8 bit。7 bit vs 8 bit——省了 1 bit。</span>
+      </div>
+      <p style="font-size:10px;color:#666">编码器做的事就是<strong>查表替换+拼接</strong>——没有计算，没有决策，纯粹机械操作。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>🔓 解码：收到 0100110，怎么还原成 A B A C？</h4>
+      <div class="sub">解码器手里有同一张表，逐 bit 读，匹配到就输出符号</div>
+      <div class="cblock" style="font-size:11px;line-height:2.2;padding:10px 14px;margin:8px 0">
+        收到码流：<strong>0100110</strong>（7 个 bit 串在一起，中间<strong>没有任何分隔符</strong>）<br><br>
+        <strong>解码器怎么切开？</strong><br>
+        读第 1 个 bit：<strong>0</strong> → 查表→表中"0"=<strong>A</strong> ✓ 输出 A，光标前进 1 bit。<br>
+        剩余：<strong>100110</strong><br>
+        读：<strong>1</strong> → 表中没有单独的"1"→ 再读一个→<strong>10</strong>→查表→"10"=<strong>B</strong> ✓ 输出 B，前进 2 bit。<br>
+        剩余：<strong>0110</strong><br>
+        读：<strong>0</strong> → <strong>A</strong> ✓ 前进 1 bit。<br>
+        剩余：<strong>110</strong><br>
+        读：<strong>11</strong> → 表中没有"11"→再读一个→<strong>110</strong>→查表→"110"=<strong>C</strong> ✓ 前进 3 bit。<br>
+        <strong>码流读完。输出：A B A C ✓</strong>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">
+        <strong>关键性质：前缀码（Prefix Code）</strong>——表中<strong>没有任何一个码字是另一个码字的前缀</strong>。<br>
+        "0"不是"10""110""111"的前缀。"10"不是"110""111"的前缀。<br>
+        这保证了读到"0"时可以<strong>立即确定</strong>它是 A，不需要继续读。<br>
+        <strong>解码器从不需要"猜"边界——前缀码性质保证边界是唯一的。</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- 扩展到 H.264 -->
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>📐 H.264 的做法：表更大、更多张，但原理完全一样</h4>
+      <div class="sub">标准定义了多张表——用哪张取决于"上下文"（邻居情况）</div>
+      <p>H.264 的 CAVLC 用的也是<strong>前缀码表</strong>——只是符号不是 A B C D，而是 <strong>TotalCoeff（非零系数个数）</strong>、<strong>total_zeros（零的总数）</strong>、<strong>run_before（零的游程长度）</strong>等。<br><br>
+      比如 <strong>coeff_token 的一张表</strong>（当邻居非零系数很少时使用）：<br>
+      TotalCoeff=0 → "1"（1 bit）← 最常见，最短<br>
+      TotalCoeff=1 → "01"（2 bit）<br>
+      TotalCoeff=3 → "0001 1"（5 bit）← 罕见，较长<br><br>
+      <strong>所有表都印在 H.264 标准文档里</strong>——编码器解码器各自存一份，不需要协商。<br>
+      "自适应"只是说<strong>根据邻居情况切换用哪张表</strong>——表本身是固定的。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🔑 为什么 A 得短码、D 得长码？—— 标准制定时统计好的</h4>
+      <div class="sub">不是编码器运行时"发现"A 常见——是标准设计者提前统计了大量视频</div>
+      <p>H.264 标准委员会在制定标准时，用<strong>几百个测试视频</strong>跑编码，统计每种符号出现的频率：<br><br>
+      <strong>统计结果</strong>：量化后的 4×4 块里，<strong>80% 的块只有 0-2 个非零系数</strong>。<br>
+      → TotalCoeff=0 给最短码"1"。TotalCoeff=5+ 给 6-16 bit 的长码。<br><br>
+      <strong>长码短码的分配在标准发布时就确定了</strong>——编码器只是机械查表，解码器机械反向查表。这和摩斯密码一样——E 得一个点、Q 得两个划一个点——表是 Samuel Morse 在 1844 年定好的，所有电报员共用同一张表。</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">一句话总结：码表 = 编解码双方共用的字典</div>
+    编码器做的事：拿着<strong>标准发给的字典</strong>，把"TotalCoeff=0"翻译成"1"，把"TotalCoeff=3"翻译成"00011"。<br>
+    解码器做的事：拿着<strong>同一本字典</strong>，看到"00011"翻到 TotalCoeff=3，看到"1"翻到 TotalCoeff=0。<br>
+    <strong>字典不需要协商——H.264 标准就是这本字典。</strong>编解码器的开发者各自从标准文档里把表抄进代码——双方自然一致。
   </div>
   <div class="scroll-hint">↓</div>
 </div>
@@ -507,50 +1361,405 @@
 <!-- S10: H.264 环路滤波 ★ -->
 <!-- ============================================================ -->
 <div class="sec" id="s10">
-  <h2 class="sec-title" id="s10t">H.264 环路滤波</h2>
-  <p class="sec-sub" id="s10s">对重建帧的块边界进行平滑——<strong>环路内</strong>的滤波，消除方块效应的同时提升后续预测的参考帧质量</p>
+  <h2 class="sec-title" id="s10t">H.264 环路滤波（去块滤波）</h2>
+  <p class="sec-sub" id="s10s">对重建帧的块边界进行平滑——消除量化造成的块效应。<strong>在编码环路内</strong>执行，滤波后的帧直接作为后续帧的参考，因此去块质量影响<strong>所有后续帧</strong>的预测精度</p>
 
-  <div class="cv-wrap" id="deblockWrap" style="height:300px">
+  <!-- 为什么会有块效应 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#f87171;margin:28px 0 4px">块效应是怎么来的？—— 相邻块量化误差不同</h4>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>🔍 用两个相邻块的像素值看清问题</h4>
+      <div class="sub">原始画面是平滑的，压缩后才出现边界跃变</div>
+      <div style="display:flex;gap:18px;align-items:center;margin:8px 0;flex-wrap:wrap">
+        <div>
+          <div style="font-size:9px;color:#888;text-align:center;margin-bottom:2px">原始像素（平滑）</div>
+          <div class="cblock" style="font-size:10px;line-height:2;padding:8px 12px;text-align:center;margin:0">
+            块A &nbsp;&nbsp;│&nbsp; 块B<br>
+            100 101 │ 102 103<br>
+            100 101 │ 102 103<br>
+            100 101 │ 102 103<br>
+            100 101 │ 102 103
+          </div>
+        </div>
+        <span style="font-size:18px;color:#888">→</span>
+        <div>
+          <div style="font-size:9px;color:#888;text-align:center;margin-bottom:2px">量化+重建后（出现跃变）</div>
+          <div class="cblock" style="font-size:10px;line-height:2;padding:8px 12px;text-align:center;margin:0">
+            块A &nbsp;&nbsp;│&nbsp; 块B<br>
+            <span style="color:#a78bfa">98</span> <span style="color:#a78bfa">99</span> │ <span style="color:#f87171">104 105</span><br>
+            <span style="color:#a78bfa">98</span> <span style="color:#a78bfa">99</span> │ <span style="color:#f87171">104 105</span><br>
+            <span style="color:#a78bfa">98</span> <span style="color:#a78bfa">99</span> │ <span style="color:#f87171">104 105</span><br>
+            <span style="color:#a78bfa">98</span> <span style="color:#a78bfa">99</span> │ <span style="color:#f87171">104 105</span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:10px;color:#666;margin-top:6px">
+        原始边界两侧像素差 = 102−101 = <strong>1</strong>（几乎平滑）。<br>
+        重建后边界两侧像素差 = 104−99 = <strong>5</strong>（明显跃变！）。<br>
+        原因：块 A 的 DC 系数被量化偏小（101→99），块 B 的 DC 偏大（102→104）——<strong>两个块各错各的，边界就穿帮了</strong>。
+      </p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>🧊 块效应在什么情况下最严重？</h4>
+      <div class="sub">三个因素叠加：QP 高 + 平坦区域 + 帧内编码</div>
+      <p>
+        <strong>① QP 越高越严重</strong>：QP 大 → 量化误差大 → 相邻块的 DC 偏差大 → 边界跃变更明显。QP=38 时块效应肉眼可见，QP=22 时基本看不到。<br><br>
+        <strong>② 平坦区域最要命</strong>：天空、白墙、人脸皮肤——这些区域像素值天然均匀，人眼对任何不连续极度敏感。<strong>纹理复杂的区域（草地、布料）天然掩盖块效应</strong>——人眼被纹理分散了注意力。<br><br>
+        <strong>③ 帧内编码块边界最严重</strong>：I 帧的所有块都是帧内编码——每个块独立预测、独立量化——块间没有任何信息共享——边界差异最大。
+      </p>
+    </div>
+  </div>
+
+  <!-- 滤波决策流程 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#a78bfa;margin:36px 0 4px">滤波决策三步走：Bs → α/β 阈值 → 滤波执行</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    环路滤波<strong>不是对所有边界都无差别地平滑</strong>——它先判断"这个边界是不是块效应造成的"，再决定滤不滤、滤多强。分三步决策。
+  </p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>Step 1: 确定边界强度 Bs</h4>
+      <div class="sub">Bs = 0~4，由两个相邻块的编码方式决定</div>
+      <div style="font-size:11px;line-height:2.2;padding:6px 10px;margin:6px 0">
+        <strong style="color:#f87171">Bs=4</strong> · 任一块是<strong>帧内编码</strong> + 位于宏块边界<br>
+        <strong style="color:#fbbf24">Bs=3</strong> · 帧间 + 任一块有<strong>非零变换系数</strong>（残差大）<br>
+        <strong style="color:#fbbf24">Bs=2</strong> · 帧间 + 任一块有<strong>变换系数</strong>（有残差但小）<br>
+        <strong style="color:#60a5fa">Bs=1</strong> · 帧间 + 都无系数 + <strong>参考帧不同/MV不同</strong><br>
+        <strong style="color:#34d399">Bs=0</strong> · 帧间 + 同参考帧 + <strong>MV 差 < 1 像素</strong>→ 不滤波
+      </div>
+      <p style="font-size:10px;color:#666">直觉：帧内块边界差异最大→Bs=4 最强滤波。同参考帧同 MV→两个块来源完全一样→不可能有块效应→Bs=0 跳过。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>Step 2: 阈值 α 和 β 门槛检查</h4>
+      <div class="sub">即便 Bs>0，也要看边界跃变是否"大到值得滤"</div>
+      <p>α 和 β 是从 <strong>QP 查表</strong>得到的两个阈值（QP 越大，α/β 越大，滤波越激进）：<br><br>
+      <strong>α 检查（块间差异）</strong>：|p₀−q₀| < α(QP) ？<br>
+      边界两侧像素差 < 阈值 → 可能是块效应 → 继续检查。<br>
+      差 ≥ 阈值 → <strong>真实边缘</strong>（物体边界），不滤！<br><br>
+      <strong>β 检查（块内差异）</strong>：|p₀−p₁| < β(QP) 且 |q₀−q₁| < β(QP) ？<br>
+      块内相邻像素差 < 阈值 → 块内部平滑 → 边界跃变<strong>确实是量化造成的</strong>。<br>
+      差 ≥ 阈值 → 块内部本身就不平滑 → 边界跃变可能是<strong>真实内容</strong>——减弱滤波。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>Step 3: 执行滤波 + Clip 裁剪</h4>
+      <div class="sub">修改边界两侧像素，但限制修改幅度防止过度平滑</div>
+      <p>滤波只修改边界两侧各 <strong>2-3 个像素</strong>（p₀ p₁ p₂ │ q₀ q₁ q₂）：<br><br>
+      <strong>Bs=4（最强）</strong>：5 抽头滤波，修改 p₀~p₂ 和 q₀~q₂——帧内块边界需要强力平滑。<br>
+      <strong>Bs=1~3（标准）</strong>：4 抽头滤波，主要修改 p₀ p₁ 和 q₀ q₁。<br><br>
+      <strong>Clip 操作</strong>：滤波计算出一个"理想值"，但实际修改量被裁剪到 <strong>±C0（对于 p₀/q₀）</strong>或<strong>±C1（对于 p₁/q₁）</strong>以内。<br>
+      C0/C1 由 QP 和 Bs 决定——保证<strong>单个像素不会被修改超过合理范围</strong>。这是防止"把真实纹理当块效应误杀"的最后一道防线。</p>
+    </div>
+  </div>
+
+  <!-- 滤波效果可视化 -->
+  <h4 style="max-width:960px;width:100%;font-size:14px;font-weight:800;color:#34d399;margin:24px 0 4px">滤波前后对比 — 边界两侧像素值的变化</h4>
+  <p style="max-width:960px;width:100%;font-size:11px;color:#888;margin-bottom:8px">
+    取一个 8 像素宽的横截面：块 A 的 p₂ p₁ p₀ │ 块 B 的 q₀ q₁ q₂。滤波前边界跃变=5，滤波后≈1。
+  </p>
+  <div class="cv-wrap" id="deblockWrap" style="height:280px">
     <canvas id="deblockCanvas"></canvas>
   </div>
 
-  <div class="card-grid c3" style="margin-top:20px">
-    <div class="g-card" style="--gc:#a78bfa">
-      <h4>方块效应的成因</h4>
-      <div class="sub">分块编码的副作用</div>
-      <p>① 变换/量化是<strong>块级独立</strong>的 → 相邻块量化误差不同 → 边界不连续<br>② 运动补偿使用<strong>不同参考块</strong> → 边界像素来源不同<br>③ 低码率下高频大量归零 → 差异更明显</p>
-    </div>
-    <div class="g-card" style="--gc:#fbbf24">
-      <h4>边界强度 Bs · 0~4</h4>
-      <div class="sub">决定滤波强度</div>
-      <p>滤波强度由<strong>边界强度 Bs</strong>（0~4）决定，同时受阈值 α（块间）和 β（块内）约束。<br>Bs 越大 → 滤波越强 → 边界越平滑，但过强会模糊真实细节。<br>完整判定逻辑见下方 Bs 对照表。</p>
+  <!-- 具体滤波计算 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#fbbf24;margin:36px 0 4px">滤波到底怎么算？—— 以 Bs=2 标准滤波为例</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    边界两侧像素排列：<strong>p₃ p₂ p₁ p₀ │ q₀ q₁ q₂ q₃</strong>。滤波修改 p₀ p₁ 和 q₀ q₁（Bs=1~3 标准滤波）。
+  </p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>📐 p₀ 和 q₀ 的滤波（主滤波，边界两侧第一排）</h4>
+      <div class="sub">核心思想：让 p₀ 和 q₀ 互相靠近——拉平跃变</div>
+      <p>先计算偏移量 Δ：<br>
+      <code>Δ = Clip3(−C0, C0, ((q₀−p₀)×4 + (p₁−q₁) + 4) >> 3)</code><br><br>
+      拆解这个公式：<br>
+      ① <strong>(q₀−p₀)×4</strong>：边界两侧像素差占主导权重——差越大，修正越多<br>
+      ② <strong>+ (p₁−q₁)</strong>：块内梯度作为修正——如果 p₁<q₁（说明只是边界跳了一下），加强修正<br>
+      ③ <strong>+4 >> 3</strong>：除以 8 并四舍五入——把修正量缩小到合理范围<br>
+      ④ <strong>Clip3(−C0, C0, …)</strong>：限制修正幅度——不会一刀切过头<br><br>
+      最终：<strong>p₀' = p₀ + Δ，q₀' = q₀ − Δ</strong>——两个像素向彼此靠近。</p>
     </div>
     <div class="g-card" style="--gc:#34d399">
-      <h4>滤波决策与裁剪</h4>
-      <div class="sub">只滤真边界，不过度平滑</div>
-      <p>先判断是否为<strong>伪边界</strong>（阈值 α/β 检查）。Bs=4 用最强 5 抽头滤波，Bs=1-3 用标准 4 抽头。<br><strong>Clip 操作</strong>设上下限，防止过度滤波导致真实细节丢失。</p>
+      <h4>📐 p₁ 和 q₁ 的滤波（次滤波，边界两侧第二排）</h4>
+      <div class="sub">次要修正——让边界附近的过渡更自然</div>
+      <p>p₁ 的修正量：<br>
+      <code>Δp₁ = Clip3(−C1, C1, (p₂ + ((p₀+q₀+1)>>1) − 2×p₁) >> 1)</code><br><br>
+      拆解：<br>
+      ① <strong>p₂ + (p₀+q₀)/2</strong>：p₁ 左右两侧邻居的平均——"理想值"<br>
+      ② <strong>− 2×p₁</strong>：与当前值的差距<br>
+      ③ <strong>>> 1</strong>：缩小一半修正量（p₁ 比 p₀ 离边界远，修正应该更保守）<br><br>
+      q₁ 同理（对称）。p₂ p₃ q₂ q₃ 不修改（Bs=1~3 时）。
+    </div>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:12px">
+    <div class="ct">用最开始那个块效应例子走一遍滤波</div>
+    滤波前：p₀=99, q₀=104 &nbsp;→&nbsp; 跃变 = 5。假设 C0=3。<br>
+    Δ = Clip3(−3, 3, ((104−99)×4 + (99−103) + 4)>>3) = Clip3(−3, 3, (20−4+4)>>3) = Clip3(−3, 3, 2) = <strong>2</strong><br>
+    滤波后：p₀' = 99+2 = <strong>101</strong>, q₀' = 104−2 = <strong>102</strong>。跃变 = 102−101 = <strong>1</strong>——恢复到了和原始一样的平滑度！<br>
+    <strong>注意</strong>：原始像素是 101 和 102，滤波后恰好恢复到原始值——这是巧合（因为量化误差恰好被 clip 范围覆盖了）。一般情况滤波只能"改善"不能"完全消除"。
+  </div>
+
+  <!-- 环路内的意义 -->
+  <h4 style="max-width:960px;width:100%;font-size:15px;font-weight:800;color:#a78bfa;margin:36px 0 4px">为什么叫"环路"滤波？—— 在编码环路内部，不是后处理</h4>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>❌ 如果是"后处理滤波"（不在环路内）</h4>
+      <div class="sub">只改善显示效果→编码效率毫无帮助</div>
+      <p>滤波后的帧 → 直接送去显示。<br><br>
+      但<strong>参考帧缓冲里存的是未滤波的帧</strong>——帧间预测用的参考帧仍然有块效应。<br>
+      → 运动补偿从有块效应的参考帧取块 → 块效应被复制到当前帧 → 需要更多残差来修正 → 码率上升。<br>
+      → 更糟的是：块效应在 P 帧之间<strong>累积和扩散</strong>——第 5 个 P 帧的块效应比第 1 个 P 帧严重得多。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>✅ 环路滤波（在环路内）</h4>
+      <div class="sub">滤波后的帧同时用于显示和参考→良性循环</div>
+      <p>滤波后的帧 → <strong>存入参考帧缓冲</strong> + 送去显示。<br><br>
+      帧间预测从<strong>已滤波的干净参考帧</strong>取块 → 参考帧画质好 → 预测更准 → 残差更小 → 码率更低。<br>
+      → 块效应不会在 P 帧之间累积——每个 P 帧看到的参考帧都是经过滤波的。<br>
+      → <strong>节省码率 5-10%</strong>（比不做环路滤波的方案）。<br><br>
+      <strong>这就是编码器架构中"反馈通路"包含去块滤波的原因</strong>——它不仅改善当前帧，更是对未来所有帧的投资。</p>
     </div>
   </div>
 
   <div class="ptbl" style="max-width:960px;width:100%;margin-top:18px">
     <table>
     <thead>
-      <tr><th>Bs 值</th><th>适用条件</th><th>滤波强度</th><th>抽头数</th><th>说明</th></tr>
+      <tr><th>Bs 值</th><th>适用条件</th><th>滤波强度</th><th>抽头数</th><th>修改像素</th><th>说明</th></tr>
     </thead>
     <tbody>
-      <tr><td class="r">4</td><td>帧内编码块边界</td><td>最强</td><td>5 抽头</td><td>帧内块边界差异通常最大，需要最强滤波</td></tr>
-      <tr><td class="y">3</td><td>帧间 + 非零变换系数（大残差）</td><td>强</td><td>4 抽头</td><td>残差大说明两个块差异大，边界明显</td></tr>
-      <tr><td class="y">2</td><td>帧间 + 有变换系数（有残差）</td><td>中</td><td>4 抽头</td><td>有残差但较小，适度降低块效应</td></tr>
-      <tr><td style="color:#60a5fa;font-weight:600">1</td><td>帧间 + 无残差 + 不同参考帧/MV</td><td>弱</td><td>4 抽头</td><td>虽无残差但参考来源不同，轻微滤波</td></tr>
-      <tr><td class="g">0</td><td>同参考帧 + 相同运动矢量</td><td>跳过</td><td>—</td><td>两个块来源一致，无块效应，不滤波</td></tr>
+      <tr><td class="r">4</td><td>帧内编码块边界</td><td>最强</td><td>5 抽头</td><td>p₀ p₁ p₂ · q₀ q₁ q₂</td><td>帧内块边界差异通常最大，需要最强滤波</td></tr>
+      <tr><td class="y">3</td><td>帧间 + 非零变换系数（大残差）</td><td>强</td><td>4 抽头</td><td>p₀ p₁ · q₀ q₁</td><td>残差大→量化误差大→边界跃变大</td></tr>
+      <tr><td class="y">2</td><td>帧间 + 有变换系数（有残差）</td><td>中</td><td>4 抽头</td><td>p₀ p₁ · q₀ q₁</td><td>有残差但较小，适度降低块效应</td></tr>
+      <tr><td style="color:#60a5fa;font-weight:600">1</td><td>帧间 + 无残差 + 不同参考帧/MV</td><td>弱</td><td>4 抽头</td><td>p₀ p₁ · q₀ q₁</td><td>虽无残差但参考来源不同，轻微滤波</td></tr>
+      <tr><td class="g">0</td><td>同参考帧 + MV 差 < 1 像素</td><td>跳过</td><td>—</td><td>无</td><td>两个块来源完全一致，不可能有块效应</td></tr>
     </tbody>
   </table>
   </div>
 
   <div class="callout warning" style="max-width:960px;width:100%;margin-top:14px">
-    <div class="ct">环路滤波 ≠ 后处理滤波</div>
-    关键区别：环路滤波作用于<strong>参考帧缓冲之前</strong>——滤波后的帧会作为<strong>后续帧的参考</strong>。更好的去块效果不仅改善当前帧画质，还能<strong>提升后续所有帧的预测精度</strong>。<br>
-    后处理滤波（如 FFmpeg 的 <code>pp</code> 滤镜）只改善播放显示效果，不影响编码效率。
+    <div class="ct">α 和 β 的查表机制——QP 越大，滤波越激进</div>
+    α(QP) 和 β(QP) 是 H.264 标准里预定义的查表值，不由编码器自由选择。<br>
+    QP=22 → α≈4, β≈3（低 QP，量化误差小→只滤最明显的跃变）。QP=38 → α≈40, β≈12（高 QP，量化误差大→几乎所有边界都滤）。<br>
+    这个设计非常聪明：<strong>量化越激进→块效应越严重→滤波自动增强</strong>——不需要编码器额外传参数，QP 本身就决定了滤波强度。
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- S10b: IPC 画质问题诊断 — 从现象到根因 ★ -->
+<!-- ============================================================ -->
+<div class="sec" id="s10b">
+  <h2 class="sec-title" id="s10bt">IPC 画质问题诊断</h2>
+  <p class="sec-sub" id="s10bs">拖影、呼吸效应、马赛克、I帧刷新感——每个现象背后都是编码理论与 ISP 处理的交叉作用</p>
+
+  <!-- 总体关系图 -->
+  <div class="card-grid c2" style="margin-top:20px">
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>🔗 编码器视角</h4>
+      <div class="sub">GOP · QP · 码控 · 运动搜索 · 去块滤波</div>
+      <p>编码器拿到的是<strong>ISP 已经处理完的 YUV 帧</strong>。ISP 的任何"处理痕迹"（过度降噪→平坦区域、过度锐化→虚假边缘、曝光振荡→亮度波动）都会被编码器<strong>当作真实画面内容</strong>来编码——编码器无法区分"真实纹理"和"ISP 引入的噪声/伪像"。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>📷 ISP 视角</h4>
+      <div class="sub">3DNR · 2DNR · AE · AWB · 锐化 · WDR</div>
+      <p>ISP 的输出<strong>直接决定编码器的输入质量</strong>。低照度下 ISP 增益放大 Sensor 噪声→编码器看到的是"充满高频噪声的画面"→运动搜索失效、量化吞掉真实细节、码率被噪声吞噬。ISP 和编码器<strong>必须联调</strong>——单独优化任何一方都是徒劳。</p>
+    </div>
+  </div>
+
+  <!-- ===== 现象1: 拖影 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#f87171;margin:36px 0 4px">现象一：拖影 (Motion Ghosting / Trailing)</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    <strong>现象</strong>：运动物体后方出现"残影"——物体已经移走了，但轮廓还在原地停留几帧才消失。低照度场景下尤其明显。
+  </p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>编码根因 ①：运动搜索范围不足</h4>
+      <div class="sub">merange 太小 → 找不到快速移动物体的匹配块</div>
+      <p>如果物体在两帧之间移动了 30 像素，但运动搜索范围只有 ±16 像素——编码器<strong>永远找不到正确匹配</strong>。它会退而求其次，选一个"不太像但离得近"的块——该块的残差很大（编码贵）但 MV 小。解码端看到的是<strong>新旧位置之间的"过渡态"</strong>——表现为拖影。<br>
+      <strong>解决</strong>：增大 merange（H.264 默认 16，可调到 32-64），或者用分层运动搜索（先粗搜大范围，再精搜小范围）。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>编码根因 ②：Skip 模式误判</h4>
+      <div class="sub">静态场景模型失效 — 运动区域被判为 Skip</div>
+      <p>在极低码率下，编码器的代价函数会<strong>偏向 Skip 模式</strong>（因为 Skip 只需 1 bit）。运动物体边缘的宏块——如果残差接近零但<strong>不完全为零</strong>——量化后残差系数全部归零→编码器判定为 Skip→<strong>直接复制参考帧对应位置的像素</strong>。旧位置的物体残影就这样被"保留"了下来。<br>
+      <strong>本质</strong>：量化吞掉了"运动物体边缘的微小残差"→编码器误以为"这里没变化"→Skip。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>ISP 关联 ③：3DNR 时域降噪</h4>
+      <div class="sub">ISP 在编码之前就已经制造了拖影</div>
+      <p><strong>3DNR（3D 降噪）</strong>的工作原理就是<strong>帧间加权平均</strong>——当前帧的每个像素 = 当前值×0.3 + 前一帧同位置值×0.7——这本身就是"拖影生成器"。如果 3DNR 的运动自适应阈值太高，<strong>运动物体也会被当作噪声进行时域平均</strong>——输出到编码器的 YUV 帧已经有拖影了。<br>
+      <strong>低照度场景</strong>：Sensor 增益高→噪声大→3DNR 强度自动增大→运动拖影加剧→编码器再叠加一层量化拖影→<strong>双重拖影</strong>。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">拖影排查路径</div>
+    ① 先关掉编码器，直接看 ISP 输出的 YUV 原图——如果原图已有拖影 → ISP 3DNR 问题。<br>
+    ② 原图没有拖影，编码后才出现 → 增大运动搜索范围（merange）、降低 QP、检查 Skip 阈值。<br>
+    ③ 只在低照度出现 → ISP 增益曲线 + 编码器 QP 策略联动调整——降增益→少噪声→编码器少吞细节。
+  </div>
+
+  <!-- ===== 现象2: 呼吸效应 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#fbbf24;margin:36px 0 4px">现象二：呼吸效应 (Breathing / Pulsing)</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    <strong>现象</strong>：画面每隔几秒（通常 2-5 秒）出现一次明显的质量波动——要么"突然清晰→逐渐模糊→再突然清晰"，要么反过来。周期与 GOP 长度精确对应。
+  </p>
+
+  <div class="cv-wrap" id="breathWrap" style="height:340px">
+    <canvas id="breathCanvas"></canvas>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>编码根因：I/P 帧比特分配失衡</h4>
+      <div class="sub">CBR 码控下 I 帧被"惩罚"——QP 高于 P 帧</div>
+      <p>I 帧的压缩比只有 ~7:1，是 P 帧（~20:1）的 3 倍大小。在 CBR 模式下，码控算法发现 I 帧"胃口太大"，<strong>给 I 帧分配更高的 QP</strong>（更差的画质）来控制总码率。结果：<strong>I 帧画质反而比后续的 P 帧还差</strong>——解码端看到的是"I 帧模糊→P 帧逐渐清晰→下一个 I 帧又模糊→..."的周期呼吸。<br>
+      反过来，如果给 I 帧足够的 bit（低 QP）：I 帧非常清晰，但随着 P 帧累积量化误差逐渐模糊——<strong>"突然清晰→逐渐模糊→再突然清晰"</strong>的呼吸。</p>
+    </div>
+    <div class="g-card" style="--gc:#34d399">
+      <h4>码控参数调节</h4>
+      <div class="sub">ipratio · qcomp · GOP 大小 · CBR vs CQP</div>
+      <p><strong>ipratio</strong>（x264）：I 帧 QP 相对于 P 帧 QP 的偏移。默认 1.4（I 帧 QP = P 帧 QP − 1.4，即 I 帧画质略优）。如果呼吸是"I 帧比 P 帧差"→增大 ipratio（让 I 帧更多 bit）；如果"I 帧太清楚导致 P 帧追不上"→减小 ipratio。<br>
+      <strong>qcomp</strong>（x264）：码率控制的压缩程度。0=恒定 QP（CQP），1=恒定码率（CBR）。默认 0.6。呼吸严重时降低 qcomp→0.4-0.5 给复杂帧更多 bit。<br>
+      <strong>GOP 大小</strong>：GOP 越小→I 帧越频繁→单次 I 帧冲击越小→呼吸幅度越低。代价是总压缩效率下降。</p>
+    </div>
+  </div>
+
+  <div class="card-grid c2" style="margin-top:0">
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>ISP 关联：AE 曝光振荡</h4>
+      <div class="sub">自动曝光的收敛周期与 GOP 周期产生拍频</div>
+      <p>AE（自动曝光）通常在 3-10 帧内完成一次亮度调整。如果 AE 的收敛周期恰好与 GOP 长度接近（如 GOP=30, AE 收敛=5 帧→每 6 个 GOP 产生一次亮度振荡），两者的<strong>拍频</strong>会让呼吸效应加倍明显——画面不仅清晰度在呼吸，<strong>亮度也在周期性变化</strong>。<br>
+      <strong>解决</strong>：AE 收敛速度需要远快于或远慢于 GOP 周期，避免产生整数倍关系。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>ISP 关联：AWB 周期性修正</h4>
+      <div class="sub">白平衡微调与 I 帧刷新叠加</div>
+      <p>AWB（自动白平衡）每 10-30 帧做一次微调。当 AWB 的调整周期与 I 帧间隔对齐时——用户看到 <strong>"I 帧刷新 + 色调微变"</strong> 的叠加效果——感知上的呼吸感被放大。<br>
+      <strong>典型场景</strong>：日光灯环境（50Hz 频闪）+ GOP=25（1秒）→ 频闪周期与 GOP 周期产生摩尔纹式的呼吸。</p>
+    </div>
+  </div>
+
+  <!-- ===== 现象3: 马赛克 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#34d399;margin:36px 0 4px">现象三：马赛克 / 块效应 (Blocking Artifacts)</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    <strong>现象</strong>：画面中出现明显的 8×8 或 16×16 方块边界——像拼图没对齐一样。低码率/低照度场景下最严重，平坦区域（天空、白墙）尤为明显。
+  </p>
+
+  <div class="card-grid c3" style="margin-top:12px">
+    <div class="g-card" style="--gc:#f87171">
+      <h4>编码根因 ①：量化过激</h4>
+      <div class="sub">QP 过高 → DCT 系数大量归零 → 块边界不连续</div>
+      <p>每个宏块的变换/量化是<strong>独立进行</strong>的。相邻两个块——即使原始像素几乎一样——量化后一个块保留了 DC+2 个 AC 系数，另一个块只剩 DC 系数。解码重建后<strong>两个块的像素值出现系统性偏差</strong>——块边界跃变就产生了。<br>
+      就像两张颜色相近但<strong>不完全相同</strong>的便利贴拼在一起——单片看没问题，拼在一起边界就穿帮了。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>编码根因 ②：去块滤波失效</h4>
+      <div class="sub">Bs 判定过低 → 该滤的边界没滤</div>
+      <p>H.264 的去块滤波（S10）会在块边界做平滑。但滤波强度由 Bs 和阈值 α/β 决定。如果两个相邻块<strong>恰好在 "滤与不滤的阈值边缘"</strong>——例如一个块的残差刚超出阈值→Bs=2（中强滤波），相邻块的残差才低于阈值→Bs=1（弱滤波）——滤波效果不对等，边界仍在。<br>
+      低码率下更糟：两个块都变成 Bs=0（无条件跳过）——因为残差全被量化归零了——但量化误差导致它们的 DC 值仍然不同。</p>
+    </div>
+    <div class="g-card" style="--gc:#a78bfa">
+      <h4>ISP 关联：噪声 → 虚假高频 → 码率被吞噬</h4>
+      <div class="sub">ISP 输出噪声大的画面 → 编码器把噪声当纹理编码</div>
+      <p>低照度场景：Sensor 模拟增益 +32dB → 噪声标准差从 2 跳到 15。ISP 如果没有充分降噪——输出到编码器的 YUV 帧充满<strong>随机高频噪声</strong>。编码器无法区分"真实纹理"和"噪声"——DCT 后大量非零高频系数 → 量化必须保留这些"假纹理" → 码率被噪声吞噬 → 真正的画面内容被迫用更高的 QP → <strong>马赛克出现在应该平滑的区域</strong>。<br>
+      <strong>典型表现</strong>：白天画质完美，一到夜间/红外模式就满屏马赛克——不是编码器坏了，是 ISP 输出信号质量崩塌了。</p>
+    </div>
+  </div>
+
+  <div class="callout warning" style="max-width:960px;margin-top:12px">
+    <div class="ct">马赛克排查路径</div>
+    ① <strong>白天正常、夜间出现</strong>：大概率 ISP 问题——低照度噪声没有被充分降噪。检查 ISP 的 2DNR/3DNR 强度、Sensor 增益上限。<br>
+    ② <strong>平坦区域（天空/白墙）出现</strong>：QP 过高。平坦区域 DCT 后只有 DC+少数 AC——如果 DC 也被量化损失→块间 DC 差异→严重色块。降低 QP 或启用自适应量化（aq-mode）。<br>
+    ③ <strong>全天候出现</strong>：码率过低 + GOP 太大。增加码率或缩小 GOP——让 I 帧更频繁地"纠正"累积的块效应。
+  </div>
+
+  <!-- ===== 现象4: I帧刷新感 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#38bdf8;margin:36px 0 4px">现象四：I 帧周期性刷新感 (I-Frame Refresh Pulse)</h4>
+  <p style="max-width:960px;width:100%;font-size:12px;color:#8888aa;margin-bottom:14px">
+    <strong>现象</strong>：画面每隔固定时间（通常是 2-5 秒），整幅画面出现一次"刷新"——画面突然变得清晰或突然变模糊，然后稳定，直到下一次刷新。周期 = GOP 长度 ÷ 帧率。例如 GOP=50, 25fps → 每 2 秒刷新一次。
+  </p>
+
+  <div class="card-grid c2" style="margin-top:12px">
+    <div class="g-card" style="--gc:#38bdf8">
+      <h4>根本原因：I 帧是"另类"——尺寸与画质异于 P/B 帧</h4>
+      <div class="sub">I 帧 = 帧内编码 → 压缩比 ~7:1 · P 帧 = 帧间编码 → 压缩比 ~20:1</div>
+      <p>关键事实：<strong>I 帧的数据量是 P 帧的 3-10 倍</strong>（同 QP 下）。CBR 码控面对这个"巨无霸"只能二选一：<br>
+      <strong>方案 A（给足 bit）</strong>：I 帧画质极好→画面突然变清晰→后续 P 帧画质逐渐下降（量化误差累积）→下一个 I 帧又一次"刷新"。用户感知：画面"哒-哒-哒"地跳动。<br>
+      <strong>方案 B（不给足 bit）</strong>：I 帧 QP 被抬高→I 帧画质反而不如 P 帧→画面在 I 帧处"模糊一下"再恢复。用户感知：每 2 秒"眼前一花"。<br>
+      <strong>方案 C（CQP/CRF）</strong>：所有帧使用相同 QP→I 帧自然比 P 帧大 5-10×→瞬时码率剧烈波动→网络传输可能丢包。画质好但不适合固定带宽场景。</p>
+    </div>
+    <div class="g-card" style="--gc:#fbbf24">
+      <h4>缓解策略</h4>
+      <div class="sub">没有完美解——只能在压缩效率、延迟、画质均匀性之间权衡</div>
+      <p>
+        <strong>① 缩小 GOP</strong>：GOP=15（0.5s@30fps）vs GOP=60（2s）→ 刷新频率变高但单次冲击变小。人眼对"高频小幅波动"的感知弱于"低频大幅波动"。代价：压缩效率下降 10-15%。<br>
+        <strong>② 开放 GOP</strong>：用 Non-IDR I 帧替代 IDR——不清空参考帧缓冲。I 帧与前后 P 帧共享参考，画质过渡更平滑。<br>
+        <strong>③ 自适应 GOP</strong>：场景切换时强制插入 I 帧（scenecut），静态场景拉长 GOP——让 I 帧只在"画面本来就该刷新"的时候出现。<br>
+        <strong>④ Intra-Refresh（H.264/H.265）</strong>：不用整帧 I 帧，而是<strong>每帧只刷新几行宏块</strong>——把 I 帧的 bit 冲击分散到多个帧上。WebRTC/实时通信常用。
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== ISP ↔ 编码器 联动总结 ===== -->
+  <h4 style="max-width:960px;width:100%;font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#a78bfa;margin:36px 0 4px">ISP ↔ 编码器 联动分析</h4>
+
+  <div class="ptbl" style="max-width:960px;width:100%;margin-top:12px">
+    <table>
+    <thead>
+      <tr><th>ISP 模块</th><th>对编码器的影响</th><th>可能引发的问题</th><th>联调建议</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:#f87171;font-weight:600">3DNR<br>（时域降噪）</td>
+        <td>帧间像素加权平均 → 削弱时间冗余 → 运动搜索的 SAD 被"虚低"</td>
+        <td>拖影、运动模糊、Skip 误判</td>
+        <td>运动区域自动降低 3DNR 强度<br>低照度下优先保运动清晰度</td>
+      </tr>
+      <tr>
+        <td style="color:#fbbf24;font-weight:600">2DNR<br>（空域降噪）</td>
+        <td>抹平高频纹理 → DCT 高频系数变小 → 量化更容易归零</td>
+        <td>纹理丢失、平坦区域马赛克、<br>"油画感"（缺乏细节）</td>
+        <td>适度保留传感器原生纹理<br>让编码器（而非 ISP）决定丢弃哪些高频</td>
+      </tr>
+      <tr>
+        <td style="color:#34d399;font-weight:600">锐化<br>（Edge Enhance）</td>
+        <td>增强边缘 → DCT 高频系数变大 → 码率需求增加</td>
+        <td>边缘ring效应、码率失控、<br>CBR 下其他区域画质被牺牲</td>
+        <td>锐化放在编码<strong>之后</strong>的后处理<br>或者在锐化后做自适应量化补偿</td>
+      </tr>
+      <tr>
+        <td style="color:#38bdf8;font-weight:600">AE<br>（自动曝光）</td>
+        <td>亮度波动 → 编码器残差的 DC 分量波动 → I 帧附近码率冲击</td>
+        <td>呼吸效应加剧、<br>I 帧刷新感叠加亮度跳动</td>
+        <td>AE 收敛避免与 GOP 周期成整数倍<br>曝光步长 ≤ 编码器可平滑的范围</td>
+      </tr>
+      <tr>
+        <td style="color:#a78bfa;font-weight:600">AWB<br>（自动白平衡）</td>
+        <td>色度分量 UV 波动 → 帧间色度差异增大</td>
+        <td>I 帧附近色调跳动、<br>色度平面的块效应</td>
+        <td>AWB 更新周期 >> GOP 周期<br>减少白平衡调整的幅度和频率</td>
+      </tr>
+      <tr>
+        <td style="color:#fbbf24;font-weight:600">WDR/HDR<br>（宽动态）</td>
+        <td>色调映射改变亮度分布 → 编码器量化策略失效</td>
+        <td>高亮/暗部区域的块效应<br>与中灰区域的画质不均衡</td>
+        <td>WDR 后使用自适应量化（AQ）<br>按区域重要性分配 QP</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout info" style="max-width:960px;margin-top:16px">
+    <div class="ct">IPC 画质问题的黄金排查顺序</div>
+    <strong>第一步：排除 ISP 问题。</strong>关掉编码器，直接 dump ISP 输出的 YUV 原图——如果原图已有拖影/噪声/色偏，问题在 ISP 端。<br>
+    <strong>第二步：检查码控参数。</strong>确认 CBR/VBR/CRF 模式、QP 范围、I/P 帧 QP 偏移（ipratio）、GOP 大小是否合理。<br>
+    <strong>第三步：分析码流。</strong>用 Elecard StreamEye 或 FFmpeg 逐帧导出 QP 分布——看 QP 是否在某些帧/区域出现异常峰值。<br>
+    <strong>第四步：ISP+编码器联调。</strong>基于第三步的发现，确定是降噪参数、增益上限、锐化强度还是码率分配的问题——逐项调整并 A/B 对比。
   </div>
   <div class="scroll-hint">↓</div>
 </div>
@@ -1040,6 +2249,8 @@ function drawEncoder() {
 }
 
 // ===== S6: Intra Prediction =====
+let intraMode = 0;
+function setIntraMode(v) { intraMode = parseInt(v); document.getElementById('intraModeLabel').textContent = intraMode + ': ' + ['垂直 Vertical','水平 Horizontal','DC(均值)','左下对角 Diagonal-DL','右下对角 Diagonal-DR','垂直偏右 VR','水平偏下 HD','垂直偏左 VL','水平偏上 HU'][intraMode]; drawIntra(); }
 function drawIntra() {
   const cv = document.getElementById('intraCanvas');
   if (!cv) return;
@@ -1049,54 +2260,136 @@ function drawIntra() {
   const ctx = cv.getContext('2d');
   ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
 
-  const cx = W*0.12, cy = H*0.18, cell = 42;
+  // === LEFT: 4x4 block with reference pixels and prediction ===
+  const cell = 36, gx = 40, gy = 55, N = 4;
+  // Reference pixels (top row + left column above/left of the 4x4)
+  const refTop = [120,115,108,100,92,84,78,72,66]; // 9 ref pixels above (for -1 row, 0..7 col)
+  const refLeft = [120,118,114,108,100,90,82,74,66]; // 9 ref pixels left (for -1 col, 0..7 row)
 
-  // Grid with reference pixels
-  for (let r = 0; r < 5; r++)
-    for (let c = 0; c < 5; c++) {
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.rect(cx + c*cell, cy + r*cell, cell, cell); ctx.fill(); ctx.stroke();
+  // Draw the 4x4 target block
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.rect(gx + c*cell, gy + r*cell, cell, cell); ctx.fill(); ctx.stroke();
     }
+  // Label "当前块"
+  ctx.fillStyle = '#6c63ff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('当前块 (4×4)', gx + N*cell/2, gy + N*cell + 22);
+  ctx.fillText('待编码', gx + N*cell/2, gy + N*cell + 38);
 
-  // Reference pixels (top row + left col)
-  ctx.fillStyle = '#34d399';
-  for (let c = 1; c < 5; c++) ctx.fillRect(cx + c*cell + 2, cy + 2, cell-4, cell-4);
-  for (let r = 1; r < 5; r++) ctx.fillRect(cx + 2, cy + r*cell + 2, cell-4, cell-4);
-  ctx.fillStyle = '#6ee7b7';
-  ctx.fillRect(cx + 2, cy + 2, cell-4, cell-4);
-
-  // Prediction arrows (vertical mode)
-  ctx.strokeStyle = 'rgba(108,99,255,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
-  for (let c = 1; c < 5; c++) {
-    ctx.beginPath();
-    ctx.moveTo(cx + c*cell + cell/2, cy + cell);
-    ctx.lineTo(cx + c*cell + cell/2, cy + 4*cell);
-    ctx.stroke();
+  // Reference pixels: top row (above block)
+  for (let c = 0; c <= N*2; c++) {
+    const v = refTop[c] || 100;
+    ctx.fillStyle = `rgb(${Math.floor(v*0.4)},${Math.floor(180+v*0.3)},${Math.floor(v*0.5)})`;
+    ctx.fillRect(gx + (c-1)*cell, gy - cell, cell-2, cell-2);
   }
-  ctx.setLineDash([]);
+  // Reference pixels: left column (left of block)
+  for (let r = 0; r <= N*2; r++) {
+    const v = refLeft[r] || 100;
+    ctx.fillStyle = `rgb(${Math.floor(v*0.4)},${Math.floor(180+v*0.3)},${Math.floor(v*0.5)})`;
+    ctx.fillRect(gx - cell, gy + (r-1)*cell, cell-2, cell-2);
+  }
+  // Top-left corner
+  ctx.fillStyle = 'rgb(100,230,120)';
+  ctx.fillRect(gx - cell, gy - cell, cell-2, cell-2);
+  ctx.fillStyle = '#34d399'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('参考像素', gx - cell/2, gy - cell - 6);
+  ctx.fillText('(已编码)', gx - cell/2, gy - cell + 8);
 
-  ctx.fillStyle = '#34d399'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('参考像素 (已编码)', cx + 2.5*cell, cy - 14);
+  // === Draw prediction based on current mode ===
+  ctx.fillStyle = 'rgba(108,99,255,0.5)'; ctx.strokeStyle = '#6c63ff'; ctx.lineWidth = 1;
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let predVal;
+      switch(intraMode) {
+        case 0: predVal = refTop[c+1]; break; // Vertical: copy from above
+        case 1: predVal = refLeft[r+1]; break; // Horizontal: copy from left
+        case 2: { // DC: average of all ref pixels
+          let sum = 0;
+          for (let i = 1; i <= N; i++) sum += refTop[i] + refLeft[i];
+          predVal = Math.round(sum / (N*2));
+          break;
+        }
+        case 3: // Diagonal down-left: 45° from top-right
+          predVal = Math.round((refTop[c+r+2] + refTop[c+r+3])/2) || refTop[N];
+          break;
+        case 4: // Diagonal down-right: 45° from top
+          predVal = Math.round((refTop[c-r+1] + refLeft[r-c+1])/2) || refTop[0];
+          break;
+        case 5: // Vertical-right
+          predVal = Math.round((refTop[c+1] * 3 + refTop[c]) / 4);
+          break;
+        case 6: // Horizontal-down
+          predVal = Math.round((refLeft[r+1] * 3 + refLeft[r]) / 4);
+          break;
+        case 7: // Vertical-left
+          predVal = Math.round((refTop[c+1] + refTop[c+2]) / 2);
+          break;
+        case 8: // Horizontal-up
+          predVal = Math.round((refLeft[r+1] + refLeft[r+2]) / 2);
+          break;
+        default: predVal = 128;
+      }
+      predVal = Math.max(40, Math.min(200, predVal));
+      ctx.fillStyle = `rgba(108,99,255,${0.25 + (1-Math.abs(predVal-120)/100)*0.3})`;
+      ctx.fillRect(gx + c*cell + 2, gy + r*cell + 2, cell-4, cell-4);
+      ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(predVal, gx + c*cell + cell/2, gy + r*cell + cell/2 + 4);
+    }
+  }
 
-  // 9 mode labels
-  const modes = ['0:垂直 ↓','1:水平 →','2:DC(均值)','3:左下对角↘','4:右下对角↙','5:右偏垂直','6:下偏水平','7:左偏垂直','8:上偏水平'];
-  ctx.textAlign = 'left';
-  modes.forEach((m, i) => {
-    ctx.fillStyle = i === 0 ? '#6c63ff' : '#7777aa';
-    ctx.font = `${i===0?'bold ':''}12px sans-serif`;
-    ctx.fillText(m, cx + 5*cell + 30, cy + i*20 + 18);
-  });
+  // Mode-specific arrows
+  ctx.strokeStyle = '#6c63ff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6;
+  if (intraMode === 0) { // Vertical
+    for (let c = 0; c < N; c++) {
+      ctx.beginPath(); ctx.setLineDash([4,4]);
+      ctx.moveTo(gx + c*cell + cell/2, gy - 4);
+      ctx.lineTo(gx + c*cell + cell/2, gy + N*cell);
+      ctx.stroke();
+    }
+  } else if (intraMode === 1) { // Horizontal
+    for (let r = 0; r < N; r++) {
+      ctx.beginPath(); ctx.setLineDash([4,4]);
+      ctx.moveTo(gx - 4, gy + r*cell + cell/2);
+      ctx.lineTo(gx + N*cell, gy + r*cell + cell/2);
+      ctx.stroke();
+    }
+  } else if (intraMode === 3) { // Diagonal DL
+    for (let i = 0; i < N; i++) {
+      ctx.beginPath(); ctx.setLineDash([4,4]);
+      const sx = gx + i*cell + cell/2, sy = gy - 4;
+      const ex = gx + (i+1)*cell + cell/2, ey = gy + N*cell;
+      ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
 
-  // Plane mode demo
-  const px = cx + 5*cell + 180, py = cy;
-  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Plane 模式', px + 50, py - 12);
-  const grd = ctx.createLinearGradient(px, py, px+100, py+80);
-  grd.addColorStop(0, '#2a2a4a'); grd.addColorStop(0.5, '#4a4a7a'); grd.addColorStop(1, '#6a6aaa');
-  ctx.fillStyle = grd; ctx.fillRect(px, py, 100, 80);
-  ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1; ctx.strokeRect(px, py, 100, 80);
-  ctx.fillStyle = '#ccccee'; ctx.font = '10px sans-serif';
-  ctx.fillText('水平+垂直', px+50, py+33); ctx.fillText('同时渐变', px+50, py+50);
+  // === RIGHT: Explanation panel ===
+  const rx = gx + N*cell + 60;
+  // Mode list
+  const modeNames = ['垂直','水平','DC(均值)','左下对角','右下对角','垂直偏右','水平偏下','垂直偏左','水平偏上'];
+  const arrows = ['↓','→','⊡','↘','↙','↘','↘','↙','↙'];
+  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('9 种预测方向（点击滑块切换）', rx, gy);
+  for (let i = 0; i < 9; i++) {
+    const my = gy + 22 + i*26;
+    ctx.fillStyle = i === intraMode ? '#6c63ff' : '#505070';
+    ctx.font = `${i===intraMode?'bold ':''}12px sans-serif`;
+    ctx.fillText(`${i}: ${modeNames[i]} ${arrows[i]}`, rx, my);
+    if (i === intraMode) {
+      ctx.fillStyle = '#a78bfa'; ctx.font = '10px sans-serif';
+      const hints = ['上方像素向下复制','左侧像素向右复制','邻居像素平均值填充','45°从左下往右上推','45°从左上往右下推','垂直微偏右~26°','水平微偏下~26°','垂直微偏左~-26°','水平微偏上~-26°'];
+      ctx.fillText(`→ ${hints[i]}`, rx + 160, my + 1);
+    }
+  }
+
+  // === BOTTOM: Mode comparison for current mode ===
+  const by = gy + N*cell + 55;
+  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`当前模式: ${intraMode} (${modeNames[intraMode]})`, gx, by);
+  ctx.fillText(`预测原理: 每个预测像素值仅由已编码的邻居像素计算得出——不依赖当前块内的任何其他像素`, gx, by + 22);
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'italic 11px sans-serif';
+  ctx.fillText(`残差 = 原始像素 − 预测值 → 变换 → 量化 → 熵编码。预测越准 → 残差越接近零 → 码率越低`, gx, by + 42);
 }
 
 // ===== S7: Motion Estimation =====
@@ -1170,56 +2463,143 @@ function drawDCT() {
   const ctx = cv.getContext('2d');
   ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
 
-  const N = 4, csz = 33, gap = 18, sx = 38, sy = 38;
+  const N = 4, csz = 44, gapX = 36, sx = 24, sy = 54;
   const dct = [[380,-45,12,-5],[-38,22,-8,3],[15,-10,5,-2],[-6,3,-2,1]];
   const qstep = Math.pow(2, (qpVal - 4) / 6);
   const quant = dct.map(r => r.map(v => Math.round(v/qstep)));
-  const deq = quant.map(r => r.map(v => v*qstep));
+  const deq = quant.map(r => r.map(v => +((v*qstep).toFixed(1))));
 
+  // Helper: draw one 4x4 matrix with title and per-cell tooltip-like styling
   const drawMat = (data, x, y, title, maxV, cs) => {
-    ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(title, x + N*csz/2, y - 8);
+    // Title
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(title, x + N*csz/2, y - 12);
+
+    // Column headers (频率方向标注)
+    ctx.fillStyle = '#555'; ctx.font = '9px sans-serif';
+    ctx.fillText('低频 → 高频', x + N*csz/2, y - 24);
+
     for (let r = 0; r < N; r++)
       for (let c = 0; c < N; c++) {
         const v = data[r][c], av = Math.abs(v);
-        const i = Math.min(1, av/(maxV*1.2));
-        let clr;
-        if (v === 0) clr = 'rgba(0,0,0,0.2)';
-        else if (cs === 'green') clr = `rgba(52,${Math.floor(60+i*155)},153,${0.3+i*0.5})`;
-        else if (cs === 'yellow') clr = `rgba(251,${Math.floor(80+i*140)},36,${0.3+i*0.5})`;
-        else clr = `rgba(168,${Math.floor(120-i*60)},${Math.floor(250-i*80)},${0.3+i*0.5})`;
-        ctx.fillStyle = clr;
-        ctx.fillRect(x + c*csz, y + r*csz, csz-2, csz-2);
-        ctx.fillStyle = v === 0 ? '#444' : '#e0e0e0'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
-        ctx.fillText(v, x + c*csz + csz/2, y + r*csz + csz/2 + 4);
+        const intensity = Math.min(1, av / (maxV * 1.1));
+
+        // Background color based on value magnitude
+        let bg;
+        if (Math.abs(v) < 0.01) {
+          // Zero cell: dark, muted
+          bg = 'rgba(30,30,40,0.6)';
+        } else if (cs === 'green') {
+          // Quantized: green = survived quantization
+          const g = Math.floor(120 + intensity * 100);
+          bg = `rgba(52,${g},100,${0.35 + intensity * 0.55})`;
+        } else if (cs === 'yellow') {
+          // Dequantized: yellow/orange
+          bg = `rgba(251,${Math.floor(130 + intensity * 80)},36,${0.3 + intensity * 0.5})`;
+        } else {
+          // Original DCT: purple
+          bg = `rgba(130,${Math.floor(100 - intensity * 60)},${Math.floor(240 + intensity * 15)},${0.3 + intensity * 0.5})`;
+        }
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(x + c*csz, y + r*csz, csz-3, csz-3);
+
+        // Value text
+        const absV = Math.abs(v);
+        let txtColor;
+        if (absV < 0.01) txtColor = '#444';
+        else if (absV < 1) txtColor = '#999';
+        else if (absV < 10) txtColor = '#ccc';
+        else txtColor = '#fff';
+
+        ctx.fillStyle = txtColor;
+        ctx.font = absV >= 100 ? 'bold 11px monospace' : (absV >= 10 ? 'bold 12px monospace' : '11px monospace');
+        ctx.textAlign = 'center';
+
+        // Format: integers without decimal, floats with 1 decimal
+        const txt = Number.isInteger(v) ? String(v) : v.toFixed(1);
+        ctx.fillText(txt, x + c*csz + csz/2, y + r*csz + csz/2 + 5);
       }
   };
 
-  drawMat(dct, sx, sy, 'DCT系数', 380, 'purple');
-  drawMat(quant, sx + N*csz + gap, sy, `量化后(QP=${qpVal})`, 380, 'green');
+  // === Layout: 3 matrices in a row with separator arrows ===
+  const m1x = sx;
+  const m2x = sx + N*csz + gapX;
+  const m3x = sx + 2*(N*csz + gapX);
 
-  const nnz = quant.flat().filter(v => v !== 0).length;
-  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-  const qx = sx + N*csz + gap;
-  ctx.fillText(`非零系数:${nnz}/16 · 压缩≈${((1-nnz/16)*100).toFixed(0)}%`, qx + N*csz/2, sy + N*csz + 26);
+  // Draw all three matrices
+  drawMat(dct, m1x, sy, '① DCT 系数（原始）', 380, 'purple');
+  drawMat(quant, m2x, sy, `② 量化后 QP=${qpVal}`, 380, 'green');
+  drawMat(deq, m3x, sy, '③ 反量化后（有损还原）', 380, 'yellow');
 
-  const dqx = sx + 2*(N*csz + gap);
-  drawMat(deq, dqx, sy, '反量化后(有损)', 380, 'yellow');
+  // === Arrows between matrices ===
+  const arrowY = sy + N*csz/2;
+  ctx.strokeStyle = 'rgba(200,200,220,0.5)'; ctx.lineWidth = 2;
+  // Arrow 1→2
+  const a1s = m1x + N*csz + 6, a1e = m2x - 6;
+  ctx.beginPath(); ctx.moveTo(a1s, arrowY); ctx.lineTo(a1e - 8, arrowY); ctx.stroke();
+  ctx.fillStyle = 'rgba(200,200,220,0.5)';
+  ctx.beginPath(); ctx.moveTo(a1e, arrowY); ctx.lineTo(a1e - 10, arrowY - 6); ctx.lineTo(a1e - 10, arrowY + 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#a78bfa'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('÷Qstep', (a1s + a1e)/2, arrowY - 8);
+  ctx.fillText('四舍五入', (a1s + a1e)/2, arrowY + 16);
 
-  // Loss markers
+  // Arrow 2→3
+  const a2s = m2x + N*csz + 6, a2e = m3x - 6;
+  ctx.strokeStyle = 'rgba(200,200,220,0.5)';
+  ctx.beginPath(); ctx.moveTo(a2s, arrowY); ctx.lineTo(a2e - 8, arrowY); ctx.stroke();
+  ctx.fillStyle = 'rgba(200,200,220,0.5)';
+  ctx.beginPath(); ctx.moveTo(a2e, arrowY); ctx.lineTo(a2e - 10, arrowY - 6); ctx.lineTo(a2e - 10, arrowY + 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fbbf24'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('×Qstep', (a2s + a2e)/2, arrowY - 8);
+  ctx.fillText('（还原）', (a2s + a2e)/2, arrowY + 16);
+
+  // === Loss markers: compare DCT[i][j] vs deq[i][j] ===
+  // Draw red dashed borders on the dequantized matrix where loss occurred
   for (let r = 0; r < N; r++)
-    for (let c = 0; c < N; c++)
-      if (dct[r][c] !== deq[r][c]) {
-        ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2;
-        ctx.strokeRect(dqx + c*csz, sy + r*csz, csz-2, csz-2);
+    for (let c = 0; c < N; c++) {
+      const orig = dct[r][c], restored = deq[r][c];
+      const loss = Math.abs(orig - restored);
+      if (loss > 0.05) {
+        // Red border thickness proportional to loss magnitude
+        const lw = Math.min(4, 1.5 + loss / 15);
+        ctx.strokeStyle = loss > 10 ? '#f87171' : 'rgba(248,113,113,0.55)';
+        ctx.lineWidth = lw;
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(m3x + c*csz + 1, sy + r*csz + 1, csz-5, csz-5);
+        ctx.setLineDash([]);
+
+        // Small loss value in corner
+        ctx.fillStyle = loss > 10 ? '#f87171' : 'rgba(248,113,113,0.7)';
+        ctx.font = 'bold 8px monospace'; ctx.textAlign = 'right';
+        ctx.fillText('Δ' + loss.toFixed(1), m3x + c*csz + csz - 7, sy + r*csz + 13);
       }
-  ctx.fillStyle = '#f87171'; ctx.font = 'italic 11px sans-serif';
-  ctx.fillText('红框 = 不可逆损失', dqx + N*csz/2, sy + N*csz + 26);
+    }
+
+  // === Bottom row: summary stats ===
+  const nnz = quant.flat().filter(v => v !== 0).length;
+  const totalLoss = dct.flat().reduce((sum, v, i) => sum + Math.abs(v - deq.flat()[i]), 0);
+  const lossPct = (totalLoss / dct.flat().reduce((s, v) => s + Math.abs(v), 0) * 100).toFixed(1);
+
+  // Summary under each matrix
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('16个系数 · 全精度', m1x + N*csz/2, sy + N*csz + 30);
+
+  ctx.fillStyle = '#34d399'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(`非零:${nnz}/16 · 归零:${16-nnz}个`, m2x + N*csz/2, sy + N*csz + 30);
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif';
+  ctx.fillText(`熵编码可压缩≈${((1-nnz/16)*100).toFixed(0)}%`, m2x + N*csz/2, sy + N*csz + 46);
+
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(`累计损失:${totalLoss.toFixed(1)} (${lossPct}%)`, m3x + N*csz/2, sy + N*csz + 30);
+
+  ctx.fillStyle = '#f87171'; ctx.font = 'bold italic 12px sans-serif';
+  ctx.fillText('红虚框 = 不可逆损失 (Δ=丢失量)', m3x + N*csz/2, sy + N*csz + 46);
 }
 
-// ===== S9: Entropy Coding =====
-function drawEntropy() {
-  const cv = document.getElementById('entCanvas');
+// ===== S8b: DCT Basis Functions =====
+function drawBasis() {
+  const cv = document.getElementById('basisCanvas');
   if (!cv) return;
   const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
   cv.width = W * 2; cv.height = H * 2;
@@ -1227,43 +2607,859 @@ function drawEntropy() {
   const ctx = cv.getContext('2d');
   ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
 
-  const steps = [
-    { x: 0.04, y: 0.35, w: 0.15, h: 0.22, label: '语法元素', sub: '(系数/MV/模式)', color: '#888' },
-    { x: 0.23, y: 0.35, w: 0.15, h: 0.22, label: '二值化', sub: '→二进制串', color: '#a78bfa' },
-    { x: 0.42, y: 0.35, w: 0.16, h: 0.22, label: '上下文建模', sub: '364个ctx', color: '#fbbf24' },
-    { x: 0.62, y: 0.35, w: 0.16, h: 0.22, label: '算术编码', sub: '概率区间细分', color: '#34d399' },
-    { x: 0.82, y: 0.35, w: 0.14, h: 0.22, label: '二进制码流', sub: '输出', color: '#888' },
-  ];
+  const N = 4; // 4×4 DCT
+  // Grid: 4 cols (u: 0→3 horizontal freq) × 4 rows (v: 0→3 vertical freq)
+  const gridCols = 4, gridRows = 4;
+  const cellSize = 48;   // size of each 4×4 basis block in pixels
+  const gapX = 28, gapY = 24;
+  const marginLeft = 36, marginTop = 54;
 
-  steps.forEach(s => {
-    const bx = s.x*W, by = s.y*H, bw = s.w*W, bh = s.h*H;
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
-    const lines = s.label.split('\n');
-    lines.forEach((l, i) => ctx.fillText(l, bx+bw/2, by+bh/2.1 + i*16 - (lines.length-1)*8));
-    ctx.fillStyle = '#7777aa'; ctx.font = '10px sans-serif';
-    ctx.fillText(s.sub, bx+bw/2, by+bh-14);
-  });
-
-  ctx.strokeStyle = 'rgba(200,200,220,0.35)'; ctx.lineWidth = 1.5;
-  for (let i = 0; i < steps.length-1; i++) {
-    ctx.beginPath();
-    ctx.moveTo((steps[i].x+steps[i].w)*W, (steps[i].y+steps[i].h/2)*H);
-    ctx.lineTo(steps[i+1].x*W, (steps[i+1].y+steps[i+1].h/2)*H);
-    ctx.stroke();
+  // Precompute basis function values
+  // basis[u][v][y][x] = cos((2x+1)*u*PI/8) * cos((2y+1)*v*PI/8)
+  const basis = [];
+  for (let u = 0; u < N; u++) {
+    basis[u] = [];
+    for (let v = 0; v < N; v++) {
+      basis[u][v] = [];
+      for (let y = 0; y < N; y++) {
+        basis[u][v][y] = [];
+        for (let x = 0; x < N; x++) {
+          const val = Math.cos((2*x+1)*u*Math.PI/8) * Math.cos((2*y+1)*v*Math.PI/8);
+          basis[u][v][y][x] = val;
+        }
+      }
+    }
   }
 
-  // Probability feedback
-  const cpx = (steps[2].x+steps[2].w/2)*W, cpy = steps[2].y*H - 10;
-  ctx.strokeStyle = 'rgba(52,211,153,0.3)'; ctx.setLineDash([5,5]);
-  ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(cpx, cpy - 26); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#34d399'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('概率更新', cpx, cpy - 32);
+  // Find global max for normalization
+  let maxAbs = 0;
+  for (let u = 0; u < N; u++)
+    for (let v = 0; v < N; v++)
+      for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++)
+          maxAbs = Math.max(maxAbs, Math.abs(basis[u][v][y][x]));
 
-  ctx.fillStyle = '#d0d0e0'; ctx.font = 'bold 14px sans-serif';
-  ctx.fillText('CABAC 三阶段编码流水线', W/2, 26);
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('DCT 基图像 (Basis Functions) — 16 张固定纹理', W/2, 28);
+
+  // Frequency axis labels
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('← 水平频率 u 增大 →', marginLeft + gridCols*(cellSize+gapX)/2, marginTop - 18);
+  ctx.save();
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 13px sans-serif';
+  ctx.translate(marginLeft - 18, marginTop + gridRows*(cellSize+gapY)/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('← 垂直频率 v 增大 →', 0, 0);
+  ctx.restore();
+
+  // Draw each basis pattern
+  for (let v = 0; v < gridRows; v++) {
+    for (let u = 0; u < gridCols; u++) {
+      const bx = marginLeft + u * (cellSize + gapX);
+      const by = marginTop  + v * (cellSize + gapY);
+
+      // Draw the 4×4 cell grid
+      const pxSize = cellSize / N; // pixels per basis pixel
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          const val = basis[u][v][y][x];
+          // Map [-1, 1] to [0, 255] grayscale: 0=black(negative), 128=gray(zero), 255=white(positive)
+          const gray = Math.round(128 + val * 127);
+          ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
+          ctx.fillRect(bx + x*pxSize, by + y*pxSize, pxSize, pxSize);
+        }
+      }
+
+      // Draw grid lines between basis pixels (thin, subtle)
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.3;
+      for (let i = 1; i < N; i++) {
+        ctx.beginPath(); ctx.moveTo(bx + i*pxSize, by); ctx.lineTo(bx + i*pxSize, by + cellSize); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bx, by + i*pxSize); ctx.lineTo(bx + cellSize, by + i*pxSize); ctx.stroke();
+      }
+
+      // Outer border
+      ctx.strokeStyle = (u===0 && v===0) ? '#34d399' : 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = (u===0 && v===0) ? 2 : 1;
+      ctx.strokeRect(bx, by, cellSize, cellSize);
+
+      // Label: (u,v)
+      ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(`(${u},${v})`, bx + cellSize/2, by + cellSize + 18);
+
+      // DC special label
+      if (u===0 && v===0) {
+        ctx.fillStyle = '#34d399'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('DC·均值', bx + cellSize/2, by - 8);
+      }
+      // Highest frequency label
+      if (u===3 && v===3) {
+        ctx.fillStyle = '#f87171'; ctx.font = '10px sans-serif';
+        ctx.fillText('最高频', bx + cellSize/2, by + cellSize + 34);
+      }
+    }
+  }
+
+  // Right side: legend and explanation
+  const lx = marginLeft + gridCols*(cellSize+gapX) + 20;
+  const ly = marginTop;
+
+  // Legend gradient bar
+  const gradH = 14, gradW = 120;
+  const grad = ctx.createLinearGradient(lx, 0, lx + gradW, 0);
+  grad.addColorStop(0, '#000'); grad.addColorStop(0.5, '#808080'); grad.addColorStop(1, '#fff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(lx, ly, gradW, gradH);
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 0.5;
+  ctx.strokeRect(lx, ly, gradW, gradH);
+  ctx.fillStyle = '#888'; ctx.font = '9px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('−1 (负相关)', lx, ly + gradH + 14);
+  ctx.fillText('0 (无关)', lx + gradW/2 - 14, ly + gradH + 14);
+  ctx.fillText('+1 (正相关)', lx + gradW - 48, ly + gradH + 14);
+
+  // Explanation text on the right
+  const textX = lx, textY = ly + gradH + 40;
+  ctx.fillStyle = '#d0d0e0'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('每个基图像(u,v) 是一个', textX, textY);
+  ctx.fillText('4×4 的余弦纹理。', textX, textY + 18);
+  ctx.fillText('', textX, textY + 30);
+  ctx.fillText('DCT 系数 F(u,v) =', textX, textY + 42);
+  ctx.fillText('  图像块 与', textX, textY + 60);
+  ctx.fillText('  基图像(u,v) 的', textX, textY + 78);
+  ctx.fillText('  逐像素乘积之和', textX, textY + 96);
+
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('还原公式：', textX, textY + 128);
+  ctx.fillStyle = '#ccc'; ctx.font = '10px sans-serif';
+  ctx.fillText('像素块 = Σ Σ', textX, textY + 146);
+  ctx.fillText('  F(u,v) × 基图像(u,v)', textX, textY + 162);
+  ctx.fillText('  u=0..3, v=0..3', textX, textY + 178);
+
+  // Border note
+  ctx.fillStyle = '#34d399'; ctx.font = 'italic 11px sans-serif';
+  ctx.fillText('绿框 = DC 分量', textX, textY + 210);
+  ctx.fillText('（全白常值）', textX, textY + 226);
+
+  ctx.fillStyle = '#888'; ctx.font = 'italic 11px sans-serif';
+  ctx.fillText('黑白交替越密集', textX, textY + 256);
+  ctx.fillText('= 空间频率越高', textX, textY + 272);
+  ctx.fillText('= 人眼越不敏感', textX, textY + 288);
+  ctx.fillText('= 量化越激进(→0)', textX, textY + 304);
+}
+
+// ===== S8c: DCT Computation Step-by-Step =====
+let dctCalcUV = [0, 0]; // currently selected (u,v) for DCT computation demo
+function setDctCalcUV(u, v) { dctCalcUV = [u, v]; drawDctCalc(); }
+function drawDctCalc() {
+  const cv = document.getElementById('dctCalcCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  const N = 4;
+  // The residual block from the intra prediction example
+  const pixel = [[2,2,2,2],[1,1,1,1],[0,0,0,0],[-1,-1,-1,-1]];
+  const [u, v] = dctCalcUV;
+
+  // Compute the basis image for (u,v): B(x,y) = cos((2x+1)uπ/8) × cos((2y+1)vπ/8)
+  const basis = [];
+  for (let y = 0; y < N; y++) { basis[y] = []; for (let x = 0; x < N; x++) {
+    basis[y][x] = Math.cos((2*x+1)*u*Math.PI/8) * Math.cos((2*y+1)*v*Math.PI/8);
+  }}
+
+  // Element-wise product: pixel × basis
+  const product = [];
+  for (let y = 0; y < N; y++) { product[y] = []; for (let x = 0; x < N; x++) {
+    product[y][x] = pixel[y][x] * basis[y][x];
+  }}
+
+  // Sum of all products
+  const rawSum = product.flat().reduce((s, v) => s + v, 0);
+
+  // Normalization: α(0) = 1/2, α(k>0) = 1/√2
+  // F(u,v) = α(u)·α(v) × Σ f(x,y) × basis_u,v(x,y)
+  const alphaU = u === 0 ? 0.5 : 1/Math.sqrt(2);
+  const alphaV = v === 0 ? 0.5 : 1/Math.sqrt(2);
+  const dctCoeff = rawSum * alphaU * alphaV;
+
+  // === Layout ===
+  const csz = 37, gap = 24;
+  const m1x = 26, m2x = m1x + N*csz + gap, m3x = m2x + N*csz + gap;
+  const my = 56;
+
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`计算系数 F(${u},${v}) — 当前选择的基图像`, W/2, 24);
+
+  // Draw the three matrices
+  const drawGrid = (data, x, y, title, fmt, maxAbs) => {
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(title, x + N*csz/2, y - 10);
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const val = data[r][c];
+        // Color based on sign and magnitude
+        const intensity = Math.min(1, Math.abs(val) / (maxAbs || 2.5));
+        let bg;
+        if (Math.abs(val) < 0.001) bg = 'rgba(30,30,40,0.5)';
+        else if (val > 0) bg = `rgba(52,211,153,${0.2 + intensity*0.45})`;
+        else bg = `rgba(248,113,113,${0.2 + intensity*0.45})`;
+        ctx.fillStyle = bg;
+        ctx.fillRect(x + c*csz, y + r*csz, csz-2, csz-2);
+        ctx.fillStyle = Math.abs(val) < 0.001 ? '#444' : '#e0e0e0';
+        ctx.font = '10px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(fmt(val), x + c*csz + csz/2, y + r*csz + csz/2 + 4);
+      }
+  };
+
+  drawGrid(pixel, m1x, my, '① 像素块 f(x,y)', v => v, 2);
+  drawGrid(basis, m2x, my, `② 基图像 B${u}${v}(x,y)`, v => v.toFixed(2), 1);
+  drawGrid(product, m3x, my, '③ 逐格乘积', v => v.toFixed(2), 2.5);
+
+  // × and = symbols
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('×', (m1x + N*csz + m2x)/2, my + N*csz/2 + 2);
+  ctx.fillText('=', (m2x + N*csz + m3x)/2, my + N*csz/2 + 2);
+
+  // === Summation line ===
+  const sumY = my + N*csz + 28;
+  // Show the sum formula
+  ctx.fillStyle = '#e0e0e0'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  let sumTerms = '';
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const pv = product[r][c];
+      if (Math.abs(pv) > 0.01) sumTerms += (pv > 0 && sumTerms ? '+' : '') + pv.toFixed(2);
+    }
+  if (!sumTerms) sumTerms = '0';
+  ctx.fillText(`④ 求和:  Σ = ${sumTerms} = ${rawSum.toFixed(3)}`, W/2, sumY);
+
+  // Normalization explanation
+  const normY = sumY + 24;
+  ctx.fillStyle = '#888'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  const alphaDescU = u===0 ? `α(0)=1/2` : `α(${u})=1/√2≈0.707`;
+  const alphaDescV = v===0 ? `α(0)=1/2` : `α(${v})=1/√2≈0.707`;
+  ctx.fillText(`⑤ 归一化:  ${alphaDescU}  ×  ${alphaDescV}  =  ${(alphaU*alphaV).toFixed(3)}`, W/2, normY);
+  ctx.fillStyle = '#666'; ctx.font = '10px sans-serif';
+  ctx.fillText('(α(0)=1/2 是因为 DC 基图像能量是 AC 基图像的 2 倍，需要除 2 来保证变换正交)', W/2, normY + 16);
+
+  // Final coefficient
+  const resultY = normY + 30;
+  ctx.fillStyle = '#6c63ff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`⇒  F(${u},${v}) = ${rawSum.toFixed(3)} × ${(alphaU*alphaV).toFixed(3)} = ${dctCoeff.toFixed(2)}`, W/2, resultY);
+
+  // Explanation
+  const explY = resultY + 20;
+  ctx.fillStyle = '#888'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  if (u === 0 && v === 0) {
+    ctx.fillText('DC 系数 = 所有像素的加权平均。基图像全为1→乘积=像素值本身→求和即总亮度→归一化后即平均值。', W/2, explY);
+  } else {
+    ctx.fillText(`基图像 B${u}${v} 在正负之间振荡。正像素×正基值=正贡献，负像素×负基值=也为正贡献——它们"共振"。`, W/2, explY);
+  }
+
+  // === Right side: 4×4 selector grid ===
+  const sx = m3x + N*csz + 40, ssy = my + 10, scsz = 24;
+  ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('点击选择', sx + 2*scsz, ssy - 20);
+  ctx.fillText('系数 (u,v)', sx + 2*scsz, ssy - 6);
+
+  for (let vu = 0; vu < N; vu++) {
+    for (let cu = 0; cu < N; cu++) {
+      const sx2 = sx + cu*scsz, sy2 = ssy + vu*scsz;
+      const isSel = cu === u && vu === v;
+      // Color gradient: blue (low freq) to red (high freq)
+      const freq = (cu + vu) / 6;
+      ctx.fillStyle = isSel ? '#fbbf24' : `rgba(${Math.floor(100+freq*155)},${Math.floor(100-freq*60)},${Math.floor(240-freq*140)},0.6)`;
+      ctx.fillRect(sx2, sy2, scsz-2, scsz-2);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(`(${cu},${vu})`, sx2 + scsz/2, sy2 + scsz/2 + 3);
+    }
+  }
+
+  // Frequency axis labels on selector
+  ctx.fillStyle = '#888'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('u→', sx + 2*scsz, ssy + 4*scsz + 12);
+  ctx.fillText('低频', sx, ssy + 4*scsz + 12);
+  ctx.fillText('高频', sx + 3*scsz, ssy + 4*scsz + 12);
+
+  // Store selector grid bounds for click handling
+  cv._selBounds = { sx, ssy, scsz, N };
+}
+
+// Click handler for DCT calculation canvas
+document.addEventListener('DOMContentLoaded', () => {
+  const cv = document.getElementById('dctCalcCanvas');
+  if (!cv) return;
+  cv.addEventListener('click', (e) => {
+    if (!cv._selBounds) return;
+    const { sx, ssy, scsz, N } = cv._selBounds;
+    const rect = cv.getBoundingClientRect();
+    const scaleX = cv.width / (2 * rect.width);   // account for 2x DPI scaling
+    const scaleY = cv.height / (2 * rect.height);
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my2 = (e.clientY - rect.top) * scaleY;
+    for (let v = 0; v < N; v++)
+      for (let u = 0; u < N; u++) {
+        if (mx >= sx + u*scsz && mx < sx + u*scsz + scsz &&
+            my2 >= ssy + v*scsz && my2 < ssy + v*scsz + scsz) {
+          setDctCalcUV(u, v);
+          return;
+        }
+      }
+  });
+});
+
+// ===== S9a: CAVLC Zigzag + Encoding =====
+function drawCavlc() {
+  const cv = document.getElementById('cavlcCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Coeff matrix (same as the CAVLC example in the text)
+  const coeff = [[34,-4,1,0],[-3,2,0,0],[1,0,0,0],[0,0,0,0]];
+  // Zigzag order for 4×4: standard H.264 zigzag
+  const zigzag = [[0,0],[0,1],[1,0],[2,0],[1,1],[0,2],[0,3],[1,2],[2,1],[3,0],[3,1],[2,2],[1,3],[2,3],[3,2],[3,3]];
+  const flat = zigzag.map(([r,c]) => coeff[r][c]);
+
+  const N = 4, csz = 40, mx = 42, my = 56;
+
+  // === Left: 4×4 matrix with zigzag overlay ===
+  // Draw grid cells
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const v = coeff[r][c];
+      const absV = Math.abs(v);
+      const intensity = Math.min(1, absV / 35);
+      let bg;
+      if (v === 0) bg = 'rgba(30,30,40,0.5)';
+      else bg = `rgba(108,99,255,${0.25 + intensity * 0.5})`;
+      ctx.fillStyle = bg;
+      ctx.fillRect(mx + c*csz, my + r*csz, csz-2, csz-2);
+      ctx.fillStyle = v === 0 ? '#444' : '#e0e0ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(v, mx + c*csz + csz/2, my + r*csz + csz/2 + 5);
+    }
+
+  // Draw zigzag path
+  ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.setLineDash([]);
+  ctx.globalAlpha = 0.7;
+  for (let i = 0; i < flat.length - 1; i++) {
+    const [r1,c1] = zigzag[i], [r2,c2] = zigzag[i+1];
+    const x1 = mx + c1*csz + csz/2, y1 = my + r1*csz + csz/2;
+    const x2 = mx + c2*csz + csz/2, y2 = my + r2*csz + csz/2;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    // Arrowhead
+    const angle = Math.atan2(y2-y1, x2-x1);
+    ctx.beginPath();
+    ctx.moveTo(x2 - 6*Math.cos(angle-0.5), y2 - 6*Math.sin(angle-0.5));
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x2 - 6*Math.cos(angle+0.5), y2 - 6*Math.sin(angle+0.5));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Zigzag 扫描顺序', mx + N*csz/2, my + N*csz + 24);
+
+  // === Center: arrow ===
+  const arrX = mx + N*csz + 30;
+  ctx.fillStyle = '#a78bfa'; ctx.font = '28px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('→', arrX + 20, my + N*csz/2);
+
+  // === Right: 1D sequence with syntax element annotations ===
+  const rx = arrX + 60, ry = my, bw = 38, gap = 4;
+  // Draw 1D array cells
+  for (let i = 0; i < 16; i++) {
+    const v = flat[i];
+    const x = rx + i*(bw + gap);
+    const absV = Math.abs(v);
+    const intensity = Math.min(1, absV / 35);
+    let bg;
+    if (v === 0) bg = 'rgba(30,30,40,0.5)';
+    else bg = `rgba(108,99,255,${0.25 + intensity * 0.5})`;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, ry, bw, bw);
+    ctx.fillStyle = v === 0 ? '#444' : '#e0e0ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(v, x + bw/2, ry + bw/2 + 4);
+    // Index below
+    ctx.fillStyle = '#555'; ctx.font = '9px sans-serif';
+    ctx.fillText(i, x + bw/2, ry + bw + 14);
+  }
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('一维系数序列 (16个)', rx + 8*(bw+gap), ry + bw + 32);
+
+  // === Bottom: CAVLC syntax element breakdown ===
+  const sy = ry + bw + 56;
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('CAVLC 5 元组编码', mx + (16*(bw+gap) + rx - mx)/2, sy);
+
+  const se = [
+    { label: '① coeff_token', val: 'TotalCoeff=5,T1=2', bits: '0000 111 (7bit)', clr: '#f87171' },
+    { label: '② T1 signs', val: '−1 → 1, +1 → 0', bits: '10 (2bit)', clr: '#fbbf24' },
+    { label: '③ level (倒序)', val: '2, 1, −3', bits: '010 1 00111 (11bit)', clr: '#34d399' },
+    { label: '④ total_zeros', val: '10个零, TotalCoeff=5', bits: '0011 (4bit)', clr: '#38bdf8' },
+    { label: '⑤ run_before', val: '1,0,1,1', bits: '10 1 01 01 (8bit)', clr: '#a78bfa' },
+  ];
+  se.forEach((s, i) => {
+    const sy2 = sy + 24 + i*24;
+    ctx.fillStyle = s.clr; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(s.label, mx, sy2);
+    ctx.fillStyle = '#ccc'; ctx.font = '11px sans-serif';
+    ctx.fillText(s.val, mx + 160, sy2);
+    ctx.fillStyle = '#e0e0ff'; ctx.font = '11px monospace';
+    ctx.fillText(s.bits, mx + 360, sy2);
+  });
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('总计: 32 bit (原始 128 bit → 压缩 4×)', mx + 360, sy + 24 + 5*24);
+}
+
+// ===== S9b: CABAC Pipeline =====
+function drawCabac() {
+  const cv = document.getElementById('cabacCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('CABAC 三阶段流水线 + 概率反馈闭环', W/2, 24);
+
+  // Three main stages on top
+  const stages = [
+    { x: 0.04, y: 0.18, w: 0.17, h: 0.24, title: '① 二值化', sub: 'Binarization', detail: '语法元素 → bin串\nUnary/Exp-Golomb/FL', color: '#f87171' },
+    { x: 0.26, y: 0.18, w: 0.20, h: 0.24, title: '② 上下文建模', sub: 'Context Modeler', detail: '364个ctxIdx\nP(LPS)查表 → 选概率', color: '#fbbf24' },
+    { x: 0.51, y: 0.18, w: 0.22, h: 0.24, title: '③ 算术编码', sub: 'Binary Arithmetic Coder', detail: '区间细分 [LOW,RANGE)\n重归一化 + 输出byte', color: '#34d399' },
+    { x: 0.78, y: 0.18, w: 0.17, h: 0.24, title: '码流输出', sub: 'Bitstream', detail: 'NAL Unit\nAnnex B / AVCC', color: '#888' },
+  ];
+
+  stages.forEach(s => {
+    const bx = s.x*W, by = s.y*H, bw = s.w*W, bh = s.h*H;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(s.title, bx+bw/2, by+22);
+    ctx.fillStyle = '#888'; ctx.font = '10px sans-serif';
+    ctx.fillText(s.sub, bx+bw/2, by+38);
+    ctx.fillStyle = '#b0b0d0'; ctx.font = '10px sans-serif';
+    const lines = s.detail.split('\n');
+    lines.forEach((l, i) => ctx.fillText(l, bx+bw/2, by+60 + i*16));
+  });
+
+  // Forward arrows
+  ctx.strokeStyle = 'rgba(200,200,220,0.4)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < stages.length-1; i++) {
+    const x1 = (stages[i].x+stages[i].w)*W, y1 = (stages[i].y+stages[i].h/2)*H;
+    const x2 = stages[i+1].x*W;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2-6, y1); ctx.stroke();
+    // Arrowhead
+    ctx.fillStyle = 'rgba(200,200,220,0.4)';
+    ctx.beginPath(); ctx.moveTo(x2, y1); ctx.lineTo(x2-10, y1-5); ctx.lineTo(x2-10, y1+5); ctx.closePath(); ctx.fill();
+  }
+
+  // Probability feedback loop (bottom)
+  const ctxX = (stages[1].x+stages[1].w/2)*W, ctxY = (stages[1].y+stages[1].h)*H + 10;
+  const arithX = (stages[2].x+stages[2].w/2)*W, arithTop = stages[2].y*H;
+
+  // Feedback arc from arithmetic coder back to context modeler
+  ctx.strokeStyle = 'rgba(52,211,153,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+  ctx.beginPath();
+  ctx.moveTo(arithX, arithTop);
+  ctx.quadraticCurveTo((ctxX+arithX)/2, arithTop - 50, ctxX, (stages[1].y+stages[1].h)*H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrow at end of feedback
+  const fbEndY = (stages[1].y+stages[1].h)*H;
+  ctx.fillStyle = 'rgba(52,211,153,0.5)';
+  ctx.beginPath(); ctx.moveTo(ctxX, fbEndY); ctx.lineTo(ctxX-6, fbEndY-10); ctx.lineTo(ctxX+6, fbEndY-10); ctx.closePath(); ctx.fill();
+
+  // Feedback label
+  ctx.fillStyle = '#34d399'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('概率更新反馈', (ctxX+arithX)/2, arithTop - 56);
+
+  // Bottom: 64-state probability table snippet
+  const tx = 0.08*W, ty = 0.62*H;
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('概率状态转移示例 (64级查表, 无浮点乘法):', tx, ty);
+
+  const stateTable = [
+    ['σ', '0','1','2','...','32','...','62','63'],
+    ['P(LPS)','0.50','0.47','0.43','...','0.11','...','0.002','0.001'],
+    ['编码LPS→','σ=1','σ=3','σ=6','...','σ=38','...','σ=63','σ=63'],
+    ['编码MPS→','σ=0','σ=0','σ=1','...','σ=31','...','σ=61','σ=62'],
+  ];
+  stateTable.forEach((row, ri) => {
+    row.forEach((cell, ci) => {
+      const cx = tx + ci*52;
+      const cy2 = ty + 18 + ri*16;
+      ctx.fillStyle = ri===0 ? '#fbbf24' : '#b0b0d0'; ctx.font = ri===0 ? 'bold 10px monospace' : '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(cell, cx, cy2);
+    });
+  });
+
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('★ 核心优势: RANGE_LPS = rangeTab[σ][(RANGE>>6)&3] — 查表替代浮点乘法', tx, ty + 18 + 4*16 + 10);
+}
+
+// ===== S9c: Arithmetic Coding Interval Visualization =====
+function drawArith() {
+  const cv = document.getElementById('arithCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Simulate encoding "0 1 0" with P(0)=0.7, P(1)=0.3
+  const bins = [{val:0, p0:0.7},{val:1, p0:0.7},{val:0, p0:0.7}];
+  let low = 0.0, range = 1.0;
+
+  const barX = 80, barW = W - 160, barH = 28, startY = 42, stepH = 60;
+  const intervals = [];
+
+  bins.forEach((bin, idx) => {
+    const split = low + range * bin.p0;
+    intervals.push({ low, range, split, choice: bin.val, p0: bin.p0, y: startY + idx*stepH });
+    if (bin.val === 0) {
+      // Choose MPS (0): range = range * P(0)
+      range = range * bin.p0;
+      // low unchanged
+    } else {
+      // Choose LPS (1): low = split, range = range * P(1)
+      low = split;
+      range = range * (1 - bin.p0);
+    }
+  });
+  const finalMid = low + range/2;
+
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('算术编码区间细分 — 编码序列 [0, 1, 0] (P(0)=0.7, P(1)=0.3)', W/2, 22);
+
+  // Draw each step
+  intervals.forEach((iv, idx) => {
+    const y = iv.y;
+    // Full bar background
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(barX, y, barW, barH);
+
+    // MPS zone (0): left portion
+    const mpsW = barW * iv.p0;
+    ctx.fillStyle = 'rgba(52,211,153,0.15)'; ctx.fillRect(barX, y, mpsW, barH);
+
+    // LPS zone (1): right portion
+    ctx.fillStyle = 'rgba(248,113,113,0.12)'; ctx.fillRect(barX + mpsW, y, barW - mpsW, barH);
+
+    // Chosen sub-interval highlight
+    const chosenStart = barX + barW * iv.low;
+    const chosenW = barW * iv.range;
+    ctx.strokeStyle = iv.choice === 0 ? '#34d399' : '#f87171';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(chosenStart, y + 2, chosenW, barH - 4);
+
+    // Split line
+    const splitX = barX + barW * iv.split;
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(splitX, y - 4); ctx.lineTo(splitX, y + barH + 4); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Labels
+    ctx.fillStyle = '#34d399'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('P(0)=0.7', barX + mpsW/2, y + barH/2 + 4);
+    ctx.fillStyle = '#f87171';
+    ctx.fillText('P(1)=0.3', barX + mpsW + (barW - mpsW)/2, y + barH/2 + 4);
+
+    // Step label on left
+    ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(`bin ${idx+1}=${iv.choice}:`, barX - 14, y + barH/2 + 4);
+
+    // Probability label
+    ctx.fillStyle = '#fbbf24'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`选择${iv.choice===0?'MPS(0)':'LPS(1)'}: [${iv.low.toFixed(3)}, ${(iv.low+iv.range).toFixed(3)})`, barX + barW + 12, y + barH/2 + 4);
+  });
+
+  // Final result
+  const finalY = startY + bins.length*stepH + 14;
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`最终区间: [${low.toFixed(4)}, ${(low+range).toFixed(4)})  区间中点 ${finalMid.toFixed(4)} → 编码为二进制小数`, W/2, finalY);
+
+  // Key insight
+  ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+  ctx.fillText('3 个 bin 只需要 1 个浮点数表示 ≈ 突破了 Huffman "每符号至少 1 bit" 的限制', W/2, finalY + 20);
+
+  // Right side legend
+  const lx = barX + barW + 50, ly = finalY + 44;
+  ctx.fillStyle = 'rgba(52,211,153,0.2)'; ctx.fillRect(lx, ly, 14, 14);
+  ctx.fillStyle = '#34d399'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('MPS (高概率符号)', lx + 22, ly + 12);
+  ctx.fillStyle = 'rgba(248,113,113,0.15)'; ctx.fillRect(lx, ly + 20, 14, 14);
+  ctx.fillStyle = '#f87171';
+  ctx.fillText('LPS (低概率符号)', lx + 22, ly + 32);
+  ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(lx, ly + 46); ctx.lineTo(lx + 14, ly + 46); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('概率分割点', lx + 22, ly + 50);
+}
+
+// ===== S10b: Breathing Effect =====
+function drawBreath() {
+  const cv = document.getElementById('breathCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Simulate a GOP of I P P P P P P P (GOP=8) at CBR
+  // I-frame: 5x size of P-frame at same QP → CBR forces higher QP on I
+  const gopSize = 8;
+  const numGOPs = 3;
+  const frames = [];
+  for (let g = 0; g < numGOPs; g++) {
+    // I-frame: large size, CBR punishes it with higher QP → lower quality
+    frames.push({ type: 'I', qp: 32, quality: 0.55, barH: 55 });
+    for (let p = 1; p < gopSize; p++) {
+      // P-frames: quality gradually degrades (drift), then next I resets
+      const drift = p / gopSize * 0.15;
+      frames.push({ type: 'P', qp: 28, quality: 0.92 - drift, barH: 92 - drift*100 });
+    }
+  }
+
+  const totalFrames = frames.length;
+  const barW = Math.min(14, (W - 100) / totalFrames - 2);
+  const gap = 2;
+  const startX = (W - totalFrames*(barW+gap)) / 2;
+  const baseY = H - 60;
+
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('呼吸效应 — CBR 下 I/P 帧画质波动 (GOP=8, 模拟 3 个 GOP 周期)', W/2, 24);
+
+  // Subtitle
+  ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+  ctx.fillText('柱高 = 画质 · 红色 = I 帧 · 蓝色 = P 帧  |  I 帧被 CBR 惩罚(QP=32)，画质反而低于 P 帧(QP=28)', W/2, 44);
+
+  // Draw frame quality bars
+  frames.forEach((f, i) => {
+    const x = startX + i*(barW + gap);
+    const h = f.barH * (H - 140) / 100;
+    const y = baseY - h;
+
+    // Bar
+    const color = f.type === 'I' ? '#f87171' : '#38bdf8';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(x, y, barW, h);
+    ctx.globalAlpha = 1;
+
+    // I-frame marker
+    if (f.type === 'I') {
+      ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('I', x + barW/2, baseY + 18);
+      // Vertical dashed line
+      ctx.strokeStyle = 'rgba(251,191,36,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(x + barW/2, y - 10); ctx.lineTo(x + barW/2, baseY + 6); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  });
+
+  // Quality axis
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(startX, baseY); ctx.lineTo(startX + totalFrames*(barW+gap), baseY); ctx.stroke();
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText('画质', startX - 8, baseY - 100);
+  ctx.fillText('高 ↑', startX - 8, baseY - 80);
+  ctx.fillText('低 ↓', startX - 8, baseY - 10);
+
+  // I-frame QP penalty annotation
+  const secondI = startX + gopSize*(barW+gap) + barW/2;
+  ctx.fillStyle = '#f87171'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('↑ I帧 QP=32', secondI, baseY - 140);
+  ctx.fillText('画质骤降', secondI, baseY - 126);
+
+  // "呼吸感" arc annotation
+  const arcY = baseY - 156;
+  ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(W/2, arcY - 24, W*0.24, Math.PI*0.15, Math.PI*0.85);
+  ctx.stroke();
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('↻ 周期性画质波动 ≈ 呼吸感', W/2, arcY - 42);
+
+  // Bottom summary
+  ctx.fillStyle = '#ccc'; ctx.font = '12px sans-serif';
+  ctx.fillText('P 帧逐渐模糊 (量化误差累积) → I 帧"纠正"→ 再模糊 → 再纠正 → ...', W/2, baseY + 42);
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif';
+  ctx.fillText('感知上像是画面在"呼吸"——GOP 越小(如15帧)呼吸越浅、频率越高，人眼越不敏感', W/2, baseY + 60);
+}
+
+// ===== S9: Entropy Coding Walkthrough =====
+function drawEntWalk() {
+  const cv = document.getElementById('entWalkCanvas');
+  if (!cv) return;
+  const W = cv.parentElement.clientWidth, H = cv.parentElement.clientHeight;
+  cv.width = W * 2; cv.height = H * 2;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
+
+  // Example quantized block
+  const coeff = [[5,0,0,0],[-2,1,0,0],[0,0,0,0],[0,0,0,0]];
+  // Standard zigzag for 4×4
+  const zz = [[0,0],[0,1],[1,0],[2,0],[1,1],[0,2],[0,3],[1,2],[2,1],[3,0],[3,1],[2,2],[1,3],[2,3],[3,2],[3,3]];
+  const flat = zz.map(([r,c]) => coeff[r][c]);
+
+  // === Section 1: Matrix → Zigzag → 1D ===
+  const N=4, csz=32, mx=28, my=46;
+
+  // Draw 4×4 block
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++){
+    const v=coeff[r][c], abs=Math.abs(v);
+    const i=Math.min(1,abs/5);
+    ctx.fillStyle=v===0?'rgba(30,30,40,0.5)':`rgba(108,99,255,${0.25+i*0.5})`;
+    ctx.fillRect(mx+c*csz,my+r*csz,csz-2,csz-2);
+    ctx.fillStyle=v===0?'#444':'#e0e0ff';ctx.font='bold 11px monospace';ctx.textAlign='center';
+    ctx.fillText(v,mx+c*csz+csz/2,my+r*csz+csz/2+4);
+  }
+  // Zigzag line
+  ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.5;ctx.globalAlpha=0.6;
+  for(let i=0;i<flat.length-1;i++){
+    const[r1,c1]=zz[i],[r2,c2]=zz[i+1];
+    ctx.beginPath();ctx.moveTo(mx+c1*csz+csz/2,my+r1*csz+csz/2);ctx.lineTo(mx+c2*csz+csz/2,my+r2*csz+csz/2);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#fbbf24';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+  ctx.fillText('zigzag 扫描',mx+N*csz/2,my+N*csz+20);
+
+  // Arrow
+  const arrX=mx+N*csz+16;
+  ctx.fillStyle='#a78bfa';ctx.font='24px sans-serif';ctx.fillText('→',arrX+6,my+N*csz/2+4);
+
+  // 1D array
+  const rx=arrX+32,ry=my,bw=22,bg=4;
+  for(let i=0;i<16;i++){
+    const v=flat[i],x=rx+i*(bw+bg);
+    const abs=Math.abs(v);
+    ctx.fillStyle=v===0?'rgba(30,30,40,0.4)':`rgba(108,99,255,${0.3+Math.min(1,abs/5)*0.5})`;
+    ctx.fillRect(x,ry,bw,bw);
+    ctx.fillStyle=v===0?'#555':'#e0e0ff';ctx.font='9px monospace';ctx.textAlign='center';
+    ctx.fillText(v,x+bw/2,ry+bw/2+3);
+    ctx.fillStyle='#444';ctx.font='7px sans-serif';ctx.fillText(i,x+bw/2,ry+bw+10);
+  }
+  ctx.fillStyle='#e0e0ff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
+  ctx.fillText('一维序列 (16个系数)',rx+8*(bw+bg),ry+bw+24);
+
+  // === Section 2: Frequency Distribution ===
+  const freqY=my+N*csz+52;
+  ctx.fillStyle='#e0e0ff';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+  ctx.fillText('统计频率：哪些值最常见？',W/2,freqY);
+
+  // Count frequencies
+  const freq={};
+  flat.forEach(v=>{freq[v]=(freq[v]||0)+1;});
+  const entries=Object.entries(freq).sort((a,b)=>b[1]-a[1]);
+  const maxCount=entries[0][1];
+
+  const barStartX=50,barY=freqY+16,barH=18,barMaxW=W-300;
+  entries.forEach(([val,count],i)=>{
+    const y=barY+i*26;
+    ctx.fillStyle='#888';ctx.font='10px monospace';ctx.textAlign='right';
+    ctx.fillText(val,barStartX-8,y+barH/2+3);
+    // Bar
+    const bw2=barMaxW*count/maxCount;
+    ctx.fillStyle=+(val)===0?'rgba(52,211,153,0.4)':'rgba(108,99,255,0.4)';
+    ctx.fillRect(barStartX,y,bw2,barH);
+    // Count label
+    ctx.fillStyle='#e0e0ff';ctx.font='bold 11px sans-serif';ctx.textAlign='left';
+    ctx.fillText(`${count}次 (${(count/16*100).toFixed(0)}%)`,barStartX+bw2+8,y+barH/2+4);
+  });
+
+  // Arrow from distribution to code table
+  ctx.fillStyle='#a78bfa';ctx.font='20px sans-serif';ctx.textAlign='center';
+  const codeArrowY=barY+entries.length*26+8;
+  ctx.fillText('↓',W/2,codeArrowY+16);
+
+  // === Section 3: Code Assignment ===
+  const codeY=codeArrowY+30;
+  ctx.fillStyle='#e0e0ff';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+  ctx.fillText('分配码字：高频→短码，低频→长码',W/2,codeY);
+
+  // Simple Huffman-like codes for illustration
+  const codeMap={'0':'0','1':'10','-2':'110','5':'111'};
+  const codeTableY=codeY+18;
+  [['0','13次 (81%)','0','1 bit'],['1','1次 (6%)','10','2 bit'],['-2','1次 (6%)','110','3 bit'],['5','1次 (6%)','111','3 bit']].forEach(([val,freq2,code,bits],i)=>{
+    const x=barStartX;
+    const y=codeTableY+i*20;
+    ctx.fillStyle='#888';ctx.font='10px monospace';ctx.textAlign='right';
+    ctx.fillText(val,x-8,y+11);
+    ctx.fillStyle='#b0b0d0';ctx.font='10px sans-serif';ctx.textAlign='left';
+    ctx.fillText(freq2,x+30,y+11);
+    ctx.fillStyle='#34d399';ctx.font='bold 11px monospace';
+    ctx.fillText(code,x+130,y+11);
+    ctx.fillStyle='#888';ctx.font='10px sans-serif';
+    ctx.fillText(bits,x+170,y+11);
+  });
+
+  // === Section 4: Bitstream ===
+  const bsy=codeTableY+4*20+20;
+  ctx.fillStyle='#e0e0ff';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+  ctx.fillText('编码结果：16 个系数 → 码流',W/2,bsy);
+
+  // Encode the flat array using run-length + value codes
+  // Simple scheme: encode "run of zeros, then non-zero value", repeat
+  let runs=[],vals=[];
+  let zeroRun=0;
+  for(let i=0;i<flat.length;i++){
+    if(flat[i]===0){zeroRun++;}
+    else{runs.push(zeroRun);vals.push(flat[i]);zeroRun=0;}
+  }
+  // Remaining zeros at end: we know total is 16, so don't need to encode final run
+
+  // Build bitstream string
+  let bitstream='';
+  let totalBits=0;
+  // Simple run-length code: 0→'0', 1→'10', 2→'110', etc (unary for runs)
+  // Value codes as above
+  for(let i=0;i<vals.length;i++){
+    // Encode run of zeros before this value (unary: N zeros → N '1's + '0')
+    const run=runs[i];
+    for(let j=0;j<run;j++)bitstream+='1';
+    bitstream+='0';
+    totalBits+=run+1;
+    // Encode the non-zero value
+    const code=codeMap[String(vals[i])]||'???';
+    bitstream+=code;
+    totalBits+=code.length;
+  }
+
+  // Display bitstream
+  ctx.fillStyle='#1a1a2e';ctx.fillRect(barStartX,bsy+6,W-barStartX-40,50);
+  // Split into manageable chunks
+  let display='';
+  for(let i=0;i<bitstream.length;i+=32)display+=bitstream.slice(i,i+32)+'\n';
+  ctx.fillStyle='#34d399';ctx.font='12px monospace';ctx.textAlign='left';
+  const lines=display.trim().split('\n');
+  lines.forEach((l,i)=>ctx.fillText(l,barStartX+10,bsy+26+i*16));
+
+  // Summary
+  const sumY=bsy+60;
+  ctx.fillStyle='#fbbf24';ctx.font='bold 14px sans-serif';ctx.textAlign='center';
+  ctx.fillText(`总计: ${totalBits} bit`,W/2,sumY);
+  ctx.fillStyle='#888';ctx.font='11px sans-serif';
+  ctx.fillText(`(原始 16×8 = 128 bit → 压缩至 ${totalBits} bit = 压缩 ${(128/totalBits).toFixed(1)}×)`,W/2,sumY+18);
+  ctx.fillText('解码端拿到码流 → 按同样的码表反向解读 → 精确还原 16 个量化系数（无损！）',W/2,sumY+36);
 }
 
 // ===== S10: Deblocking Filter =====
@@ -1276,49 +3472,91 @@ function drawDeblock() {
   const ctx = cv.getContext('2d');
   ctx.scale(2, 2); ctx.clearRect(0, 0, W, H);
 
-  const bx = 30, by = 40, bsz = 48;
-  // Before: blocky
-  for (let r = 0; r < 2; r++)
-    for (let c = 0; c < 2; c++) {
-      const v = 55 + Math.floor(Math.random()*40) + (r===1?35:0);
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.fillRect(bx + c*bsz, by + r*bsz, bsz, bsz);
+  // Pixel values before and after filtering
+  // p₂ p₁ p₀ | q₀ q₁ q₂
+  const beforeP = [98, 99, 99, 104, 105, 106];
+  const afterP  = [98, 100, 101, 102, 104, 106];
+
+  const csz = 46, gap = 14, startX = W/2 - (3*csz + gap/2);
+  const beforeY = 44, afterY = beforeY + csz + 50;
+
+  // Title
+  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('块边界像素横截面 — 滤波前后对比', W/2, 20);
+
+  // Helper: draw one row of pixels
+  const drawRow = (vals, y, title, titleColor) => {
+    // Left block label
+    ctx.fillStyle = '#a78bfa'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('块A', startX - 30, y + csz/2 + 4);
+
+    for (let i = 0; i < 6; i++) {
+      const x = startX + i*csz + (i >= 3 ? gap : 0);
+      // Color intensity based on value
+      const norm = (vals[i] - 95) / 15;
+      const gray = Math.floor(40 + norm * 180);
+      ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
+      ctx.fillRect(x, y, csz, csz);
+      // Value text
+      ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(vals[i], x + csz/2, y + csz/2 + 5);
+      // Pixel label below
+      const labels = ['p₂','p₁','p₀','q₀','q₁','q₂'];
+      ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+      ctx.fillText(labels[i], x + csz/2, y + csz + 15);
     }
-  ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-  ctx.beginPath(); ctx.moveTo(bx, by+bsz); ctx.lineTo(bx+2*bsz, by+bsz); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#f87171'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('滤波前 · 明显块边界', bx+bsz, by+2*bsz+22);
 
-  ctx.fillStyle = '#6c63ff'; ctx.font = '20px sans-serif';
-  ctx.fillText('→', bx+2*bsz+28, by+bsz+4);
+    // Right block label
+    ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('块B', startX + 6*csz + gap + 30, y + csz/2 + 4);
 
-  // After: smooth
-  const ax = bx+2*bsz+70;
-  for (let r = 0; r < 2; r++)
-    for (let c = 0; c < 2; c++) {
-      const v = 88 + (r===1?3:-3);
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.fillRect(ax + c*bsz, by + r*bsz, bsz, bsz);
-    }
-  for (let i = 0; i < 5; i++) {
-    const v = 86 + i;
-    ctx.fillStyle = `rgb(${v},${v},${v})`;
-    ctx.fillRect(ax, by+bsz-2+i, 2*bsz, 1);
-  }
-  ctx.fillStyle = '#34d399';
-  ctx.fillText('滤波后 · 平滑过渡', ax+bsz, by+2*bsz+22);
+    // Boundary line
+    const bx = startX + 3*csz + gap/2;
+    ctx.strokeStyle = titleColor; ctx.lineWidth = 2; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(bx, y - 10); ctx.lineTo(bx, y + csz + 20); ctx.stroke();
+    ctx.setLineDash([]);
 
-  // Bs rules on right
-  const tx = ax + 2*bsz + 50, ty = by;
-  ctx.fillStyle = '#e0e0ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('边界强度 Bs', tx, ty);
-  [['Bs=4','帧内编码边界','#f87171'],['Bs=3','帧间+大残差','#fbbf24'],['Bs=2','帧间+有残差','#fbbf24'],['Bs=1','不同参考帧/MV','#60a5fa'],['Bs=0','同参考帧+同MV','#666']].forEach(([l,d,c],i) => {
-    ctx.fillStyle = c; ctx.font = 'bold 11px monospace';
-    ctx.fillText(l, tx, ty+22+i*20);
-    ctx.fillStyle = '#8888aa'; ctx.font = '11px sans-serif';
-    ctx.fillText(d, tx+48, ty+22+i*20);
+    // Title
+    ctx.fillStyle = titleColor; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(title, startX + 3*csz + gap/2, y - 16);
+  };
+
+  drawRow(beforeP, beforeY, '滤波前 (跃变=104−99=5)', '#f87171');
+  drawRow(afterP, afterY, '滤波后 (跃变=102−101=1)', '#34d399');
+
+  // Arrow showing the change
+  ctx.fillStyle = '#6c63ff'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('↓ Δ=+2 ↓', startX + 2*csz + csz/2, beforeY + csz + 32);
+  ctx.fillText('↓ Δ=−2 ↓', startX + 3*csz + gap + csz/2, beforeY + csz + 32);
+
+  // Annotation for modified pixels
+  // p0 (index 2) and q0 (index 3) got modified
+  [2, 3].forEach(i => {
+    const x = startX + i*csz + (i >= 3 ? gap : 0);
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 3;
+    ctx.strokeRect(x - 1, afterY - 1, csz + 2, csz + 2);
   });
+  // p1 (index 1) and q1 (index 4) got modified slightly
+  [1, 4].forEach(i => {
+    const x = startX + i*csz + (i >= 3 ? gap : 0);
+    ctx.strokeStyle = 'rgba(251,191,36,0.5)'; ctx.lineWidth = 2;
+    ctx.strokeRect(x - 1, afterY - 1, csz + 2, csz + 2);
+  });
+
+  // Legend
+  const ly = afterY + csz + 22;
+  ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 3;
+  ctx.strokeRect(startX, ly, 16, 16);
+  ctx.fillStyle = '#ccc'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('p₀ q₀  主修正 (±2)', startX + 24, ly + 12);
+
+  ctx.strokeStyle = 'rgba(251,191,36,0.5)'; ctx.lineWidth = 2;
+  ctx.strokeRect(startX + 160, ly, 16, 16);
+  ctx.fillStyle = '#ccc';
+  ctx.fillText('p₁ q₁  次修正 (±1)', startX + 184, ly + 12);
+
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('p₂ q₂ 未修改 — 离边界远，不需要修正', W/2, ly + 28);
 }
 
 // ===== S14: API Pipeline =====
@@ -1371,7 +3609,7 @@ function drawAPI() {
 // ===== Initialize All =====
 function drawAll() {
   drawHero(); drawYUV(); drawGOP(); drawEncoder(); drawIntra();
-  drawInter(); drawDCT(); drawEntropy(); drawDeblock(); drawAPI();
+  drawInter(); drawDCT(); drawDctCalc(); drawBasis(); drawEntWalk(); drawBreath(); drawDeblock(); drawAPI();
 }
 
 // Observe canvas wrappers — draw when visible
