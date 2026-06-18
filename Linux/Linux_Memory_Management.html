@@ -64,6 +64,36 @@
 .mb .c1{background:rgba(108,99,255,.15);color:#a78bfa;}.mb .c2{background:rgba(52,211,153,.12);color:#34d399;}
 .mb .c3{background:rgba(251,191,36,.1);color:#fbbf24;}.mb .c4{background:rgba(248,113,113,.1);color:#f87171;}
 .mb .c5{background:rgba(56,189,248,.12);color:#38bdf8;}
+
+/* ===== Allocator Hierarchy Diagram ===== */
+.alloc-diagram{position:relative;margin:28px 0;font-family:"JetBrains Mono","Fira Code",monospace}
+.alloc-layer{border-radius:14px;padding:20px 24px;margin-bottom:4px;position:relative}
+.alloc-layer .ly-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;text-align:center}
+.alloc-layer.user{background:rgba(167,139,250,.04);border:1px solid rgba(167,139,250,.15)}
+.alloc-layer.user .ly-title{color:#a78bfa}
+.alloc-layer.kernel{background:rgba(52,211,153,.03);border:1px solid rgba(52,211,153,.12)}
+.alloc-layer.kernel .ly-title{color:#34d399}
+.alloc-layer.phys{background:rgba(251,191,36,.04);border:1px solid rgba(251,191,36,.15)}
+.alloc-layer.phys .ly-title{color:#fbbf24}
+.alloc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;margin:6px 0}
+.alloc-box{background:rgba(0,0,0,.25);border:1px solid;border-radius:10px;padding:10px 16px;text-align:center;font-size:11px;line-height:1.5;transition:all .25s}
+.alloc-box:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.alloc-box.b1{border-color:rgba(167,139,250,.25);color:#c0b0f8}
+.alloc-box.b2{border-color:rgba(56,189,248,.25);color:#80d0f8}
+.alloc-box.b3{border-color:rgba(52,211,153,.25);color:#80e8c0}
+.alloc-box.b4{border-color:rgba(251,191,36,.25);color:#f0d060}
+.alloc-box.b5{border-color:rgba(248,113,113,.25);color:#f09090}
+.alloc-box strong{display:block;font-size:12.5px;margin-bottom:2px}
+.alloc-box small{font-size:9.5px;color:#6666aa;display:block;margin-top:2px}
+.alloc-arrow{color:#555577;font-size:18px;font-weight:300;flex-shrink:0}
+.alloc-arrow.down{display:block;text-align:center;margin:2px 0;font-size:16px;line-height:1}
+.alloc-split{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin:8px 0}
+.alloc-split .branch{flex:1;min-width:220px;max-width:420px}
+.alloc-split .branch-label{font-size:10px;color:#555577;text-align:center;margin-bottom:6px;font-weight:600}
+.alloc-hint{font-size:10px;color:#555577;text-align:center;margin:8px 0;font-style:italic}
+.alloc-path{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0;font-size:10.5px;color:#8888aa}
+.alloc-path .ap-box{background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px 12px;white-space:nowrap}
+.alloc-path .ap-arr{color:#555577}
 </style>
 </head>
 <body>
@@ -144,6 +174,469 @@
   </div>
 </div>
 
+<!-- ═══════ 分配器层级关系全景图 ═══════ -->
+<h2 class="sh" style="margin-top:48px">1.5 分配器层级关系 — 谁调用了谁</h2>
+<p class="ss">理解 Buddy → SLUB → kmalloc → vmalloc → malloc 之间的<b style="color:#a78bfa">调用层级</b>是掌握 Linux 内存管理的核心。下图展示了从用户空间 <code>malloc</code> 到底层 Buddy 分配器的完整路径。</p>
+
+<div class="alloc-diagram">
+
+  <!-- ═══ USER SPACE LAYER ═══ -->
+  <div class="alloc-layer user">
+    <div class="ly-title">◉ User Space — 用户空间</div>
+
+    <div class="alloc-row">
+      <div class="alloc-box b1"><strong>new / malloc(size)</strong></div>
+      <div class="alloc-arrow">▼</div>
+      <div class="alloc-box b1" style="min-width:360px">
+        <strong>glibc ptmalloc2 分配器</strong>
+        <small>arena → tcache(无锁) → fast bins → small bins → large bins → unsorted bin</small>
+        <small>chunk 拆分 & 合并 · top chunk 备胎 · binmap 位图加速查找</small>
+      </div>
+    </div>
+
+    <div class="alloc-arrow down">│</div>
+    <div class="alloc-arrow down" style="font-size:11px;color:#7777aa">根据请求大小分流</div>
+    <div class="alloc-arrow down">│</div>
+
+    <div class="alloc-split">
+      <div class="branch">
+        <div class="branch-label">小分配 (&lt; 128KB)</div>
+        <div class="alloc-row" style="flex-direction:column">
+          <div class="alloc-box b2"><strong>brk() / sbrk()</strong><small>调整 program break · 堆连续增长</small></div>
+          <div class="alloc-arrow down">▼</div>
+          <div class="alloc-box b3" style="font-size:10px">扩展/收缩 [heap] VMA<small>只能从顶部释放 · 碎片可能无法归还 OS</small></div>
+        </div>
+      </div>
+      <div class="branch">
+        <div class="branch-label">大分配 (≥ 128KB)</div>
+        <div class="alloc-row" style="flex-direction:column">
+          <div class="alloc-box b2"><strong>mmap(MAP_ANONYMOUS)</strong><small>在地址空间任意位置映射新 VMA</small></div>
+          <div class="alloc-arrow down">▼</div>
+          <div class="alloc-box b3" style="font-size:10px">创建独立 VMA<small>free 时立即 munmap · 内存完全归还 OS</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:2px 0;color:#444466;font-size:14px">═══ system call boundary (系统调用边界) ═══</div>
+
+  <!-- ═══ KERNEL SPACE LAYER ═══ -->
+  <div class="alloc-layer kernel">
+    <div class="ly-title">◉ Kernel Space — 内核空间分配路径</div>
+
+    <div class="alloc-split">
+      <!-- 内核分配器分支 -->
+      <div class="branch">
+        <div class="branch-label">内核自身内存分配 (驱动/子系统)</div>
+        <div class="alloc-row" style="flex-direction:column;align-items:stretch">
+          <div class="alloc-box b1">
+            <strong>kmalloc(size, flags) / kzalloc()</strong>
+            <small>物理连续 · ≤ 8KB · 从 SLUB 通用 cache 分配</small>
+          </div>
+          <div class="alloc-arrow down">▼</div>
+          <div class="alloc-box b3">
+            <strong>SLUB / SLAB 分配器</strong>
+            <small>kmem_cache 对象缓存 · Per-CPU slab (无锁快速路径)</small>
+            <small>通用 cache: 8B → 8KB · 专用 cache: kmem_cache_create()</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- 虚拟内存分支 -->
+      <div class="branch">
+        <div class="branch-label">用户空间缺页路径 (page fault)</div>
+        <div class="alloc-row" style="flex-direction:column;align-items:stretch">
+          <div class="alloc-box b2">
+            <strong>VMA (vm_area_struct)</strong>
+            <small>红黑树管理 · 虚拟地址范围 · 权限/文件映射</small>
+          </div>
+          <div class="alloc-arrow down">▼</div>
+          <div class="alloc-box b5">
+            <strong>缺页中断 do_page_fault()</strong>
+            <small>首次访问触发 · minor(已缓存) / major(读磁盘) / COW</small>
+            <small>分配物理页 → 建立页表映射 → 更新 TLB</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="alloc-arrow down" style="margin-top:6px">│</div>
+
+    <!-- 特殊路径: vmalloc -->
+    <div class="alloc-path">
+      <div class="ap-box" style="border-color:rgba(248,113,113,.2);color:#f09090">
+        <strong>vmalloc(size)</strong> 特殊路径
+      </div>
+      <div class="ap-arr">→</div>
+      <div class="ap-box">alloc_page() × N 次 (逐个物理页)</div>
+      <div class="ap-arr">→</div>
+      <div class="ap-box">修改页表建立虚拟连续映射</div>
+      <div class="ap-arr">→</div>
+      <div style="font-size:10px;color:#8888aa">物理不连续，虚拟连续 · TLB 刷新开销大</div>
+    </div>
+
+    <div class="alloc-arrow down">│</div>
+    <div class="alloc-arrow down" style="font-size:11px;color:#7777aa">所有路径最终汇聚</div>
+    <div class="alloc-arrow down">│</div>
+
+    <div class="alloc-row">
+      <div class="alloc-box b3" style="text-align:center;min-width:280px">
+        <strong>alloc_pages() / __get_free_pages()</strong>
+        <small>内核统一的物理页分配入口 · order 指定连续页数 (2^order)</small>
+        <small>GFP_KERNEL / GFP_ATOMIC / __GFP_RECLAIM ...</small>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:2px 0;color:#444466;font-size:14px">▼ 最终入口 ▼</div>
+
+  <!-- ═══ PHYSICAL LAYER ═══ -->
+  <div class="alloc-layer phys">
+    <div class="ly-title">◉ Physical Memory — Buddy 伙伴分配器</div>
+
+    <div class="alloc-row">
+      <div class="alloc-box b4" style="text-align:center;min-width:480px">
+        <strong>Buddy Allocator (mm/page_alloc.c)</strong>
+        <small>free_area[0..10] · 2^order 页块 · 分裂 ↓ & 合并 ↑</small>
+      </div>
+    </div>
+
+    <div class="alloc-row" style="margin-top:8px;gap:6px">
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 0: 4KB</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 1: 8KB</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 2: 16KB</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 3: 32KB</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 4: 64KB</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">···</div>
+      <div class="alloc-box b4" style="font-size:9.5px;padding:6px 10px">order 10: 4MB</div>
+    </div>
+
+    <div class="alloc-row" style="margin-top:8px;gap:8px">
+      <div style="font-size:10px;color:#8888aa">MIGRATE_UNMOVABLE</div>
+      <div style="font-size:10px;color:#8888aa">MIGRATE_MOVABLE</div>
+      <div style="font-size:10px;color:#8888aa">MIGRATE_RECLAIMABLE</div>
+      <div style="font-size:10px;color:#8888aa">MIGRATE_CMA</div>
+      <div style="font-size:10px;color:#8888aa">MIGRATE_HIGHATOMIC</div>
+    </div>
+
+    <div style="text-align:center;font-size:10px;color:#555577;margin-top:8px">
+      Per-CPU Page Cache (PCP) — 单页无锁快速路径 · 多核高性能关键
+    </div>
+
+    <div class="alloc-row" style="margin-top:8px">
+      <div class="alloc-box b4" style="text-align:center;min-width:360px">
+        <strong>Physical Pages (物理页框)</strong>
+        <small>NUMA Node 0..N → Zone DMA / Normal / HighMem → struct page[]</small>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="callout info" style="margin-top:20px">
+  <div class="ct">🧭 阅读导航 — 按图索骥</div>
+  <div style="font-size:11.5px;line-height:2;color:#b0b0d0">
+    <b style="color:#fbbf24">Buddy Allocator</b> → 第 2 章详解（分裂/合并/迁移类型/PCP）<br>
+    <b style="color:#34d399">SLUB / kmalloc</b> → 第 3 章详解（kmem_cache/对象缓存/通用 cache）<br>
+    <b style="color:#38bdf8">VMA / 缺页中断</b> → 第 4 章详解（vm_area_struct/页表/TLB）<br>
+    <b style="color:#a78bfa">malloc / ptmalloc2</b> → 第 5 章详解（arena/bins/chunks/tcache/brk vs mmap）<br>
+    <b style="color:#f87171">vmalloc</b> → 第 3 章末尾（虚拟连续但物理不连续的大块分配）
+  </div>
+</div>
+
+<!-- ═══════ 核心澄清：kmalloc / vmalloc / malloc 的本质区别 ═══════ -->
+<h2 class="sh" style="margin-top:48px">1.6 核心澄清 — kmalloc / vmalloc / malloc 的本质区别</h2>
+<p class="ss">前面框图中三条路径都经过 Buddy 拿到物理页，但它们的<b style="color:#fbbf24">虚拟地址来源</b>和<b style="color:#f87171">VMA 有无关系</b>完全不同。这是最容易混淆的地方。</p>
+
+<!-- ══ 内核虚拟地址空间布局 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ 内核虚拟地址空间布局 (64-bit ARM64 示意)</h3>
+
+<div class="cb" style="font-size:10.5px;line-height:2.0">
+<span class="cm">64-bit 内核虚拟地址空间 (48-bit 有效, 256TB 用户 + 256TB 内核)</span>
+
+<span class="cm">┌──────────────────────────────────────────┐ 0x0000_0000_0000_0000</span>
+<span class="cm">│                                          │</span>
+<span class="cm">│         用户空间 (User Space)              │  ← 每个进程独立地址空间</span>
+<span class="cm">│     Text / Data / Heap / mmap / Stack     │     VMA 管理 · 缺页分配</span>
+<span class="cm">│                                          │</span>
+<span class="cm">├──────────────────────────────────────────┤ 0x0000_FFFF_FFFF_FFFF (? 可变)</span>
+<span class="cm">│         内核空间 (Kernel Space)            │  ← 所有进程共享同一份</span>
+<span class="cm">│                                          │</span>
+<span class="cm">│  ┌────────────────────────────────────┐  │</span>
+<span class="kw">│  │  Direct Mapping (直接映射区)        │  │</span>  <span class="cm">← kmalloc 地址来源 ★</span>
+<span class="kw">│  │  va = pa + PAGE_OFFSET             │  │</span>     <span class="cm">所有物理内存 1:1 映射</span>
+<span class="kw">│  │  物理连续 + 虚拟连续               │  │</span>     <span class="cm">物理地址=0x80000000 → VA=0xFFFF_0000_80000000</span>
+<span class="kw">│  └────────────────────────────────────┘  │</span>
+<span class="kw">│  ┌────────────────────────────────────┐  │</span>
+<span class="kw">│  │  vmalloc Area (vmalloc 区域)        │  │</span>  <span class="cm">← vmalloc 地址来源 ★</span>
+<span class="kw">│  │  VMALLOC_START → VMALLOC_END       │  │</span>     <span class="cm">虚拟连续 · 物理可能不连续</span>
+<span class="kw">│  │  alloc_page()×N + 修改内核页表映射  │  │</span>     <span class="cm">每次分配逐页获取+改页表</span>
+<span class="kw">│  └────────────────────────────────────┘  │</span>
+<span class="kw">│  ┌────────────────────────────────────┐  │</span>
+<span class="kw">│  │  Kernel Modules / fixmap / etc.    │  │</span>
+<span class="kw">│  └────────────────────────────────────┘  │</span>
+<span class="cm">│                                          │</span>
+<span class="cm">└──────────────────────────────────────────┘</span></div>
+
+<!-- ══ 三者对比表 ══ -->
+<div class="ptbl" style="margin-top:20px">
+  <table>
+  <thead><tr><th>维度</th><th style="color:#38bdf8">kmalloc / kzalloc</th><th style="color:#f87171">vmalloc</th><th style="color:#a78bfa">malloc (用户空间)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>谁来用</strong></td>
+      <td>内核代码（驱动、子系统）</td>
+      <td>内核代码（需大块虚拟连续）</td>
+      <td>用户程序（C/C++应用）</td>
+    </tr>
+    <tr>
+      <td><strong>返回的地址</strong></td>
+      <td><span style="color:#38bdf8">内核直接映射区 VA</span></td>
+      <td><span style="color:#f87171">内核 vmalloc 区域 VA</span></td>
+      <td><span style="color:#a78bfa">用户空间 VA（进程独立）</span></td>
+    </tr>
+    <tr>
+      <td><strong>VA → PA 转换</strong></td>
+      <td><span style="color:#34d399">va - PAGE_OFFSET = pa（简单减法！）</span></td>
+      <td><span style="color:#fbbf24">需遍历内核页表（VMALLOC 区 PTE）</span></td>
+      <td><span style="color:#fbbf24">需遍历进程页表（用户区 PTE）</span></td>
+    </tr>
+    <tr>
+      <td><strong>物理连续？</strong></td>
+      <td class="g"><strong>✓ 物理连续</strong></td>
+      <td class="r"><strong>✗ 物理不连续</strong>（每页独立获取）</td>
+      <td class="y"><strong>可能连续也可能不连续</strong>（透明，取决于 buddy 状态）</td>
+    </tr>
+    <tr>
+      <td><strong>虚拟连续？</strong></td>
+      <td class="g"><strong>✓ 虚拟连续</strong></td>
+      <td class="g"><strong>✓ 虚拟连续</strong>（页表拼出来的假象）</td>
+      <td class="g"><strong>✓ 虚拟连续</strong>（用户只看到 VA）</td>
+    </tr>
+    <tr>
+      <td><strong>和 VMA 的关系</strong></td>
+      <td class="r"><strong>无关！</strong> 内核直接映射，不走 VMA</td>
+      <td class="r"><strong>无关！</strong> 修改内核页表（init_mm），不走 VMA</td>
+      <td class="g"><strong>必须通过 VMA</strong><br>每个 mmap/malloc 区域对应一个 vm_area_struct</td>
+    </tr>
+    <tr>
+      <td><strong>底层分配</strong></td>
+      <td>SLUB → alloc_pages() → Buddy</td>
+      <td>alloc_page() × N → 修改内核页表 → Buddy</td>
+      <td>缺页中断 → alloc_pages() → Buddy</td>
+    </tr>
+    <tr>
+      <td><strong>大小限制</strong></td>
+      <td>≤ 8KB（通常）；≤ 4MB（直接 alloc_pages）</td>
+      <td>几乎无限制（受 vmalloc 区域大小和 TLB 压力制约）</td>
+      <td>≤ 堆的大小（64-bit 几乎无限）</td>
+    </tr>
+    <tr>
+      <td><strong>时延</strong></td>
+      <td class="g">低（无 TLB miss，VA→PA 只需减法）</td>
+      <td class="r">高（需修改页表 + TLB 刷新 + 每次访问可能 TLB miss）</td>
+      <td class="y">中等（缺页中断延迟，TLB 正常）</td>
+    </tr>
+    <tr>
+      <td><strong>释放时</strong></td>
+      <td>kfree → SLUB 归还对象 → 可能归还 buddy</td>
+      <td>vfree → 逐页释放 + 解除页表映射</td>
+      <td>free → glibc bin 缓存（可能不立刻归还 OS）</td>
+    </tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ 关键理解卡片 ══ -->
+<div class="cg c3" style="margin-top:20px">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>① kmalloc 是物理内存吗？</h4>
+    <div class="lbl">答：是的，物理连续</div>
+    <p><strong>kmalloc 分配的内存在内核直接映射区</strong>——这片区域在系统启动时就建立了所有物理内存的 1:1 页表映射。kmalloc 返回的虚拟地址减去 <code>PAGE_OFFSET</code> 直接等于物理地址。<strong>不需要缺页中断，不创建 VMA</strong>。分配出来就是物理存在的、连续的页。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>② vmalloc 是物理内存吗？</h4>
+    <div class="lbl">答：是的，但物理不连续</div>
+    <p>vmalloc <strong>确实分配了物理内存</strong>——每次调用 <code>alloc_page()</code> 从 Buddy 获取一个真实物理页。但多个物理页<strong>不是连续的</strong>。vmalloc 通过修改<strong>内核页表</strong>，把这些分散的物理页映射到一个连续的虚拟地址范围。<strong>同样不创建 VMA</strong>。VMA 是用户空间的概念。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>③ VMA 到底管什么？</h4>
+    <div class="lbl">答：只管用户空间的虚拟地址区域</div>
+    <p><strong>VMA (vm_area_struct) 只用于用户进程</strong>。每个进程有自己的 <code>mm_struct</code> → 红黑树 VMA → 描述 text/heap/mmap/stack 等区域。内核自身的内存管理（kmalloc/vmalloc/slab）<strong>完全不经过 VMA</strong>。<code>/proc/PID/maps</code> 列出的是用户空间的 VMA，看不到内核分配。</p>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="ct">💡 一句话总结</div>
+  <b style="color:#38bdf8">kmalloc</b> = 内核用的，直接映射区，物理连续，速度快（VA→PA 减法即可），<b>不走 VMA</b><br>
+  <b style="color:#f87171">vmalloc</b> = 内核用的，vmalloc 区，物理不连续但虚拟连续（页表拼凑），开销大，<b>不走 VMA</b><br>
+  <b style="color:#a78bfa">malloc</b> = 用户程序用的，用户地址空间，延迟分配（首次访问缺页才分配物理页），<b>必须经过 VMA + 缺页中断</b><br>
+  <b style="color:#34d399">三者最终都从 Buddy 获取物理页</b>——区别在于<b>虚拟地址空间的位置</b>和<b>是否需要 VMA</b>。
+</div>
+
+<!-- ═══════ 深度追问：为什么返回的是虚拟地址？ ═══════ -->
+<h2 class="sh" style="margin-top:48px">1.7 深度追问 — 为什么返回虚拟地址而非物理地址？</h2>
+<p class="ss">既然 kmalloc/vmalloc 分配的都是物理内存，为什么返回的是虚拟地址？VMA 管理的用户空间也是虚拟地址——<b style="color:#a78bfa">那整个系统中虚拟地址和物理地址到底是什么关系？</b></p>
+
+<!-- ══ 核心原理 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ 根本原因：MMU 一旦使能，CPU 只认识虚拟地址</h3>
+
+<div class="cg c2" style="margin-top:14px">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>CPU 只发出虚拟地址</h4>
+    <div class="lbl">从 bootloader 跳转到内核那一刻起</div>
+    <p>Linux 启动早期（head.S 汇编阶段）MMU 就必须使能。MMU 使能之后，<strong>CPU 核心里每一个取指、每一条 load/store 指令，地址总线上发出的都是虚拟地址</strong>。CPU 硬件自动把虚拟地址送给 MMU → 查 TLB → 命中的话翻译成物理地址 → 送到内存控制器。CPU 核心<strong>永远不知道也看不到物理地址</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>物理地址只有 MMU 和 DMA 在用</h4>
+    <div class="lbl">C 指针 = 虚拟地址 = 永远</div>
+    <p>在内核 C 代码中，<strong>任何指针都是虚拟地址</strong>。即使 kmalloc 返回的那个 "va = pa + PAGE_OFFSET" 值——它仍然是虚拟地址，只不过碰巧和物理地址差一个常数偏移。<strong>MMU 仍然要翻译它</strong>（通过大页映射实现高效翻译）。只有 DMA 引擎、IOMMU、页表硬件（PTE 中存储的地址）才使用物理地址。</p>
+  </div>
+</div>
+
+<!-- ══ 图解：CPU → MMU → 物理内存 ══ -->
+<div class="alloc-diagram" style="margin-top:20px">
+  <div class="alloc-layer user" style="border-color:rgba(167,139,250,.2);background:rgba(167,139,250,.03)">
+    <div class="ly-title">◉ 核心逻辑：CPU 核通过 MMU 访问一切内存</div>
+    <div class="alloc-row">
+      <div class="alloc-box b1" style="min-width:120px"><strong>CPU 核心</strong><small>执行指令<br>发出虚拟地址</small></div>
+      <div class="alloc-arrow">VA ────→</div>
+      <div class="alloc-box b2" style="min-width:200px;border:2px solid #fbbf24">
+        <strong>MMU / TLB</strong>
+        <small>① 先查 TLB（快，~0 周期）</small>
+        <small>② TLB miss → 遍历页表（慢，~数十周期）</small>
+        <small>③ 翻译：VA → PA</small>
+      </div>
+      <div class="alloc-arrow">── PA →</div>
+      <div class="alloc-box b3" style="min-width:140px"><strong>内存控制器</strong><small>读取/写入<br>物理内存</small></div>
+    </div>
+
+    <div class="alloc-row" style="margin-top:12px;gap:6px;flex-wrap:wrap">
+      <div style="font-size:10px;color:#8888aa;text-align:center">
+        <b style="color:#a78bfa">用户进程 VA</b><br>
+        <span style="font-size:9px">如 0x7f... → 查进程页表 → PA</span>
+      </div>
+      <div class="alloc-arrow" style="font-size:12px">|</div>
+      <div style="font-size:10px;color:#8888aa;text-align:center">
+        <b style="color:#38bdf8">kmalloc VA (直接映射)</b><br>
+        <span style="font-size:9px">如 0xffff... → 查内核页表大页 → PA</span>
+        <span style="font-size:9px;color:#555577">va - PAGE_OFFSET = pa 只是方便内核代码算 PA</span>
+        <span style="font-size:9px;color:#555577"><b>MMU 还是会翻译的！</b></span>
+      </div>
+      <div class="alloc-arrow" style="font-size:12px">|</div>
+      <div style="font-size:10px;color:#8888aa;text-align:center">
+        <b style="color:#f87171">vmalloc VA</b><br>
+        <span style="font-size:9px">如 0xffff... → 查内核页表（VMALLOC 区）→ PA</span>
+        <span style="font-size:9px;color:#555577">散列物理页 → 虚拟连续假象</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:4px 0;font-size:10px;color:#555577">
+    ⚠ 关键：kmalloc 返回的 VA 虽然 "va = pa + 常量"，但<b style="color:#fbbf24">MMU 仍然把它当虚拟地址处理</b>——只是页表条目恰好按 1:1 偏移映射
+  </div>
+
+  <!-- 内核地址空间 -->
+  <div class="alloc-layer kernel" style="border-color:rgba(52,211,153,.2);background:rgba(52,211,153,.03)">
+    <div class="ly-title">◉ 内核地址空间的两种页表体系</div>
+    <div class="alloc-split">
+      <div class="branch">
+        <div class="branch-label" style="color:#38bdf8">直接映射区 (kmalloc 地址来源)</div>
+        <div style="font-size:10px;color:#b0b0d0;line-height:1.7;text-align:center">
+          <b>启动时一次性建立（arch/x86/mm/init.c / arm64 mm/init.c）</b><br>
+          用 <b>1GB/2MB 大页</b> 将所有物理内存 1:1 映射到内核空间<br>
+          页表条目 = <b>只读属性 + 全局标志</b>（TLB 不随进程切换刷新）<br>
+          <span style="color:#38bdf8">va = pa + PAGE_OFFSET（或 phys_to_virt 宏）</span><br>
+          <span style="color:#555577">这种映射下 VA→PA 的 MMU 翻译本来就极快（大页 TLB 命中率高）</span>
+        </div>
+      </div>
+      <div class="branch">
+        <div class="branch-label" style="color:#f87171">vmalloc 区域 (vmalloc 地址来源)</div>
+        <div style="font-size:10px;color:#b0b0d0;line-height:1.7;text-align:center">
+          <b>运行时动态建立（mm/vmalloc.c）</b><br>
+          每次 vmalloc 调用 alloc_page() 取散页 → 修改内核页表<br>
+          每页独立映射，用 <b>4KB 页表条目</b> 在 VMALLOC 区域建立连续<br>
+          <span style="color:#f87171">TLB miss 成本高于直接映射区（4KB 页 vs 大页）</span><br>
+          <span style="color:#555577">vmalloc 的 VA 范围不包含物理地址的任何常量偏移关系</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户空间 -->
+  <div class="alloc-layer phys" style="border-color:rgba(251,191,36,.2);background:rgba(251,191,36,.03)">
+    <div class="ly-title">◉ 用户空间的虚拟地址 — VMA 的角色</div>
+    <div style="font-size:10px;color:#b0b0d0;line-height:1.8;text-align:center">
+      <b style="color:#a78bfa">VMA (vm_area_struct) 是用户进程虚拟地址空间的"登记簿"</b><br>
+      它<strong>不存储数据，只记录"哪些虚拟地址范围被分配了、有什么属性"</strong><br>
+      进程页表（mm_struct→pgd）才是 VA→PA 的翻译表——VMA 是页表分配时的<b>权限和属性依据</b><br>
+      缺页中断：检查 VMA 确认这个地址合法 → 从 Buddy 分配物理页 → 填充进程页表<br>
+      <span style="color:#555577">内核直接映射区和 vmalloc 区<b>不需要 VMA</b>——它们直接操作内核页表（init_mm→pgd）</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 总结：两种虚拟地址管理体系的对比 ══ -->
+<div class="ptbl" style="margin-top:20px">
+  <table>
+  <thead><tr><th>维度</th><th style="color:#a78bfa">用户空间虚拟地址</th><th style="color:#38bdf8">内核直接映射区 VA</th><th style="color:#f87171">内核 vmalloc 区 VA</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>虚拟地址范围</strong></td>
+      <td>0x0 → 0x7FFF_FFFF_FFFF (用户态)</td>
+      <td>PAGE_OFFSET → PAGE_OFFSET+RAM_SIZE</td>
+      <td>VMALLOC_START → VMALLOC_END</td>
+    </tr>
+    <tr>
+      <td><strong>谁来管理区域的创建</strong></td>
+      <td><span style="color:#a78bfa">VMA (vm_area_struct)</span> — 记录每个区间</td>
+      <td><span style="color:#38bdf8">启动时固定映射</span> — 无 VMA</td>
+      <td><span style="color:#f87171">vmalloc 自身管理</span> — 无 VMA</td>
+    </tr>
+    <tr>
+      <td><strong>页表存在哪里</strong></td>
+      <td>进程的 <code>mm_struct→pgd</code></td>
+      <td><code>init_mm→pgd</code> (swapper_pg_dir)</td>
+      <td><code>init_mm→pgd</code> (swapper_pg_dir)</td>
+    </tr>
+    <tr>
+      <td><strong>页表何时建立</strong></td>
+      <td>缺页中断时动态建立</td>
+      <td>内核启动时一次性建立</td>
+      <td>vmalloc 调用时建立 · vfree 时拆除</td>
+    </tr>
+    <tr>
+      <td><strong>VA → PA 关系</strong></td>
+      <td>无固定关系（任何 VA 可映射到任何 PA）</td>
+      <td><span style="color:#34d399">va − PAGE_OFFSET = pa</span>（固定偏移）</td>
+      <td>无固定关系（散页映射）</td>
+    </tr>
+    <tr>
+      <td><strong>页大小</strong></td>
+      <td>4KB（THP 可合并为 2MB）</td>
+      <td><span style="color:#34d399">1GB / 2MB 大页</span>（TLB 高效）</td>
+      <td>4KB（TLB 压力大）</td>
+    </tr>
+    <tr>
+      <td><strong>进程切换时</strong></td>
+      <td>切换进程页表 (TTBR0_EL1 / CR3)</td>
+      <td><span style="color:#34d399">不变</span>（全局映射，所有进程共享）</td>
+      <td><span style="color:#34d399">不变</span>（全局映射，所有进程共享）</td>
+    </tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success" style="margin-top:18px">
+  <div class="ct">🎯 回答你的问题</div>
+  <div style="font-size:12px;line-height:2;color:#b0b0d0">
+    <b>Q: 为什么 kmalloc/vmalloc 返回虚拟地址而不是物理地址？</b><br>
+    <b style="color:#34d399">A: 因为 MMU 使能后 CPU 只能通过虚拟地址访问内存。C 代码里的任何指针都是虚拟地址。即使内核直接映射区的 "va = pa + 偏移"，它仍然是经过 MMU 翻译的虚拟地址——只是页表条目恰好在启动时按 1:1 偏移建立好了而已。物理地址只在两个地方使用：页表条目（PTE）中存储的值，以及 DMA 引擎/IOMMU 的总线地址。</b><br><br>
+    <b>Q: VMA 不就是虚拟地址吗？那 kmalloc 的虚拟地址也归 VMA 管？</b><br>
+    <b style="color:#34d399">A: VMA <em>只管理用户空间的虚拟地址</em>。内核空间的虚拟地址（无论直接映射区还是 vmalloc 区）通过 <code>init_mm</code>（内核的 mm_struct）和 swapper_pg_dir（内核页表）管理，<em>完全不用 VMA</em>。VMA 是用户进程地址空间的 "登记簿"——分配用户虚拟地址空间时先登记 VMA，缺页时再查 VMA 分配物理页。内核没有这个 "先登记后缺页" 的过程——直接映射区启动时就建好了，vmalloc 区调用时当场建页表。</b>
+  </div>
+</div>
+
 <!-- ══ Ch2: Buddy Allocator ══ -->
 <h2 class="sh">2. Buddy Allocator — 物理页管理器</h2>
 <p class="ss">Linux 物理内存分配的核心 — 以 2 的幂次块管理空闲页 · 分裂与合并 · 迁移类型防碎片</p>
@@ -153,7 +646,7 @@
     <h4>Buddy 算法原理</h4><div class="lbl">2^n 页块的分裂与合并</div>
     <p><strong>分配 (分裂)</strong>: 从 <code>free_area[order]</code> 链表取空闲块 → 若无则向上级 order+1 请求并分裂 → 一半分配，一半入对应链表。<br>
     <strong>释放 (合并)</strong>: 归还块 → 检查 buddy (邻近同大小块) 是否也空闲 → 合并为 order+1 → 递归向上合并。<br>
-    <code>MAX_ORDER = 10</code> → 最大连续分配 2^10 = 1024 页 = <strong>4MB</strong>。</p>
+    <code>MAX_ORDER = 11</code>（内核常量，<code>include/linux/mmzone.h:24</code>），<strong>最大可分配阶为 MAX_ORDER-1 = 10</strong> → 2^10 = 1024 页 = <strong>4MB</strong>。free_area 数组有 MAX_ORDER 个元素 (索引 0~10)。</p>
   </div>
   <div class="cd" style="--gc:#34d399">
     <h4>迁移类型 (反碎片)</h4><div class="lbl">5 种迁移类型隔离页面</div>
@@ -174,23 +667,244 @@
 };
 
 <span class="kw">struct</span> <span class="ty">zone</span> {
-    <span class="kw">struct</span> <span class="ty">free_area</span>    free_area[<span class="ma">MAX_ORDER</span> + <span class="nu">1</span>]; <span class="cm">// order 0~10 的空闲链表数组</span>
+    <span class="kw">struct</span> <span class="ty">free_area</span>    free_area[<span class="ma">MAX_ORDER</span>]; <span class="cm">// order 0~(MAX_ORDER-1) 的空闲链表数组, MAX_ORDER=11 → 11 个</span>
     <span class="kw">unsigned long</span>     watermark[<span class="ma">NR_WMARK</span>];     <span class="cm">// min, low, high 水位线</span>
     <span class="kw">struct</span> <span class="ty">per_cpu_pages</span> __percpu *per_cpu_pageset; <span class="cm">// Per-CPU 单页缓存</span>
     <span class="ty">atomic_long_t</span>     managed_pages;             <span class="cm">// 此 zone 管理的总页数</span>
 };
 
 <span class="cm">/* ===== 分配页的 GFP 标志 (Get Free Pages) ===== */</span>
-<span class="ma">GFP_KERNEL</span>      <span class="cm">// 标准内核分配 — 可睡眠，可触发回收</span>
-<span class="ma">GFP_ATOMIC</span>      <span class="cm">// 原子上下文 — 不可睡眠，使用紧急预留</span>
-<span class="ma">GFP_DMA</span>         <span class="cm">// 从 ZONE_DMA 分配</span>
-<span class="ma">GFP_HIGHUSER</span>    <span class="cm">// 用户空间分配 — 允许使用 HIGHMEM</span>
-<span class="ma">__GFP_RECLAIM</span>   <span class="cm">// 允许回收 (配合 GFP_KERNEL 使用)</span>
+<span class="cm">/* ═══ 实际 GFP 标志组合 (include/linux/gfp.h:237-248) ═══ */</span>
+<span class="ma">GFP_KERNEL</span>      = <span class="ma">__GFP_RECLAIM</span> | <span class="ma">__GFP_IO</span> | <span class="ma">__GFP_FS</span>
+<span class="cm">                   // 标准内核分配 — 可回收、可 I/O、可访问文件系统</span>
+<span class="ma">GFP_ATOMIC</span>      = <span class="ma">__GFP_HIGH</span> | <span class="ma">__GFP_ATOMIC</span> | <span class="ma">__GFP_KSWAPD_RECLAIM</span>
+<span class="cm">                   // 原子上下文 — 不可睡眠，可使用紧急预留，不可 direct reclaim</span>
+<span class="ma">GFP_USER</span>        = <span class="ma">__GFP_RECLAIM</span> | <span class="ma">__GFP_IO</span> | <span class="ma">__GFP_FS</span> | <span class="ma">__GFP_HARDWALL</span>
+<span class="cm">                   // 用户空间分配 — 遵守 cpuset 硬墙限制</span>
+<span class="ma">GFP_HIGHUSER_MOVABLE</span> = <span class="ma">GFP_HIGHUSER</span> | <span class="ma">__GFP_MOVABLE</span>
+<span class="cm">                   // 用户空间可移动页 — page fault 缺页分配的默认标志</span>
+<span class="ma">__GFP_RECLAIM</span>   = <span class="ma">__GFP_DIRECT_RECLAIM</span> | <span class="ma">__GFP_KSWAPD_RECLAIM</span>
+<span class="cm">                   // 允许 direct reclaim + kswapd reclaim</span>
 <span class="ma">__GFP_ZERO</span>      <span class="cm">// 返回清零的页</span></div>
 
 <div class="callout info">
   <div class="ct">Per-CPU Page Cache (PCP)</div>
   对于最常见的 <strong>order-0</strong> 单页分配，buddy 通过 Per-CPU 缓存避免锁争用。每个 CPU 预取一批页缓存本地 → 分配从 CPU 本地取 (<strong>无锁</strong>) → 缓存耗尽时批量从 buddy 补充。这是多核环境 page_alloc 高性能的关键。
+</div>
+
+<!-- ══ Ch2.5: 迁移类型详解 ══ -->
+<h2 class="sh">2.5 迁移类型 (Migrate Types) — 反碎片的核心机制</h2>
+<p class="ss">如果所有类型的页面混在一起，运行一段时间后系统会<b style="color:#f87171">碎片化</b>——虽然有大量空闲页，但无法分配高阶连续块（如 2MB THP 大页）。迁移类型通过<b style="color:#34d399">按可移动性分类存放</b>来解决这个问题。</p>
+
+<!-- ══ 为什么需要迁移类型 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 8px">◈ 碎片化问题：为什么需要分类？</h3>
+
+<div class="cg c2" style="margin-top:12px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>无迁移类型：灾难场景</h4>
+    <div class="lbl">所有页混在一起</div>
+    <p>物理内存中 <strong>不可移动的页（内核 slab）</strong> 和 <strong>可移动的页（用户空间匿名页）</strong> 随机交错分布。即使有 50% 空闲内存，一个不可移动的 4KB 内核页挡在中间 → <strong>无法合并出连续 2MB 高阶块</strong>。这就是 <b>"外部碎片"</b>——有空闲但不可用的内存。<br>
+    <code style="font-size:10px;display:block;margin-top:6px;color:#f87171">[slab][free][anon][free][slab][free][anon]... → 无法得到连续 2MB</code></p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>有迁移类型：解决方案</h4>
+    <div class="lbl">同类相聚，按需迁移</div>
+    <p>将物理页按 <strong>"能不能被移动"</strong> 分到不同迁移类型的空闲链表中。<br>
+    ① <strong>UNMOVABLE</strong> 页面聚在一起 → 它们占用的区域"牺牲"给内核<br>
+    ② <strong>MOVABLE</strong> 页面聚在一起 → 需要大块时，把这些页<strong>迁移到其他物理地址</strong>，腾出连续空间<br>
+    ③ 内存压缩 (compaction) 只在 MOVABLE 区域工作 → 高效生成高阶块。</p>
+  </div>
+</div>
+
+<!-- ══ 五种迁移类型 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 五种迁移类型详解</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>迁移类型</th><th>可移动？</th><th>谁来用</th><th>典型分配者</th><th>GFP 标志映射</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong style="color:#f87171">MIGRATE_UNMOVABLE</strong></td>
+      <td class="r"><strong>✗ 不可移动</strong></td>
+      <td>内核核心分配</td>
+      <td style="font-size:10.5px">slab (kmalloc) · 页表 (PTE) · 内核栈 · vmalloc 页表 · 内核代码/数据</td>
+      <td style="font-size:10px"><code>GFP_KERNEL</code> · <code>GFP_ATOMIC</code> 等大部分内核 GFP 标志</td>
+    </tr>
+    <tr>
+      <td><strong style="color:#38bdf8">MIGRATE_MOVABLE</strong></td>
+      <td class="g"><strong>✓ 可移动</strong></td>
+      <td>用户空间页</td>
+      <td style="font-size:10.5px">匿名页 (堆/栈/mmap ANON) · 进程页表用户部分</td>
+      <td style="font-size:10px"><code>GFP_HIGHUSER_MOVABLE</code></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#34d399">MIGRATE_RECLAIMABLE</strong></td>
+      <td class="y"><strong>△ 可回收</strong></td>
+      <td>文件缓存</td>
+      <td style="font-size:10.5px">Page Cache · inode/dentry 缓存 · tmpfs 文件内容</td>
+      <td style="font-size:10px"><code>__GFP_RECLAIM</code></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#fbbf24">MIGRATE_CMA</strong></td>
+      <td class="g"><strong>✓ 可移动</strong></td>
+      <td>CMA 预留区域</td>
+      <td style="font-size:10.5px">设备驱动（相机/视频解码/GPU）需要连续大块 DMA 缓冲区时使用<br>空闲时可被 MOVABLE 分配借走，需要时驱逐归还</td>
+      <td style="font-size:10px"><code>__GFP_CMA</code></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#f472b6">MIGRATE_HIGHATOMIC</strong></td>
+      <td class="r"><strong>✗ 紧急预留</strong></td>
+      <td>原子上下文</td>
+      <td style="font-size:10.5px">中断处理中的紧急分配 · 网络数据包处理 (softirq)</td>
+      <td style="font-size:10px"><code>GFP_ATOMIC</code>（order>0 时优先从此取）</td>
+    </tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="cg c3" style="margin-top:16px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>UNMOVABLE 为什么不可移动？</h4>
+    <div class="lbl">内核地址是硬编码的</div>
+    <p>内核代码中的指针指向<strong>具体的物理地址</strong>（通过直接映射区的 1:1 对应）。slab 对象、task_struct、内核栈等分配后，内核到处持有这些物理地址的引用。要"移动"它们意味着 <strong>扫描整个内核空间更新每一个指针</strong>——不现实。所以这些页面标记为不可移动。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>MOVABLE 怎么移动？</h4>
+    <div class="lbl">用户页通过页表间接访问</div>
+    <p>用户空间的页通过<strong>页表 (PTE)</strong> 间接访问——进程看到的是虚拟地址。要移动一个物理页：<br>① 分配新物理页并拷贝数据<br>② 更新 PTE 指向新物理地址<br>③ 刷新 TLB<br>④ 释放旧页<br><strong>进程完全无感知</strong>，不需要修改任何用户代码或指针。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>RECLAIMABLE 怎么回收？</h4>
+    <div class="lbl">文件页有后备存储</div>
+    <p>Page Cache 中的文件页有<strong>磁盘上的原始副本</strong>（如果是干净页）或可以先回写到磁盘（如果是脏页）。回收时：干净页 → 直接丢弃（需要时再从磁盘读）；脏页 → 先回写再丢弃。不需要拷贝到新位置。</p>
+  </div>
+</div>
+
+<!-- ══ 后备回退规则 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 后备回退规则 (Fallback Order)</h3>
+<p class="ss" style="margin-bottom:12px">当某迁移类型的空闲页耗尽时，Buddy 不会直接返回失败——它会<strong>按预设的优先级顺序</strong>从其他类型"借用"页面。这个顺序被精心设计以<strong>最小化碎片化</strong>。</p>
+
+<div class="cb"><span class="cm">/* ===== mm/page_alloc.c: fallbacks[][] — 每种迁移类型的后备列表 ===== */</span>
+<span class="kw">static int</span> fallbacks[<span class="ma">MIGRATE_TYPES</span>][<span class="nu">3</span>] = {
+    <span class="cm">// UNMOVABLE 耗尽时 → 先借 RECLAIMABLE → 再借 MOVABLE</span>
+    [<span class="ma">MIGRATE_UNMOVABLE</span>]   = { <span class="ma">MIGRATE_RECLAIMABLE</span>, <span class="ma">MIGRATE_MOVABLE</span> },
+    <span class="cm">// MOVABLE 耗尽时    → 先借 RECLAIMABLE → 再借 UNMOVABLE</span>
+    [<span class="ma">MIGRATE_MOVABLE</span>]     = { <span class="ma">MIGRATE_RECLAIMABLE</span>, <span class="ma">MIGRATE_UNMOVABLE</span> },
+    <span class="cm">// RECLAIMABLE 耗尽时 → 先借 UNMOVABLE → 再借 MOVABLE</span>
+    [<span class="ma">MIGRATE_RECLAIMABLE</span>] = { <span class="ma">MIGRATE_UNMOVABLE</span>, <span class="ma">MIGRATE_MOVABLE</span> },
+};</div>
+
+<div class="cg c2" style="margin-top:14px">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>回退规则的设计哲学</h4>
+    <div class="lbl">核心原则：尽量不污染可移动区域</div>
+    <p>① <strong>可回退的优先级高于不可回退的</strong>——RECLAIMABLE 和 MOVABLE 可以通过回收/迁移腾出空间，UNMOVABLE 不行。所以 fallback 优先选择 "可以抢救" 的页面避免累积碎片。<br>
+    ② <strong>借用 UNMOVABLE 页面风险最大</strong>——如果 MOVABLE 分配借了 UNMOVABLE 的页，这块物理区域从此被"钉死"，再也无法用于生成大块连续内存。所以 MOVABLE 的回退链将 UNMOVABLE 放在<strong>最后</strong>。<br>
+    ③ <strong>CMA 被隔离对待</strong>——CMA 地块专门留给 DMA 大块需求，普通分配默认不进 CMA 区域（除非显式使用 __GFP_CMA）。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>回退过量时的后果</h4>
+    <div class="lbl">碎片化的累积</div>
+    <p>当系统长期运行且内存压力大时，回退频繁发生 → UNMOVABLE 页面逐渐渗入 MOVABLE 区域 → <strong>可移动区域被污染</strong> → 即使有足够空闲页，compaction 也无法在 MOVABLE 区域生成连续大块 → <strong>THP 分配失败率上升</strong> → 性能下降。<br>
+    监控指标：<code>/sys/kernel/debug/extfrag/unusable_index</code> 反映各 order 的碎片化程度。</p>
+  </div>
+</div>
+
+<!-- ══ GFP 标志 → 迁移类型的映射 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ GFP 标志如何决定迁移类型</h3>
+<p class="ss" style="margin-bottom:12px">调用者传递的 GFP 标志会自动映射到合适的迁移类型——<b style="color:#38bdf8">调用者通常不需要关心迁移类型</b>，内核帮你做正确的选择。</p>
+
+<div class="cb"><span class="cm">/* ===== include/linux/gfp.h: GFP 标志 → 迁移类型映射 ===== */</span>
+<span class="kw">static inline int</span> <span class="fn">gfp_migratetype</span>(<span class="kw">const</span> <span class="ty">gfp_t</span> gfp_flags)
+{
+    <span class="cm">// __GFP_MOVABLE 显式指定 → MOVABLE</span>
+    <span class="kw">if</span> (unlikely(gfp_flags & <span class="ma">__GFP_MOVABLE</span>))
+        <span class="kw">return</span> <span class="ma">MIGRATE_MOVABLE</span>;
+
+    <span class="cm">// __GFP_RECLAIMABLE → RECLAIMABLE</span>
+    <span class="kw">if</span> (unlikely(gfp_flags & <span class="ma">__GFP_RECLAIMABLE</span>))
+        <span class="kw">return</span> <span class="ma">MIGRATE_RECLAIMABLE</span>;
+
+    <span class="cm">// 默认 → UNMOVABLE（大多数内核分配走这里）</span>
+    <span class="kw">return</span> <span class="ma">MIGRATE_UNMOVABLE</span>;
+}
+
+<span class="cm">/* ===== 实例：常见分配对应的迁移类型 ===== */</span>
+<span class="fn">kmalloc</span>(size, <span class="ma">GFP_KERNEL</span>)           <span class="cm">// → MIGRATE_UNMOVABLE</span>
+<span class="fn">alloc_pages</span>(<span class="ma">GFP_HIGHUSER_MOVABLE</span>)   <span class="cm">// → MIGRATE_MOVABLE (用户空间页)</span>
+<span class="fn">alloc_pages</span>(<span class="ma">__GFP_RECLAIMABLE</span>)       <span class="cm">// → MIGRATE_RECLAIMABLE (page cache)</span>
+<span class="fn">alloc_pages</span>(<span class="ma">GFP_ATOMIC</span>, order=<span class="nu">2</span>)     <span class="cm">// → MIGRATE_HIGHATOMIC (原子+高阶, 紧急预留)</span></div>
+
+<!-- ══ 内存压缩 (Compaction) ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 内存压缩 (Memory Compaction) — 把碎片整理成连续块</h3>
+
+<div class="cg c2" style="margin-top:12px">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>Compaction 的工作原理</h4>
+    <div class="lbl">双游标扫描 — 从两端向中间推进</div>
+    <p><strong>左边游标 (migrate scanner)</strong>: 从区域起始向后扫描，找到<strong>已分配的 MOVABLE 页</strong>。<br>
+    <strong>右边游标 (free scanner)</strong>: 从区域末尾向前扫描，找到<strong>空闲页</strong>。<br><br>
+    <strong>过程</strong>: 左游标找到的 MOVABLE 页 → 拷贝到右游标找到的空闲页 → 更新页表 → 释放原位置 → 原位置变为空闲页 → 和一墙之隔的空闲页合并 → 逐步聚拢出连续大块。<br><br>
+    <strong>UNMOVABLE 页无法迁移</strong> → 左游标遇到 UNMOVABLE 跳过 → 这些页成为"钉子"，阻止该位置产生连续块。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>Compaction 的触发时机</h4>
+    <div class="lbl">自动 (kcompactd) + 手动 (分配路径中)</div>
+    <p>① <strong>kcompactd[N]</strong> — 后台内核线程，每个 NUMA 节点一个。监控碎片指数，在问题恶化<strong>之前</strong>主动压缩。使用 <code>sysctl</code> <code>vm.compact_memory</code> 控制。<br>
+    ② <strong>直接压缩 (direct compaction)</strong> — 当 <code>alloc_pages()</code> 分配高阶块（如 THP 2MB）失败时，<strong>在分配者进程上下文中同步执行</strong>压缩。阻塞分配者，类似直接回收。<br>
+    ③ <strong>手动触发</strong>: <code>echo 1 &gt; /proc/sys/vm/compact_memory</code></p>
+  </div>
+</div>
+
+<!-- ══ /proc/pagetypeinfo 解读 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 诊断工具：/proc/pagetypeinfo 和 /proc/buddyinfo</h3>
+
+<div class="cb"><span class="cm">/* ===== /proc/pagetypeinfo — 每迁移类型 × 每 order 的空闲块数 ===== */</span>
+$ <span class="fn">cat</span> /proc/pagetypeinfo
+Page block order: <span class="nu">9</span>
+Pages per block:  <span class="nu">512</span>
+
+Free pages count per migrate type at order       <span class="nu">0</span>     <span class="nu">1</span>     <span class="nu">2</span>     <span class="nu">3</span>    <span class="nu">4</span>    <span class="nu">5</span>   ...
+Node    <span class="nu">0</span>, zone   Normal, type   <span class="st">Unmovable</span>    <span class="nu">245</span>   <span class="nu">60</span>    <span class="nu">28</span>    <span class="nu">12</span>    <span class="nu">5</span>    <span class="nu">2</span>   ...
+Node    <span class="nu">0</span>, zone   Normal, type     <span class="st">Movable</span>   <span class="nu">820</span>  <span class="nu">120</span>    <span class="nu">45</span>    <span class="nu">20</span>    <span class="nu">8</span>    <span class="nu">3</span>   ...
+Node    <span class="nu">0</span>, zone   Normal, type <span class="st">Reclaimable</span>    <span class="nu">95</span>   <span class="nu">30</span>    <span class="nu">10</span>     <span class="nu">5</span>    <span class="nu">2</span>    <span class="nu">1</span>   ...
+
+<span class="cm">/* ===== /proc/buddyinfo — 所有迁移类型汇总 (简化版) ===== */</span>
+$ <span class="fn">cat</span> /proc/buddyinfo
+Node <span class="nu">0</span>, zone   Normal  <span class="nu">1160</span>   <span class="nu">210</span>    <span class="nu">83</span>    <span class="nu">37</span>   <span class="nu">15</span>    <span class="nu">6</span>   ...
+<span class="cm">                      order0 order1 order2 order3 order4 order5 ...</span>
+
+<span class="cm">/* ===== 碎片化程度诊断 ===== */</span>
+<span class="cm"># unusable_index — 各 order 的不可用程度 (越低越好, 0~1000)</span>
+$ <span class="fn">cat</span> /sys/kernel/debug/extfrag/unusable_index
+Node <span class="nu">0</span>, zone   Normal order=<span class="nu">0</span>  unusable:<span class="nu">0</span>   order=<span class="nu">4</span>  unusable:<span class="nu">12</span>  order=<span class="nu">9</span>  unusable:<span class="nu">348</span>
+<span class="cm"># order 9 (2MB) unusable=348 → 34.8% 的空闲内存在 order 9 级别不可用 → 碎片化较重</span>
+
+<span class="cm"># 查看 compaction 是否在成功运行</span>
+$ <span class="fn">cat</span> /proc/vmstat | <span class="fn">grep</span> compact
+compact_migrate_scanned <span class="nu">342018</span>
+compact_free_scanned    <span class="nu">510293</span>
+compact_isolated        <span class="nu">98234</span>
+compact_success         <span class="nu">152</span>     <span class="cm">← 成功次数 (如果持续为 0 → 碎片化严重)</span>
+compact_fail            <span class="nu">823</span>     <span class="cm">← 失败次数</span></div>
+
+<!-- ══ 总结卡片 ══ -->
+<div class="cg c3" style="margin-top:20px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>UNMOVABLE — 内核的"钉子"</h4>
+    <div class="lbl">不可移动 · 占住就不走</div>
+    <p>kmalloc/slab/页表/内核栈都属于此类。<br>默认 GFP 标志（GFP_KERNEL 等）全部落入 UNMOVABLE。<br>这些页面越多 → 可生成连续大块的区域越小。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>MOVABLE — 可迁移的"活页"</h4>
+    <div class="lbl">用户空间按需腾挪</div>
+    <p>匿名页/用户栈/堆。<br>compaction 的目标就是这类页。<br>通过页表重映射迁移 → 进程无感。<br>GFP_HIGHUSER_MOVABLE 显式请求。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>RECLAIMABLE — 可丢弃的"缓存"</h4>
+    <div class="lbl">有后备存储的页</div>
+    <p>Page Cache / inode 缓存。<br>干净页直接丢弃 → 脏页先回写再丢弃。<br>回收比迁移更轻量（不需拷贝数据）。<br>__GFP_RECLAIMABLE 显式请求。</p>
+  </div>
 </div>
 
 <!-- ══ Ch3: SLUB ══ -->
@@ -433,6 +1147,162 @@ cat /proc/$$/status | grep -E <span class="st">'VmRSS|VmSize|VmSwap|VmData|VmStk
 <span class="fn">malloc_info</span>(<span class="nu">0</span>, stdout);  <span class="cm">// 打印 XML 格式的 arena/bins 状态</span>
 <span class="fn">malloc_stats</span>();           <span class="cm">// 打印人类可读统计到 stderr</span></div>
 
+<!-- ══ Ch5.5: malloc 内核路径 ══ -->
+<h2 class="sh">5.5 malloc 的内核路径 — glibc 到 Buddy 的完整调用链</h2>
+<p class="ss">前面 Ch1.5 的框图中画了 malloc → ptmalloc2 → brk/mmap → page fault → alloc_pages 的路径。这里把每一步<b style="color:#fbbf24">具体的内核代码</b>串起来。</p>
+
+<!-- ══ 路径 1: 小块分配 (brk/sbrk) ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ 路径 1：小块分配 &lt; 128KB — brk() → 缺页中断</h3>
+
+<div class="cb"><span class="cm">/* ═══ Step 0: glibc 决定走 brk 路径 ═══ */</span>
+<span class="fn">malloc</span>(<span class="nu">100</span>) → tcache miss → bins miss → top chunk 不够
+         → <span class="fn">sysmalloc</span>() → <span class="fn">sbrk</span>(<span class="nu">4096</span>)     <span class="cm">// 请求扩展堆 4KB</span>
+
+<span class="cm">/* ═══ Step 1: 内核 brk() 系统调用 — mm/mmap.c ═══ */</span>
+<span class="kw">SYSCALL_DEFINE1</span>(brk, <span class="kw">unsigned long</span>, brk)
+{
+    <span class="cm">// 1. 找到当前进程的 mm_struct</span>
+    <span class="kw">struct</span> <span class="ty">mm_struct</span> *mm = current->mm;
+
+    <span class="cm">// 2. 新 brk 必须 > 代码段结束地址 & 不能和 mmap 区域冲突</span>
+    <span class="kw">if</span> (brk < min_brk || brk > mm->mmap_base)
+        <span class="kw">goto</span> out;
+
+    <span class="cm">// 3. 对齐到页边界</span>
+    newbrk = <span class="fn">PAGE_ALIGN</span>(brk);
+    oldbrk = <span class="fn">PAGE_ALIGN</span>(mm->brk);
+
+    <span class="cm">// 4. 扩展 heap VMA: [heap] 区域的 vm_end 增大</span>
+    <span class="kw">if</span> (newbrk > oldbrk) {
+        <span class="fn">do_brk</span>(oldbrk, newbrk - oldbrk);
+        <span class="cm">// ★ 关键：do_brk() 只修改 VMA 边界，不分配物理页！</span>
+        <span class="cm">// VMA: vm_start=0x1000000, vm_end 从 0x1001000 → 0x1002000</span>
+    }
+    mm->brk = brk;  <span class="cm">// 更新 program break</span>
+}
+<span class="cm">// 返回后：heap VMA 扩大了，但新扩展的虚拟地址页表全为空
+// → 首次访问这些地址时触发缺页中断 → 才真正分配物理页</span></div>
+
+<div class="cb" style="margin-top:12px"><span class="cm">/* ═══ Step 2: 缺页中断 — 首次访问 brk 扩展的地址 ═══ */</span>
+<span class="cm">/* ═══ arch/arm64/mm/fault.c 或 arch/x86/mm/fault.c → do_page_fault() ═══ */</span>
+<span class="kw">static int</span> __kprobes <span class="fn">do_page_fault</span>(<span class="kw">struct</span> pt_regs *regs, <span class="kw">unsigned long</span> addr)
+{
+    <span class="kw">struct</span> <span class="ty">vm_area_struct</span> *vma;
+    <span class="kw">struct</span> <span class="ty">mm_struct</span> *mm = current->mm;
+
+    <span class="fn">down_read</span>(&mm->mmap_sem);
+
+    <span class="cm">// 1. 查找 addr 属于哪个 VMA</span>
+    vma = <span class="fn">find_vma</span>(mm, addr);
+    <span class="kw">if</span> (!vma)
+        <span class="kw">goto</span> bad_area;  <span class="cm">// 段错误！地址不属于任何 VMA</span>
+
+    <span class="kw">if</span> (vma->vm_start <= addr && addr < vma->vm_end) {
+        <span class="cm">// 2. 调用 handle_mm_fault → __handle_mm_fault → handle_pte_fault</span>
+        <span class="kw">int</span> ret = <span class="fn">handle_mm_fault</span>(mm, vma, addr, flags);
+        <span class="kw">if</span> (ret & VM_FAULT_OOM)
+            <span class="kw">goto</span> out_of_memory;  <span class="cm">// 连缺页分配都失败了 → 触发 OOM</span>
+    }
+    <span class="fn">up_read</span>(&mm->mmap_sem);
+}
+
+<span class="cm">/* ═══ mm/memory.c — handle_pte_fault() ═══ */</span>
+<span class="kw">static int</span> <span class="fn">handle_pte_fault</span>(<span class="kw">struct</span> mm_struct *mm,
+                            <span class="kw">struct</span> vm_area_struct *vma, ...)
+{
+    <span class="kw">if</span> (!pte_present(entry)) {
+        <span class="kw">if</span> (pte_none(entry))
+            <span class="kw">return</span> <span class="fn">do_anonymous_page</span>(mm, vma, address, ...);
+            <span class="cm">// ↑ 匿名页 (heap/stack/mmap ANON) 走这里</span>
+        <span class="kw">else</span>
+            <span class="kw">return</span> <span class="fn">do_swap_page</span>(mm, vma, address, ...);
+            <span class="cm">// ↑ 换出的页走这里 (swap in)</span>
+    }
+}
+
+<span class="cm">/* ═══ mm/memory.c — do_anonymous_page() ═══ */</span>
+<span class="kw">static int</span> <span class="fn">do_anonymous_page</span>(<span class="kw">struct</span> mm_struct *mm,
+        <span class="kw">struct</span> vm_area_struct *vma, <span class="kw">unsigned long</span> address, ...)
+{
+    <span class="cm">// 1. 从 Buddy 分配一个物理页 (order-0, MOVABLE)</span>
+    page = <span class="fn">alloc_zeroed_user_highpage_movable</span>(vma, address);
+    <span class="cm">//           └→ alloc_pages(GFP_HIGHUSER_MOVABLE, 0)
+    //               └→ __alloc_pages_nodemask()
+    //                   ├→ get_page_from_freelist() (fast path)
+    //                   └→ __alloc_pages_slowpath() (slow path, 可能触发回收/OOM)</span>
+
+    <span class="cm">// 2. 建立 PTE: 把虚拟地址 → 物理页的映射写入进程页表</span>
+    <span class="fn">set_pte_at</span>(mm, address, page_table, entry);
+
+    <span class="cm">// 3. 清零页 → 返回用户态 → cpu 重试访问指令 → 成功！
+    // 此后进程中对该地址的访问通过 TLB 直接命中，不再触发缺页</span>
+}</div>
+
+<!-- ══ 路径 2: 大块分配 (mmap) ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 路径 2：大块分配 ≥ 128KB — mmap(MAP_ANONYMOUS)</h3>
+
+<div class="cb"><span class="cm">/* ═══ Step 0: glibc 决定走 mmap 路径 ═══ */</span>
+<span class="fn">malloc</span>(<span class="nu">200</span>*<span class="nu">1024</span>)  <span class="cm">// 200KB ≥ 128KB (MMAP_THRESHOLD)</span>
+  → <span class="fn">sysmalloc</span>() → <span class="fn">mmap</span>(NULL, <span class="nu">200</span>*<span class="nu">1024</span>, PROT_READ|PROT_WRITE,
+                        MAP_PRIVATE|MAP_ANONYMOUS, -<span class="nu">1</span>, <span class="nu">0</span>)
+
+<span class="cm">/* ═══ Step 1: mm/mmap.c — do_mmap() ═══ */</span>
+<span class="kw">unsigned long</span> <span class="fn">do_mmap</span>(<span class="kw">struct</span> file *file, <span class="kw">unsigned long</span> addr,
+        <span class="kw">unsigned long</span> len, <span class="kw">unsigned long</span> prot, <span class="kw">unsigned long</span> flags, ...)
+{
+    <span class="cm">// 1. 在进程地址空间中找到 len 大小的空闲虚拟地址范围</span>
+    addr = <span class="fn">get_unmapped_area</span>(file, addr, len, ...);
+
+    <span class="cm">// 2. 创建新的 VMA: vm_area_struct</span>
+    vma = <span class="fn">kmem_cache_zalloc</span>(vm_area_cachep, GFP_KERNEL);
+    vma->vm_start = addr;
+    vma->vm_end   = addr + len;
+    vma->vm_flags = VM_READ | VM_WRITE | ...;
+    vma->vm_page_prot = <span class="fn">vm_get_page_prot</span>(vma->vm_flags);
+
+    <span class="cm">// 3. 将 VMA 插入进程的 mm_struct 红黑树</span>
+    <span class="fn">vma_link</span>(mm, vma, prev, rb_link, rb_parent);
+}
+<span class="cm">// ★ 关键：mmap 也只创建 VMA，不分配物理页！
+// 后续首次访问 → 缺页 → do_anonymous_page → alloc_pages
+// 和 brk 路径的缺页中断完全一样</span></div>
+
+<!-- ══ 路径 3: free() 如何归还物理页 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ free() 的内核路径 — 物理页如何被归还</h3>
+
+<div class="cb"><span class="cm">/* ═══ 场景 A: 大块 — mmap 分配 → munmap 归还 ═══ */</span>
+<span class="fn">free</span>(mmap_ptr)  <span class="cm">// ptr 来自 mmap (chunk size 的 IS_MMAPPED 标志位=1)</span>
+  → <span class="fn">munmap_chunk</span>(p)
+    → <span class="fn">munmap</span>(ptr, size)       <span class="cm">// 系统调用 → mm/mmap.c do_munmap()</span>
+      → <span class="fn">unmap_region</span>(mm, vma, start, end)
+        → <span class="fn">unmap_page_range</span>()     <span class="cm">// 遍历页表，清除 PTE</span>
+        → <span class="fn">free_pages_and_swap_cache</span>() <span class="cm">// ★ 释放物理页回 Buddy</span>
+          → <span class="fn">free_one_page</span>() → <span class="fn">__free_one_page</span>() → Buddy 分裂/合并
+          <span class="cm">// 物理页回到 pageblock 当前类型的 freelist</span>
+        → <span class="fn">remove_vma</span>(vma)        <span class="cm">// 从红黑树中删除 VMA</span>
+  <span class="st">→ 物理页立即归还 Buddy！</span>
+
+<span class="cm">/* ═══ 场景 B: 小块 — brk 分配 → free → chunk 合并 → trim 归还 ═══ */</span>
+<span class="fn">free</span>(brk_ptr)  <span class="cm">// ptr 来自 brk (heap)</span>
+  → 放入 glibc bin (tcache/fastbin/unsorted)
+  → glibc <strong>不立即</strong>归还给内核——缓存起来给后续 malloc 用
+  → <span class="kw">只有当</span>:
+    ① <span class="fn">malloc_trim</span>() 被显式调用，或
+    ② top chunk 超过 128KB → glibc 调用 <span class="fn">sbrk</span>(-size) 收缩 heap
+      → 内核 do_brk() 反向收缩 VMA → 释放物理页回 Buddy
+      → 但 heap 碎片化 → top chunk 下面有已分配 chunk → 无法收缩
+      <span class="cm">→ ★ 这就是 brk 路径"碎片不归还 OS"的根因</span></div>
+
+<div class="callout info" style="margin-top:14px">
+  <div class="ct">📐 malloc/free 内核路径总结</div>
+  <div style="font-size:11.5px;line-height:1.9;color:#b0b0d0">
+    · <b>malloc</b>: glibc bins → sysmalloc → brk/mmap <b>(仅扩展 VMA，0 个物理页)</b> → 首次访问 → 缺页中断 → <b>alloc_pages (才分配物理页)</b><br>
+    · <b>free (mmap 大块)</b>: munmap → 清页表 → <b>free_one_page → 物理页立即归还 Buddy</b><br>
+    · <b>free (brk 小块)</b>: 放入 glibc bin → <b>物理页暂不归还</b> → 等 trim 或 top chunk 收缩才归还 → <b>碎片可能导致永久不归还</b><br>
+    · <b>缺页路径</b>: do_page_fault → find_vma (验证地址合法) → handle_mm_fault → do_anonymous_page → alloc_page → set_pte
+  </div>
+</div>
+
 <!-- ══ Ch6: Page Cache ══ -->
 <h2 class="sh">6. Page Cache — 文件数据的缓存</h2>
 <p class="ss">所有文件 I/O 的必经之路 · address_space 管理 · folio 统一单页和大页 · 写回的决策引擎</p>
@@ -592,7 +1462,31 @@ cat /proc/meminfo | grep <span class="st">'Swap\|Shmem'</span>
 <div class="cg c2">
   <div class="cd" style="--gc:#f87171">
     <h4>受害进程选择算法</h4><div class="lbl">badness = f(RSS, oom_score_adj, ...)</div>
-    <p><code>select_bad_process()</code> 遍历所有进程计算<strong>badness 分数</strong>。主要因子：<strong>RSS</strong> (实际占用物理内存)、<strong>swap 使用量</strong>、<code>oom_score_adj</code> (用户可调)、<strong>运行时间</strong> (长时间运行有惩罚)、是否有 <code>CAP_SYS_ADMIN</code>。分数最高的进程被选中 → <code>SIGKILL</code>。被杀的进程获得 <code>TIF_MEMDIE</code> 标志，可以使用预留内存完成退出。</p>
+    <div class="cb" style="margin-bottom:12px"><span class="cm">/* ═══ mm/oom_kill.c:159-201 — oom_badness() 精确公式 ═══ */</span>
+<span class="kw">unsigned long</span> <span class="fn">oom_badness</span>(<span class="kw">struct</span> task_struct *p, ...)
+{
+    <span class="cm">// 1. 豁免检查</span>
+    <span class="kw">if</span> (<span class="fn">oom_unkillable_task</span>(p)) <span class="kw">return</span> <span class="nu">0</span>;   <span class="cm">// init/kthread/被豁免的</span>
+    adj = p->signal->oom_score_adj;
+    <span class="kw">if</span> (adj == <span class="ma">OOM_SCORE_ADJ_MIN</span>) <span class="kw">return</span> <span class="nu">0</span>; <span class="cm">// -1000 = 永不杀</span>
+
+    <span class="cm">// 2. 基础分 = 物理内存 + swap + 页表占用</span>
+    <span class="kw">long</span> points = <span class="fn">get_mm_rss</span>(p->mm)              <span class="cm">// RSS (匿名页+文件页)</span>
+                + <span class="fn">get_mm_counter</span>(p->mm, <span class="ma">MM_SWAPENTS</span>) <span class="cm">// swap entries</span>
+                + <span class="fn">atomic_long_read</span>(&p->mm->nr_ptes)    <span class="cm">// 页表页数</span>
+                + <span class="fn">mm_nr_pmds</span>(p->mm);                  <span class="cm">// PMD 页数</span>
+
+    <span class="cm">// 3. CAP_SYS_ADMIN 减免 3%</span>
+    <span class="kw">if</span> (<span class="fn">has_capability_noaudit</span>(p, <span class="ma">CAP_SYS_ADMIN</span>))
+        points -= (points * <span class="nu">3</span>) / <span class="nu">100</span>;
+
+    <span class="cm">// 4. oom_score_adj 调整: 归一化到 totalpages 的千分比</span>
+    adj *= totalpages / <span class="nu">1000</span>;
+    points += adj;    <span class="cm">// adj 可正 (优先杀) 可负 (保护)</span>
+
+    <span class="kw">return</span> points > <span class="nu">0</span> ? points : <span class="nu">1</span>;  <span class="cm">// 最小返回 1 (防止零分进程永远不被杀)</span>
+}</div>
+<p><code>select_bad_process()</code>（line 300）遍历所有进程调用 <code>oom_badness()</code>，选 <strong>points 最高</strong>且可杀的进程 → <code>oom_kill_process()</code> → <code>send_sig(SIGKILL)</code>。被杀的进程获得 <code>TIF_MEMDIE</code> 标志，可以使用预留内存完成退出。如果<strong>找不到任何可杀进程</strong>（所有进程都被豁免）→ <code>panic("Out of memory and no killable processes")</code>。</p>
   </div>
   <div class="cd" style="--gc:#34d399">
     <h4>oom_reaper — 异步收割</h4><div class="lbl">防止被杀进程阻塞 OOM 恢复</div>
@@ -618,6 +1512,131 @@ echo f &gt; /proc/sysrq-trigger      <span class="cm">// 手动触发 OOM Killer
 <span class="cm"># Memory cgroup OOM (不同于全局 OOM)</span>
 <span class="cm">// cgroup v1: echo 1 &gt; /sys/fs/cgroup/memory/&lt;group&gt;/memory.oom_control</span>
 <span class="cm">// cgroup v2: 默认启用，memory.max 超限时触发 cgroup 内 OOM</span></div>
+
+<!-- ══ Ch9.5: OOM 触发链 ══ -->
+<h2 class="sh">9.5 OOM 触发链 — __alloc_pages_slowpath 的完整决策树</h2>
+<p class="ss">OOM Killer 不是凭空弹出来的——它是 <code>__alloc_pages_slowpath()</code> 中<b style="color:#f87171">五级递进尝试全部失败后的最后手段</b>。下面基于内核 4.4.94 源码逐级展示。</p>
+
+<!-- ══ 完整决策树 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ __alloc_pages_slowpath 的五级递进</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:3225 — 所有物理页分配的入口 ═══ */</span>
+<span class="kw">struct</span> page *<span class="fn">__alloc_pages_nodemask</span>(gfp_t gfp_mask, <span class="kw">unsigned int</span> order, ...)
+{
+    <span class="cm">// Step 0: Fast path — 从 PCP 或 buddy freelist 直接获取</span>
+    page = <span class="fn">get_page_from_freelist</span>(alloc_mask, order,
+                    <span class="ma">ALLOC_WMARK_LOW</span>|ALLOC_CPUSET, &ac);
+    <span class="kw">if</span> (page)
+        <span class="kw">goto</span> out;    <span class="cm">// ← 95%+ 的分配走这里直接返回</span>
+
+    <span class="cm">// Step 1-5: Slow path — 内存不够了，开始递进尝试</span>
+    page = <span class="fn">__alloc_pages_slowpath</span>(alloc_mask, order, &ac);
+}</div>
+
+<div class="chain" style="margin-top:14px">
+<span class="cm">/* ═══ __alloc_pages_slowpath() 完整决策树 (line 3023) ═══ */</span>
+
+<b>__alloc_pages_slowpath(order, gfp_mask)</b>
+  │
+  ├── <span class="cm">【前置检查】</span>
+  │   ├── order >= <span class="ma">MAX_ORDER</span> → <span class="kw">直接返回 NULL</span> (永远不可能满足)
+  │   └── <span class="ma">__GFP_THISNODE</span> && !可回收 → <span class="kw">直接返回 NULL</span> (不浪费精力)
+  │
+  ├── <span class="cm">【第一级: 唤醒 kswapd + 重试, line 3062-3064】</span>
+  │   <span class="fn">wake_all_kswapds</span>(order, ac);        <span class="cm">// 唤醒后台回收，异步——不阻塞</span>
+  │   page = <span class="fn">get_page_from_freelist</span>(order, ALLOC_WMARK_MIN/*!*/);
+  │   │   <span class="cm">// 降低水位线要求: LOW → MIN → 允许使用紧急储备</span>
+  │   └── success → return page;
+  │
+  ├── <span class="cm">【第二级: 异步内存压缩 (Compaction), line 3129-3134】</span>
+  │   page = <span class="fn">__alloc_pages_direct_compact</span>(MIGRATE_ASYNC);
+  │   │   <span class="cm">// 只迁移 MOVABLE 页，不阻塞</span>
+  │   └── success → return page;
+  │
+  ├── <span class="cm">【第三级: 直接回收 (Direct Reclaim), line 3176-3179】</span>
+  │   page = <span class="fn">__alloc_pages_direct_reclaim</span>();
+  │   │   <span class="cm">// ★ 分配者自己被阻塞，同步扫描 LRU + 回收页缓存/slab</span>
+  │   │   <span class="cm">// 这是系统"突然变慢"的直接原因</span>
+  │   └── success → return page;
+  │
+  ├── <span class="cm">【重试循环: line 3185-3191】</span>
+  │   <span class="kw">if</span> (did_some_progress && order <= <span class="ma">PAGE_ALLOC_COSTLY_ORDER</span>) {
+  │       <span class="fn">wait_iff_congested</span>();     <span class="cm">// 等 I/O 完成 (写回脏页)</span>
+  │       <span class="kw">goto</span> retry;               <span class="cm">// 回到第一级重试 → 可能循环多次</span>
+  │   }                            <span class="cm">// PAGE_ALLOC_COSTLY_ORDER = 3 (32KB)</span>
+  │
+  ├── <span class="cm">【第四级: OOM Killer, line 3195-3197】</span>
+  │   <span class="kw">if</span> (重试多次后仍失败) {
+  │       page = <span class="fn">__alloc_pages_may_oom</span>(gfp_mask, order, ac);
+  │       │
+  │       │   <span class="cm">/* ═══ __alloc_pages_may_oom() 内部 (line 2736) ═══ */</span>
+  │       │   ├── <span class="fn">mutex_trylock</span>(&oom_lock)     <span class="cm">// OOM 锁——同一时间只有一个分配者做 OOM</span>
+  │       │   ├── <span class="kw">再试一次</span> get_page_from_freelist(<span class="ma">ALLOC_WMARK_HIGH</span>)
+  │       │   │   <span class="cm">// 可能在等锁期间其他 CPU 已经释放了内存</span>
+  │       │   │
+  │       │   ├── <span class="cm">【以下情况 <b>跳过</b> OOM，直接返回失败】</span>
+  │       │   │   ├── order > <span class="ma">PAGE_ALLOC_COSTLY_ORDER</span> (3)
+  │       │   │   │   <span class="cm">// ★ 高阶分配 (>32KB) 不触发 OOM！直接返回 NULL</span>
+  │       │   │   ├── !(<span class="ma">__GFP_FS</span>)  <span class="cm">// 不允许文件系统操作 → 不能回收 → OOM 无意义</span>
+  │       │   │   ├── <span class="ma">__GFP_THISNODE</span>  <span class="cm">// 只在特定 NUMA 节点分配 → OOM 整个系统不公平</span>
+  │       │   │   ├── <span class="ma">PF_DUMPCORE</span>    <span class="cm">// 正在 coredump → 不能杀</span>
+  │       │   │   └── high_zoneidx < <span class="ma">ZONE_NORMAL</span>  <span class="cm">// 只在 DMA 区分配 → OOM 无意义</span>
+  │       │   │
+  │       │   └── <span class="kw">以上检查全通过</span> → <span class="fn">out_of_memory</span>(&oc)  <span class="cm">// ★★★ 触发 OOM Killer ★★★</span>
+  │       │       │
+  │       │       │   <span class="cm">/* ═══ mm/oom_kill.c:673 out_of_memory() ═══ */</span>
+  │       │       │   ├── <span class="fn">select_bad_process</span>()  <span class="cm">// 选 badness 分最高的进程</span>
+  │       │       │   ├── <span class="cm">如果找不到可杀的进程 → panic("Out of memory and no killable processes")</span>
+  │       │       │   └── <span class="fn">oom_kill_process</span>(p, ...) → <span class="fn">send_sig</span>(SIGKILL)
+  │       │       │
+  │       │       └── <span class="kw">return</span> page; <span class="cm">// 返回 NULL 或被杀进程释放后的内存</span>
+  │       │
+  │       └── success → return page;
+  │   }
+  │
+  ├── <span class="cm">【OOM 后重试: line 3199-3200】</span>
+  │   <span class="kw">if</span> (did_some_progress)
+  │       <span class="kw">goto</span> retry;  <span class="cm">// OOM 杀了进程 → 再试一次分配</span>
+  │
+  └── <span class="cm">【第五级: 彻底失败, line 3215-3216】</span>
+      <span class="fn">warn_alloc_failed</span>(gfp_mask, order, NULL);  <span class="cm">// 打印警告日志</span>
+      <span class="kw">return NULL</span>;  <span class="cm">// 返回 -ENOMEM 给调用者</span></div>
+
+<!-- ══ 关键规则 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 三个关键规则——解释了 OOM 看似"不公平"的行为</h3>
+
+<div class="cg c3" style="margin-top:12px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>规则 1: 高阶分配不触发 OOM</h4>
+    <div class="lbl">order > 3 ( > 32KB) → 直接返回 NULL</div>
+    <p>源码 line 2773-2774: <code>if (order > PAGE_ALLOC_COSTLY_ORDER) goto out;</code><br>
+    含义：如果需要 32KB 以上连续物理页但无法满足 → <b>不杀进程，直接返回 NULL 给调用者</b>。因为杀一个进程也可能释放不出这么大连续块。<br>
+    <strong>影响</strong>：驱动 dma_alloc_coherent(128KB) 失败 → 返回 NULL → 驱动不检查 NULL → kernel panic。这不走 OOM，而是直接 crash。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>规则 2: GFP_ATOMIC 不触发回收</h4>
+    <div class="lbl">中断上下文 → 不能睡眠 → 不能回收 → 不能 OOM</div>
+    <p>源码 line 3063: <code>wake_all_kswapds</code> 只在有 <code>__GFP_KSWAPD_RECLAIM</code> 时触发。<br>
+    GFP_ATOMIC 分配：不能唤醒 kswapd → 不能 direct reclaim → 不能触发 OOM → <b>只能用紧急预留 (ALLOC_WMARK_MIN)</b>。紧急预留用尽 → 直接返回 NULL。<br>
+    <strong>影响</strong>：中断 handler 中的内存分配最容易静默失败 → 未检查 NULL → panic。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>规则 3: 递归/已 OOM 进程不再次 OOM</h4>
+    <div class="lbl">避免 OOM 自己也需要分配内存 → 无限递归</div>
+    <p>源码 line 3118: <code>if (current->flags & PF_MEMALLOC) goto nopage;</code><br>
+    源码 line 3122: <code>if (test_thread_flag(TIF_MEMDIE) && !__GFP_NOFAIL) goto nopage;</code><br>
+    含义：① 正在回收内存的进程（kswapd/直接回收的分配者）自身需要内存时不再触发 OOM ② 已被 OOM 选中正在死去的进程需要内存时不再触发 OOM。<br>
+    <strong>影响</strong>：被 OOM 的进程可能因需要内存而卡住 → oom_reaper 异步收割解决。</p>
+  </div>
+</div>
+
+<div class="callout success" style="margin-top:16px">
+  <div class="ct">🎯 OOM 触发条件总结</div>
+  <div style="font-size:12px;line-height:2.2;color:#b0b0d0">
+    <b>OOM Killer 会被触发</b>：① 分配 order ≤ 3 (≤ 32KB) ② 允许回收 (__GFP_FS 且非 GFP_ATOMIC) ③ 非 NUMA 绑定 (无需 __GFP_THISNODE) ④ <b>五级递进全部失败</b>: kswapd 异步回收 → async compaction → direct reclaim → 重试多次 → 最后手段 OOM<br><br>
+    <b>OOM Killer 不会被触发</b>：① order > 3 (> 32KB，直接返回 NULL) ② GFP_ATOMIC (不能睡眠，不能回收) ③ __GFP_THISNODE (NUMA 单节点限制) ④ PF_MEMALLOC (正在回收的进程)</b>
+  </div>
+</div>
 
 <!-- ══ Ch9: Huge Pages ══ -->
 <h2 class="sh">10. 大页内存 — THP · hugetlbfs</h2>

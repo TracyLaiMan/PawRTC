@@ -153,6 +153,161 @@
   Direct Reclaim 反复失败 -> OOM Killer 选择并杀死进程
   杀进程后释放内存 -> 水位回升 -> 系统继续运行</div>
 
+<!-- ═══ Ch2.5: 物理内存连续的本质 ═══ -->
+<h2 class="sh">2.5 物理内存"连续"到底是什么？— 底层原理</h2>
+<p class="ss">前面讨论的 buddy、pageblock、迁移类型、fallback、窃取——<b style="color:#fbbf24">全部是为了保住物理连续页的分配能力</b>。不先理解"连续"在物理层面意味着什么，就不知道为什么需要这么复杂的机制。</p>
+
+<!-- ══ 物理内存的线性模型 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ 物理内存 = 从 0 开始的一维数组</h3>
+
+<div class="cb"><span class="cm">/* ═══ 物理内存的最简模型 ═══ */</span>
+<span class="cm">物理地址空间 (Physical Address Space) 是一个从 0 开始的线性空间：</span>
+
+  物理地址:  0x80000000  0x80001000  0x80002000  0x80003000  ...  0x88000000
+             │          │          │          │          │         │
+  页框号(PFN):    0          1          2          3      ...      32768
+             │          │          │          │          │         │
+             ▼          ▼          ▼          ▼          ▼         ▼
+           [Page 0]  [Page 1]  [Page 2]  [Page 3]  ...    [Page 32767]
+           └────────────────── 128MB DDR ──────────────────────────┘
+
+<span class="cm">// "物理连续" = 页框号(PFN)连续 = 物理地址连续 = 在数组中是邻居</span>
+<span class="kw">物理连续 4 页</span>  =  PFN {100, 101, 102, 103}  =  地址 0x80000000+100*4K 起始的 16KB
+<span class="kw">物理不连续 4 页</span> = PFN {100, 500, 3, 8192} = 四个分散的 4KB，地址互不相邻</div>
+
+<!-- ══ Buddy 如何保证连续 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ Buddy 分配器如何保证"连续"</h3>
+
+<div class="cg c2" style="margin-top:12px">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>Buddy 块 = 一组物理连续的页</h4>
+    <div class="lbl">free_area[order] 中的每个块：2^order 个 PFN 连续</div>
+    <p>Buddy 分配器的核心数据结构 <code>free_area[order]</code>——每个链表节点指向一个<strong>起始 PFN 对齐到 2^order 边界</strong>的连续物理页块：<br>
+    · order-0: 1 页 (4KB)——单页，天然连续<br>
+    · order-1: 2 页 (8KB)——PFN 必须是偶数<br>
+    · order-2: 4 页 (16KB)——PFN 必须是 4 的倍数<br>
+    · order-3: 8 页 (32KB)——PFN 必须是 8 的倍数<br>
+    <strong>关键</strong>：PFN 对齐规则保证分裂/合并时 buddy 块总是<strong>物理相邻</strong>的。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>分裂与合并 = 连续性的维护机制</h4>
+    <div class="lbl">分裂保持连续 · 合并恢复连续</div>
+    <p><strong>分裂</strong>：分配 order-2(16KB) 块但只有 order-3(32KB) 空闲 → 将 32KB 从中点劈成两个 16KB 块 → 一块分配出去，一块放入 order-2 freelist。<strong>劈开的两半各自内部仍然物理连续</strong>——因为它们在原始块中就是连续的。<br>
+    <strong>合并</strong>：释放 order-2 块 → 查它的 buddy（伴随 PFN）是否也空闲 → 是 → 合并为 order-3 → 递归向上。<strong>合并的条件是两个 buddy 必须恰好相邻且在同一个对齐边界内</strong>。</p>
+  </div>
+</div>
+
+<!-- ══ Buddy 连续性的图解 ══ -->
+<div class="cb"><span class="cm">/* ═══ Buddy 块的分裂与合并 — 物理连续性的可视化 ═══ */</span>
+<span class="cm">假设 order-3 块 = 8 页连续 (PFN 0~7, 32KB)</span>
+
+  order-3 块:  [PFN0│PFN1│PFN2│PFN3│PFN4│PFN5│PFN6│PFN7]    ← 1 个块，物理连续
+                      │
+                      │ 分配 order-2 (16KB) → 从中点分裂
+                      ▼
+  order-2 块A: [PFN0│PFN1│PFN2│PFN3]   ← 分配出去 (物理连续 16KB)
+  order-2 块B: [PFN4│PFN5│PFN6│PFN7]   ← 放入 order-2 freelist (物理连续 16KB)
+                      │
+                      │ 块A 释放 → buddy (块B) 也空闲? → 是 → 合并
+                      ▼
+  order-3 块:  [PFN0│PFN1│PFN2│PFN3│PFN4│PFN5│PFN6│PFN7]    ← 恢复为一个连续块
+
+<span class="cm">/* ═══ 什么是 buddy？═══ */</span>
+<span class="kw">PFN 0 的 order-1 buddy 是 PFN 2</span>  (0 XOR 2^1 = 2)
+<span class="kw">PFN 4 的 order-2 buddy 是 PFN 0</span>  (4 XOR 2^2 = 0)
+<span class="kw">PFN 8 的 order-3 buddy 是 PFN 0</span>  (8 XOR 2^3 = 0)
+
+<span class="cm">// 公式: buddy_pfn = pfn ^ (1 << order)
+// 只有 XOR 计算出的那个特定 PFN 才是"buddy"——不是任意相邻页</span></div>
+
+<!-- ══ 碎片如何破坏连续性 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 碎片如何破坏连续性：被"钉子页"阻断的合并链</h3>
+
+<div class="cb"><span class="cm">/* ═══ 碎片化场景 — 有空闲但无法合并 ═══ */</span>
+
+<span class="cm">初始状态: order-3 块 = PFN 0~7 全部空闲</span>
+  [○0│○1│○2│○3│○4│○5│○6│○7]    ○ = 空闲
+
+<span class="cm">Step 1: 分配 PFN 0 (order-0, 不可移动的内核 slab)</span>
+  [●0│○1│○2│○3│○4│○5│○6│○7]    ● = 已分配 (不可移动)
+
+<span class="cm">Step 2: 分配 PFN 1~7 → 使用后释放 PFN 2~7</span>
+  [●0│●1│○2│○3│○4│○5│○6│○7]    PFN 0,1 被内核永久占用 (不可移动)
+
+<span class="cm">Step 3: 尝试合并:</span>
+  PFN 2,3 → order-1 buddy → 可以合并 (2^1=2, XOR: 2^2=0? No, 2 XOR 2 = 0, buddy is PFN0 which is allocated)
+  <span class="kw">✗ PFN 2 的 buddy 是 PFN 0 (已被占用) → 无法合并!</span>
+  PFN 4,5 → order-1 buddy → 可以合并成 order-2
+  PFN 6,7 → order-1 buddy → 可以合并成 order-2
+  PFN 4~7 → order-2 buddy → 可以合并成 order-3... 但是 PFN 0~3 被钉子占住了
+
+  <span class="kw">最终结果:</span>
+  [●0│●1│○2│○3│○4│○5│○6│○7]
+   └──钉子──┘ └─order1─┘ └─── order-3 ? ───┘
+                              ↑
+              即使有 6 个空闲页 (24KB)，但 PFN 0,1 两个钉子阻止了完整合并
+              → 只能得到 order-2 (16KB, PFN 4~7) + order-1 (8KB, PFN 2~3)
+              → 无法满足 order-3 (32KB) 的分配请求
+              → 这就是 <b>"有空闲但分配失败"</b> 的物理本质</div>
+
+<!-- ══ 为什么必须物理连续 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 为什么必须"物理连续"而不能用"虚拟连续"凑合？</h3>
+
+<div class="cg c2" style="margin-top:12px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>需要物理连续的场景</h4>
+    <div class="lbl">DMA 引擎看不到虚拟地址</div>
+    <p><strong>DMA 控制器</strong>直接访问物理总线地址——它不经过 MMU，不认识虚拟地址。如果你给 DMA 一个"虚拟连续但物理分散"的 buffer：<br>
+    · DMA 只看到第一页的物理地址 → 读完 4KB 后 <strong>不知道下一页在哪</strong> → 写到错误的内存 → 数据损坏<br>
+    · 解决方案：<strong>scatter-gather DMA</strong>（用一个描述符表告诉 DMA 每一段的物理地址和长度）——但不是所有硬件都支持，且编程复杂。<br>
+    <strong>旧式/廉价 DMA 引擎只接受一个物理起始地址 + 长度</strong>——必须是物理连续的。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>可以用虚拟连续替代的场景</h4>
+    <div class="lbl">CPU 访问时 MMU 可以"骗"CPU</div>
+    <p><strong>vmalloc</strong>：物理页分散在各处，但内核修改页表让它们在虚拟地址空间看起来连续。CPU 在访问时：虚拟地址 → MMU → 查页表 → 翻译到各个分散的物理页。<br>
+    <strong>用户态 malloc</strong>：同样的原理——进程看到的都是虚拟地址，页表背后可以映射到任意物理页。<br>
+    <strong>但代价</strong>：TLB miss 增加（4KB 页表条目多）→ 性能下降。且 DMA 无法使用。</p>
+  </div>
+</div>
+
+<!-- ══ pageblock 的反碎片角色 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 从"连续"角度重新理解 pageblock 和迁移类型</h3>
+
+<div class="cb"><span class="cm">/* ═══ pageblock 隔离 = 保护"可合并区域"不被钉子穿透 ═══ */</span>
+
+<span class="cm">没有 pageblock 隔离时 (早期 Linux):</span>
+  内核 slab (UNMOVABLE) 散布在物理内存各处:
+  [●][○][○][●][○][○][●][○]...[○][●][○][○] ...
+   └钉┘     └钉┘     └钉┘         └钉┘
+  每个钉子 (UNMOVABLE 页) 阻断一条合并链 → 无法形成大的连续块
+
+<span class="cm">有 pageblock 隔离后:</span>
+  Pageblock#0 (UNMOVABLE):  [●][●][●][●][●][●][●][●]...   ← 钉子集中在这里
+  Pageblock#1 (MOVABLE):    [○][○][○][○][○][○][○][○]...   ← 干净，可合并
+  Pageblock#2 (MOVABLE):    [○][○][○][○][○][○][○][○]...   ← 干净，可合并
+  ...
+  <span class="kw">→ UNMOVABLE 集中到少数 pageblock → 其余 pageblock 无钉子 → 可以合并出大块</span>
+  <span class="kw">→ 这就是 pageblock 存在的全部意义：把钉子关进笼子，保护其余区域的连续性</span>
+
+<span class="cm">窃取 (steal) 是钉子突破笼子的过程:</span>
+  Pageblock#0 (UNMOVABLE) 满了 → 钉子开始渗透到 Pageblock#1 (MOVABLE)
+  → Pageblock#1 被窃取 → 变为 UNMOVABLE → 钉子又多了一个笼子
+  → 当足够多笼子被污染 → 干净的 MOVABLE 区域不够 → 无法满足高阶分配 → OOM</div>
+
+<!-- ══ 总结 ══ -->
+<div class="callout success" style="margin-top:16px">
+  <div class="ct">🎯 物理内存"连续"的本质</div>
+  <div style="font-size:12px;line-height:2.2;color:#b0b0d0">
+    · <b>物理连续</b> = 页框号(PFN)连续 → buddy 块 = 一组 PFN 连续的页<br>
+    · <b>Buddy 的分裂/合并</b> = 基于 XOR 的相邻性检查——只有"buddy"才能合并<br>
+    · <b>碎片化</b> = 一个 UNMOVABLE 页（钉子）卡在 buddy 链中间 → 阻断两侧的空闲页合并 → 无法形成高阶连续块<br>
+    · <b>pageblock 隔离</b> = 把钉子限制在少数 pageblock 中，保护其余区域的合并能力<br>
+    · <b>窃取</b> = 钉子突破 pageblock 边界的过程——每窃取一个 pageblock，就多一个区域失去合并能力<br>
+    · <b>物理连续的必要性</b> = DMA 引擎不经过 MMU，必须物理连续才能用单个地址+长度描述整个 buffer
+  </div>
+</div>
+
 <!-- ═══ Ch3 ═══ -->
 <h2 class="sh">3. 内存碎片 — 为什么空闲 30MB 却分配失败？</h2>
 <p class="ss">这是嵌入式系统内存问题中<strong>最容易被误判</strong>的场景——free 显示大量空闲，但应用或驱动分配失败。</p>
@@ -337,12 +492,12 @@ T+15s   编码器 __get_free_pages(order=3, 32KB)              <span class="st">
     <h4>案例 3: 概率性 OOM — CONFIG_FORCE_MAX_ZONEORDER 从 16 降到 10</h4>
     <div class="lbl">根因: 巨型 pageblock 被单个不可移动页"污染" → 整个块变为不可移动 → 可移动分配无内存可用</div>
     <p>问题现象：系统<strong>概率性</strong>OOM——几小时到几天随机触发。dmesg 显示 free 还有 20-30MB 但 OOM Killer 被激活。<br>
-    <strong>排查过程</strong>：① <code>cat /proc/pagetypeinfo</code> → Movable 类型的空闲页极少，但 Unmovable 和 Reclaimable 类型有大量空闲页 ② 进一步发现：大量 order-9/10 的 pageblock 被标记为 Unmovable——因为其中<strong>混入了少量不可移动页</strong>（如内核 slab 对象、DMA coherent buffer）③ 用户态 malloc 分配的是 Movable 类型 → Buddy 只在 Movable 类型的空闲列表中查找 → 虽然 Unmovable 列表中有大量空闲页，但<strong>不能跨类型分配</strong> → 可移动分配无页可用 → OOM。</p>
+    <strong>排查过程</strong>：① <code>cat /proc/pagetypeinfo</code> → Movable 类型的空闲页极少，但 Unmovable 和 Reclaimable 类型有大量空闲页 ② 进一步发现：大量 order-9/10 的 pageblock 被标记为 Unmovable——因为其中<strong>混入了少量不可移动页</strong>（如内核 slab 对象、DMA coherent buffer）③ 用户态 malloc 分配的是 Movable 类型 → Buddy 优先从 Movable 类型的空闲列表查找 → Movable 列表为空 → 触发 fallback：按优先级先借 RECLAIMABLE、再借 UNMOVABLE。但此时 UNMOVABLE pageblock 中的空闲页大部分已被内核 slab 和 DMA buffer 占满——<strong>即使能跨类型借，UNMOVABLE 池中的连续空闲块也不够应用的高阶需求</strong> → Direct Reclaim 失败 → OOM。</p>
   </div>
   <div class="cd" style="--gc:#34d399">
     <h4>Pageblock 迁移类型污染机制</h4>
     <div class="lbl">单个不可移动页 → 污染整个 pageblock → 该 block 所有空闲页对 Movable 分配不可见</div>
-    <p><strong>Linux 的 pageblock 规则</strong>：内核将物理内存按<strong>固定大小的 pageblock</strong>（通常是 MAX_ORDER-1 阶，即 2^(MAX_ORDER-1) 页）分组，每个 pageblock 有一个<strong>迁移类型</strong>（MIGRATE_UNMOVABLE / RECLAIMABLE / MOVABLE / CMA）。<strong>关键规则</strong>：如果一个 pageblock 中<strong>任何一页</strong>被分配为 Unmovable 类型，且该 pageblock 中的空闲页不足以让该分配"搬出去"，<strong>整个 pageblock 被标记为 Unmovable</strong>——后续即使该 pageblock 中 99% 的页都被释放，这些空闲页只能用于 Unmovable 类型的分配（如内核 slab），<strong>不能用于 Movable 分配（如用户态 malloc、Page Cache）</strong>。<br>
+    <p><strong>Linux 的 pageblock 规则</strong>：内核将物理内存按<strong>固定大小的 pageblock</strong>（通常是 MAX_ORDER-1 阶，即 2^(MAX_ORDER-1) 页）分组，每个 pageblock 有一个<strong>迁移类型</strong>（MIGRATE_UNMOVABLE / RECLAIMABLE / MOVABLE / CMA）。<strong>关键规则</strong>：如果一个 pageblock 被标记为 Unmovable，其内部所有空闲页都在 UNMOVABLE freelist 中。<strong>Buddy 优先从请求类型的 freelist 分配</strong>——Movable 请求先在 Movable freelist 中查找。但 Movable 并非"完全不能"用 Unmovable 的页：fallback 数组（<code>mm/page_alloc.c:1482</code>）允许 Movable 依次从 RECLAIMABLE → UNMOVABLE 借页。然而 UNMOVABLE 页借给 Movable 后——由于 <code>can_steal_fallback()</code> 对 Movable 类型的严格限制（仅 order ≥ pageblock_order/2 才触发窃取）——<strong>借来的页不会被永久转换为 Movable</strong>，释放后仍然回到 UNMOVABLE freelist。结果：Movable 可以"临时借用"但<strong>不能永久占有</strong> UNMOVABLE 的空闲页——在高频分配场景下这个临时借用的吞吐量远不足以满足稳定需求。<br>
     <strong>order=16 的放大效应</strong>：pageblock 大小 = 2^15×4KB = <strong>128MB</strong>。一个 4KB 的 kmalloc 分配落在某个 128MB pageblock 中 → 该 pageblock 被永久标记为 Unmovable → 即使用户态释放了 100MB 内存，如果这 100MB 都在这个被污染的 128MB pageblock 中 → 它们对新的 Movable 分配<strong>不可见</strong> → Buddy 从 Movable 视角看是"内存耗尽" → OOM。</p>
   </div>
 </div>
@@ -399,6 +554,458 @@ T+15s   编码器 __get_free_pages(order=3, 32KB)              <span class="st">
   <strong>验证方法</strong>：<code>cat /proc/pagetypeinfo</code> 查看各迁移类型的空闲页分布。Movable 类型的空闲页总量才是<strong>用户态真正可用的内存</strong>——比 <code>free</code> 更准确。
 </div>
 
+<div class="callout info">
+<!-- ═══ 深度追问：为什么不是一启动就 OOM？污染是渐进的 ═══ -->
+<h2 class="sh" style="margin-top:56px">7.5 深度追问 — 基于内核源码的 pageblock 污染机制<br><span style="font-size:12px;color:#555577">基于 mm/page_alloc.c + include/linux/pageblock-flags.h 源码精确分析</span></h2>
+<p class="ss">回到核心困惑：128MB 系统 MAX_ORDER=16 → 只有 1-2 个 pageblock<b style="color:#fbbf24">→ 为什么系统能正常运行几分钟到几小时，而不是第一个 kmalloc 调用就让所有内存变成 UNMOVABLE？</b></p>
+
+<!-- ══ 源码基础 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ 源码基础：pageblock 的定义与迁移类型</h3>
+
+<div class="cb"><span class="cm">/* ═══ include/linux/pageblock-flags.h:56-63 — pageblock 大小 ═══ */</span>
+<span class="cm">// 未配置 hugetlb 时，pageblock 大小由 MAX_ORDER 决定：</span>
+<span class="kw">#define</span> <span class="ma">pageblock_order</span>  (<span class="ma">MAX_ORDER</span> - <span class="nu">1</span>)
+<span class="kw">#define</span> <span class="ma">pageblock_nr_pages</span> (<span class="nu">1UL</span> << <span class="ma">pageblock_order</span>)
+
+<span class="cm">// 配置了 hugetlb（ARM/ARM64 常见）时：</span>
+<span class="kw">#define</span> <span class="ma">pageblock_order</span>  <span class="ma">HUGETLB_PAGE_ORDER</span>
+
+<span class="cm">/* ═══ include/linux/mmzone.h:78-88 — 读写 pageblock 迁移类型 ═══ */</span>
+<span class="kw">#define</span> <span class="ma">NR_MIGRATETYPE_BITS</span> (<span class="ma">PB_migrate_end</span> - <span class="ma">PB_migrate</span> + <span class="nu">1</span>)
+<span class="kw">#define</span> <span class="fn">get_pageblock_migratetype</span>(page)                    \
+        <span class="fn">get_pageblock_flags_mask</span>(page, <span class="ma">PB_migrate</span>,        \
+                <span class="ma">PB_migrate_end</span>, <span class="ma">MIGRATETYPE_MASK</span>)
+
+<span class="kw">static inline int</span> <span class="fn">get_pfnblock_migratetype</span>(<span class="kw">struct</span> page *page, <span class="kw">unsigned long</span> pfn)
+{
+        <span class="kw">return</span> <span class="fn">get_pfnblock_flags_mask</span>(page, pfn, <span class="ma">PB_migrate_end</span>,
+                        <span class="ma">MIGRATETYPE_MASK</span>);
+}
+
+<span class="cm">/* ═══ mm/page_alloc.c:359-367 — 设置 pageblock 的迁移类型 ═══ */</span>
+<span class="kw">void</span> <span class="fn">set_pageblock_migratetype</span>(<span class="kw">struct</span> page *page, <span class="ty">int</span> migratetype)
+{
+        <span class="kw">if</span> (unlikely(page_group_by_mobility_disabled &&
+                     migratetype < <span class="ma">MIGRATE_PCPTYPES</span>))
+                migratetype = <span class="ma">MIGRATE_UNMOVABLE</span>;
+
+        <span class="fn">set_pageblock_flags_group</span>(page, (<span class="kw">unsigned long</span>)migratetype,
+                        <span class="ma">PB_migrate</span>, <span class="ma">PB_migrate_end</span>);
+}</div>
+
+<div class="callout info">
+  <div class="ct">📐 核心确认：一个 pageblock = 唯一迁移类型</div>
+  <b>你的理解完全正确。</b>每个 pageblock 的迁移类型存储在 pageblock 第一个页的 <code>page->flags</code> 中（<code>PB_migrate</code> 位段）。内核通过 <code>get_pageblock_migratetype()</code> / <code>get_pfnblock_migratetype()</code> 读取，通过 <code>set_pageblock_migratetype()</code> 修改。<b>一个 pageblock 只能同时拥有一种类型。</b>
+</div>
+
+<!-- ══ fallback 优先级 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 源码核心：fallback 回退优先级</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:1482-1492 — 回退优先级数组 ═══ */</span>
+<span class="kw">static int</span> fallbacks[<span class="ma">MIGRATE_TYPES</span>][<span class="nu">4</span>] = {
+        [<span class="ma">MIGRATE_UNMOVABLE</span>]   = { <span class="ma">MIGRATE_RECLAIMABLE</span>, <span class="ma">MIGRATE_MOVABLE</span>,   <span class="ma">MIGRATE_TYPES</span> },
+        [<span class="ma">MIGRATE_RECLAIMABLE</span>] = { <span class="ma">MIGRATE_UNMOVABLE</span>,   <span class="ma">MIGRATE_MOVABLE</span>,   <span class="ma">MIGRATE_TYPES</span> },
+        [<span class="ma">MIGRATE_MOVABLE</span>]     = { <span class="ma">MIGRATE_RECLAIMABLE</span>, <span class="ma">MIGRATE_UNMOVABLE</span>, <span class="ma">MIGRATE_TYPES</span> },
+        <span class="cm">// CMA / ISOLATE 不参与 fallback</span>
+};</div>
+
+<div class="ptbl" style="margin-top:12px">
+  <table>
+  <thead><tr><th>请求类型</th><th>fallback 优先级 1</th><th>fallback 优先级 2</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><strong>UNMOVABLE</strong></td><td style="color:#34d399">RECLAIMABLE</td><td style="color:#38bdf8">MOVABLE</td><td>优先借可回收的，其次借可移动的</td></tr>
+    <tr><td><strong>MOVABLE</strong></td><td style="color:#34d399">RECLAIMABLE</td><td style="color:#f87171">UNMOVABLE</td><td>优先借可回收的，最后才借不可移动的</td></tr>
+    <tr><td><strong>RECLAIMABLE</strong></td><td style="color:#f87171">UNMOVABLE</td><td style="color:#38bdf8">MOVABLE</td><td>优先借不可移动的，其次借可移动的</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<!-- ══ can_steal_fallback ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 源码核心：can_steal_fallback() — 可否窃取的判定</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:1597-1616 ═══ */</span>
+<span class="kw">static bool</span> <span class="fn">can_steal_fallback</span>(<span class="kw">unsigned int</span> order, <span class="ty">int</span> start_mt)
+{
+        <span class="cm">/* 条件 1: 分配的 order >= pageblock_order → 一定窃取 */</span>
+        <span class="kw">if</span> (order <span class="eq">>=</span> pageblock_order)
+                <span class="kw">return true</span>;
+
+        <span class="cm">/* 条件 2: order >= pageblock_order/2 → 窃取 */</span>
+        <span class="kw">if</span> (order <span class="eq">>=</span> pageblock_order / <span class="nu">2</span> ||
+        <span class="cm">    /* ★★★ 条件 3: 请求者是 UNMOVABLE 或 RECLAIMABLE → 无条件窃取 ★★★ */</span>
+                start_mt <span class="eq">==</span> <span class="ma">MIGRATE_RECLAIMABLE</span> ||
+                start_mt <span class="eq">==</span> <span class="ma">MIGRATE_UNMOVABLE</span> ||
+                page_group_by_mobility_disabled)
+                <span class="kw">return true</span>;
+
+        <span class="kw">return false</span>;
+}
+<span class="cm">// ★ 关键：UNMOVABLE 作为请求者时，can_steal 永远为 true
+// 但这只是"允许"——实际行为由 steal_suitable_fallback() 决定</span></div>
+
+<!-- ══ steal_suitable_fallback ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 源码核心：steal_suitable_fallback() — 窃取的实际执行 ★★★</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:1625-1643 — 这是最关键的函数 ═══ */</span>
+<span class="kw">static void</span> <span class="fn">steal_suitable_fallback</span>(<span class="kw">struct</span> zone *zone, <span class="kw">struct</span> page *page,
+                                          <span class="ty">int</span> start_type)
+{
+        <span class="kw">unsigned int</span> current_order <span class="eq">=</span> <span class="fn">page_order</span>(page);
+        <span class="ty">int</span> pages;
+
+        <span class="cm">/* ── 分支 A：找到的 buddy 块 ≥ 整个 pageblock → 无条件窃取 ── */</span>
+        <span class="kw">if</span> (current_order <span class="eq">>=</span> pageblock_order) {
+                <span class="fn">change_pageblock_range</span>(page, current_order, start_type);
+                <span class="kw">return</span>;       <span class="cm">// 所有覆盖到的 pageblock 类型被永久改变</span>
+        }
+
+        <span class="cm">/* ── 分支 B：将该 pageblock 内<strong>所有空闲页</strong>移到 start_type 的 freelist ── */</span>
+        pages <span class="eq">=</span> <span class="fn">move_freepages_block</span>(zone, page, start_type);
+
+        <span class="cm">/* ── 分支 C：空闲页超过半个 pageblock → 永久改变 pageblock 类型 ── */</span>
+        <span class="kw">if</span> (pages <span class="eq">>=</span> (<span class="nu">1</span> << (pageblock_order - <span class="nu">1</span>)) ||
+                page_group_by_mobility_disabled)
+                <span class="fn">set_pageblock_migratetype</span>(page, start_type);
+        <span class="cm">// ★ 否则：空闲页被移走了，但 pageblock 类型<strong>不变</strong>
+//   这是 pageblock 类型未被永久改变的唯一缓冲！</span>
+}</div>
+
+<div class="cg c3" style="margin-top:14px">
+  <div class="cd" style="--gc:#34d399">
+    <h4>分支 A：大块直接窃取</h4>
+    <div class="lbl">current_order >= pageblock_order</div>
+    <p>当 fallback 找到的空闲块本身 ≥ pageblock 时（如 order-10 的 4MB 块在 pageblock=2MB 中），<code>change_pageblock_range()</code>（line 1574-1583）遍历覆盖的所有 pageblock，逐个调用 <code>set_pageblock_migratetype()</code>。<strong>立即永久改变。</strong></p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>分支 B + C：空闲过半才永久窃取</h4>
+    <div class="lbl">pages >= 2^(pageblock_order-1)</div>
+    <p><code>move_freepages_block()</code>（line 1553-1572）以 pageblock 边界对齐后，将所有空闲页从原类型移到新类型。如果移动的页数 ≥ pageblock 的一半（如 2MB/512页 → ≥256页），调用 <code>set_pageblock_migratetype()</code> <strong>永久改变</strong>pageblock 类型。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>无分支：空闲不够一半 → 类型不变</h4>
+    <div class="lbl">pages < 2^(pageblock_order-1)</div>
+    <p>空闲页被移到新类型 freelist，但 pageblock 的<strong>类型标签不变</strong>。这就是 <b>为什么污染不是瞬间的</b>——在 pageblock 空闲率降到 50% 之前，窃取不会变成永久。</p>
+  </div>
+</div>
+
+<!-- ══ 释放路径 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 释放路径：pageblock 当前类型决定页回到哪条 freelist</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:874-889 — 释放页 ═══ */</span>
+<span class="kw">static void</span> <span class="fn">free_one_page</span>(<span class="kw">struct</span> zone *zone,
+                <span class="kw">struct</span> page *page, <span class="kw">unsigned long</span> pfn,
+                <span class="kw">unsigned int</span> order, <span class="ty">int</span> migratetype)
+{
+        <span class="kw">if</span> (unlikely(migratetype != <span class="ma">MIGRATE_ISOLATE</span>))
+                __mod_zone_freepage_state(zone, <span class="nu">1</span> << order, migratetype);
+
+        <span class="cm">/* ★★★ 读取 pageblock 当前存储的类型 ★★★ */</span>
+        migratetype <span class="eq">=</span> <span class="fn">get_pfnblock_migratetype</span>(page, pfn);
+
+        __free_one_page(page, pfn, zone, order, migratetype);
+}
+<span class="cm">/* ★ 关键结论：
+ * 如果 pageblock 类型在窃取中被 set_pageblock_migratetype() 改变 → 即使释放
+ *   的是 MOVABLE 页，free_one_page 也会把它放入 UNMOVABLE freelist——永久污染！
+ * 如果 pageblock 类型未被改变（分支 C 不满足，空闲不够一半）→ 释放的 MOVABLE
+ *   页仍然回到 MOVABLE freelist——可以部分恢复。 */</span></div>
+
+<!-- ══ 三阶段时间线 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 三阶段时间线：从启动到 OOM — 基于源码的完整推演</h3>
+
+<div class="cb"><span class="cm">/* ═══ 128MB 系统 MAX_ORDER=10 (pageblock=2MB, 共 64 个 pageblock) ═══ */</span>
+
+<span class="cm">─── 阶段 0：启动时 — <b>所有 pageblock 初始为 MOVABLE</b> (memmap_init_zone line 4566) ───</span>
+  <span class="kw">set_pageblock_migratetype(page, MIGRATE_MOVABLE);</span>  <span class="cm">// 全部 64 个！</span>
+  <span class="cm">/* 设计意图 (源码注释 line 4550-4556):
+   * "Mark the block movable so that blocks are reserved for movable at startup.
+   *  This will force kernel allocations to reserve their blocks rather than
+   *  leaking throughout the address space during boot"
+   * — 全部初始为 MOVABLE，迫使内核分配时通过 fallback/steal "认领" pageblock */</span>
+
+<span class="cm">─── 阶段 1：内核启动分配 — 通过 fallback/steal 动态创建 UNMOVABLE pageblock ───</span>
+  内核初始化 (slab 创建、页表分配、驱动 probe):
+    每次 kmalloc → __rmqueue_smallest(UNMOVABLE) 失败 (无 UNMOVABLE pageblock)
+              → __rmqueue_fallback() → fallbacks[UNMOVABLE] = {RECLAIMABLE, MOVABLE}
+              → can_steal_fallback(UNMOVABLE) = true (始终)
+              → steal_suitable_fallback() → move_freepages_block + set_pageblock_migratetype
+              → pageblock#0 被窃取为 UNMOVABLE
+  依次窃取 ~8 个 MOVABLE pageblock → 变为 UNMOVABLE
+  <span class="st">内核自己通过 steal 机制"圈出"了 8 个 UNMOVABLE pageblock (16MB)</span>
+
+<span class="cm">─── 阶段 2：运行时稳态 — 剩余 ~56 个 MOVABLE pageblock 服务用户态 ───</span>
+  用户态 malloc → MOVABLE freelist 命中 → 正常分配
+  内核 slab → UNMOVABLE freelist 命中 → 正常分配
+  MOVABLE ↔ UNMOVABLE 双向 fallback 均可工作（但窃取不对等）
+
+<span class="cm">─── 阶段 3：运行时退化 — UNMOVABLE 窃取更多 pageblock ───</span>
+  内核 slab 持续增长 → 8 个 UNMOVABLE pageblock 耗尽
+  → fallback 开始触及剩余的 MOVABLE pageblock
+  → UNMOVABLE 的 can_steal 始终为 true → 逐页借用但不一定触发永久窃取
+  → 取决于目标 pageblock 的空闲率是否 >= 50%
+  → 每个被永久窃取的 pageblock = 2MB MOVABLE 永久损失
+  经过数天/数周，~25 个 pageblock 被窃取 → MOVABLE 容量从 112MB 降到 62MB
+
+<span class="cm">─── 阶段 4：OOM — MOVABLE 池不足 ───</span>
+  应用 malloc 峰值 > MOVABLE 可用量
+  → MOVABLE freelist 空 → fallback 到 RECLAIMABLE → 也空
+  → fallback 到 UNMOVABLE → 能借到页但 <b>can_steal=false</b> (MOVABLE 请求者)
+  → 借到的页释放后回到 UNMOVABLE (free_one_page 读 pageblock 类型)
+  → 无法永久扩大 MOVABLE 池 → Direct Reclaim 也无法增加 MOVABLE 页
+  → OOM</div>
+
+<!-- ══ pageblock 数量影响 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ pageblock 数量 = 污染隔离墙的数量</h3>
+
+<div class="cg c3" style="margin-top:12px">
+  <div class="cd" style="--gc:#34d399">
+    <h4>64 pageblocks (2MB 每个)<br>MAX_ORDER=10, 128MB 系统</h4>
+    <div class="lbl">64 道防火墙 · 存活数周</div>
+    <p>① 启动时全部 MOVABLE → 内核初始化通过 steal 动态认领 ~8 个 pageblock 为 UNMOVABLE<br>
+    ② 剩余 ~56 个保持 MOVABLE → 112MB 用户态可用<br>
+    ③ 每次 fallback 只触及 1 个 pageblock<br>
+    ④ 窃取一个仅损失 2MB<br>
+    ⑤ 即使 10 个后续被窃取 → 仅损失 20MB</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>4 pageblocks (32MB 每个)<br>MAX_ORDER=14, 128MB 系统</h4>
+    <div class="lbl">4 道防火墙 · 存活数天</div>
+    <p>① 启动时全部 MOVABLE → 内核需认领 1 个为 UNMOVABLE（32MB 被偷）<br>
+    ② 剩余 3 个 MOVABLE → 96MB 用户态可用<br>
+    ③ 窃取一个损失 32MB → 杀伤半径大<br>
+    ④ 窃取 2 个 → 64MB 永久损失 → 接近坏死</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>1 pageblock (128MB 每个)<br>MAX_ORDER=16, 128MB 系统</h4>
+    <div class="lbl">0 道防火墙 · 存活数小时</div>
+    <p>① 启动时唯一个 pageblock = MOVABLE<br>
+    ② <b>第一个 kmalloc 即触发 fallback → 窃取 → 128MB 全部变为 UNMOVABLE</b><br>
+    ③ 此后整个系统在"单类型"下运行：MOVABLE 每次分配都要 fallback 到 UNMOVABLE<br>
+    ④ can_steal(MOVABLE) = false (order < pageblock_order/2) → 借到的页永远不永久属于 MOVABLE<br>
+    ⑤ 存活时间 = 单 pageblock 的 fallback 效率能否跟上分配速率</p>
+  </div>
+</div>
+
+<!-- ══ 回答核心困惑 ══ -->
+<div class="callout success" style="margin-top:18px">
+  <div class="ct">🎯 基于源码的回答</div>
+  <div style="font-size:12px;line-height:2.2;color:#b0b0d0">
+    <b>Q: 一个 pageblock 只有一个迁移类型（你理解正确），为什么不是第一个 kmalloc 就让 128MB 全变 UNMOVABLE？</b><br>
+    <b style="color:#34d399">A: 对于多 pageblock 系统（MAX_ORDER=10，64 pageblocks）：<br>
+    ① 启动时 <b>所有 pageblock 均为 MOVABLE</b>（<code>memmap_init_zone()</code> line 4566）<br>
+    ② 内核初始化时通过 fallback/steal <b>动态认领</b>若干 pageblock 变为 UNMOVABLE——仅接触需要的那几个<br>
+    ③ 剩余大量 MOVABLE pageblock 完全不受影响 → 存储用户态 MOVABLE 分配<br>
+    ④ <code>steal_suitable_fallback()</code> 的分支 C（空闲过半才永久窃取）进一步延缓了扩散<br><br>
+    对于单 pageblock 系统（MAX_ORDER=16，1 pageblock）：<br>
+    ① 唯一的 pageblock 初始为 MOVABLE<br>
+    ② 第一个 kmalloc → fallback → steal → <b>整个 128MB 变为 UNMOVABLE</b><br>
+    ③ 此后用户态 MOVABLE 分配通过 fallback 从 UNMOVABLE 借用——但这只是"借用"，不触发窃取<br>
+    ④ 系统在 fallback 模式下苟活，存活时间取决于借用速率能否覆盖需求</b><br><br>
+    <b>Q: pageblock 多为什么"延寿"？</b><br>
+    <b style="color:#34d399">A: 多 pageblock = <b>空间隔离</b>：内核只需从 64 个中偷 8 个用于 UNMOVABLE，其余 56 个保持 MOVABLE 毫发无伤。而 1 pageblock 时内核启动直接偷走唯一的一个 → 用户态从"拥有自己的领地"变成"只能向 UNMOVABLE 借地"。</b>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">📐 存活时间对比</div>
+  <div style="font-size:11.5px;line-height:2;color:#b0b0d0">
+    <b>多 pageblock 系统</b>：内核启动 steal 少量 pageblock → 剩余 MOVABLE 直接服务用户态 → 后续退化缓慢<br>
+    <b>单 pageblock 系统</b>：内核启动 steal 唯一的 pageblock → 全部变为 UNMOVABLE → <b>用户态从一开始就在 fallback 借用</b> → 每次借用不带窃取 → 释放后页回到 UNMOVABLE → MOVABLE freelist 始终接近空 → 一个 order > pageblock_order/2 的 MOVABLE 分配就会触发 OOM<br>
+    <b>本质区别</b>：多 pageblock = MOVABLE 有自己的领地；单 pageblock = MOVABLE 从第一天起就是 UNMOVABLE 领地上的"二等公民"
+  </div>
+</div>
+
+<!-- ═══ 实战根因：nr_reserved_highatomic 大 pageblock 致命一击 ═══ -->
+<h2 class="sh" style="margin-top:56px">7.6 实战根因 — MAX_ORDER=15 + GFP_ATOMIC 预留 = 致命组合</h2>
+<p class="ss"><b style="color:#f87171">真实案例</b>：128MB 系统 MAX_ORDER=15（pageblock=64MB，2 个 pageblock），无 CMA。系统空闲 UNMOVABLE 7-8MB，但 order-0 分配触发 OOM。降低 MAX_ORDER 后问题消失。</p>
+
+<!-- ══ 机制 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:32px 0 10px">◈ nr_reserved_highatomic — 每次预留吃掉一个完整 pageblock</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:1686-1712 — reserve_highatomic_pageblock() ═══ */</span>
+<span class="kw">static void</span> <span class="fn">reserve_highatomic_pageblock</span>(<span class="kw">struct</span> page *page, <span class="kw">struct</span> zone *zone,
+                <span class="kw">unsigned int</span> alloc_order)
+{
+    <span class="ty">int</span> mt;
+    <span class="kw">unsigned long</span> max_managed, flags;
+
+    <span class="cm">// 上限 = 总内存的 1% + 一个 pageblock</span>
+    max_managed = (zone->managed_pages / <span class="nu">100</span>) + pageblock_nr_pages;
+    <span class="cm">// MAX_ORDER=15: max_managed = 327 + 16384 ≈ 65MB
+    // MAX_ORDER=10: max_managed = 327 + 512   ≈ 2.3MB</span>
+
+    <span class="kw">if</span> (zone->nr_reserved_highatomic >= max_managed)
+        <span class="kw">return</span>;
+
+    spin_lock_irqsave(&zone->lock, flags);
+    <span class="kw">if</span> (zone->nr_reserved_highatomic >= max_managed)
+        <span class="kw">goto</span> out_unlock;
+
+    mt = <span class="fn">get_pageblock_migratetype</span>(page);
+    <span class="kw">if</span> (mt != <span class="ma">MIGRATE_HIGHATOMIC</span> && !is_migrate_isolate(mt) && !is_migrate_cma(mt)) {
+        zone->nr_reserved_highatomic += <span class="kw">pageblock_nr_pages</span>;
+        <span class="cm">//          MAX_ORDER=15: += 16384 页 (64MB!) ← 一次吃掉半个系统</span>
+        <span class="cm">//          MAX_ORDER=10: += 512 页   (2MB)   ← 一次吃掉 2%</span>
+        <span class="fn">set_pageblock_migratetype</span>(page, <span class="ma">MIGRATE_HIGHATOMIC</span>);
+        <span class="fn">move_freepages_block</span>(zone, page, <span class="ma">MIGRATE_HIGHATOMIC</span>);
+    }
+}
+
+<span class="cm">/* ═══ 触发条件 — mm/page_alloc.c:2644 ═══ */</span>
+<span class="cm">// get_page_from_freelist() 中，分配成功后:</span>
+<span class="kw">if</span> (unlikely(<span class="kw">order</span> && (alloc_flags & <span class="ma">ALLOC_HARDER</span>)))
+    <span class="fn">reserve_highatomic_pageblock</span>(page, zone, order);
+<span class="cm">// 条件 1: order > 0 — 分配 ≥ 8KB (不是 4KB 单页)
+// 条件 2: ALLOC_HARDER — 仅 GFP_ATOMIC 设置
+// 两个条件同时满足 → 一次成功分配触发整个 pageblock 被预留</span></div>
+
+<!-- ══ watermark 扣除 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ watermark 检查扣除预留 — 正常分配看不到被预留的页</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:2406-2433 — __zone_watermark_ok() ═══ */</span>
+<span class="kw">static bool</span> __zone_watermark_ok(<span class="kw">struct</span> zone *z, <span class="kw">unsigned int</span> order,
+                <span class="kw">unsigned long</span> mark, <span class="ty">int</span> classzone_idx, <span class="ty">int</span> alloc_flags,
+                <span class="ty">long</span> free_pages)
+{
+    <span class="ty">long</span> min = mark;
+    <span class="kw">const int</span> alloc_harder = (alloc_flags & <span class="ma">ALLOC_HARDER</span>);
+
+    free_pages -= (<span class="nu">1</span> << order) - <span class="nu">1</span>;
+
+    <span class="kw">if</span> (alloc_flags & <span class="ma">ALLOC_HIGH</span>)
+        min -= min / <span class="nu">2</span>;
+
+    <span class="cm">// ★ 非 GFP_ATOMIC 分配者: 从可用计数中扣除 highatomic 预留!</span>
+    <span class="kw">if</span> (likely(!alloc_harder))
+        free_pages -= z->nr_reserved_highatomic;
+    <span class="cm">//   MAX_ORDER=15: free_pages = 7MB - 64MB = <b>负数</b> → 永远低于任何水位线
+    //   MAX_ORDER=10: free_pages = 7MB - 2MB  = <b>5MB</b>  → 高于 watermark[HIGH]</span>
+
+    <span class="kw">if</span> (free_pages <= min + z->lowmem_reserve[classzone_idx])
+        <span class="kw">return false</span>;
+
+    <span class="kw">if</span> (!order)
+        <span class="kw">return true</span>;
+    ...
+}</div>
+
+<!-- ══ unreserve 缺陷 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ unreserve 的"至少保留一个 pageblock"——大 pageblock 下的致命缺陷</h3>
+
+<div class="cb"><span class="cm">/* ═══ mm/page_alloc.c:1725-1737 — unreserve_highatomic_pageblock() ═══ */</span>
+<span class="kw">static void</span> <span class="fn">unreserve_highatomic_pageblock</span>(<span class="kw">const struct</span> alloc_context *ac)
+{
+    for_each_zone_zonelist_nodemask(zone, z, zonelist, ...) {
+        <span class="cm">// ★ 至少保留一个 pageblock 的 highatomic 预留</span>
+        <span class="kw">if</span> (zone->nr_reserved_highatomic <= pageblock_nr_pages)
+            <span class="kw">continue</span>;   <span class="cm">// ← 不释放!</span>
+        <span class="cm">//   MAX_ORDER=15: nr_reserved=16384(64MB) <= 16384? <b>是 → 不释放</b>
+        //   MAX_ORDER=10: nr_reserved=2560(10MB,5个pageblock) <= 512? <b>否 → 释放!</b></span>
+        ...
+        zone->nr_reserved_highatomic -= <span class="kw">min</span>(pageblock_nr_pages,
+                                zone->nr_reserved_highatomic);
+        <span class="cm">// 每次减少一个 pageblock 的预留量
+        // MAX_ORDER=15: 减去 64MB → 0 (但被上面 continue 挡掉了)
+        // MAX_ORDER=10: 减去 2MB → 10MB→8MB→6MB→4MB→2MB(保留)</span>
+    }
+}</div>
+
+<!-- ══ 完整链路 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 完整触发链：一次网络中断如何导致 72 小时后的 OOM</h3>
+
+<div class="chain" style="margin-top:12px">
+<span class="cm">/* ═══ MAX_ORDER=15, pageblock=64MB, 128MB 系统 = 2 个 pageblock ═══ */</span>
+
+<b>T+0 (启动)</b>
+  2 个 pageblock: [Pageblock#0: MOVABLE, 64MB] [Pageblock#1: MOVABLE, 64MB]
+  内核启动 steal → Pageblock#0 变为 UNMOVABLE, Pageblock#1 保持 MOVABLE
+  系统正常: UNMOVABLE 64MB + MOVABLE 64MB = 充足
+
+<b>T+3h (某次 WIFI 中断)</b>
+  WIFI 驱动处理 RX 帧:
+    skb = alloc_skb(8KB, GFP_ATOMIC);  <span class="cm">// 软中断上下文</span>
+    → order=1 (>0) ✓ + ALLOC_HARDER ✓
+    → 分配成功 (从 MOVABLE 借到)
+    → <span class="kw">reserve_highatomic_pageblock(page, zone, 1)</span>
+    → zone->nr_reserved_highatomic = 16384 页 (64MB!)
+    → Pageblock#1 被永久标记为 MIGRATE_HIGHATOMIC
+    → 剩余的 MOVABLE 空闲页全部移入 HIGHATOMIC freelist
+
+  <span class="st">系统仍然正常——空闲总量 > 64MB，watermark 扣除后仍有正数</span>
+
+<b>T+72h (内存逐渐消耗)</b>
+  空闲页总量降到 7-8MB:
+    GFP_KERNEL 分配 → __zone_watermark_ok:
+      free_pages = 7MB - nr_reserved_highatomic(64MB) = <b>负数</b>
+      → <span class="kw">return false</span> → zone 被跳过 → slowpath
+    → direct reclaim (回收了但不够)
+    → unreserve_highatomic_pageblock:
+      nr_reserved(16384) <= pageblock_nr_pages(16384)? <b>是 → continue(不释放!)</b>
+    → OOM Killer
+
+  dmesg: <span class="st">"Killed process app ... free=7MB"</span>
+  <span class="cm">// free 显示 7MB——但全在 HIGHATOMIC 预留中，正常分配看不见</span></div>
+
+<!-- ══ GFP_ATOMIC order>0 真实触发源 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 触发 GFP_ATOMIC + order>0 的典型场景</h3>
+
+<div class="cg c2" style="margin-top:12px">
+  <div class="cd" style="--gc:#f87171">
+    <h4>网络驱动 (最常见)</h4>
+    <div class="lbl">NAPI poll · 软中断上下文 · skb 分配</div>
+    <p>WIFI 驱动 RX: <code>__alloc_skb(>4KB, GFP_ATOMIC)</code> → order≥1<br>
+    以太网 TSO/GRO: 合并大数据包时分配 frag page<br>
+    <strong>只需一次成功的 order>0 分配 → 触发预留</strong><br>
+    触发频率最高——每次收大包都可能触发。</p>
+  </div>
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>其他可能</h4>
+    <div class="lbl">DMA coherent · 中断 handler</div>
+    <p><code>dma_alloc_coherent(>4KB, GFP_ATOMIC)</code> — DMA buffer<br>
+    SDIO/MMC 中断 handler 的 descriptor 分配<br>
+    USB HCD 完成中断的传输 buffer<br>
+    <strong>频率低但一次就够——因为触发一次 = 预留 64MB 永不释放</strong></p>
+  </div>
+</div>
+
+<!-- ══ 为什么降低 MAX_ORDER 能解决 ══ -->
+<h3 style="color:#a78bfa;font-size:16px;font-weight:800;margin:36px 0 10px">◈ 降低 MAX_ORDER 为什么解决</h3>
+
+<div class="ptbl">
+  <table>
+  <thead><tr><th>维度</th><th style="color:#f87171">MAX_ORDER=15 (出问题时)</th><th style="color:#34d399">MAX_ORDER=10 (修复后)</th></tr></thead>
+  <tbody>
+    <tr><td>pageblock 大小</td><td style="color:#f87171">64MB</td><td style="color:#34d399">2MB</td></tr>
+    <tr><td>pageblock 数量</td><td style="color:#f87171">2 个</td><td style="color:#34d399">64 个</td></tr>
+    <tr><td>一次预留</td><td style="color:#f87171">64MB (50% 系统!)</td><td style="color:#34d399">2MB (1.5%)</td></tr>
+    <tr><td>unreserve 最小保留</td><td style="color:#f87171">64MB → 永不释放</td><td style="color:#34d399">2MB → 合理</td></tr>
+    <tr><td>OOM 条件</td><td style="color:#f87171">free < 64MB 即触发</td><td style="color:#34d399">free < 2MB 才触发</td></tr>
+    <tr><td><b>本质</b></td><td style="color:#f87171">预留吃掉半个系统且不可逆</td><td style="color:#34d399">预留开销可忽略，可动态释放</td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="callout success" style="margin-top:16px">
+  <div class="ct">🎯 根因总结</div>
+  <div style="font-size:12px;line-height:2.2;color:#b0b0d0">
+    <b>不是"order-0 分配不到"</b>——是你看到的 7-8MB UNMOVABLE 空闲在 <code>__zone_watermark_ok</code> 中被 <code>nr_reserved_highatomic = 64MB</code> 覆盖掉了。对于非 GFP_ATOMIC 分配者，这些页如同不存在。<br>
+    <b>不是"UNMOVABLE 不能分配"</b>——是 <code>unreserve_highatomic_pageblock</code> 的"至少保留一个 pageblock"保护机制，在 pageblock=64MB 时等同于"永远不释放"。<br>
+    <b>不是"迁移类型污染"</b>——是 <code>nr_reserved_highatomic</code> 的粒度等于 pageblock 大小。大 pageblock 让这个保护机制变成了毒药。<br>
+    <b>降低 MAX_ORDER 修复的根因</b>：pageblock 变小 → 预留粒度变小 → unreserve 阈值变小 → watermark 扣除量变小 → 系统恢复正常。
+  </div>
+</div>
+
+<!-- ══ IPC 相机低内存 Checklist ══ -->
+<div class="callout info">
+  <div class="ct">📐 默认 min_free_kbytes 计算约 1.4MB (128M DDR)</div>
+  <div style="font-size:11.5px;line-height:1.9;color:#b0b0d0">
+    <b>公式</b>：<code>min_free_kbytes ≈ sqrt(16 * total_ram_kb)</code> → 128MB 系统 ≈ 1448 KB ≈ <b>1.4MB</b><br>
+    watermark[LOW] ≈ 1.8MB, watermark[HIGH] ≈ 2.1MB<br>
+    7-8MB 空闲正常情况下远超水位线——<b>只有 nr_reserved_highatomic=64MB 才能解释 OOM</b>
+  </div>
+</div>
+
+<!-- ══ IPC 相机低内存 Checklist ══ -->
 <div class="callout info">
   <div class="ct">IPC 相机低内存 Checklist</div>
   □ <strong>CMA</strong>：启动参数 cma=128M 或设备树 linux,cma — 确保 ISP/编码器 DMA buffer 有连续内存<br>

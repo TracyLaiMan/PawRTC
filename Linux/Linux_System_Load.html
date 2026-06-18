@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux 系统负载 — 深入理解 Load Average</title>
+<link rel="stylesheet" href="../immersive_dark_style.css">
+<style>
+.doc{max-width:960px;margin:0 auto;padding:48px 28px 80px}
+.sh{font-size:1.75rem;font-weight:800;margin:56px 0 6px;background:linear-gradient(135deg,#e0e0ff,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ss{font-size:14px;color:#7777aa;margin-bottom:24px;line-height:1.7}
+.cg{display:grid;gap:16px;margin:20px 0}.cg.c2{grid-template-columns:1fr 1fr}.cg.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:700px){.cg.c2,.cg.c3{grid-template-columns:1fr}}
+.cd{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:22px 20px;transition:all .3s}
+.cd:hover{border-color:var(--gc,#6c63ff);background:rgba(255,255,255,.04);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.cd h4{font-size:15px;font-weight:800;color:#e0e0ff;margin-bottom:4px}
+.cd .lbl{font-size:11.5px;color:var(--gc,#6c63ff);font-weight:600;margin-bottom:10px}
+.cd p{font-size:12.5px;color:#9999bb;line-height:1.75}
+.cd code{font-size:10.5px}.cd em{color:#6c63ff;font-style:normal;font-weight:600}.cd strong{color:#d0d0f0}
+.cb{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:18px 22px;margin:18px 0;font-family:"JetBrains Mono","Fira Code",monospace;font-size:11.5px;line-height:1.78;overflow-x:auto;color:#c8c8e8;white-space:pre}
+.cb .kw{color:#a78bfa;font-weight:600}.cb .ty{color:#38bdf8;font-weight:600}.cb .cm{color:#555577;font-style:italic}.cb .st{color:#34d399}.cb .nu{color:#fbbf24}.cb .ma{color:#fbbf24;font-weight:600}.cb .fn{color:#d2a8ff}.cb .eq{color:#f472b6;font-weight:600}.cb .va{color:#e0e0ff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 28px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(108,99,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(108,99,255,.012) 1px,transparent 1px);background-size:48px 48px;pointer-events:none}
+.hero-stats{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hero-stats .stat{text-align:center}.hero-stats .stat .n{font-size:28px;font-weight:900;color:#e0e0ff;line-height:1.1}
+.hero-stats .stat .l{font-size:10px;color:#6666aa;text-transform:uppercase;letter-spacing:1px}
+.ptbl{margin:20px 0}.ptbl table{width:100%;border-collapse:collapse;font-size:12px;color:#b0b0d0}
+.ptbl th{background:rgba(108,99,255,.08);color:#a78bfa;font-weight:700;text-align:left;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px}
+.ptbl td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.03);color:#b0b0d0;line-height:1.6}
+.ptbl tr:nth-child(even){background:rgba(255,255,255,.01)}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:80px;margin:10px 0;padding:0 4px}
+.bar-chart .bar{border-radius:3px 3px 0 0;min-width:24px;transition:all .3s;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;font-size:9.5px;font-weight:600}
+.load-gauge{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:20px 24px;margin:18px 0}
+.load-gauge .row{display:flex;align-items:center;gap:14px;margin:8px 0}
+.load-gauge .row .label{width:90px;flex-shrink:0;font-size:11px;color:#7777aa;text-align:right}
+.load-gauge .row .track{flex:1;height:18px;background:rgba(255,255,255,.03);border-radius:9px;overflow:hidden;position:relative}
+.load-gauge .row .track .fill{border-radius:9px;height:100%;display:flex;align-items:center;padding:0 10px;font-size:10px;font-weight:700}
+.fill.green{background:linear-gradient(90deg,rgba(52,211,153,.35),rgba(52,211,153,.55));color:#34d399}
+.fill.yellow{background:linear-gradient(90deg,rgba(251,191,36,.4),rgba(251,191,36,.6));color:#fbbf24}
+.fill.red{background:linear-gradient(90deg,rgba(248,113,113,.4),rgba(248,113,113,.6));color:#f87171}
+.fill.purple{background:linear-gradient(90deg,rgba(167,139,250,.3),rgba(167,139,250,.5));color:#a78bfa}
+.core-viz{display:flex;gap:3px;flex-wrap:wrap;margin:12px 0}
+.core-viz .core{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;border:1px solid}
+.core-viz .core.busy{background:rgba(248,113,113,.15);border-color:rgba(248,113,113,.3);color:#f87171}
+.core-viz .core.idle{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.15);color:#34d399}
+.core-viz .core.wait{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.2);color:#fbbf24}
+.note-row{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}
+.note-row .note{flex:1;min-width:200px;background:rgba(0,0,0,.2);border-radius:10px;padding:16px 18px;border-left:3px solid;font-size:12px;color:#b0b0d0;line-height:1.7}
+.note-row .note b{font-size:13px;display:block;margin-bottom:4px}
+.callout{border-radius:12px;padding:18px 22px;margin:20px 0;font-size:12.5px;line-height:1.8;color:#b0b0d0}
+.callout.info{background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.15)}
+.callout.warning{background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15)}
+.callout.success{background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.15)}
+.callout .ct{font-weight:800;font-size:13px;margin-bottom:6px}
+.callout.info .ct{color:#38bdf8}
+.callout.warning .ct{color:#fbbf24}
+.callout.success .ct{color:#34d399}
+.formula{text-align:center;font-size:14px;color:#b0b0d0;padding:14px;margin:12px 0;font-family:"JetBrains Mono","Fira Code",monospace;background:rgba(0,0,0,.18);border-radius:8px}
+.formula b{color:#a78bfa}
+.formula i{color:#38bdf8;font-style:normal}
+.formula u{color:#34d399;text-decoration:none}
+.two-col{display:flex;gap:18px;margin:18px 0;flex-wrap:wrap}
+.two-col>div{flex:1;min-width:240px}
+.scenario{background:rgba(0,0,0,.22);border-radius:12px;padding:18px 20px;margin:14px 0;border:1px solid rgba(255,255,255,.04)}
+.scenario h4{font-size:14px;font-weight:800;margin-bottom:4px}
+.scenario .tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700;margin-right:6px}
+.scenario .tag.ok{background:rgba(52,211,153,.12);color:#34d399}
+.scenario .tag.warn{background:rgba(251,191,36,.12);color:#fbbf24}
+.scenario .tag.bad{background:rgba(248,113,113,.12);color:#f87171}
+.scenario p{font-size:11.5px;color:#9999bb;line-height:1.7;margin-top:6px}
+.scenario .load-num{font-size:24px;font-weight:900;margin:6px 0}
+</style>
+</head>
+<body>
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="particle" style="left:8%;animation-duration:12s;animation-delay:0s"></div>
+  <div class="particle" style="left:25%;animation-duration:16s;animation-delay:2s"></div>
+  <div class="particle" style="left:55%;animation-duration:14s;animation-delay:1s"></div>
+  <div class="particle" style="left:72%;animation-duration:18s;animation-delay:3s"></div>
+  <div class="particle" style="left:90%;animation-duration:13s;animation-delay:2s"></div>
+
+  <h2 class="sec-title" style="font-size:clamp(28px,5vw,44px);font-weight:900">Linux 系统负载</h2>
+  <p class="sec-sub">深入理解 Load Average ——它不是 CPU 使用率，而是 <b style="color:#a78bfa">运行 + 等待</b> 的任务队列长度</p>
+
+  <div class="flow-row" style="margin:28px 0;flex-wrap:wrap">
+    <span class="flow-box" style="color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)"><strong>R 状态</strong><br><small>正在运行 / 就绪</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#f472b6;border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.06)"><strong>D 状态</strong><br><small>不可中断等待 I/O</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.06)"><strong>指数衰减</strong><br><small>1min / 5min / 15min</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)"><strong>CPU 核数</strong><br><small>多核归一化基准</small></span>
+    <span class="flow-arr">→</span>
+    <span class="flow-box" style="color:#38bdf8;border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)"><strong>诊断工具</strong><br><small>uptime · top · vmstat</small></span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">R + D</div><div class="l">负载统计源</div></div>
+    <div class="stat"><div class="n">1 / 5 / 15</div><div class="l">分钟平均值</div></div>
+    <div class="stat"><div class="n">≠ CPU%</div><div class="l">最常见误解</div></div>
+    <div class="stat"><div class="n">~/.5ms</div><div class="l">LOAD_FREQ 周期</div></div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<!-- ═══════ DOCUMENT BODY ═══════ -->
+<div class="doc">
+
+<!-- ── Ch1 ── -->
+<h2 class="sh">1. 系统负载 = 什么？本质定义</h2>
+<p class="ss">系统负载（Load Average）是 Linux 内核统计的一个<b>指数衰减移动平均值</b>，表示一段时间内处于 <b style="color:#fbbf24">可运行状态（R）</b> 和 <b style="color:#f472b6">不可中断睡眠状态（D）</b> 的平均进程数。它不直接等于 CPU 使用率——理解这个区别是正确诊断系统性能的第一步。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>🔵 R 状态 — TASK_RUNNING</h4>
+    <div class="lbl">Running + Runnable</div>
+    <p>进程要么<strong>正在 CPU 上执行</strong>，要么在<strong>运行队列（runqueue）中排队等待 CPU</strong>。两种都算 R 状态。CPU 密集型负载主要推高 R 态任务数。<code>ps aux | grep ' R'</code> 可查看。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>🟣 D 状态 — TASK_UNINTERRUPTIBLE</h4>
+    <div class="lbl">Uninterruptible Sleep</div>
+    <p>进程<strong>正在等待 I/O 完成</strong>（磁盘读写、网络请求、NFS 等待），在此期间<strong>不响应任何信号</strong>（即使用 kill -9 也无法杀死）。此设计的初衷是<strong>防止数据丢失</strong>——进程必须在 I/O 完成后才能被中断。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>🟢 S 状态 — TASK_INTERRUPTIBLE</h4>
+    <div class="lbl">不计入负载</div>
+    <p><strong>可中断睡眠</strong>是进程在等待事件（如网络数据、锁、定时器），但可以接收信号唤醒。这种等待<strong>不贡献负载</strong>。绝大多数"空闲"进程（如等待请求的服务端程序）处于 S 状态，不会推高 Load Average。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="ct">💡 关键洞察：为什么 Load Average 包含 D 状态？</div>
+  D 状态进程虽然不占 CPU，但它们是<b>系统吞吐量的瓶颈指示器</b>。如果磁盘 I/O 是瓶颈，大量的 D 状态进程会导致系统"感觉"繁忙——CPU 可能空闲，但 I/O 子系统饱和，新的 I/O 请求必须排队。负载平均反映的是<b>"系统资源争用"</b>，而不仅仅是 CPU 资源争用。
+</div>
+
+
+<!-- ── Ch2 ── -->
+<h2 class="sh">2. 三个数字的含义：1分钟 · 5分钟 · 15分钟</h2>
+<p class="ss">每次看到 <code>load average: 2.10, 1.85, 1.62</code> 三个数字时，它们分别代表过去 1 分钟、5 分钟、15 分钟的指数衰减移动平均值。这三个数字在一起，可以判断负载是正在上升、下降还是保持稳定。</p>
+
+<div class="load-gauge">
+  <div class="row">
+    <div class="label">1 分钟</div>
+    <div class="track"><div class="fill yellow" style="width:70%">2.10 → 短期：高</div></div>
+  </div>
+  <div class="row">
+    <div class="label">5 分钟</div>
+    <div class="track"><div class="fill purple" style="width:61%">1.85 → 中期：中</div></div>
+  </div>
+  <div class="row">
+    <div class="label">15 分钟</div>
+    <div class="track"><div class="fill green" style="width:54%">1.62 → 长期：偏低</div></div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div>
+    <div class="formula">
+      <b>趋势判断法则</b><br><br>
+      1min <u>&lt;</u> 5min <u>&lt;</u> 15min<br>
+      <small>→ 负载在下降，高峰已过 ✓</small><br><br>
+      1min <u>&gt;</u> 5min <u>&gt;</u> 15min<br>
+      <small>→ 负载在上升，需要关注 ⚡</small><br><br>
+      1min <u>≈</u> 5min <u>≈</u> 15min<br>
+      <small>→ 负载稳定，稳态运行</small>
+    </div>
+  </div>
+  <div>
+    <div class="scenario">
+      <h4 style="color:#e0e0ff">📊 指数衰减原理</h4>
+      <p>内核每 <b style="color:#38bdf8">5 秒</b>（LOAD_FREQ）采样一次 R + D 状态的进程数，然后用<strong>指数加权移动平均（EWMA）</strong>更新三个值。衰减因子：</p>
+      <div class="formula" style="font-size:12px">
+        1min 衰减: <i>exp(-5/60)</i>  <u>≈ 0.9200</u><br>
+        5min 衰减: <i>exp(-5/300)</i> <u>≈ 0.9834</u><br>
+        15min衰减:<i>exp(-5/900)</i> <u>≈ 0.9944</u>
+      </div>
+      <p>衰减因子越接近 1，历史值的影响越大、变化越慢。15分钟值比 1 分钟值<strong>平滑得多</strong>。</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ 1 分钟值的"欺骗性"</div>
+  1 分钟平均值使用 12 个采样周期（12 × 5s = 60s），实际上<strong>63% 的权重集中在最近的 60 秒内</strong>，但残余影响可以延伸到过去数分钟。这意味着一个短促的 CPU 尖峰（如编译了几秒）会在 1 分钟值上留下<b>几分钟的"尾巴"</b>。不要仅凭 1 分钟值就断定系统过载。
+</div>
+
+
+<!-- ── Ch3 ── -->
+<h2 class="sh">3. 内核如何计算：从源码到 /proc/loadavg</h2>
+<p class="ss">Load Average 的计算发生在内核的 <code>sched/loadavg.c</code> 中，通过定时器周期性触发。理解这个过程可以让你明白为什么负载值"滞后但稳定"。</p>
+
+<div class="cg c2">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>采样触发：sched_timer</h4>
+    <div class="lbl">kernel/sched/loadavg.c → do_timer()</div>
+    <p>每次<strong>时钟中断（tick）</strong>触发 <code>do_timer()</code>，累加 <code>calc_load_tasks</code>（当前 R + D 状态的任务数）。当累积达到 <code>LOAD_FREQ</code>（5s）时，调用 <code>calc_global_load()</code> 计算新的负载平均值。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>核心公式：EWMA</h4>
+    <div class="lbl">指数加权移动平均</div>
+    <div class="cb"><span class="cm">// load<sub>new</sub> = load<sub>old</sub> * exp(-Δt/τ) + n * (1 - exp(-Δt/τ))</span>
+<span class="kw">#define</span> <span class="ma">EXP_1</span>  <span class="nu">1884</span>  <span class="cm">// exp(-5/60)   * 2^11</span>
+<span class="kw">#define</span> <span class="ma">EXP_5</span>  <span class="nu">2014</span>  <span class="cm">// exp(-5/300)  * 2^11</span>
+<span class="kw">#define</span> <span class="ma">EXP_15</span> <span class="nu">2037</span>  <span class="cm">// exp(-5/900)  * 2^11</span>
+
+av1  <span class="eq">=</span> (av1  * <span class="ma">EXP_1</span>  + n * (<span class="nu">2048</span> - <span class="ma">EXP_1</span>)  + <span class="nu">1024</span>) >> <span class="nu">11</span>;
+av5  <span class="eq">=</span> (av5  * <span class="ma">EXP_5</span>  + n * (<span class="nu">2048</span> - <span class="ma">EXP_5</span>)  + <span class="nu">1024</span>) >> <span class="nu">11</span>;
+av15 <span class="eq">=</span> (av15 * <span class="ma">EXP_15</span> + n * (<span class="nu">2048</span> - <span class="ma">EXP_15</span>) + <span class="nu">1024</span>) >> <span class="nu">11</span>;
+<span class="cm">// 全部使用定点整数运算，避免浮点开销</span></div>
+    <p>其中 <code>n</code> 是当前采样到的活跃任务数，<code>τ</code> 是时间常数（60s / 300s / 900s）。<strong>所有计算使用定点数（2^11 = 2048 缩放因子），高效且无浮点误差</strong>。</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm">// ─── /proc/loadavg 的内容 ───</span>
+$ <span class="fn">cat</span> /proc/loadavg
+<span class="nu">2.10 1.85 1.62</span> <span class="st">2/1024</span> <span class="nu">30456</span>
+<span class="cm">│    │    │    │   │     │
+│    │    │    │   │     └── 最近创建的 PID
+│    │    │    │   └────── 系统总线程数
+│    │    │    └────────── 当前运行中的线程数（R 状态）
+│    │    └─────────────── 15 分钟负载平均
+│    └──────────────────── 5 分钟负载平均
+└───────────────────────── 1 分钟负载平均</span></div>
+
+<div class="callout success">
+  <div class="ct">🧠 为什么用指数平均而不是简单平均？</div>
+  简单滑动窗口平均存在"悬崖效应"——当高负载时段刚好移出窗口时，平均值会突然下降。指数衰减平均的权重<strong>平滑过渡</strong>，近期的采样权重更大，历史的采样逐渐"淡出"，没有突兀的边界。同时内存开销极小——只需存 3 个数，无需缓存完整历史数据。
+</div>
+
+
+<!-- ── Ch4 ── -->
+<h2 class="sh">4. 负载与 CPU 核数：最关键的理解</h2>
+<p class="ss">这是 Load Average 中最容易被误解的地方。负载值<strong>是绝对值，未按 CPU 核数归一化</strong>。一个 Load Average 为 4.0 的值，在 2 核机器上是"严重过载"，在 32 核机器上则是"轻松空闲"。</p>
+
+<div class="core-viz" style="justify-content:center;margin:24px 0">
+  <!-- 8 核机器示意：5 个忙 + 3 个闲 → 负载 ~5 → 健康 -->
+  <span style="width:100%;text-align:center;font-size:10px;color:#555577;margin-bottom:6px">8 核机器 · 负载 ≈ 5.0 · 健康（负载 / 核数 = 0.625）</span>
+  <div class="core busy">1</div>
+  <div class="core busy">2</div>
+  <div class="core busy">3</div>
+  <div class="core busy">4</div>
+  <div class="core busy">5</div>
+  <div class="core idle">6</div>
+  <div class="core idle">7</div>
+  <div class="core idle">8</div>
+</div>
+
+<div class="ptbl">
+  <table>
+    <tr>
+      <th>CPU 核数</th>
+      <th>Load = 1.0</th>
+      <th>Load = 4.0</th>
+      <th>Load = 8.0</th>
+      <th>Load = 64.0</th>
+    </tr>
+    <tr>
+      <td><strong>1 核</strong></td>
+      <td><span style="color:#fbbf24">满载</span></td>
+      <td><span style="color:#f87171">严重过载</span></td>
+      <td><span style="color:#f87171">严重过载</span></td>
+      <td><span style="color:#f87171">系统濒死</span></td>
+    </tr>
+    <tr>
+      <td><strong>4 核</strong></td>
+      <td><span style="color:#34d399">低负载</span></td>
+      <td><span style="color:#fbbf24">满载</span></td>
+      <td><span style="color:#f87171">过载 2×</span></td>
+      <td><span style="color:#f87171">过载 16×</span></td>
+    </tr>
+    <tr>
+      <td><strong>8 核</strong></td>
+      <td><span style="color:#34d399">空闲</span></td>
+      <td><span style="color:#34d399">半载</span></td>
+      <td><span style="color:#fbbf24">满载</span></td>
+      <td><span style="color:#f87171">过载 8×</span></td>
+    </tr>
+    <tr>
+      <td><strong>16 核</strong></td>
+      <td><span style="color:#34d399">空闲</span></td>
+      <td><span style="color:#34d399">低负载</span></td>
+      <td><span style="color:#34d399">半载</span></td>
+      <td><span style="color:#f87171">过载 4×</span></td>
+    </tr>
+    <tr>
+      <td><strong>64 核</strong></td>
+      <td><span style="color:#34d399">空闲</span></td>
+      <td><span style="color:#34d399">空闲</span></td>
+      <td><span style="color:#34d399">低负载</span></td>
+      <td><span style="color:#fbbf24">满载</span></td>
+    </tr>
+  </table>
+</div>
+
+<div class="callout info">
+  <div class="ct">📐 判断规则：负载 / CPU 核数</div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px">
+    <div style="flex:1;min-width:180px">
+      <b style="color:#34d399">比值 &lt; 0.7</b><br>
+      <span style="font-size:11px;color:#7777aa">CPU 有空闲余量，系统健康。</span>
+    </div>
+    <div style="flex:1;min-width:180px">
+      <b style="color:#fbbf24">比值 ≈ 1.0</b><br>
+      <span style="font-size:11px;color:#7777aa">CPU 刚好满载，无排队但无余量。<br>如果持续，需要关注。</span>
+    </div>
+    <div style="flex:1;min-width:180px">
+      <b style="color:#f87171">比值 &gt; 1.0</b><br>
+      <span style="font-size:11px;color:#7777aa">有任务在排队等待 CPU。<br>比值即排队倍数，不可持续。</span>
+    </div>
+  </div>
+</div>
+
+<div class="cb"><span class="cm"># 查看 CPU 核数</span>
+$ <span class="fn">nproc</span>                     <span class="cm"># 逻辑 CPU 数</span>
+$ <span class="fn">lscpu</span> | <span class="fn">grep</span> -E <span class="st">'^CPU\(s\)|Model name'</span>
+$ <span class="fn">grep</span> -c ^processor /proc/cpuinfo
+
+<span class="cm"># 一键对比：负载 / 核数</span>
+$ <span class="fn">uptime</span> | <span class="fn">awk</span> <span class="st">'{print "Load:",$(NF-2),$(NF-1),$NF}'</span>
+$ <span class="fn">echo</span> <span class="st">"Cores: $(nproc)"</span></div>
+
+
+<!-- ── Ch5 ── -->
+<h2 class="sh">5. 查看负载的常用命令</h2>
+<p class="ss">Linux 提供了多种查看系统负载的方式——从最简单的 uptime 到功能丰富的 top/htop。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>uptime</h4>
+    <div class="lbl">最简洁——一行知晓全局</div>
+    <div class="cb"><span class="cm"># 系统运行时间 + 三值负载</span>
+$ <span class="fn">uptime</span>
+<span class="nu">14:32:01</span> up <span class="nu">45</span> days, <span class="nu">3:12</span>, \
+  <span class="nu">2</span> users, \
+  load average: <span class="nu">0.52, 0.38, 0.29</span></div>
+    <p>适合<strong>快速健康检查</strong>的第一条命令。看到数字后立即除以 CPU 核数判断健康状况。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>top / htop</h4>
+    <div class="lbl">动态查看 + 进程级详情</div>
+    <div class="cb">top - <span class="nu">14:32:15</span> up <span class="nu">45</span> days
+Tasks: <span class="nu">178</span> total, <span class="nu">1</span> running
+%Cpu(s): <span class="nu">2.3</span> us, <span class="nu">0.7</span> sy, <span class="nu">0.0</span> ni,
+         <span class="nu">96.8</span> id, <span class="nu">0.1</span> wa
+Load Avg: <span class="nu">0.52, 0.38, 0.29</span></div>
+    <p><strong>top</strong> 同时显示 CPU 使用率、I/O 等待和负载平均值。对比三个指标可以判断：高负载 + 低 CPU 使用率 = I/O 瓶颈。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>/proc/loadavg</h4>
+    <div class="lbl">procfs——不需要命令</div>
+    <div class="cb">$ <span class="fn">cat</span> /proc/loadavg
+<span class="nu">0.52 0.38 0.29 1/178 24561</span></div>
+    <p>程序的<strong>直接数据源</strong>。许多监控工具（Prometheus node_exporter、Zabbix、Datadog Agent）都从这里读取负载数据。额外显示运行中/总线程数和最近 PID。</p>
+  </div>
+</div>
+
+<div class="ptbl">
+  <table>
+    <tr><th>命令</th><th>适用场景</th><th>额外信息</th></tr>
+    <tr><td><strong>uptime</strong></td><td>第一眼快速检查</td><td>系统运行时长、登录用户数</td></tr>
+    <tr><td><strong>top</strong></td><td>实时动态监控</td><td>进程列表、CPU/内存分解、I/O等待</td></tr>
+    <tr><td><strong>htop</strong></td><td>增强交互式监控</td><td>彩色柱状图、树形进程视图、鼠标操作</td></tr>
+    <tr><td><strong>w</strong></td><td>查看登录用户 + 负载</td><td>各用户正在执行的命令</td></tr>
+    <tr><td><strong>vmstat</strong></td><td>系统整体统计</td><td>r(Runnable)、b(Blocked) 列直接反映负载组成</td></tr>
+    <tr><td><strong>cat /proc/loadavg</strong></td><td>脚本/程序读取</td><td>原始数据，零开销</td></tr>
+    <tr><td><strong>iostat -x</strong></td><td>I/O 负载定位</td><td>每块磁盘的利用率、等待队列、await/svctm</td></tr>
+    <tr><td><strong>sar -q</strong></td><td>历史负载分析</td><td>历史队列长度和负载平均值（需 sysstat）</td></tr>
+  </table>
+</div>
+
+<div class="cb"><span class="cm"># vmstat: r 列 = R 状态（运行/就绪），b 列 = D 状态（阻塞在 I/O）</span>
+$ <span class="fn">vmstat</span> <span class="nu">1 5</span>
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ <span class="kw">r  b</span>   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ <span class="nu">2  0</span>      <span class="nu">0</span> <span class="nu">82456</span>  <span class="nu">12840</span> <span class="nu">340224</span>    <span class="nu">0</span>    <span class="nu">0</span>    <span class="nu">12</span>    <span class="nu">45</span>  <span class="nu">252</span>  <span class="nu">612</span>  <span class="nu">3</span>  <span class="nu">1</span> <span class="nu">95</span>  <span class="nu">1</span>  <span class="nu">0</span>
+ <span class="cm">│  │                                                                   │  │  └── steal
+ │  │                                                                   │  └──── iowait
+ │  └── D 状态（阻塞在不可中断等待）                                     └─────── idle</span>
+ └── R 状态（运行/就绪队列长度，即"瞬时负载"采样源）</div>
+
+
+<!-- ── Ch6 ── -->
+<h2 class="sh">6. CPU 密集型 vs I/O 密集型负载</h2>
+<p class="ss">Load Average 包含 R 和 D 两种状态，这两种不同的来源意味着相同的负载值可能有完全不同的原因和对策。区分它们是高负载诊断的核心任务。</p>
+
+<div class="two-col">
+  <div class="scenario">
+    <div class="tag bad">CPU 密集型</div>
+    <h4 style="color:#f87171">高 R 状态 + 高 CPU 使用率</h4>
+    <p>典型场景：<strong>数学计算、视频编码、编译、加密/解密、机器学习训练</strong>。</p>
+    <div class="cb"><span class="cm"># 现象：CPU 使用率高 (id≈0%)，I/O 等待低 (wa≈0%)</span>
+$ <span class="fn">top</span>
+%Cpu(s): <span class="nu">98.3</span> us,  <span class="nu">1.7</span> sy,  <span class="nu">0.0</span> ni,
+         <span class="nu">0.0</span> id,  <span class="nu">0.0</span> wa
+
+$ <span class="fn">vmstat</span> <span class="nu">1</span>
+procs: r=<span class="nu">12</span>  b=<span class="nu">0</span>   <span class="cm">← 大量就绪任务排队</span>
+cpu:   us=<span class="nu">98</span>  id=<span class="nu">0</span>  wa=<span class="nu">0</span></div>
+    <p style="color:#f87171"><strong>对策</strong>：优化算法 / 减少并发度 / 增加 CPU 资源 / 使用 nice 调整优先级 / cgroup CPU 限制</p>
+  </div>
+  <div class="scenario">
+    <div class="tag warn">I/O 密集型</div>
+    <h4 style="color:#fbbf24">高 D 状态 + 低 CPU 使用率</h4>
+    <p>典型场景：<strong>大量磁盘读写、数据库查询、NFS 挂载响应慢、日志刷盘、swap 抖动</strong>。</p>
+    <div class="cb"><span class="cm"># 现象：CPU 空闲 (id 高)，但 I/O 等待 (wa) 显著</span>
+$ <span class="fn">top</span>
+%Cpu(s):  <span class="nu">5.2</span> us,  <span class="nu">2.1</span> sy,  <span class="nu">0.0</span> ni,
+         <span class="nu">68.5</span> id, <span class="nu">24.2</span> wa
+
+$ <span class="fn">vmstat</span> <span class="nu">1</span>
+procs: r=<span class="nu">1</span>  b=<span class="nu">18</span>   <span class="cm">← 大量 D 状态阻塞在 I/O</span>
+cpu:   us=<span class="nu">7</span>  id=<span class="nu">68</span> wa=<span class="nu">24</span></div>
+    <p style="color:#fbbf24"><strong>对策</strong>：升级存储（HDD → SSD / NVMe）/ 增加文件系统缓存 / 优化 SQL / 排查 NFS / 检查 swap 使用</p>
+  </div>
+</div>
+
+<div class="cb"><span class="cm"># 列出系统中所有 D 状态进程——高负载排查利器</span>
+$ <span class="fn">ps</span> aux | <span class="fn">awk</span> <span class="st">'$8 ~ /D/'</span>
+$ <span class="fn">ps</span> -eo pid,stat,wchan:32,comm | <span class="fn">grep</span> <span class="st">' D'</span>
+<span class="cm"># wchan 列显示进程在内核中阻塞在哪个函数（如 blkdev_issue_flush、rpc_wait_bit_killable）</span>
+
+<span class="cm"># 查看每块磁盘的繁忙程度和等待队列</span>
+$ <span class="fn">iostat</span> -x <span class="nu">1</span>
+Device   r/s   w/s   <span class="kw">rkB/s wkB/s</span>  <span class="ty">await</span>  <span class="ty">%util</span>
+sda      <span class="nu">45</span>   <span class="nu">120</span>    <span class="nu">520</span>  <span class="nu">3840</span>    <span class="nu">8.5</span>   <span class="nu">72.3</span>
+<span class="cm"># await：平均 I/O 响应时间(ms)；%util：磁盘繁忙百分比</span></div>
+
+
+<!-- ── Ch7 ── -->
+<h2 class="sh">7. 高负载诊断流程</h2>
+<p class="ss">当监控告警响起——负载飙升到异常水平时，按照下面的系统性流程快速定位根因。</p>
+
+<div style="position:relative;padding-left:36px;border-left:2px solid rgba(108,99,255,.15);margin:24px 0">
+
+  <div style="margin-bottom:28px;position:relative">
+    <div style="position:absolute;left:-44px;top:0;width:24px;height:24px;border-radius:50%;background:rgba(56,189,248,.15);border:2px solid #38bdf8;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#38bdf8">1</div>
+    <h4 style="color:#38bdf8;margin-bottom:4px">确认负载水平</h4>
+    <div class="cb"><span class="fn">uptime</span>; <span class="fn">nproc</span>; <span class="fn">echo</span> <span class="st">"负载/核比："</span> $(<span class="fn">awk</span> <span class="st">'{print $1}'</span> /proc/loadavg) / $(<span class="fn">nproc</span>)</div>
+    <p style="font-size:11.5px;color:#7777aa">负载 / CPU 核数 的比值确定严重程度。比值 > 核数意味着大量任务在排队。</p>
+  </div>
+
+  <div style="margin-bottom:28px;position:relative">
+    <div style="position:absolute;left:-44px;top:0;width:24px;height:24px;border-radius:50%;background:rgba(167,139,250,.15);border:2px solid #a78bfa;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#a78bfa">2</div>
+    <h4 style="color:#a78bfa;margin-bottom:4px">区分 CPU 瓶颈 vs I/O 瓶颈</h4>
+    <div class="cb"><span class="fn">vmstat</span> 1 5    <span class="cm"># 观察 r 列（R状态）和 b 列（D状态）</span>
+<span class="fn">top</span>           <span class="cm"># 观察 %Cpu 行的 us/sy/id/wa 分布</span></div>
+    <p style="font-size:11.5px;color:#7777aa">高 r 值 → CPU 瓶颈；高 b 值 + 高 wa% → I/O 瓶颈。两种都高 → 混合型，分别处理。</p>
+  </div>
+
+  <div style="margin-bottom:28px;position:relative">
+    <div style="position:absolute;left:-44px;top:0;width:24px;height:24px;border-radius:50%;background:rgba(251,191,36,.15);border:2px solid #fbbf24;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#fbbf24">3</div>
+    <h4 style="color:#fbbf24;margin-bottom:4px">定位罪魁祸首进程</h4>
+    <div class="cb"><span class="cm"># CPU 瓶颈场景</span>
+<span class="fn">ps</span> -eo pid,ppid,stat,%cpu,%mem,time,comm --sort<span class="eq">=</span>-%cpu | <span class="fn">head</span> -20
+<span class="fn">top</span> -o %CPU -bn1 | <span class="fn">head</span> -20
+
+<span class="cm"># I/O 瓶颈场景——找到 D 状态进程和它们的 wchan</span>
+<span class="fn">ps</span> -eo pid,stat,wchan:32,comm | <span class="fn">grep</span> <span class="st">' D'</span>
+<span class="fn">iotop</span> -o                 <span class="cm"># 实时 I/O 排序（需 root）</span></div>
+  </div>
+
+  <div style="margin-bottom:28px;position:relative">
+    <div style="position:absolute;left:-44px;top:0;width:24px;height:24px;border-radius:50%;background:rgba(52,211,153,.15);border:2px solid #34d399;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#34d399">4</div>
+    <h4 style="color:#34d399;margin-bottom:4px">深入根因</h4>
+    <div class="cb"><span class="cm"># CPU 高：perf 火焰图 / strace 系统调用分析</span>
+<span class="fn">perf</span> top -p &lt;PID&gt;
+<span class="fn">strace</span> -c -p &lt;PID&gt;  <span class="cm"># 统计系统调用耗时分布</span>
+
+<span class="cm"># I/O 高：块层追踪 + NFS 诊断</span>
+<span class="fn">iostat</span> -x 1           <span class="cm"># 磁盘级 I/O 统计</span>
+<span class="fn">iotop</span> -oP             <span class="cm"># 进程级 I/O 排序</span>
+<span class="fn">cat</span> /proc/&lt;PID&gt;/stack  <span class="cm"># 查看 D 状态进程的内核调用栈（需 root）</span></div>
+  </div>
+
+  <div style="position:relative">
+    <div style="position:absolute;left:-44px;top:0;width:24px;height:24px;border-radius:50%;background:rgba(248,113,113,.15);border:2px solid #f87171;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#f87171">5</div>
+    <h4 style="color:#f87171;margin-bottom:4px">解决问题</h4>
+    <div style="font-size:11.5px;color:#9999bb;line-height:1.8">
+      <b style="color:#a78bfa">CPU 瓶颈</b>：调整进程优先级（nice/renice）、限制并发度（如 make -j 参数）、cgroup CPU 配额、代码优化<br>
+      <b style="color:#fbbf24">I/O 瓶颈</b>：升级存储（NVMe）、增加内存做缓存、调整内核 I/O 调度器（mq-deadline → kyber）、排查 NFS 服务器、禁用 swap<br>
+      <b style="color:#34d399">通用/紧急</b>：kill -STOP 暂停非关键进程、重启服务、迁移负载到其他节点
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Ch8 ── -->
+<h2 class="sh">8. 常见误解与澄清</h2>
+<p class="ss">关于 Load Average 的误区非常普遍，即便经验丰富的工程师也常犯错。下面澄清最常见的几个。</p>
+
+<div class="note-row">
+  <div class="note" style="border-color:#f87171">
+    <b style="color:#f87171">❌ 误区：Load 高 = CPU 使用率高</b>
+    这是最常见也是危害最大的误解。一个系统可以在 CPU 使用率不到 10% 的情况下 Load Average 达到 50+——只需大量的 D 状态进程（如 NFS 挂载无响应、磁盘 I/O 饱和）。<strong>负载 ≠ CPU 使用率</strong>。
+  </div>
+  <div class="note" style="border-color:#fbbf24">
+    <b style="color:#fbbf24">❌ 误区：Load &lt; 1.0 就安全</b>
+    在 32 核机器上，Load 0.8 表示只用不到 3% 的 CPU 能力，极端安全。但在单核机器上，Load 0.9 意味着 90% 的 CPU 被占用，接近饱和。<strong>永远除以 CPU 核数再判断</strong>。
+  </div>
+</div>
+
+<div class="note-row">
+  <div class="note" style="border-color:#38bdf8">
+    <b style="color:#38bdf8">❌ 误区：负载值变化应该很灵敏</b>
+    指数衰减平均<strong>天然滞后</strong>。1 分钟平均值的 63% 权重分布在最近 60 秒，但仍有约 37% 的权重落在更早的时间。一个只持续 5 秒的 CPU 尖峰可能需要 2-3 分钟才能从 1 分钟值中完全消失。
+  </div>
+  <div class="note" style="border-color:#a78bfa">
+    <b style="color:#a78bfa">❌ 误区：htop 的 CPU 条满了就没救了</b>
+    htop 是<strong>瞬时采样</strong>，top 的 CPU 百分比也是瞬时值。而 Load Average 是<strong>时间平滑</strong>的。可以出现 htop CPU 条 100% 但 Load 只有 0.5（短暂尖峰），也可以 Load 很高但 CPU 条很低（大量 D 状态任务）。
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="ct">⚠️ systemd-oomd 的 Load 阈值陷阱</div>
+  现代 Linux 发行版（Fedora、Ubuntu 22.04+）默认启用 <b>systemd-oomd</b>，它会监控 Load Average 并在超过阈值时杀进程。默认阈值 <b>Load &gt; CPU 核数 × 5</b>。如果一台 8 核机器 Load 达到 40，systemd-oomd <b>会静默杀掉它认为"最应该死"的进程</b>——而这个阈值对于高负载设计的生产服务可能太低了。通过 <code>oomctl</code> 调整策略或适当提高阈值。
+</div>
+
+
+<!-- ── Ch9 ── -->
+<h2 class="sh">9. 实战场景分析</h2>
+<p class="ss">通过具体场景的数字学习如何解读 Load Average。</p>
+
+<div class="scenario">
+  <div class="tag ok">场景 A：健康的 Web 服务器</div>
+  <h4 style="color:#e0e0ff">8 核服务器 · 低负载 · 一切正常</h4>
+  <div class="cb">$ <span class="fn">uptime</span>
+load average: <span class="st">0.52, 0.38, 0.29</span>
+
+<span class="cm"># 解读：
+# 核数=8，负载/核=0.065 — CPU 几乎空闲
+# 1min > 5min > 15min — 负载在缓慢上升
+# 可能正在接收新流量，但远未达到需要关注的级别</span></div>
+</div>
+
+<div class="scenario">
+  <div class="tag warn">场景 B：CPU 密集型编译任务</div>
+  <h4 style="color:#e0e0ff">4 核服务器 · 全核编译 · 负载刚好满载</h4>
+  <div class="cb">$ <span class="fn">uptime</span>
+load average: <span class="st">4.10, 3.95, 1.20</span>
+
+<span class="cm"># 解读：
+# 核数=4，负载/核≈1.0 — 刚好满载，无排队
+# 1min ≈ 5min ≫ 15min — 编译在 1-5 分钟前开始，之前空闲
+# top 显示：CPU 100%，0% iowait，运行队列 ~4
+# make -j4 是预期行为，编译结束后负载会下降</span></div>
+</div>
+
+<div class="scenario">
+  <div class="tag bad">场景 C：磁盘 I/O 瓶颈</div>
+  <h4 style="color:#e0e0ff">8 核服务器 · 低 CPU 高负载 · 磁盘站饱和</h4>
+  <div class="cb">$ <span class="fn">uptime</span>
+load average: <span class="st">24.50, 18.30, 8.72</span>
+
+$ <span class="fn">top</span>
+%Cpu(s): <span class="nu">8.2</span> us, <span class="nu">3.1</span> sy, <span class="nu">0.0</span> ni,
+         <span class="nu">64.5</span> id, <span class="nu">24.2</span> wa   <span class="cm">← CPU 64% 空闲！但 iowait 24%</span>
+
+$ <span class="fn">vmstat</span> 1
+r=<span class="nu">1</span>  b=<span class="nu">22</span>  <span class="cm">← 几乎无 R 态排队，但 22 个进程阻塞在 D 态</span>
+
+<span class="cm"># 解读：
+# CPU 大量空闲，但 22 个进程在 D 状态等待 I/O
+# iowait 24.2% — 磁盘子系统饱和
+# 1min ≫ 5min ≫ 15min — I/O 问题在最近 1 分钟急剧恶化
+# 结论：磁盘 I/O 瓶颈，需要升级存储或优化 I/O 模式</span></div>
+</div>
+
+<div class="scenario">
+  <div class="tag bad">场景 D：NFS 无响应（经典的 D 状态爆炸）</div>
+  <h4 style="color:#e0e0ff">16 核服务器 · NFS 服务器宕机 · 大量 D 状态阻塞</h4>
+  <div class="cb">$ <span class="fn">uptime</span>
+load average: <span class="st">89.30, 76.15, 42.80</span>
+
+$ <span class="fn">ps</span> -eo pid,stat,wchan:32,comm | <span class="fn">grep</span> <span class="st">' D'</span> | <span class="fn">wc</span> -l
+<span class="nu">84</span>
+$ <span class="fn">ps</span> -eo pid,stat,wchan:32,comm | <span class="fn">grep</span> <span class="st">' D'</span> | <span class="fn">head</span> -3
+<span class="nu">1245</span> D rpc_wait_bit_killable     nfsd
+<span class="nu">1246</span> D rpc_wait_bit_killable     nfsd
+<span class="nu">1280</span> D rpc_wait_bit_killable     java
+
+<span class="cm"># 解读：
+# 84 个进程阻塞在 NFS RPC 等待（rpc_wait_bit_killable）
+# 所有等待 NFS I/O 的进程进入 D 状态，推高负载
+# CPU 大量空闲——但这些 D 状态进程 kill -9 也无法杀死
+# 唯一解法：强制卸载 NFS (umount -f / -l) 或等待 NFS 服务器恢复</span></div>
+</div>
+
+
+<!-- ── Ch10 ── -->
+<h2 class="sh">10. 负载与 CPU 使用率的对比</h2>
+<p class="ss">理解这两个经常被混淆的指标之间的关系，可以让你快速做出准确判断。</p>
+
+<div class="ptbl">
+  <table>
+    <tr>
+      <th>维度</th>
+      <th>Load Average</th>
+      <th>CPU 使用率 (%)</th>
+    </tr>
+    <tr>
+      <td><strong>数据来源</strong></td>
+      <td>内核调度器：R + D 状态进程数</td>
+      <td>/proc/stat：各 CPU 模式的时间片统计</td>
+    </tr>
+    <tr>
+      <td><strong>统计范围</strong></td>
+      <td>包含 CPU + I/O 等待</td>
+      <td>仅 CPU 时间分配（含 iowait）</td>
+    </tr>
+    <tr>
+      <td><strong>归一化</strong></td>
+      <td><span style="color:#f87171">未归一化——必须除以核数</span></td>
+      <td>已归一化——0~100% 跨平台通用</td>
+    </tr>
+    <tr>
+      <td><strong>时间平滑</strong></td>
+      <td>指数衰减平均——有惯性</td>
+      <td>瞬时采样或短窗口平均——变化快</td>
+    </tr>
+    <tr>
+      <td><strong>反映问题</strong></td>
+      <td>资源争用程度（排队/阻塞）</td>
+      <td>CPU 工作时间占比</td>
+    </tr>
+    <tr>
+      <td><strong>D 状态</strong></td>
+      <td>计入</td>
+      <td>不计入 CPU 使用（仅 iowait 反映一部分）</td>
+    </tr>
+    <tr>
+      <td><strong>典型值</strong></td>
+      <td>0 ~ ∞（实际很少超过数百）</td>
+      <td>0 ~ 100%</td>
+    </tr>
+    <tr>
+      <td><strong>内核读取</strong></td>
+      <td>/proc/loadavg</td>
+      <td>/proc/stat</td>
+    </tr>
+  </table>
+</div>
+
+<div class="callout success">
+  <div class="ct">🎯 黄金诊断组合</div>
+  将 Load Average、CPU 使用率和 I/O 等待三个指标结合查看，可以在数秒内确定问题性质：
+  <div class="cb"><span class="cm"># 三个命令，一键三连</span>
+<span class="fn">uptime</span>                    <span class="cm"># 1. 负载整体水平</span>
+<span class="fn">top</span> -bn1 | <span class="fn">grep</span> <span class="st">'Cpu'</span>     <span class="cm"># 2. CPU 使用分布</span>
+<span class="fn">vmstat</span> <span class="nu">1 3</span>              <span class="cm"># 3. R/D 状态分离 + I/O 指标</span></div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px">
+    <div style="font-size:11px;color:#b0b0d0;line-height:1.6">
+      <b style="color:#34d399">高 Load + 高 CPU + 低 iowait</b><br>→ CPU 密集型，优化代码或增加算力
+    </div>
+    <div style="font-size:11px;color:#b0b0d0;line-height:1.6">
+      <b style="color:#fbbf24">高 Load + 低 CPU + 高 iowait</b><br>→ I/O 密集型，升级存储或优化 I/O
+    </div>
+    <div style="font-size:11px;color:#b0b0d0;line-height:1.6">
+      <b style="color:#f87171">高 Load + 低 CPU + 低 iowait</b><br>→ 可能是 NFS/网络文件系统 D 状态阻塞
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Ch11 ── -->
+<h2 class="sh">11. 内核实现细节</h2>
+<p class="ss">对想要深入了解的读者，这里涵盖内核源码层面的完整调用链。</p>
+
+<div class="cb"><span class="cm">// ─── kernel/sched/loadavg.c ─── 核心数据结构与函数</span>
+
+<span class="kw">static</span> <span class="ty">unsigned</span> <span class="ty">long</span> <span class="fn">calc_load</span>(<span class="ty">unsigned</span> <span class="ty">long</span> load,
+                             <span class="ty">unsigned</span> <span class="ty">long</span> exp,
+                             <span class="ty">unsigned</span> <span class="ty">long</span> active)
+{
+    <span class="ty">unsigned</span> <span class="ty">long</span> newload;
+    <span class="cm">// load = old load average * exp + active * (FSHIFT - exp)</span>
+    newload = load * exp + active * (<span class="ma">FSHIFT</span> - exp);
+    <span class="kw">if</span> (active >= load)
+        newload += <span class="ma">FSHIFT</span> - <span class="nu">1</span>;
+    <span class="kw">return</span> newload / <span class="ma">FSHIFT</span>;
+}
+
+<span class="cm">// ─── 采样时机：每次 do_timer() 时钟中断 ───</span>
+<span class="cm">// kernel/time/timekeeping.c → do_timer() → calc_global_load()</span>
+
+<span class="kw">void</span> <span class="fn">calc_global_load</span>(<span class="ty">unsigned</span> <span class="ty">long</span> ticks)
+{
+    <span class="ty">long</span> active, change;
+
+    <span class="cm">// 1. 读取当前 R + D 状态任务数的 5s 平均值</span>
+    active = <span class="fn">atomic_long_read</span>(&calc_load_tasks);
+    active = active > <span class="nu">0</span> ? active * <span class="ma">FSHIFT</span> : <span class="ma">FSHIFT</span>/<span class="nu">2</span>;
+
+    <span class="cm">// 2. 更新三个时间尺度的指数平均值</span>
+    <span class="fn">avenrun</span>[<span class="nu">0</span>] = <span class="fn">calc_load</span>(<span class="fn">avenrun</span>[<span class="nu">0</span>], <span class="ma">EXP_1</span>, active);
+    <span class="fn">avenrun</span>[<span class="nu">1</span>] = <span class="fn">calc_load</span>(<span class="fn">avenrun</span>[<span class="nu">1</span>], <span class="ma">EXP_5</span>, active);
+    <span class="fn">avenrun</span>[<span class="nu">2</span>] = <span class="fn">calc_load</span>(<span class="fn">avenrun</span>[<span class="nu">2</span>], <span class="ma">EXP_15</span>, active);
+}
+
+<span class="cm">// ─── 用户态读取：/proc/loadavg ───</span>
+<span class="cm">// fs/proc/loadavg.c → loadavg_proc_show()</span>
+
+<span class="kw">static</span> <span class="ty">int</span> <span class="fn">loadavg_proc_show</span>(<span class="kw">struct</span> seq_file *m, <span class="kw">void</span> *v)
+{
+    <span class="ty">unsigned</span> <span class="ty">long</span> avnrun[<span class="nu">3</span>];
+    <span class="fn">get_avenrun</span>(avnrun, <span class="ma">FIXED_1</span>/<span class="nu">200</span>, <span class="nu">0</span>);
+    <span class="cm">// 将 2048 比例定点数转换为以 0.01 为单位的小数</span>
+    <span class="fn">seq_printf</span>(m, <span class="st">"%lu.%02lu %lu.%02lu %lu.%02lu %ld/%d %d</span><span class="se">\n</span><span class="st">"</span>,
+        <span class="ma">LOAD_INT</span>(avnrun[<span class="nu">0</span>]), <span class="ma">LOAD_FRAC</span>(avnrun[<span class="nu">0</span>]),
+        <span class="ma">LOAD_INT</span>(avnrun[<span class="nu">1</span>]), <span class="ma">LOAD_FRAC</span>(avnrun[<span class="nu">1</span>]),
+        <span class="ma">LOAD_INT</span>(avnrun[<span class="nu">2</span>]), <span class="ma">LOAD_FRAC</span>(avnrun[<span class="nu">2</span>]),
+        nr_running(), nr_threads,
+        <span class="fn">task_active_pid_ns</span>(current)->last_pid);
+    <span class="kw">return</span> <span class="nu">0</span>;
+}</div>
+
+<div class="callout info">
+  <div class="ct">📖 关键常量速查</div>
+  <div style="font-size:11.5px;line-height:2;color:#b0b0d0">
+    <code style="color:#a78bfa">LOAD_FREQ = 5</code> · 采样间隔（秒）<br>
+    <code style="color:#a78bfa">FSHIFT = 11</code> · 定点小数位数（2048 = 2^11）<br>
+    <code style="color:#38bdf8">EXP_1 = 1884</code> · exp(-5/60) × 2048<br>
+    <code style="color:#38bdf8">EXP_5 = 2014</code> · exp(-5/300) × 2048<br>
+    <code style="color:#38bdf8">EXP_15 = 2037</code> · exp(-5/900) × 2048<br>
+    <code style="color:#34d399">LOAD_INT(x) = x >> 11</code> · 取出整数部分<br>
+    <code style="color:#34d399">LOAD_FRAC(x) = ((x & (FSHIFT-1)) * 100) >> 11</code> · 取出小数部分（%）
+  </div>
+</div>
+
+
+<!-- ── Ch12 ── -->
+<h2 class="sh">12. 总结：记住这几点就够了</h2>
+<p class="ss">前面的所有内容浓缩成几个核心要点——理解这些，日常运维和调试就够用了。</p>
+
+<div class="cg c3">
+  <div class="cd" style="--gc:#fbbf24">
+    <h4>① 负载 = R + D 的任务数</h4>
+    <div class="lbl">不是 CPU 使用率</div>
+    <p>Load Average 统计的是<strong>正在运行</strong>和<strong>等待 I/O 不可中断</strong>的进程数。一台 CPU 空闲的机器可以因磁盘或 NFS 问题而负载爆表。</p>
+  </div>
+  <div class="cd" style="--gc:#a78bfa">
+    <h4>② 除以核数再判断</h4>
+    <div class="lbl">1.0 在 1 核和 64 核机器上完全不同</div>
+    <p>Load 是<strong>未归一化</strong>的绝对值。<code>load / 核数 &lt; 0.7</code> 安全，<code>≈ 1.0</code> 满载，<code>&gt; 1.0</code> 有排队。永远<strong>先执行 nproc</strong>。</p>
+  </div>
+  <div class="cd" style="--gc:#38bdf8">
+    <h4>③ 三个数字看趋势</h4>
+    <div class="lbl">1min · 5min · 15min</div>
+    <p>1min > 5min > 15min = 负载在上升（关注）；反之在下降（高峰已过）；三者接近 = 稳态运行。结合趋势比看单一值更有意义。</p>
+  </div>
+  <div class="cd" style="--gc:#34d399">
+    <h4>④ 区分 CPU vs I/O</h4>
+    <div class="lbl">vmstat 的 r 列和 b 列</div>
+    <p><code>vmstat 1</code>，r 高 = CPU 瓶颈，b 高 = I/O 瓶颈。<code>ps aux | grep ' D'</code> 找到 I/O 阻塞的进程，<code>wchan</code> 揭示具体阻塞位置。</p>
+  </div>
+  <div class="cd" style="--gc:#f472b6">
+    <h4>⑤ 指数平均有惯性</h4>
+    <div class="lbl">不会立即反映瞬时尖峰</div>
+    <p>1 分钟平均需要约 5 分钟才能完全反映长期变化（约需 4-5 个时间常数）。不要因短时尖峰就判定系统过载——看 5min 和 15min 确认。</p>
+  </div>
+  <div class="cd" style="--gc:#f87171">
+    <h4>⑥ D 状态不可杀</h4>
+    <div class="lbl">kill -9 对 D 状态无效</div>
+    <p>TASK_UNINTERRUPTIBLE 是<strong>内核设计的保护机制</strong>——防止在 I/O 中途被杀死导致数据损坏。大量 D 状态进程堆积只能从根源解决（如恢复 I/O 通路）。</p>
+  </div>
+</div>
+
+<hr style="margin:48px 0 24px;border-color:rgba(255,255,255,.04)">
+
+<p style="text-align:center;font-size:11px;color:#555577">
+  Linux Load Average — 系统负载的全面理解 · R + D 状态的指数衰减移动平均 · 永远除以 CPU 核数 · 区分 CPU 瓶颈与 I/O 瓶颈
+</p>
+
+</div><!-- /.doc -->
+
+<script>
+(function(){
+  document.querySelectorAll('.sec-title,.sec-sub,.cd').forEach(function(el){
+    new IntersectionObserver(function(es){es.forEach(function(e){
+      if(e.isIntersecting) e.target.classList.add('vis');
+    })},{threshold:0.08}).observe(el);
+  });
+})();
+</script>
+</body>
+</html>
